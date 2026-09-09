@@ -1,0 +1,79 @@
+{
+  "schema_version": "native_nb_matrix/1",
+  "scope": "Separately frozen post-repair diagnostic stage; not the 36-cell/2000-cohort qualification matrix, clinical validation, or an acceptance decision",
+  "clinical_release_allowed": false,
+  "seed": 2026091001,
+  "rng": "NumPy PCG64; SeedSequence(seed).spawn(6) in listed cell order; each cell spawns 20 cohorts; each cohort spawns four streams for means, libraries, nuisance batch coefficients and counts",
+  "cohorts_per_cell": 20,
+  "cells": [
+    {"id": "null_n24_a005", "samples": 24, "alpha": 0.05, "regime": "complete_null"},
+    {"id": "null_n24_a080", "samples": 24, "alpha": 0.8, "regime": "complete_null"},
+    {"id": "null_n48_a005", "samples": 48, "alpha": 0.05, "regime": "complete_null"},
+    {"id": "null_n48_a080", "samples": 48, "alpha": 0.8, "regime": "complete_null"},
+    {"id": "mixed_n24_a020", "samples": 24, "alpha": 0.2, "regime": "mixed"},
+    {"id": "mixed_n48_a020", "samples": 48, "alpha": 0.2, "regime": "mixed"}
+  ],
+  "engines": ["edger_qlf", "deseq2_lrt"],
+  "panel_genes": 80,
+  "hypothesis_genes": 32,
+  "hypothesis_selection": "g000 through g031; fixed before observing counts; no filtering",
+  "times": [0, 1, 2, 3, 4, 5],
+  "time_unit": "synthetic ordinal unit",
+  "batch_assignment": "Alternating A/B within each balanced time; two subjects per time/batch for n24 and four for n48; every sample has its own independent biological unit",
+  "gene_mean_distribution": {"name": "log_uniform", "lower": 2.0, "upper": 600.0},
+  "log_library_distribution": {"name": "normal", "mean": 0.0, "sd": 0.7, "centering": "subtract within-cohort sampled log-factor mean before exponentiating"},
+  "batch_coefficient_distribution": {"name": "normal", "mean": 0.0, "sd": 0.35},
+  "count_distribution": "Negative binomial with mean mu and variance mu + alpha * mu^2; NumPy n=1/alpha, p=n/(n+mu)",
+  "mean_model": "mu[g,s] = base_mean[g] * library_factor[s] * exp(batch_coefficient[g] * I(batch B) + effect_amplitude * curve[g,time[s]])",
+  "mixed_effects": {
+    "amplitude": 1.3862943611198906,
+    "amplitude_definition": "log(4); each alternative curve has peak-to-trough range 1, giving a fourfold temporal mean range before nuisance and library factors",
+    "null_hypotheses": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "alternatives": [
+      {"indices": [16, 17, 18, 19], "shape": "positive_linear", "curve": [-0.5, -0.3, -0.1, 0.1, 0.3, 0.5]},
+      {"indices": [20, 21, 22, 23], "shape": "negative_linear", "curve": [0.5, 0.3, 0.1, -0.1, -0.3, -0.5]},
+      {"indices": [24, 25, 26, 27], "shape": "transient", "curve": [-0.45, -0.1, 0.55, 0.55, -0.1, -0.45]},
+      {"indices": [28, 29, 30, 31], "shape": "delayed", "curve": [-0.3, -0.3, -0.3, -0.1, 0.3, 0.7]}
+    ],
+    "other_panel_genes": "g032 through g079 remain null",
+    "model_scope": "Fixed data-generating curves; nonlinear alternatives need not lie exactly in the tested three-df spline subspace. Power is empirical detection under these explicit generators, not effect-estimation validation."
+  },
+  "design": {
+    "formula": "1 + batch + cr(time, df=3, constraints='center')",
+    "batch_encoding": "numeric 0/1",
+    "full_columns": ["Intercept", "BatchB", "Temporal1", "Temporal2", "Temporal3"],
+    "reduced_columns": ["Intercept", "BatchB"],
+    "temporal_columns": [3, 4, 5],
+    "condition_number_max": 1000.0,
+    "null_coefficient_absolute_tolerance": 1e-10,
+    "same_input_bytes_for_both_engines": true
+  },
+  "normalization": "rle",
+  "deseq2_fit_type": "mean",
+  "wheel": {
+    "name": "devharness-0.4.4-py3-none-any.whl",
+    "sha256": "b0b5dfe2e0841bd9991b663406abf0148fb77c2e35bb6bf6a1cbf4fe3dbee11e",
+    "runtime_image_id": "sha256:c34c4ecaf9f1ef909b0c2478f5643530e9dec02c9db9cb8d05f406b9208d8b0e",
+    "driver_sha256": "742ac1e76be27427c5142a84eb1e44456d10d92b5a18ed5414fd422c75ad50d9",
+    "isolation": "Verified full extraction with frozen file inventory; every child uses extracted cwd and PYTHONPATH, -B/-s and explicit module-origin checks; no current controlled source imports"
+  },
+  "runtime": {"concurrency": 2, "cpu_per_run": 1, "memory_mb_per_run": 1024, "native_deadline_seconds": 60, "outer_cli_deadline_seconds": 150, "approval_validity_hours": 24, "network": "none", "threads": 1, "memory_peak_mb": null},
+  "reporting": {
+    "nominal_p_threshold": 0.05,
+    "bh_q_threshold": 0.05,
+    "comparison": "less than or equal",
+    "null_rejection_fraction": "Within-cohort rejected true-null hypotheses divided by the prespecified true-null count (32 complete-null, 16 mixed)",
+    "fdp": "False BH discoveries divided by max(all BH discoveries,1); zero if no discoveries",
+    "fdr": "Mean cohort FDP, with cohorts as the independent simulation replicates",
+    "power": "Mixed cells only: true BH discoveries / 16 alternatives, plus descriptive shape-specific detection / 4",
+    "primary_warning_family": "24 prespecified slots: null rejection fraction and FDR for every one of 6 cells and 2 engines",
+    "simultaneous_warning": "Bonferroni family alpha 0.05 across all 24 slots. Warn only if one-sided lower confidence bound exceeds 0.05. Use exact Clopper-Pearson for complete-null FDR (Bernoulli any-discovery); use Hoeffding bounded-cohort lower bounds for null-rejection fractions and mixed FDP. Require all 20 cohorts usable for a primary warning assessment. No absence-of-warning acceptance claim.",
+    "descriptive_intervals": "Two-sided 95% exact Clopper-Pearson for complete-null BH occurrence; otherwise distribution-free Hoeffding mean bounds clipped to the metric range. Power is descriptive; no clinical success margin.",
+    "paired_differences": "DESeq2 minus edgeR per matched usable cohort; mean differences for null rejection, FDP and mixed power with two-sided 95% Hoeffding bounds on [-1,1]. Incomplete matched sets are explicitly conditional on usable runs.",
+    "missingness": "Report planned, attempted, terminal, usable and failed cohorts, unavailable hypotheses, complete-case summaries and all-attempt missingness bounds. Never replace missing probabilities with 0/1 or classify failed cohorts as successful negatives.",
+    "numeric_check_absolute_tolerance": 1e-10,
+    "clinical_acceptance_margin": null,
+    "main_target_outstanding": "Broader 36-cell matrix, 2000 independent cohorts per stochastic cell, stress scenarios, analytical/clinical validation and independent qualification"
+  },
+  "integrity": "Freeze this protocol, runner, verified wheel extraction, all generated inputs/truth/seeds, public fixture registry, signed plans and approvals before fitting. Stop scheduling on frozen-file drift, infrastructure blocker or invalid audit evidence; do not retry measured attempts. Retain every start/outcome, raw stdout/stderr, result and available receipt. Ephemeral fixture private keys remain in memory only; their signatures do not establish human approval or clinical authorization."
+}

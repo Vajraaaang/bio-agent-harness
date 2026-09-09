@@ -1,0 +1,123 @@
+{
+  "source_summary_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/summary.json",
+  "source_summary_sha256": "e576fc1a30638268ea07664cfcf4612e33135f46ea6473afd48ae1ff059d2814",
+  "source_main_protocol_sha256": "5882ee2e17edefc6a6b666426e3ab010d0980c049deb8a5ad79c891997c155ef",
+  "source_main_freeze_sha256": "52025e61490e4f104456d30f36bff0486838830eab9de56eafc015380fb2807e",
+  "source_prototype_sha256": "7d3234b95e8c69f1f5ef486a51332a6fa91ef30a6a6be8ea17167c7109f4c9bc",
+  "execution_roots": [
+    {
+      "run": "preflight-01",
+      "root_hash": "e91646784051a7f8d95dfc01d127d0d3ef6c9cde8e0d49d210577be055126b3c",
+      "valid": true,
+      "manifest_sha256": "67bcedc6aa0530059cd0ca7b318778067a9cc39da82e8767cb3114ea362b2b3d",
+      "node_count": 11
+    },
+    {
+      "run": "main-02",
+      "root_hash": "ad1886dd788b1d09353a477af76e2302fe4464f982c783290cadad8d99ecc5e6",
+      "valid": true,
+      "manifest_sha256": "e633cb8c6879eb9c18cabac72d146bb9502f8dc6102004fb3d5021d250ee38be",
+      "node_count": 27
+    },
+    {
+      "run": "replay-01",
+      "root_hash": "1bcdb3c6070c6043c929647748257b09065e8317200c21e74a8bb05a274719e9",
+      "valid": true,
+      "manifest_sha256": "677657cb79575d6a71ab4f5b7773f3ee08a90f7816d69c6c736dd80a0187ad8c",
+      "node_count": 27
+    }
+  ],
+  "files": [
+    {
+      "snapshot_path": "data/n24/heteroskedastic_null.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n24/heteroskedastic_null.npz",
+      "sha256": "bc0542248278f31e07fc6703244bdd0913ab9eb434f14659dcc99fc8cafd4f0c"
+    },
+    {
+      "snapshot_path": "data/n24/homoskedastic_null.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n24/homoskedastic_null.npz",
+      "sha256": "666e81b61c770dbf61724f8eeb928340992d8b8a6ae16a2a2fe6026cf030b6a6"
+    },
+    {
+      "snapshot_path": "data/n24/linear_signal.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n24/linear_signal.npz",
+      "sha256": "da7c2b572c7114d3bac3415766c397ce60211e74795d0f892ea22fed1594f752"
+    },
+    {
+      "snapshot_path": "data/n24/oscillatory_signal.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n24/oscillatory_signal.npz",
+      "sha256": "9f72a162b5ad04ce174a65627c6fc361eb141721cc2d92b63938a1b327d8af12"
+    },
+    {
+      "snapshot_path": "data/n24/reference.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n24/reference.npz",
+      "sha256": "efff133ae9e9f485907b16cc0517d932206414f64a672771f3790d7e3084f1f6"
+    },
+    {
+      "snapshot_path": "data/n48/heteroskedastic_null.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n48/heteroskedastic_null.npz",
+      "sha256": "6478a278721e4aa7ecd0ab3e0022cb5ba0e8b01a31425782886a57ef6fb7554f"
+    },
+    {
+      "snapshot_path": "data/n48/homoskedastic_null.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n48/homoskedastic_null.npz",
+      "sha256": "23cc4dc1ec48fcaedc4015a0b05db56a79728da44ec9da51582b6c8e76962c2d"
+    },
+    {
+      "snapshot_path": "data/n48/linear_signal.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n48/linear_signal.npz",
+      "sha256": "4dc5d95f7efc3bff7d851687f83f420b92447ee15b6296fe3bd5d9d3012aaf3c"
+    },
+    {
+      "snapshot_path": "data/n48/oscillatory_signal.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n48/oscillatory_signal.npz",
+      "sha256": "b1ad270f6232e8bdca397a0c2dd7a2dc3b751553578b9111a45ba25271e409b9"
+    },
+    {
+      "snapshot_path": "data/n48/reference.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n48/reference.npz",
+      "sha256": "c4cca0f27432dd3113d6d5b8bc3cd8d9b7a179baeb3fef50d97b3fa983d33bec"
+    },
+    {
+      "snapshot_path": "data/n96/heteroskedastic_null.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n96/heteroskedastic_null.npz",
+      "sha256": "65060bd5c5b4578ed5f7dfa765653d18d5405b1be072619ad9ea89863fc1b60c"
+    },
+    {
+      "snapshot_path": "data/n96/homoskedastic_null.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n96/homoskedastic_null.npz",
+      "sha256": "9313ad71c3c90b653d9f883326ac5ad6d7439b1d266958c8b1aaa357e6371c73"
+    },
+    {
+      "snapshot_path": "data/n96/linear_signal.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n96/linear_signal.npz",
+      "sha256": "015da59bf6209a8b5dc1be0ffbdcef88e784393aa88521a495a271d382d1e41e"
+    },
+    {
+      "snapshot_path": "data/n96/oscillatory_signal.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n96/oscillatory_signal.npz",
+      "sha256": "f2631efdf263eea89dc2ac833604a777848579542affc0bb7545747940dd6171"
+    },
+    {
+      "snapshot_path": "data/n96/reference.npz",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n96/reference.npz",
+      "sha256": "6720ffdb9985182f74a2aad5a6674919ec55a94c4400992ddf00d6d5989730b2"
+    },
+    {
+      "snapshot_path": "data/n24/designs.json",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n24/designs.json",
+      "sha256": "2e7be87a00d164155efed3bb2021872107de585c92b4f58e92cc7b3303e51238"
+    },
+    {
+      "snapshot_path": "data/n48/designs.json",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n48/designs.json",
+      "sha256": "272fc596f4030085efbb650f07ff0366b8c148ea967e5950132140e2b370d6d0"
+    },
+    {
+      "snapshot_path": "data/n96/designs.json",
+      "source_path": "results/selection-mc-2026-09-08.mgmeuwj_/main-02/n96/designs.json",
+      "sha256": "773ba7af2951b257e0f90b15b48cee2371a2f7bd8ccd67b1f3680a2bae3abd4f"
+    }
+  ],
+  "scope": "Portable derivative snapshot. Complete CAS/DAG archives and original observer failure remain in local results archives; they are not all included here. This snapshot supports array/summary recomputation, not independent reconstruction of every original execution event."
+}

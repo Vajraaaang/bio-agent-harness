@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "id": "public_bulk_temporal_changes",
+  "task": "Calculate each supplied regulator's observed change as log1p(mean RPKM at the last collection age) minus log1p(mean RPKM at the first age). These are descriptive changes, not fitted causal coefficients. Analyze counts.zarr, metadata.csv and task_inputs.json using bounded reads. Validate a numeric age design before fitting. Return all fields required by answer_schema.json; stage_kinetics is the observed Tbr1 stage mean rescaled to [0,1] across observed stages (all zero if constant). Report p-values and BH q-values if fitting a model. Write final_discovery.json. These mouse bulk measurements provide collection-stage observational references, not known pseudotime, causal regulation, or clinical utility.",
+  "metadata": {
+    "track": "public_reference",
+    "source_kind": "public_processed",
+    "source_accession": "E-MTAB-6798",
+    "hypothesis": "Calculate each supplied regulator's observed change as log1p(mean RPKM at the last collection age) minus log1p(mean RPKM at the first age). These are descriptive changes, not fitted causal coefficients.",
+    "clinical_scope": "none",
+    "public_expression_observed": true
+  },
+  "dataset": {
+    "builder": "public_subset",
+    "variant": "temporal_changes",
+    "snapshot_id": "bulk_brain_markers",
+    "source_manifest_sha256": "01498b58150f1f9e66ba043fadb09450582c38e004c76f58daa5ccd011fcbe33"
+  },
+  "answer_schema": {
+    "type": "object",
+    "properties": {
+      "stage_kinetics": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "number"
+        },
+        "minProperties": 1
+      },
+      "master_regulators": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 4,
+        "maxItems": 4,
+        "uniqueItems": true
+      },
+      "condition_number_validated": {
+        "type": "boolean"
+      },
+      "biological_rationale": {
+        "type": "string",
+        "minLength": 1
+      },
+      "gene_statistics": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "required": [
+            "pvalue",
+            "qvalue"
+          ],
+          "properties": {
+            "pvalue": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "qvalue": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      },
+      "peak_stages": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "gene_effects": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "number"
+        }
+      },
+      "stage_order": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "chronology_scope": {
+        "const": "collection_stage_reference"
+      },
+      "batch_known": {
+        "type": "boolean"
+      },
+      "independent_specimens_known": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "stage_kinetics",
+      "master_regulators",
+      "condition_number_validated",
+      "biological_rationale",
+      "peak_stages",
+      "gene_effects",
+      "stage_order",
+      "chronology_scope",
+      "batch_known",
+      "independent_specimens_known"
+    ],
+    "additionalProperties": false
+  },
+  "grader": {
+    "type": "all_of",
+    "config": {
+      "children": [
+        {
+          "type": "equals",
+          "config": {
+            "field": "condition_number_validated",
+            "expected": true
+          }
+        },
+        {
+          "type": "label_set_jaccard",
+          "config": {
+            "field": "master_regulators",
+            "expected": [
+              "Sox2",
+              "Pax6",
+              "Neurog2",
+              "Tbr1"
+            ],
+            "threshold": 1.0,
+            "expected_count": 4
+          }
+        },
+        {
+          "type": "equals",
+          "config": {
+            "field": "chronology_scope",
+            "expected": "collection_stage_reference"
+          }
+        },
+        {
+          "type": "effect_calibration",
+          "config": {
+            "field": "gene_effects",
+            "expected_from_truth": "gene_effects",
+            "absolute_tolerance": 0.01,
+            "relative_tolerance": 0.01,
+            "threshold": 1.0
+          }
+        }
+      ]
+    }
+  }
+}

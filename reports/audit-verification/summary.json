@@ -1,0 +1,260 @@
+{
+  "schema_version": "devharness.audit-verification-summary/1",
+  "software_version": "0.4.15",
+  "scope": "Software and synthetic execution evidence; no clinical qualification or new live-model performance",
+  "full_local_suite": {
+    "tests": 1975,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2,
+    "passed": 1973,
+    "seconds": 456.64
+  },
+  "installed_wheel_tests": {
+    "tests": 64,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 64,
+    "seconds": 4.554
+  },
+  "notebook_delivery_tests": {
+    "tests": 33,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 33,
+    "seconds": 4.052
+  },
+  "frozen_files_unchanged_during_final_suite": 233,
+  "local_control_rows": [
+    {
+      "task_id": "trajectory_observed_increasing",
+      "repetition": 0,
+      "passed": true,
+      "score": 1.0,
+      "condition": "assisted trusted numerical control",
+      "elapsed_seconds": 0.07606395799666643,
+      "sampled_peak_decimal_mb": 283.000832,
+      "memory_sampling": {
+        "scope": "runner_and_recursive_children",
+        "unit": "bytes",
+        "interval_sec": 0.1,
+        "successful_sample_count": 2,
+        "retained_stride": 1,
+        "complete": true,
+        "peak_memory_mb_unit": "decimal_MB",
+        "limit_enforced_by_sampler": false
+      },
+      "failure_type": null,
+      "actual_model": null
+    },
+    {
+      "task_id": "adversarial_observed_label_reversal",
+      "repetition": 0,
+      "passed": true,
+      "score": 1.0,
+      "condition": "assisted trusted numerical control",
+      "elapsed_seconds": 0.04931462503736839,
+      "sampled_peak_decimal_mb": 284.884992,
+      "memory_sampling": {
+        "scope": "runner_and_recursive_children",
+        "unit": "bytes",
+        "interval_sec": 0.1,
+        "successful_sample_count": 2,
+        "retained_stride": 1,
+        "complete": true,
+        "peak_memory_mb_unit": "decimal_MB",
+        "limit_enforced_by_sampler": false
+      },
+      "failure_type": null,
+      "actual_model": null
+    },
+    {
+      "task_id": "trajectory_observed_increasing",
+      "repetition": 1,
+      "passed": true,
+      "score": 1.0,
+      "condition": "assisted trusted numerical control",
+      "elapsed_seconds": 0.04661762499017641,
+      "sampled_peak_decimal_mb": 285.884416,
+      "memory_sampling": {
+        "scope": "runner_and_recursive_children",
+        "unit": "bytes",
+        "interval_sec": 0.1,
+        "successful_sample_count": 2,
+        "retained_stride": 1,
+        "complete": true,
+        "peak_memory_mb_unit": "decimal_MB",
+        "limit_enforced_by_sampler": false
+      },
+      "failure_type": null,
+      "actual_model": null
+    },
+    {
+      "task_id": "adversarial_observed_label_reversal",
+      "repetition": 1,
+      "passed": true,
+      "score": 1.0,
+      "condition": "assisted trusted numerical control",
+      "elapsed_seconds": 0.047789374948479235,
+      "sampled_peak_decimal_mb": 286.048256,
+      "memory_sampling": {
+        "scope": "runner_and_recursive_children",
+        "unit": "bytes",
+        "interval_sec": 0.1,
+        "successful_sample_count": 2,
+        "retained_stride": 1,
+        "complete": true,
+        "peak_memory_mb_unit": "decimal_MB",
+        "limit_enforced_by_sampler": false
+      },
+      "failure_type": null,
+      "actual_model": null
+    }
+  ],
+  "local_controls": {
+    "attempted": 4,
+    "passed": 4,
+    "checks": [
+      {
+        "label": "trajectory_observed_increasing-0",
+        "manifest_verified": true,
+        "restore_verified": true,
+        "restored_answer_exact": true,
+        "task_snapshot_bound": true,
+        "numerical_tools_replayed": 1,
+        "replay_matched": true
+      },
+      {
+        "label": "adversarial_observed_label_reversal-0",
+        "manifest_verified": true,
+        "restore_verified": true,
+        "restored_answer_exact": true,
+        "task_snapshot_bound": true,
+        "numerical_tools_replayed": 1,
+        "replay_matched": true
+      },
+      {
+        "label": "trajectory_observed_increasing-1",
+        "manifest_verified": true,
+        "restore_verified": true,
+        "restored_answer_exact": true,
+        "task_snapshot_bound": true,
+        "numerical_tools_replayed": 1,
+        "replay_matched": true
+      },
+      {
+        "label": "adversarial_observed_label_reversal-1",
+        "manifest_verified": true,
+        "restore_verified": true,
+        "restored_answer_exact": true,
+        "task_snapshot_bound": true,
+        "numerical_tools_replayed": 1,
+        "replay_matched": true
+      }
+    ],
+    "pairs": [
+      {
+        "task_id": "trajectory_observed_increasing",
+        "answers_exact": true,
+        "datasets_exact": true
+      },
+      {
+        "task_id": "adversarial_observed_label_reversal",
+        "answers_exact": true,
+        "datasets_exact": true
+      }
+    ],
+    "frozen_inputs_unchanged": true,
+    "participant_model_calls": 0,
+    "original_captured_tool_calls": 4,
+    "restored_data_tool_recalculations": 4,
+    "replayed_tool_calls": 4,
+    "clinical_release_allowed": false,
+    "compliance_certified": false
+  },
+  "historical_manifests_reverified": 10,
+  "cloud": {
+    "notebook_url": "https://colab.research.google.com/drive/1iz5aVlhdNKxKH9gopxosLm-W6_gpqPO2",
+    "tests": {
+      "tests": 1490,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "passed": 1489,
+      "seconds": 205.587
+    },
+    "targeted_audit_and_source_tests": 22,
+    "analyses": 4,
+    "exact_repeat_pairs": 2,
+    "local_semantic_verifications": 4,
+    "fixture_signature_checks": 8,
+    "runtime_source_comparisons": 156,
+    "expected_source_members_verified_after_execution": 205,
+    "archive_sha256": "6a50b70e63c58232165c46acde123fcc075348a6f7f709ee3be3ca28fa800689",
+    "verified_manifest_entries": 359,
+    "source_bundle_sha256": "6f3c310e98e0a5b38481d62b75586a9be9fc06d9036115b65065ae5e61bc390c",
+    "setup_seconds_observed": 100.71,
+    "numerical_stage_seconds_observed": 24.17,
+    "environment": {
+      "dependencies": {
+        "PyNaCl": "1.6.2",
+        "cryptography": "50.0.1",
+        "h5py": "3.16.0",
+        "matplotlib": "3.11.1",
+        "numcodecs": "0.15.1",
+        "numpy": "2.5.3",
+        "pandas": "2.3.3",
+        "patsy": "1.0.3",
+        "psutil": "7.2.2",
+        "pydantic": "2.13.5",
+        "pydeseq2": "0.5.4",
+        "scikit-learn": "1.9.0",
+        "scipy": "1.18.1",
+        "statsmodels": "0.14.6",
+        "zarr": "2.18.7"
+      },
+      "implementation": "CPython",
+      "machine": "x86_64",
+      "plotting_backend": "Agg",
+      "python": "3.13.15",
+      "system": "Linux",
+      "threads": {
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
+        "VECLIB_MAXIMUM_THREADS": "1"
+      }
+    },
+    "peak_memory_mb": null,
+    "worker_watchdog_mib": 2048,
+    "billing_units": null
+  },
+  "review": {
+    "implementation_focused_tests": 36,
+    "independent_implementation_probes": 12,
+    "concurrent_publishers": {
+      "attempts": 8,
+      "successes": 1,
+      "safe_refusals": 7
+    },
+    "introduced_bundle_dependency_finding": "resolved; source-only -I -S imports and ten tests verified",
+    "initial_isolated_bundle_tests": {
+      "failed": 2,
+      "passed": 7
+    }
+  },
+  "task_definitions_unchanged": 66,
+  "external_dependency_records_unchanged": 83,
+  "participant_model_calls": 0,
+  "model_usage_scope": "excludes coordinator and reviewer conversations",
+  "actual_participant_model": null,
+  "participant_tokens": null,
+  "participant_cost_usd": null,
+  "clinical_release_allowed": false,
+  "compliance_certified": false,
+  "local_evidence_root": "results/audit-binding-2026-09-09.1asxvq8k",
+  "cloud_evidence_root": "results/colab-v0415-2026-09-09.epwwq95_"
+}

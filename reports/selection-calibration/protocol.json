@@ -1,0 +1,21 @@
+{
+  "schema_version": "gaussian_selection_mc_diagnostic/1",
+  "sample_sizes": [
+    24,
+    48,
+    96
+  ],
+  "reference_draws": 65535,
+  "evaluation_draws": 20000,
+  "chunk_size": 1024,
+  "seed": 2027090827,
+  "alpha": 0.05,
+  "numeric_tolerance": 1e-09,
+  "scenarios": [
+    "homoskedastic_null",
+    "heteroskedastic_null",
+    "linear_signal",
+    "oscillatory_signal"
+  ],
+  "scope": "Prospective synthetic marginal temporal-test diagnostic. Repeats AIC/BIC/GCV selection before rank-based Monte Carlo calibration under fixed-design independent homoskedastic Gaussian errors. Not NB or endpoint-interval calibration, clinical acceptance, multiplicity/FDR qualification, or live agent performance. No production estimator changes."
+}

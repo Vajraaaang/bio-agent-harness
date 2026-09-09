@@ -1,0 +1,25 @@
+{
+  "scope": "Synthetic post-snapshot I/O fault; real Docker identity only; no native/model numerical execution",
+  "configured_metadata_limit": 8388608,
+  "original_metadata_bytes": 127,
+  "launch_boundary_calls": 0,
+  "injected_bytes": 8388609,
+  "injected_digest": "942d6013edf5b8bf6c141eadd970afb4d1dec9f2d6d92dbe93f4be90748037ed",
+  "cas_blob_exists": true,
+  "cas_blob_bytes": 8388609,
+  "outcome_status": "failed",
+  "error_type": "InputIntegrityError",
+  "error": "native_snapshot_modified_during_execution",
+  "hash_verification_valid": true,
+  "semantic_verification_valid": true,
+  "semantic_errors": [],
+  "receipt": {
+    "analysis_fingerprint": "a7480c7a745b7d8aeda912e1f91d8ff944fd7c58a72b03f277e811e01df4c1f4",
+    "artifact_count": 50,
+    "manifest_path": "/Users/vajraang/Documents/ChatGPT/bio-agent-harness/results/controlled-capture-2026-09-09.lioqvebx/native-baseline-authorized/run/audit/manifest.json",
+    "node_count": 3,
+    "root_hash": "358159968f40b980db0561eadc3f7146eab700f2aa17e4a51ca813f8a989bf01",
+    "schema_version": "devharness.execution-dag/1"
+  },
+  "clinical_release_allowed": false
+}

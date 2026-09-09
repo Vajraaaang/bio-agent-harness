@@ -1,0 +1,50 @@
+{
+  "verified_date": "2026-09-07",
+  "references": {
+    "E-MTAB-6798": {
+      "title": "Mouse RNA-seq time-series of the development of seven major organs",
+      "study_url": "https://www.ebi.ac.uk/biostudies/arrayexpress/studies/E-MTAB-6798",
+      "metadata_url": "https://www.ebi.ac.uk/biostudies/api/v1/studies/E-MTAB-6798",
+      "processed_url": "https://www.ebi.ac.uk/biostudies/files/E-MTAB-6798/Mouse.RPKM.txt",
+      "verified_processed_bytes": 121114240,
+      "measurement": "continuous RPKM; bulk RNA-seq",
+      "specimen_scope": "Mus musculus developmental organ samples; column-label replicates do not establish independent animal IDs",
+      "chronology_scope": "collection age reference; not known latent pseudotime",
+      "license_note": "Dataset source retained; no assumption that access implies permission for unrestricted redistribution",
+      "download_status": "verified_cached",
+      "sha256": "0d70a65b0d3b4f8b0cd8103ec30f2544852ea4af6896fc67fcee4c63e2574f50"
+    },
+    "E-MTAB-6967": {
+      "title": "A single-cell molecular map of mouse gastrulation and early organogenesis",
+      "doi": "10.1038/s41586-019-0933-9",
+      "study_url": "https://www.ebi.ac.uk/biostudies/arrayexpress/studies/E-MTAB-6967",
+      "metadata_url": "https://www.ebi.ac.uk/biostudies/api/v1/studies/E-MTAB-6967",
+      "processed_url": "https://www.ebi.ac.uk/biostudies/files/E-MTAB-6967/atlas_data.tar.gz",
+      "verified_processed_bytes": 1669415283,
+      "initial_download_status": "not_downloaded_exceeds_1gb_budget",
+      "author_repository": "https://github.com/MarioniLab/EmbryoTimecourse2018",
+      "efficient_derivative": "https://bioconductor.org/packages/MouseGastrulationData/",
+      "metadata_semantics_source": "https://github.com/MarioniLab/MouseGastrulationData/blob/master/R/EmbryoAtlasData.R",
+      "measurement": "processed called-cell count matrix; single-cell RNA-seq",
+      "specimen_scope": "embryo pools; author metadata states samples sharing a pool are technical rather than biological replicates",
+      "chronology_scope": "E6.5-E8.5 collection-stage reference; cell type annotations are study labels, not causal lineage truth",
+      "license_note": "Check source distribution terms before redistribution; raw read archives are excluded"
+    },
+    "TRRUST_mouse": {
+      "title": "TRRUST v2: an expanded reference database of human and mouse transcriptional regulatory interactions",
+      "doi": "10.1093/nar/gkx1013",
+      "source_url": "https://www.grnpedia.org/trrust/",
+      "download_page": "https://www.grnpedia.org/trrust/downloadnetwork.php",
+      "processed_url": "https://www.grnpedia.org/trrust/data/trrust_rawdata.mouse.tsv",
+      "network_evidence_kind": "literature_curated_TF_target",
+      "truth_scope": "curated literature reference; not complete developmental-stage causal truth; absent pairs are unassessed, not known negatives",
+      "usage_terms": "Landing page explicitly restricts freely available network edge information to non-commercial research; footer also links CC BY-SA 4.0. Cached locally, not vendored or relicensed.",
+      "encode_claim": false,
+      "download_status": "verified_cached_not_vendored",
+      "sha256": "4847c960c7c2ce0173b056184137b1cc71e8d61d1b1edc825247504ad882dd55",
+      "observed_edge_rows": 7057
+    }
+  },
+  "matrix_coverage": "55 synthetic scenarios; actual public snapshots reported separately",
+  "clinical_scope": "No clinical samples, diagnostic validity, or treatment utility claimed"
+}

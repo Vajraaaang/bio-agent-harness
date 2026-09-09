@@ -1,0 +1,40 @@
+{
+  "schema_version": "devharness.input-preservation-summary/1",
+  "software_version": "0.4.13",
+  "scope": "Derived local software verification summary; not clinical qualification or live agent performance",
+  "full_suite": {
+    "passed": 1930,
+    "skipped": 2,
+    "failed": 0,
+    "errors": 0,
+    "seconds": 481.12,
+    "frozen_inputs_unchanged_during_suite": 233
+  },
+  "installed_wheel_tests": {
+    "passed": 23,
+    "seconds": 3.9
+  },
+  "controlled_execution": {
+    "new_analyses": 4,
+    "exact_repeat_pairs": 2,
+    "reference_agreement": true,
+    "historical_histories_reverified": 8,
+    "total_histories_verified": 12,
+    "configured_key_signature_checks": 24
+  },
+  "unchanged_task_definitions": 61,
+  "unchanged_external_dependency_records": 83,
+  "clinical_release_allowed": false,
+  "peak_memory_mb": null,
+  "model_service_calls": 0,
+  "corrections": [
+    "streaming aggregate byte/member limits",
+    "exclusive directory reservation before copying"
+  ],
+  "limitations": [
+    "individual filesystem-operation latency is not bounded",
+    "host-administrator isolation is not established",
+    "statistical/clinical qualifications are unchanged"
+  ],
+  "source_archive": "results/input-preservation-2026-09-09.fntrur93"
+}

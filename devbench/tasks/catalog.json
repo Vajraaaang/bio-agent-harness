@@ -1,0 +1,10 @@
+{
+  "version": "devbench.curated/1",
+  "selection_basis": "Three distinct existing mechanisms per requested track; original definitions and grading thresholds unchanged",
+  "tracks": [
+    {"name": "trajectory", "tasks": ["trajectory_linear", "trajectory_continuous_noise", "trajectory_stage_gap"]},
+    {"name": "batch", "tasks": ["batch_balanced", "batch_partial_confounding", "batch_complete_alias"]},
+    {"name": "lineage", "tasks": ["trajectory_bifurcation", "trajectory_early_branch", "trajectory_trifurcation"]},
+    {"name": "adversarial", "tasks": ["adversarial_inverted_chronology", "adversarial_invalid_contrast", "adversarial_zero_inflation"]}
+  ]
+}

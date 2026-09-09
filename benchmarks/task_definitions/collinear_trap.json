@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "dataset": {
+    "variant": "collinear",
+    "seed": 42
+  },
+  "answer_schema": {
+    "type": "object",
+    "required": [
+      "rank_deficient",
+      "corrected_formula",
+      "stage_kinetics",
+      "master_regulators",
+      "condition_number_validated",
+      "biological_rationale"
+    ],
+    "properties": {
+      "rank_deficient": {
+        "type": "boolean"
+      },
+      "corrected_formula": {
+        "type": "string",
+        "minLength": 1
+      },
+      "stage_kinetics": {
+        "type": "object",
+        "properties": {
+          "E8.5": {
+            "type": "number"
+          },
+          "E10.5": {
+            "type": "number"
+          },
+          "E12.5": {
+            "type": "number"
+          },
+          "E14.5": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "E8.5",
+          "E10.5",
+          "E12.5",
+          "E14.5"
+        ],
+        "additionalProperties": false
+      },
+      "master_regulators": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 4,
+        "maxItems": 4,
+        "uniqueItems": true
+      },
+      "condition_number_validated": {
+        "type": "boolean"
+      },
+      "biological_rationale": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "additionalProperties": false
+  },
+  "grader": {
+    "type": "all_of",
+    "config": {
+      "children": [
+        {
+          "type": "equals",
+          "config": {
+            "field": "rank_deficient",
+            "expected": true
+          }
+        },
+        {
+          "type": "tool_sequence",
+          "config": {}
+        },
+        {
+          "type": "equals",
+          "config": {
+            "field": "condition_number_validated",
+            "expected": true
+          }
+        }
+      ]
+    }
+  },
+  "id": "collinear_trap",
+  "task": "Analyze counts.zarr and metadata.csv in the supplied workspace. Call validate_design_matrix with 1 + numeric_time + C(batch) using ToolDispatcher. Determine whether age and batch are confounded. Correct the temporal spline model by dropping the batch covariate and fit Sox2 and Tbr1 with fit_temporal_trajectory through ToolDispatcher. Return rank_deficient (boolean) and corrected_formula (string). Captured successful tool calls on the staged data are required; self-reported tool history is not evidence. Write final_discovery.json matching answer_schema.json. Include stage_kinetics, exactly four master_regulators, condition_number_validated and biological_rationale, plus the task-specific fields."
+}

@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "id": "adversarial_observed_label_reversal",
+  "task": "Summarize the observed raw counts for Increasing using counts.zarr, metadata.csv and task_inputs.json. Align expression columns and metadata by sample_id, and group by the supplied embryonic_age labels. Report the arithmetic mean at each of the four observed stages in stage_kinetics, in raw count units; do not replace observations with fitted or smoothed values. Order stages numerically, not lexically. Calculate temporal_score as sum(sign(next_mean-current_mean))/(number_of_stages-1), using sign(0)=0. Under this task's strict rule, is_monotonic is true only when the score is exactly +1 or -1; otherwise temporal_direction is non_monotonic, including a flat profile. Also check the rank and 2-norm condition number of the specified design; numeric_time is the numeric portion of the supplied stage label. Do not infer the answer from gene names or expression-column order. This is a descriptive synthetic-data check: no GLM fit, p-value, biological-independence assumption, causal claim or clinical conclusion is requested. Supplied grouping labels are observations, not proof of true developmental time. Write finite final_discovery.json matching answer_schema.json. Retain full numerical precision when computing means and the signed score.",
+  "metadata": {
+    "track": "adversarial",
+    "source_kind": "synthetic",
+    "clinical_scope": "none",
+    "hypothesis": "Observed stage values and strict temporal classification must agree",
+    "truth_kind": "coordinator_observed_synthetic_summary",
+    "temporal_task_version": 1,
+    "dataset_reuse": "Five analytic questions over two seeded fixture variants, not independent cohorts"
+  },
+  "dataset": {
+    "builder": "observed_temporal",
+    "profile": "label_reversal",
+    "seed": 42
+  },
+  "answer_schema": {
+    "type": "object",
+    "properties": {
+      "stage_kinetics": {
+        "type": "object",
+        "properties": {
+          "E8.5": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000.0
+          },
+          "E10.5": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000.0
+          },
+          "E12.5": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000.0
+          },
+          "E14.5": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000.0
+          }
+        },
+        "required": [
+          "E8.5",
+          "E10.5",
+          "E12.5",
+          "E14.5"
+        ],
+        "additionalProperties": false
+      },
+      "temporal_score": {
+        "type": "number",
+        "minimum": -1,
+        "maximum": 1
+      },
+      "temporal_direction": {
+        "type": "string",
+        "enum": [
+          "increasing",
+          "decreasing",
+          "non_monotonic"
+        ]
+      },
+      "is_monotonic": {
+        "type": "boolean"
+      },
+      "condition_number": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 1000
+      },
+      "condition_number_validated": {
+        "type": "boolean"
+      },
+      "evidence_scope": {
+        "type": "string",
+        "enum": [
+          "observed_raw_counts"
+        ]
+      },
+      "biological_rationale": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required": [
+      "stage_kinetics",
+      "temporal_score",
+      "temporal_direction",
+      "is_monotonic",
+      "condition_number",
+      "condition_number_validated",
+      "evidence_scope",
+      "biological_rationale"
+    ],
+    "additionalProperties": false
+  },
+  "grader": {
+    "type": "all_of",
+    "config": {
+      "children": [
+        {
+          "type": "equals",
+          "config": {
+            "field": "condition_number_validated",
+            "expected": true
+          }
+        },
+        {
+          "type": "numeric_tolerance",
+          "config": {
+            "field": [
+              "stage_kinetics",
+              "E8.5"
+            ],
+            "expected_from_truth": [
+              "stage_means",
+              "E8.5"
+            ],
+            "tolerances": {
+              "type": "absolute",
+              "value": 1e-06
+            }
+          }
+        },
+        {
+          "type": "numeric_tolerance",
+          "config": {
+            "field": [
+              "stage_kinetics",
+              "E10.5"
+            ],
+            "expected_from_truth": [
+              "stage_means",
+              "E10.5"
+            ],
+            "tolerances": {
+              "type": "absolute",
+              "value": 1e-06
+            }
+          }
+        },
+        {
+          "type": "numeric_tolerance",
+          "config": {
+            "field": [
+              "stage_kinetics",
+              "E12.5"
+            ],
+            "expected_from_truth": [
+              "stage_means",
+              "E12.5"
+            ],
+            "tolerances": {
+              "type": "absolute",
+              "value": 1e-06
+            }
+          }
+        },
+        {
+          "type": "numeric_tolerance",
+          "config": {
+            "field": [
+              "stage_kinetics",
+              "E14.5"
+            ],
+            "expected_from_truth": [
+              "stage_means",
+              "E14.5"
+            ],
+            "tolerances": {
+              "type": "absolute",
+              "value": 1e-06
+            }
+          }
+        },
+        {
+          "type": "numeric_tolerance",
+          "config": {
+            "field": "condition_number",
+            "expected_from_truth": "condition_number",
+            "tolerances": {
+              "type": "absolute",
+              "value": 1e-06
+            }
+          }
+        },
+        {
+          "type": "numeric_tolerance",
+          "config": {
+            "field": "temporal_score",
+            "expected_from_truth": "temporal_score",
+            "tolerances": {
+              "type": "absolute",
+              "value": 0
+            }
+          }
+        },
+        {
+          "type": "equals",
+          "config": {
+            "field": "temporal_direction",
+            "expected_from_truth": "temporal_direction"
+          }
+        },
+        {
+          "type": "equals",
+          "config": {
+            "field": "is_monotonic",
+            "expected_from_truth": "is_monotonic"
+          }
+        },
+        {
+          "type": "equals",
+          "config": {
+            "field": "evidence_scope",
+            "expected": "observed_raw_counts"
+          }
+        },
+        {
+          "type": "temporal_monotonicity",
+          "config": {
+            "field": "stage_kinetics",
+            "expected_from_truth": "temporal_score"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "verified_at_utc": "2026-09-09T19:45:36.710220+00:00",
+  "checks": [
+    {
+      "run": "continuous-repeat",
+      "root_hash": "723c8637cfcf083fe9a7231bd1ea6570a8bcb047a34f93afa22cdd1263c3aff1",
+      "semantic_verification_valid": true,
+      "fixture_signatures_verified": 2,
+      "runtime_source_files_matching_uploaded_bundle": 39
+    },
+    {
+      "run": "continuous-run",
+      "root_hash": "c86d3ec5a820b39d2cb050c0f8edc508271e2833a1b724efa4c938c03ed484be",
+      "semantic_verification_valid": true,
+      "fixture_signatures_verified": 2,
+      "runtime_source_files_matching_uploaded_bundle": 39
+    },
+    {
+      "run": "counts-repeat",
+      "root_hash": "d220bf79ad6ccb9b29aca0d1548a378be806ded8f83e5a4a7058f5692e5393c6",
+      "semantic_verification_valid": true,
+      "fixture_signatures_verified": 2,
+      "runtime_source_files_matching_uploaded_bundle": 39
+    },
+    {
+      "run": "counts-run",
+      "root_hash": "39c31dcfb656e895fd1f151ef4562ef687ab2babf752856f94c492fecafcd4e6",
+      "semantic_verification_valid": true,
+      "fixture_signatures_verified": 2,
+      "runtime_source_files_matching_uploaded_bundle": 39
+    }
+  ],
+  "all_valid": true,
+  "runtime_source_file_comparisons": 156,
+  "clinical_release_allowed": false,
+  "compliance_certified": false
+}

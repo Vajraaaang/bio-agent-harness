@@ -1,0 +1,20 @@
+include AGENTS.md
+include uv.lock
+include Makefile LICENSE NOTICE.md .env.example
+recursive-include docs *.svg
+recursive-include docs *.md
+recursive-include docs *.html
+recursive-include tests *.py
+recursive-include notebooks *.ipynb
+recursive-include .github/workflows *.yml
+recursive-include containers/native-nb *.R Dockerfile
+recursive-include validation *.json
+recursive-include reports/selection-calibration *.md *.json *.py *.csv *.svg *.png *.npz SHA256SUMS
+recursive-include reports/api-verification *.md *.json SHA256SUMS
+recursive-include reports/colab-verification *.md *.json SHA256SUMS
+recursive-include reports/input-preservation *.md *.json SHA256SUMS
+recursive-include reports/temporal-verification *.md *.json SHA256SUMS
+recursive-include reports/audit-verification *.md *.json SHA256SUMS
+recursive-include reports/runtime-identity *.md *.json SHA256SUMS
+include tools/build_evidence_page.py tools/build_results_snapshot.py
+recursive-include reports/code-action-audit *.md *.json SHA256SUMS

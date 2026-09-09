@@ -1,0 +1,766 @@
+{
+  "schema_version": "devharness.api-verification-summary/1",
+  "software_version": "0.4.12",
+  "scope": "Derived public summary of executed synthetic software/numerical checks. Full input/result/CAS archives remain local; this summary is not a replacement for them or clinical qualification.",
+  "full_suite": {
+    "passed": 1908,
+    "skipped": 2,
+    "failed": 0,
+    "errors": 0,
+    "skip_reason": "No wider-than-float64 host type",
+    "seconds": 483.17,
+    "frozen_files_unchanged": 233
+  },
+  "installed_wheel_checks": {
+    "passed": 32,
+    "seconds": 26.13,
+    "scope": "Isolated imports, SDK/MCP execution and Gaussian admission"
+  },
+  "main": {
+    "scheduled_calls": 18,
+    "attempted_calls": 18,
+    "completed_calls": 18,
+    "failed_calls": 0,
+    "unique_response_vectors": 600,
+    "elapsed_seconds": 45.62742774997605
+  },
+  "rows": [
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.016431879182052155,
+          0.11283491110546275
+        ],
+        "rate": 0.05,
+        "rejected": 5,
+        "tested": 100
+      },
+      "criterion": "aic",
+      "elapsed_seconds": 2.0134147080243565,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 24,
+      "reference_probability_hash": "087931babe89f192d6310e2bb61e07b3fdda09bb0b8c016b39ab1ae944f4ee92",
+      "result_sha256": "0f534bf9c48ac9223b628153dc10d5f872afe6a4e7976a3d67c0baca21f0d226",
+      "scenario": "homoskedastic_null",
+      "selected_df_counts": {
+        "2": 61,
+        "3": 16,
+        "4": 13,
+        "5": 10
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.011004493986188198,
+          0.09925715671265992
+        ],
+        "rate": 0.04,
+        "rejected": 4,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.016431879182052155,
+          0.11283491110546275
+        ],
+        "rate": 0.05,
+        "rejected": 5,
+        "tested": 100
+      },
+      "criterion": "bic",
+      "elapsed_seconds": 2.010150874964893,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 24,
+      "reference_probability_hash": "f4659cad36ee84776a14fa9c92691909d9a0bd71d3ba4c7366f657bcdfb03188",
+      "result_sha256": "d447c8a9712cfbc4d94ffacc2120f950d4e83a7d150d0fc79300a417d13427b1",
+      "scenario": "homoskedastic_null",
+      "selected_df_counts": {
+        "2": 84,
+        "3": 8,
+        "4": 4,
+        "5": 4
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.011004493986188198,
+          0.09925715671265992
+        ],
+        "rate": 0.04,
+        "rejected": 4,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.016431879182052155,
+          0.11283491110546275
+        ],
+        "rate": 0.05,
+        "rejected": 5,
+        "tested": 100
+      },
+      "criterion": "gcv",
+      "elapsed_seconds": 2.0063921670080163,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 24,
+      "reference_probability_hash": "e73103e4bf396baab66b0691c55c11761a800417d7d7b783f1f2e798053012b0",
+      "result_sha256": "5fd20ceaadb00b31b79d42844b4977c07fa54649fbeceaef9d408053971387f9",
+      "scenario": "homoskedastic_null",
+      "selected_df_counts": {
+        "2": 76,
+        "3": 11,
+        "4": 6,
+        "5": 7
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.011004493986188198,
+          0.09925715671265992
+        ],
+        "rate": 0.04,
+        "rejected": 4,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.04900468922148595,
+          0.17622259774002266
+        ],
+        "rate": 0.1,
+        "rejected": 10,
+        "tested": 100
+      },
+      "criterion": "aic",
+      "elapsed_seconds": 2.0268127500312403,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 24,
+      "reference_probability_hash": "087931babe89f192d6310e2bb61e07b3fdda09bb0b8c016b39ab1ae944f4ee92",
+      "result_sha256": "527b3e08619d89f68bde6cd7d09498d7baf3d14a49b3155ee9e81722fdeb94e2",
+      "scenario": "heteroskedastic_null",
+      "selected_df_counts": {
+        "2": 73,
+        "3": 7,
+        "4": 10,
+        "5": 10
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.028605288907438704,
+          0.13891972845585732
+        ],
+        "rate": 0.07,
+        "rejected": 7,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.04900468922148595,
+          0.17622259774002266
+        ],
+        "rate": 0.1,
+        "rejected": 10,
+        "tested": 100
+      },
+      "criterion": "bic",
+      "elapsed_seconds": 2.0348576670512557,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 24,
+      "reference_probability_hash": "f4659cad36ee84776a14fa9c92691909d9a0bd71d3ba4c7366f657bcdfb03188",
+      "result_sha256": "8eef32c9e9fba24fe49a868014d7b773488dbcf2eed86f1a34154f36da3f8b16",
+      "scenario": "heteroskedastic_null",
+      "selected_df_counts": {
+        "2": 89,
+        "3": 7,
+        "4": 2,
+        "5": 2
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.028605288907438704,
+          0.13891972845585732
+        ],
+        "rate": 0.07,
+        "rejected": 7,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.04900468922148595,
+          0.17622259774002266
+        ],
+        "rate": 0.1,
+        "rejected": 10,
+        "tested": 100
+      },
+      "criterion": "gcv",
+      "elapsed_seconds": 2.056414082995616,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 24,
+      "reference_probability_hash": "e73103e4bf396baab66b0691c55c11761a800417d7d7b783f1f2e798053012b0",
+      "result_sha256": "c4932cf6972c0aa70a6fdd6986c1d88bb8261714a59216e176fadf1922e413c4",
+      "scenario": "heteroskedastic_null",
+      "selected_df_counts": {
+        "2": 82,
+        "3": 8,
+        "4": 5,
+        "5": 5
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.028605288907438704,
+          0.13891972845585732
+        ],
+        "rate": 0.07,
+        "rejected": 7,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.04900468922148595,
+          0.17622259774002266
+        ],
+        "rate": 0.1,
+        "rejected": 10,
+        "tested": 100
+      },
+      "criterion": "aic",
+      "elapsed_seconds": 2.3276342090102844,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 48,
+      "reference_probability_hash": "138e29173c51058b1a8dd119b036c2ebbbd80f1220296a83dd9ca2a895185b52",
+      "result_sha256": "1a1d1044f7faede6095b74415ae2b64c26d562c129b729fafd724a826fb22bc8",
+      "scenario": "homoskedastic_null",
+      "selected_df_counts": {
+        "2": 64,
+        "3": 18,
+        "4": 11,
+        "5": 7
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.022334886071316378,
+          0.12602993458082296
+        ],
+        "rate": 0.06,
+        "rejected": 6,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.04900468922148595,
+          0.17622259774002266
+        ],
+        "rate": 0.1,
+        "rejected": 10,
+        "tested": 100
+      },
+      "criterion": "bic",
+      "elapsed_seconds": 2.362178833980579,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 48,
+      "reference_probability_hash": "ab379af4d1f0290cac72fd4f6e2ac85bfeac1f56ac064986ba757baf8a1d8311",
+      "result_sha256": "66bdd33d8ff6de10a003a492634ecc9948bc628d65a5ff487bc076912d295e10",
+      "scenario": "homoskedastic_null",
+      "selected_df_counts": {
+        "2": 92,
+        "3": 6,
+        "4": 2,
+        "5": 0
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.028605288907438704,
+          0.13891972845585732
+        ],
+        "rate": 0.07,
+        "rejected": 7,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.04900468922148595,
+          0.17622259774002266
+        ],
+        "rate": 0.1,
+        "rejected": 10,
+        "tested": 100
+      },
+      "criterion": "gcv",
+      "elapsed_seconds": 2.3717845829669386,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 48,
+      "reference_probability_hash": "d1533b3763439e887d4d2f496ee26d531b8ea59f1d4d0bddf0329e28f47ddbff",
+      "result_sha256": "7da782c260c771abce407fb746ae4aff8d035df0bdcd4e4ff1f0631c9a26f979",
+      "scenario": "homoskedastic_null",
+      "selected_df_counts": {
+        "2": 74,
+        "3": 18,
+        "4": 6,
+        "5": 2
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.022334886071316378,
+          0.12602993458082296
+        ],
+        "rate": 0.06,
+        "rejected": 6,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.08645438564164856,
+          0.23530750014895488
+        ],
+        "rate": 0.15,
+        "rejected": 15,
+        "tested": 100
+      },
+      "criterion": "aic",
+      "elapsed_seconds": 2.382863875012845,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 48,
+      "reference_probability_hash": "138e29173c51058b1a8dd119b036c2ebbbd80f1220296a83dd9ca2a895185b52",
+      "result_sha256": "dc25954ff5e0b32502e3d2a7be20fe983eecac1cd7de620debe44e55cc2be11b",
+      "scenario": "heteroskedastic_null",
+      "selected_df_counts": {
+        "2": 67,
+        "3": 15,
+        "4": 7,
+        "5": 11
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.07870540492696577,
+          0.22372798137056774
+        ],
+        "rate": 0.14,
+        "rejected": 14,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.07107304618542953,
+          0.21204067708744978
+        ],
+        "rate": 0.13,
+        "rejected": 13,
+        "tested": 100
+      },
+      "criterion": "bic",
+      "elapsed_seconds": 2.345523583004251,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 48,
+      "reference_probability_hash": "ab379af4d1f0290cac72fd4f6e2ac85bfeac1f56ac064986ba757baf8a1d8311",
+      "result_sha256": "3016d557f16c1e428aa8ec6a0da83c5f4d1d13443afca74e9a22b35474e85a49",
+      "scenario": "heteroskedastic_null",
+      "selected_df_counts": {
+        "2": 90,
+        "3": 5,
+        "4": 1,
+        "5": 4
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.07107304618542953,
+          0.21204067708744978
+        ],
+        "rate": 0.13,
+        "rejected": 13,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.08645438564164856,
+          0.23530750014895488
+        ],
+        "rate": 0.15,
+        "rejected": 15,
+        "tested": 100
+      },
+      "criterion": "gcv",
+      "elapsed_seconds": 2.3453594589955173,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 48,
+      "reference_probability_hash": "d1533b3763439e887d4d2f496ee26d531b8ea59f1d4d0bddf0329e28f47ddbff",
+      "result_sha256": "e39dd7b704af7569f09e4e5bd03b2609c05dbec16a0d8ec6399160c31a5e9682",
+      "scenario": "heteroskedastic_null",
+      "selected_df_counts": {
+        "2": 70,
+        "3": 15,
+        "4": 5,
+        "5": 10
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.07870540492696577,
+          0.22372798137056774
+        ],
+        "rate": 0.14,
+        "rejected": 14,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.016431879182052155,
+          0.11283491110546275
+        ],
+        "rate": 0.05,
+        "rejected": 5,
+        "tested": 100
+      },
+      "criterion": "aic",
+      "elapsed_seconds": 2.9830514589557424,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 96,
+      "reference_probability_hash": "8a1ff0ac8c5ab54854ad40415ef11895361eb6fcd3c21d37212f674db8eebaac",
+      "result_sha256": "c186636571b748395802daa5e3dc3aa42f937e782f2cfccab1d2527c421d1188",
+      "scenario": "homoskedastic_null",
+      "selected_df_counts": {
+        "2": 78,
+        "3": 10,
+        "4": 6,
+        "5": 6
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.002431336823942542,
+          0.07038393247107011
+        ],
+        "rate": 0.02,
+        "rejected": 2,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.011004493986188198,
+          0.09925715671265992
+        ],
+        "rate": 0.04,
+        "rejected": 4,
+        "tested": 100
+      },
+      "criterion": "bic",
+      "elapsed_seconds": 3.040631707990542,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 96,
+      "reference_probability_hash": "bb8eaf8160ce2555fbb9d5c9e1d74b0c68b38c4fe0d1681fb857b583f5b2a28a",
+      "result_sha256": "f8a961adb199a8080890a36602a61b56972adf1904fe312772d5fcff1bb0a9bc",
+      "scenario": "homoskedastic_null",
+      "selected_df_counts": {
+        "2": 97,
+        "3": 2,
+        "4": 1,
+        "5": 0
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.006229971538306393,
+          0.08517605297428002
+        ],
+        "rate": 0.03,
+        "rejected": 3,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.016431879182052155,
+          0.11283491110546275
+        ],
+        "rate": 0.05,
+        "rejected": 5,
+        "tested": 100
+      },
+      "criterion": "gcv",
+      "elapsed_seconds": 2.998739500006195,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 96,
+      "reference_probability_hash": "dc82e1fefbdbffce6e2ecaeaab79ab1c90b246a761b3a229e3d672ae7a1d4382",
+      "result_sha256": "ef5b075e61dbcd5c2e8815de859396c4c69f6db1875765a1588c5e668fea2905",
+      "scenario": "homoskedastic_null",
+      "selected_df_counts": {
+        "2": 80,
+        "3": 10,
+        "4": 5,
+        "5": 5
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.002431336823942542,
+          0.07038393247107011
+        ],
+        "rate": 0.02,
+        "rejected": 2,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.0943102899739462,
+          0.24678759741086234
+        ],
+        "rate": 0.16,
+        "rejected": 16,
+        "tested": 100
+      },
+      "criterion": "aic",
+      "elapsed_seconds": 3.0156707080313936,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 96,
+      "reference_probability_hash": "8a1ff0ac8c5ab54854ad40415ef11895361eb6fcd3c21d37212f674db8eebaac",
+      "result_sha256": "aa3108eb969505b2fa169a46800bca32d07512768f26b98b3669af0468bd903f",
+      "scenario": "heteroskedastic_null",
+      "selected_df_counts": {
+        "2": 75,
+        "3": 11,
+        "4": 7,
+        "5": 7
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.04900468922148595,
+          0.17622259774002266
+        ],
+        "rate": 0.1,
+        "rejected": 10,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.041983595628392247,
+          0.1639822550296352
+        ],
+        "rate": 0.09,
+        "rejected": 9,
+        "tested": 100
+      },
+      "criterion": "bic",
+      "elapsed_seconds": 3.0873624999658205,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 96,
+      "reference_probability_hash": "bb8eaf8160ce2555fbb9d5c9e1d74b0c68b38c4fe0d1681fb857b583f5b2a28a",
+      "result_sha256": "1bdf270af975c41a0d857ad816e9a2063f3f6e6dc6638dc930a959106e86bb0b",
+      "scenario": "heteroskedastic_null",
+      "selected_df_counts": {
+        "2": 93,
+        "3": 3,
+        "4": 3,
+        "5": 1
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.03517156251816281,
+          0.15155763586442095
+        ],
+        "rate": 0.08,
+        "rejected": 8,
+        "tested": 100
+      },
+      "status": "completed"
+    },
+    {
+      "conditional": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.0943102899739462,
+          0.24678759741086234
+        ],
+        "rate": 0.16,
+        "rejected": 16,
+        "tested": 100
+      },
+      "criterion": "gcv",
+      "elapsed_seconds": 3.0378650830243714,
+      "execution_performed": true,
+      "genes": 100,
+      "independent_ranks_match": true,
+      "n": 96,
+      "reference_probability_hash": "dc82e1fefbdbffce6e2ecaeaab79ab1c90b246a761b3a229e3d672ae7a1d4382",
+      "result_sha256": "fa8dbda97a875512fc7a191a2bab35f2ed9bb7490aa0989c77dea8af600346e2",
+      "scenario": "heteroskedastic_null",
+      "selected_df_counts": {
+        "2": 77,
+        "3": 10,
+        "4": 7,
+        "5": 6
+      },
+      "selection_mc": {
+        "interval_scope": "Evaluation uncertainty conditional on the shared reference pool",
+        "pointwise_interval_95": [
+          0.04900468922148595,
+          0.17622259774002266
+        ],
+        "rate": 0.1,
+        "rejected": 10,
+        "tested": 100
+      },
+      "status": "completed"
+    }
+  ],
+  "replay": {
+    "audits": [
+      {
+        "run": "diagnostic-preflight",
+        "root_hash": "e3eb10b769cc6e910793245fa7696a1026437d2b7af19daf18f0937441ac9101",
+        "nodes": 12,
+        "valid": true,
+        "anchored": true
+      },
+      {
+        "run": "diagnostic-preflight-02",
+        "root_hash": "08b5e40e508f4942d01957fb86fe1e4ae5215d9118f80a22a020f0202a355557",
+        "nodes": 12,
+        "valid": true,
+        "anchored": true
+      },
+      {
+        "run": "diagnostic-preflight-03",
+        "root_hash": "e1fd774432645f592438a498141e5184e7bc17ef4b16af02b23c95d169c22877",
+        "nodes": 12,
+        "valid": true,
+        "anchored": true
+      },
+      {
+        "run": "diagnostic-main",
+        "root_hash": "f2fa7f1e717ba60050a66fc85ad3ab4d7cda299db945832754f1744172da8c15",
+        "nodes": 30,
+        "valid": true,
+        "anchored": true
+      },
+      {
+        "run": "diagnostic-replay",
+        "root_hash": "95fc87d92f1d7622cad7ef71a7d3114d5c2f24efc0f8c59181b7210e09bbf3cc",
+        "nodes": 30,
+        "valid": true,
+        "anchored": true
+      }
+    ],
+    "full_result_files_compared": 18,
+    "gene_criterion_records_compared": 1800,
+    "independent_reference_arrays_compared": 9,
+    "clinical_release_allowed": false,
+    "frozen_files_unchanged": 97,
+    "all_result_bytes_and_reference_arrays_equal": true
+  },
+  "task_definitions_unchanged": 61,
+  "external_lock_records_unchanged": 83,
+  "new_model_participant_calls": 0,
+  "new_colab_runs": 0,
+  "clinical_release_allowed": false,
+  "source_archive": "results/gaussian-selection-api-2026-09-09.yti04ore",
+  "source_summary_sha256": "69f4f1c12180a63f8778b99dd2bc666bf404f66d777695ffaf9653d95aaa580e",
+  "source_postcheck_sha256": "b8b02e91d07199c085a122259e6bdcf97f1826529c8d712e667e578074d91af5"
+}

@@ -1,0 +1,42 @@
+name: Software verification
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        python: ['3.11', '3.12']
+    env:
+      VECLIB_MAXIMUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+          enable-cache: true
+      - name: Install locked environment
+        run: make install PYTHON_VERSION=${{ matrix.python }}
+      - name: Verify expected architecture
+        run: .venv/bin/python -c 'import platform; assert platform.machine() == ("arm64" if platform.system() == "Darwin" else "x86_64")'
+      - name: Test suite
+        run: make test
+      - name: Generate synthetic formats
+        run: .venv/bin/devharness-synthetic --output-dir "$PWD/results/ci-synthetic"
+      - name: Offline oracle demo
+        run: make demo
+      - name: Save verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-${{ matrix.os }}-${{ matrix.python }}
+          path: results/
+          if-no-files-found: ignore

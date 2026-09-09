@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "id": "trajectory_uneven_sampling",
+  "task": "Recover progression with excess early specimens. Analyze counts.zarr, metadata.csv and task_inputs.json. This is a synthetic benchmark with known simulation design, not a clinical or empirical developmental conclusion. Validate the specified design before fitting numeric time. Report fitted gene p-values and BH-adjusted q-values in gene_statistics whenever a fit is performed. Use sample IDs as keys. The root and allowable candidate network universe are supplied in task_inputs.json. For lineage_graph use root, branch_point, and terminal_0.. terminal_K names; a single trajectory is root->terminal_0. For gene_effects report log-mean slopes per unit normalized_time for EffectPositive, EffectNegative, EffectNull, and EffectWeak; if unidentifiable return an empty object with an explicit non-identifiability rationale. The diagnostic vocabulary and suspected failure modes are specified in task_inputs.json. Write final_discovery.json matching answer_schema.json, with four distinct regulator names and a rationale stating evidence limits.",
+  "metadata": {
+    "track": "trajectory",
+    "source_kind": "synthetic",
+    "matrix_version": 1,
+    "hypothesis": "Recover progression with excess early specimens",
+    "truth_kind": "known_simulation_latent",
+    "clinical_scope": "none"
+  },
+  "dataset": {
+    "builder": "matrix",
+    "track": "trajectory",
+    "scenario": "uneven_sampling",
+    "seed": 1701,
+    "parameters": {
+      "n_genes": 96,
+      "n_samples": 48,
+      "noise": 0.08,
+      "expression": "count",
+      "sampling": "early_dense",
+      "scenario_identity": "trajectory:uneven_sampling"
+    }
+  },
+  "answer_schema": {
+    "type": "object",
+    "properties": {
+      "stage_kinetics": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "number"
+        },
+        "minProperties": 1
+      },
+      "master_regulators": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 4,
+        "maxItems": 4,
+        "uniqueItems": true
+      },
+      "condition_number_validated": {
+        "type": "boolean"
+      },
+      "biological_rationale": {
+        "type": "string",
+        "minLength": 1
+      },
+      "gene_statistics": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "required": [
+            "pvalue",
+            "qvalue"
+          ],
+          "properties": {
+            "pvalue": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "qvalue": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      },
+      "pseudotime": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "number"
+        },
+        "minProperties": 1
+      },
+      "branch_assignments": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "lineage_graph": {
+        "type": "object",
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "properties": {
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        }
+      }
+    },
+    "required": [
+      "stage_kinetics",
+      "master_regulators",
+      "condition_number_validated",
+      "biological_rationale",
+      "pseudotime",
+      "branch_assignments",
+      "lineage_graph"
+    ],
+    "additionalProperties": false
+  },
+  "grader": {
+    "type": "all_of",
+    "config": {
+      "children": [
+        {
+          "type": "equals",
+          "config": {
+            "field": "condition_number_validated",
+            "expected": true
+          }
+        },
+        {
+          "type": "pseudotime",
+          "config": {
+            "field": "pseudotime",
+            "expected_from_truth": "pseudotime",
+            "branch_field": "branch_assignments",
+            "branches_from_truth": "branch_assignments",
+            "threshold": 0.7
+          }
+        },
+        {
+          "type": "lineage_graph",
+          "config": {
+            "field": "lineage_graph",
+            "expected_from_truth": "lineage_graph",
+            "method": "label_edit",
+            "threshold": 0.8
+          }
+        }
+      ]
+    }
+  }
+}

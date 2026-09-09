@@ -1,0 +1,36 @@
+{
+  "artifacts": {
+    "devharness-0.4.17-py3-none-any.whl": {
+      "sha256": "0986de1e5e3e71967f9897abb6f170ead64767606b3c8b486274401baaf0bf79",
+      "bytes": 505770
+    },
+    "devharness-0.4.17.tar.gz": {
+      "sha256": "ff3cb858463969dc95b7f302ba20bf5425fe0d57308ce527f2e1823343f05d5d",
+      "bytes": 27640635
+    }
+  },
+  "wheel_members": 173,
+  "all_wheel_member_bytes_identical_to_installed_test_package": true,
+  "source_archive_files": 363,
+  "required_reports_notebooks_tests_match": [
+    "reports/code-action-audit/README.md",
+    "reports/code-action-audit/summary.json",
+    "reports/code-action-audit/SHA256SUMS",
+    "notebooks/colab_runner.ipynb",
+    "notebooks/controlled_verification.ipynb",
+    "tests/test_code_action_audit.py",
+    "tests/test_code_action_audit_limits.py",
+    "devbench/evidence.py",
+    "devbench/runner.py",
+    "devharness_core/provenance.py",
+    "devbench_engine/runner.py",
+    "devbench_engine/audit_cli.py",
+    "docs/requirements-verification.md",
+    "docs/clinical-production-goal.md",
+    "docs/index.html"
+  ],
+  "anchored_public_synthetic_data_members": 18,
+  "private_runtime_paths_absent": true,
+  "frozen_notebook_source_members_unchanged": 210,
+  "clinical_release_allowed": false
+}

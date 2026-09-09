@@ -1,0 +1,84 @@
+{
+  "schema_version": "devharness.colab-verification-summary/1",
+  "software_version": "0.4.12",
+  "source_bundle_sha256": "2836a13db40ad535e1499500d3252c4d189afe36641f5963acd48bc75101de96",
+  "archive_sha256": "7fcfbaf050104a3dbd419c1a861f1ad94168010e5dae65e7c14d3827b970535f",
+  "test_results": {
+    "passed": 1389,
+    "skipped": 1,
+    "failures": 0,
+    "errors": 0,
+    "seconds": 203.65,
+    "skip_reason": "macOS-only actual-path spelling check"
+  },
+  "environment": {
+    "dependencies": {
+      "PyNaCl": "1.6.2",
+      "cryptography": "50.0.1",
+      "h5py": "3.16.0",
+      "matplotlib": "3.11.1",
+      "numcodecs": "0.15.1",
+      "numpy": "2.5.3",
+      "pandas": "2.3.3",
+      "patsy": "1.0.3",
+      "psutil": "7.2.2",
+      "pydantic": "2.13.5",
+      "pydeseq2": "0.5.4",
+      "scikit-learn": "1.9.0",
+      "scipy": "1.18.1",
+      "statsmodels": "0.14.6",
+      "zarr": "2.18.7"
+    },
+    "implementation": "CPython",
+    "machine": "x86_64",
+    "plotting_backend": "Agg",
+    "python": "3.13.15",
+    "system": "Linux",
+    "threads": {
+      "MKL_NUM_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "VECLIB_MAXIMUM_THREADS": "1"
+    }
+  },
+  "numerical_runs": 4,
+  "numerical_repeat_pairs": {
+    "continuous": true,
+    "counts": true
+  },
+  "numerical_seconds": 24.980533386999923,
+  "local_audit_verifications": [
+    {
+      "run": "continuous-repeat",
+      "root_hash": "15bcdd40b5321e9f2f917d2beeb17037aa34f1747e304cb40f6df30c7ae0e44d",
+      "valid": true,
+      "approval_signatures_verified": 2
+    },
+    {
+      "run": "continuous-run",
+      "root_hash": "589e50c490b7e44e93a749ee45d6ba519e4e968da61e6f3cf7c12c10a64aa25d",
+      "valid": true,
+      "approval_signatures_verified": 2
+    },
+    {
+      "run": "counts-repeat",
+      "root_hash": "e0e725601526a984d95891173fbb608d724de1db25c3a41a57d9918950a49bff",
+      "valid": true,
+      "approval_signatures_verified": 2
+    },
+    {
+      "run": "counts-run",
+      "root_hash": "be142ccf3f4b662ea754ba462506404851051c2df51d4c64463e643c01cffe31",
+      "valid": true,
+      "approval_signatures_verified": 2
+    }
+  ],
+  "source_files_verified_per_run": 39,
+  "exported_files_verified": 358,
+  "model_service_calls": 0,
+  "peak_memory_mb": null,
+  "billed_compute_units": null,
+  "clinical_release_allowed": false,
+  "scope": "Executed controlled synthetic notebook, independently verified after archive retrieval. It predates the0.4.13input-preservation change and does not qualify that change on Linux, clinical use or live agent performance."
+}

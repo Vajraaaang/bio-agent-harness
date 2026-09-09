@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "dataset": {
+    "variant": "inverted",
+    "seed": 42
+  },
+  "answer_schema": {
+    "type": "object",
+    "required": [
+      "chronology_mismatch",
+      "corrected_stage_order",
+      "stage_kinetics",
+      "master_regulators",
+      "condition_number_validated",
+      "biological_rationale"
+    ],
+    "properties": {
+      "chronology_mismatch": {
+        "type": "boolean"
+      },
+      "corrected_stage_order": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 4,
+        "maxItems": 4,
+        "uniqueItems": true
+      },
+      "stage_kinetics": {
+        "type": "object",
+        "properties": {
+          "E8.5": {
+            "type": "number"
+          },
+          "E10.5": {
+            "type": "number"
+          },
+          "E12.5": {
+            "type": "number"
+          },
+          "E14.5": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "E8.5",
+          "E10.5",
+          "E12.5",
+          "E14.5"
+        ],
+        "additionalProperties": false
+      },
+      "master_regulators": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 4,
+        "maxItems": 4,
+        "uniqueItems": true
+      },
+      "condition_number_validated": {
+        "type": "boolean"
+      },
+      "biological_rationale": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "additionalProperties": false
+  },
+  "grader": {
+    "type": "all_of",
+    "config": {
+      "children": [
+        {
+          "type": "equals",
+          "config": {
+            "field": "chronology_mismatch",
+            "expected": true
+          }
+        },
+        {
+          "type": "longest_subsequence",
+          "config": {
+            "field": "corrected_stage_order",
+            "expected": [
+              "E14.5",
+              "E12.5",
+              "E10.5",
+              "E8.5"
+            ],
+            "pass_threshold": 1
+          }
+        },
+        {
+          "type": "longest_subsequence",
+          "config": {
+            "field": "master_regulators",
+            "expected": [
+              "Sox2",
+              "Pax6",
+              "Neurog2",
+              "Tbr1"
+            ],
+            "pass_threshold": 1
+          }
+        },
+        {
+          "type": "equals",
+          "config": {
+            "field": "condition_number_validated",
+            "expected": true
+          }
+        }
+      ]
+    }
+  },
+  "id": "inverted_chronology",
+  "task": "Analyze counts.zarr and metadata.csv in the supplied workspace. Stage annotations may contradict marker progression. Compare early Sox2 and late Tbr1 expression to identify a chronology mismatch. Return chronology_mismatch (boolean), corrected_stage_order (list of the observed stage labels in biological order), and master_regulators (Sox2/Pax6/Neurog2/Tbr1 peak order after correction). Write final_discovery.json matching answer_schema.json. Include stage_kinetics, exactly four master_regulators, condition_number_validated and biological_rationale, plus the task-specific fields."
+}

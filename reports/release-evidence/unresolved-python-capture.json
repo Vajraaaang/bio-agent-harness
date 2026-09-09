@@ -1,0 +1,27 @@
+{
+  "scope": "Synthetic post-snapshot I/O fault; no actual numerical or model execution",
+  "configured_metadata_limit": 8388608,
+  "original_metadata_bytes": 650,
+  "launch_boundary_calls": 1,
+  "injected_bytes": 8388609,
+  "injected_digest": "942d6013edf5b8bf6c141eadd970afb4d1dec9f2d6d92dbe93f4be90748037ed",
+  "cas_blob_exists": true,
+  "cas_blob_bytes": 8388609,
+  "outcome_status": "failed",
+  "error_type": "InputIntegrityError",
+  "error": "snapshot_modified_during_execution",
+  "hash_verification_valid": true,
+  "semantic_verification_valid": false,
+  "semantic_errors": [
+    "Preserved input is not bound to plan: metadata.csv"
+  ],
+  "receipt": {
+    "analysis_fingerprint": "d61cffc7f073da6b6064e82a56d88493f6f3956bab04ab08a7b1e80ac02140a6",
+    "artifact_count": 46,
+    "manifest_path": "/Users/vajraang/Documents/ChatGPT/bio-agent-harness/results/controlled-capture-2026-09-09.lioqvebx/python-baseline/run/audit/manifest.json",
+    "node_count": 5,
+    "root_hash": "c40dde1ca26b292e487f9f8af4b42a9c9909b922bb428d28e11aa272ffd2fdac",
+    "schema_version": "devharness.execution-dag/1"
+  },
+  "clinical_release_allowed": false
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": "gaussian_mc_api_diagnostic/1",
+  "sample_sizes": [
+    24,
+    48,
+    96
+  ],
+  "evaluation_genes": 100,
+  "reference_draws": 65535,
+  "reference_block_size": 4096,
+  "spline_dfs": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "criteria": [
+    "aic",
+    "bic",
+    "gcv"
+  ],
+  "scenarios": [
+    "homoskedastic_null",
+    "heteroskedastic_null"
+  ],
+  "evaluation_seed": 931090001,
+  "reference_seed": 931190001,
+  "alpha": 0.05,
+  "numeric_rtol": 2e-09,
+  "numeric_atol": 2e-10,
+  "scope": "Prospective installed-API software/numerical diagnostic on synthetic independent observations. All criteria share the same 600 response vectors; not 1800 independent cohorts. Null counts are descriptive, with intervals conditional on a shared reference. Unequal-variance stress deliberately violates the Gaussian model. This is not clinical, FDR, NB or interval qualification and not model-agent performance.",
+  "replay": "Repeat every case with the same pinned environment, sources, inputs, seeds and options in a fresh output directory. Compare full result JSON exactly; elapsed times, DAG run IDs and wall-clock timestamps are separately recorded infrastructure fields."
+}

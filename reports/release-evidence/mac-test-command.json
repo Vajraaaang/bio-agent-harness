@@ -1,0 +1,29 @@
+{
+  "argv": [
+    "/Users/vajraang/Documents/ChatGPT/bio-agent-harness/results/code-action-audit-2026-09-09.mcawtee8/venv/bin/python",
+    "-m",
+    "pytest",
+    "/Users/vajraang/Documents/ChatGPT/bio-agent-harness/tests",
+    "-q",
+    "--junitxml=/Users/vajraang/Documents/ChatGPT/bio-agent-harness/results/code-action-audit-2026-09-09.mcawtee8/final-full-suite.xml"
+  ],
+  "cwd": "/Users/vajraang/Documents/ChatGPT/bio-agent-harness",
+  "started_unix": 1788982147.854935,
+  "environment_keys": [
+    "HOME",
+    "LANG",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "PATH",
+    "SHELL",
+    "TMPDIR",
+    "USER",
+    "VECLIB_MAXIMUM_THREADS"
+  ],
+  "timeout_seconds": 900,
+  "clinical_release_allowed": false,
+  "exit_code": 0,
+  "elapsed_seconds": 468.3235836669919
+}

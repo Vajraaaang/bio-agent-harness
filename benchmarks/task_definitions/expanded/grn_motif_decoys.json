@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "id": "grn_motif_decoys",
+  "task": "Keep motif candidates separate from active regulon edges. Analyze counts.zarr, metadata.csv and task_inputs.json. This is a synthetic benchmark with known simulation design, not a clinical or empirical developmental conclusion. Validate the specified design before fitting numeric time. Report fitted gene p-values and BH-adjusted q-values in gene_statistics whenever a fit is performed. Use sample IDs as keys. The root and allowable candidate network universe are supplied in task_inputs.json. For lineage_graph use root, branch_point, and terminal_0.. terminal_K names; a single trajectory is root->terminal_0. For gene_effects report log-mean slopes per unit normalized_time for EffectPositive, EffectNegative, EffectNull, and EffectWeak; if unidentifiable return an empty object with an explicit non-identifiability rationale. The diagnostic vocabulary and suspected failure modes are specified in task_inputs.json. Write final_discovery.json matching answer_schema.json, with four distinct regulator names and a rationale stating evidence limits.",
+  "metadata": {
+    "track": "grn",
+    "source_kind": "synthetic",
+    "matrix_version": 1,
+    "hypothesis": "Keep motif candidates separate from active regulon edges",
+    "truth_kind": "known_simulation_latent",
+    "clinical_scope": "none"
+  },
+  "dataset": {
+    "builder": "matrix",
+    "track": "grn",
+    "scenario": "motif_decoys",
+    "seed": 1701,
+    "parameters": {
+      "n_genes": 96,
+      "n_samples": 48,
+      "noise": 0.08,
+      "expression": "count",
+      "network": "mixed",
+      "motif_decoys": true,
+      "scenario_identity": "grn:motif_decoys"
+    }
+  },
+  "answer_schema": {
+    "type": "object",
+    "properties": {
+      "stage_kinetics": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "number"
+        },
+        "minProperties": 1
+      },
+      "master_regulators": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 4,
+        "maxItems": 4,
+        "uniqueItems": true
+      },
+      "condition_number_validated": {
+        "type": "boolean"
+      },
+      "biological_rationale": {
+        "type": "string",
+        "minLength": 1
+      },
+      "gene_statistics": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "required": [
+            "pvalue",
+            "qvalue"
+          ],
+          "properties": {
+            "pvalue": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "qvalue": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      },
+      "edges": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "tf",
+            "target",
+            "sign",
+            "score"
+          ],
+          "properties": {
+            "tf": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            },
+            "sign": {
+              "type": "integer",
+              "enum": [
+                -1,
+                1
+              ]
+            },
+            "score": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "evidence_scope": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "stage_kinetics",
+      "master_regulators",
+      "condition_number_validated",
+      "biological_rationale",
+      "edges",
+      "evidence_scope"
+    ],
+    "additionalProperties": false
+  },
+  "grader": {
+    "type": "all_of",
+    "config": {
+      "children": [
+        {
+          "type": "equals",
+          "config": {
+            "field": "condition_number_validated",
+            "expected": true
+          }
+        },
+        {
+          "type": "network_precision_recall",
+          "config": {
+            "field": "edges",
+            "expected_from_truth": "edges",
+            "universe_from_truth": "candidate_universe",
+            "signed": true,
+            "threshold": 0.6
+          }
+        },
+        {
+          "type": "equals",
+          "config": {
+            "field": "evidence_scope",
+            "expected_from_truth": "evidence_scope"
+          }
+        }
+      ]
+    }
+  }
+}

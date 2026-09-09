@@ -1,0 +1,31 @@
+{
+  "archive_sha256": "b2c18ee5f37b14a442a8c0b6930254ec76f5dcfd5964ad79f5c8b9d127addbb0",
+  "manifest_entries_verified": 359,
+  "extracted_files": 360,
+  "tests": {
+    "tests": 1543,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "passed": 1542,
+    "seconds": 197.81
+  },
+  "targeted_audit_and_source_tests_passed": 22,
+  "runtime_identity_tests_passed": 16,
+  "primary_audit_and_clinical_regressions_passed": 37,
+  "post_execution_source_members_verified": 210,
+  "source_bundle_sha256": "bcfb5d1e5c7f11aa47ded9098129dbccaae4c8c01908bf702b9ebf651095497d",
+  "reported_audit_roots": {
+    "continuous-repeat": "723c8637cfcf083fe9a7231bd1ea6570a8bcb047a34f93afa22cdd1263c3aff1",
+    "continuous-run": "c86d3ec5a820b39d2cb050c0f8edc508271e2833a1b724efa4c938c03ed484be",
+    "counts-repeat": "d220bf79ad6ccb9b29aca0d1548a378be806ded8f83e5a4a7058f5692e5393c6",
+    "counts-run": "39c31dcfb656e895fd1f151ef4562ef687ab2babf752856f94c492fecafcd4e6"
+  },
+  "configured_key_signature_checks_reported": 8,
+  "numerical_analyses": 4,
+  "exact_repeat_pairs": 2,
+  "r_references_completed_and_agreed": true,
+  "local_semantic_verification_pending": true,
+  "clinical_release_allowed": false,
+  "compliance_certified": false
+}

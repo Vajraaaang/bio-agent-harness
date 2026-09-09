@@ -1,0 +1,402 @@
+{
+  "schema_version": "native_nb_package_sources/1",
+  "R": "4.6.1",
+  "BiocVersion": "3.23.1",
+  "repositories": ["https://bioconductor.org/packages/3.23/bioc", "https://cloud.r-project.org"],
+  "targets": ["edgeR", "DESeq2", "statmod"],
+  "packages": [
+    {
+      "package": "abind",
+      "version": "1.4-8",
+      "file": "abind_1.4-8.tar.gz",
+      "sha256": "264a051b523ceae1795a0879e7768949ea55c586ac8db0adf1f5ebeddd2623e1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "BH",
+      "version": "1.90.0-1",
+      "file": "BH_1.90.0-1.tar.gz",
+      "sha256": "2e1fafb05938e81073561ae4892dc543ef15807e375e0ea8fa75e3ab79f0281b",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "Biobase",
+      "version": "2.72.0",
+      "file": "Biobase_2.72.0.tar.gz",
+      "sha256": "d04af4c5850352f96a966285ea771b15777d2f009f7b86fa4b702de13f31bbdd",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": "BiocGenerics"
+    },
+    {
+      "package": "BiocGenerics",
+      "version": "0.58.1",
+      "file": "BiocGenerics_0.58.1.tar.gz",
+      "sha256": "6911559f0b2b5a07081cd21b6738aa4c6048509b23425cc3ebafc0b4cb011a98",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": "generics"
+    },
+    {
+      "package": "BiocParallel",
+      "version": "1.46.0",
+      "file": "BiocParallel_1.46.0.tar.gz",
+      "sha256": "d06642f7b53517299a48ac68b074c28e03dd1de41159562fb8011117419e1038",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": ["futile.logger", "snow", "codetools", "BH", "cpp11"]
+    },
+    {
+      "package": "cli",
+      "version": "3.6.6",
+      "file": "cli_3.6.6.tar.gz",
+      "sha256": "b2b58d6dd82f5798b335e39c00591686a01fd3e94399ef898e146173e36f18f9",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "codetools",
+      "version": "0.2-20",
+      "file": "codetools_0.2-20.tar.gz",
+      "sha256": "3be6f375ec178723ddfd559d1e8e85bfeee04a5fbaf9f53f2f844e1669fea863",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "cpp11",
+      "version": "0.5.5",
+      "file": "cpp11_0.5.5.tar.gz",
+      "sha256": "72486beb0605c1229bf3d422cd536224af8dc09bd389a3116f62f4c7705c62f4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "DelayedArray",
+      "version": "0.38.2",
+      "file": "DelayedArray_0.38.2.tar.gz",
+      "sha256": "d9d3195f8f8e3ddf4aa9a47ac149413dc226761377e34d9320d09cbe8cefe3fd",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": ["Matrix", "BiocGenerics", "MatrixGenerics", "S4Vectors", "IRanges", "S4Arrays", "SparseArray"]
+    },
+    {
+      "package": "DESeq2",
+      "version": "1.52.0",
+      "file": "DESeq2_1.52.0.tar.gz",
+      "sha256": "8c91699286336350e66eec132ce6fdf5bb4af78e2a4d015a5a61224f62a95984",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": ["S4Vectors", "IRanges", "GenomicRanges", "SummarizedExperiment", "BiocGenerics", "Biobase", "BiocParallel", "matrixStats", "locfit", "ggplot2", "Rcpp", "MatrixGenerics", "RcppArmadillo"]
+    },
+    {
+      "package": "edgeR",
+      "version": "4.10.5",
+      "file": "edgeR_4.10.5.tar.gz",
+      "sha256": "083f1ec9ff3999d4df497927c63d2f83d0f8a59b28510a32cdc92aa0834950c7",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": ["limma", "locfit"]
+    },
+    {
+      "package": "farver",
+      "version": "2.1.2",
+      "file": "farver_2.1.2.tar.gz",
+      "sha256": "528823b95daab4566137711f1c842027a952bea1b2ae6ff098e2ca512b17fe25",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "formatR",
+      "version": "1.14",
+      "file": "formatR_1.14.tar.gz",
+      "sha256": "4ebaab2c3f8527871655246b62abd060bc75dae1cec7f962ca4752b8080f474c",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "futile.logger",
+      "version": "1.4.9",
+      "file": "futile.logger_1.4.9.tar.gz",
+      "sha256": "496bedbe2e52d06db22a4d659b8e7dd9ad0f1d1f95ead459ec02d05d0ac2b3d6",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": ["lambda.r", "futile.options"]
+    },
+    {
+      "package": "futile.options",
+      "version": "1.0.1",
+      "file": "futile.options_1.0.1.tar.gz",
+      "sha256": "7a9cc974e09598077b242a1069f7fbf4fa7f85ffe25067f6c4c32314ef532570",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "generics",
+      "version": "0.1.4",
+      "file": "generics_0.1.4.tar.gz",
+      "sha256": "bbe95a097792d38fc3b7e677738af1b95b66ea5e5017e33b8beac6a6088d0801",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "GenomicRanges",
+      "version": "1.64.0",
+      "file": "GenomicRanges_1.64.0.tar.gz",
+      "sha256": "09fee555b60be2f54c8fa35b0a2238fea9a1b96dea24e9a8c52166b61d44f776",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": ["BiocGenerics", "S4Vectors", "IRanges", "Seqinfo"]
+    },
+    {
+      "package": "ggplot2",
+      "version": "4.0.3",
+      "file": "ggplot2_4.0.3.tar.gz",
+      "sha256": "690224bd61642b6222adb109470988e87f786e193cca77a15c0923cf9da73fa5",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": ["cli", "gtable", "isoband", "lifecycle", "rlang", "S7", "scales", "vctrs", "withr"]
+    },
+    {
+      "package": "glue",
+      "version": "1.8.1",
+      "file": "glue_1.8.1.tar.gz",
+      "sha256": "1c55905d3efc3d5c199ceb0bd12218e97f0d4c64df6038ff41ecef415478a122",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "gtable",
+      "version": "0.3.6",
+      "file": "gtable_0.3.6.tar.gz",
+      "sha256": "d305a5fa11278b649d2d8edc5288bf28009be888a42be58ff8714018e49de0ef",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": ["cli", "glue", "lifecycle", "rlang"]
+    },
+    {
+      "package": "IRanges",
+      "version": "2.46.0",
+      "file": "IRanges_2.46.0.tar.gz",
+      "sha256": "a61e97812b0357411b770c5886b684fc6c0b59c05441f7336e46404e6898b3e9",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": ["BiocGenerics", "S4Vectors"]
+    },
+    {
+      "package": "isoband",
+      "version": "0.3.0",
+      "file": "isoband_0.3.0.tar.gz",
+      "sha256": "fe8d3d58ca75bbee32f389152ac0058818f3f76f09c9867949531de7abc424ac",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": ["cli", "rlang", "cpp11"]
+    },
+    {
+      "package": "labeling",
+      "version": "0.4.3",
+      "file": "labeling_0.4.3.tar.gz",
+      "sha256": "c62f4fc2cc74377d7055903c5f1913b7295f7587456fe468592738a483e264f2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "lambda.r",
+      "version": "1.2.4",
+      "file": "lambda.r_1.2.4.tar.gz",
+      "sha256": "d252fee39065326c6d9f45ad798076522cec05e73b8905c1b30f95a61f7801d6",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": "formatR"
+    },
+    {
+      "package": "lattice",
+      "version": "0.23-1",
+      "file": "lattice_0.23-1.tar.gz",
+      "sha256": "34e9b2fc023582c4246959b543c331233c62118efd922bcc1ba72b4888adc590",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "lifecycle",
+      "version": "1.0.5",
+      "file": "lifecycle_1.0.5.tar.gz",
+      "sha256": "61841e3e6edba056a88355a3f1d6698ab8d5d9cb3c05f2af0ec5a44ab516f8ee",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": ["cli", "rlang"]
+    },
+    {
+      "package": "limma",
+      "version": "3.68.5",
+      "file": "limma_3.68.5.tar.gz",
+      "sha256": "40b1d2059a76ad98db4bf80139760acf8e8bae92a8265aaaf16ac199831533f4",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": "statmod"
+    },
+    {
+      "package": "locfit",
+      "version": "1.5-9.12",
+      "file": "locfit_1.5-9.12.tar.gz",
+      "sha256": "fa31b9d407f3557a6fcb7105cbd7b16a32a6fb868a7c60bc38a3e33cb7a39343",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": "lattice"
+    },
+    {
+      "package": "Matrix",
+      "version": "1.7-6",
+      "file": "Matrix_1.7-6.tar.gz",
+      "sha256": "694239dbe47e659d6d39a49af95157f46bd94977c283df00c4e8a016601cf143",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": "lattice"
+    },
+    {
+      "package": "MatrixGenerics",
+      "version": "1.24.0",
+      "file": "MatrixGenerics_1.24.0.tar.gz",
+      "sha256": "371d32bbd324ad6665465b5c54f66a9619c2958c5cad6f7aa65c6d533379005e",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": "matrixStats"
+    },
+    {
+      "package": "matrixStats",
+      "version": "1.5.0",
+      "file": "matrixStats_1.5.0.tar.gz",
+      "sha256": "12996c5f3e6fc202a43e1087f16a71b7fa93d7e908f512542c7ee89cf95dcc15",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "R6",
+      "version": "2.6.1",
+      "file": "R6_2.6.1.tar.gz",
+      "sha256": "59c6eba8b1b912eb7e104f65053235604be853425ee67c152ac4e86a1f2073b4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "RColorBrewer",
+      "version": "1.1-3",
+      "file": "RColorBrewer_1.1-3.tar.gz",
+      "sha256": "4f42f5423c45688b39f492c7892d93f37b4541831c8ffb140364d2bd89031ac0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "Rcpp",
+      "version": "1.1.2",
+      "file": "Rcpp_1.1.2.tar.gz",
+      "sha256": "2746cf2fb188e5f0a84dbf5c8f68915b54564ed33e5754572f174e7b32e7f4f3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "RcppArmadillo",
+      "version": "15.4.2-1",
+      "file": "RcppArmadillo_15.4.2-1.tar.gz",
+      "sha256": "141c8da25f1e8ff1771b0a1b68d65fbdd821b6061cdd9504ff446ee65f70b801",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": "Rcpp"
+    },
+    {
+      "package": "rlang",
+      "version": "1.3.0",
+      "file": "rlang_1.3.0.tar.gz",
+      "sha256": "80aa537d49e72265f443a15e8936128af583caa5e572086518b503cbf064279c",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "S4Arrays",
+      "version": "1.12.0",
+      "file": "S4Arrays_1.12.0.tar.gz",
+      "sha256": "46f4e1514e1c35b17ae70edfdf36248e324bd770ffd5041111f2a1db0e61e338",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": ["Matrix", "abind", "BiocGenerics", "S4Vectors", "IRanges"]
+    },
+    {
+      "package": "S4Vectors",
+      "version": "0.50.2",
+      "file": "S4Vectors_0.50.2.tar.gz",
+      "sha256": "fc6c67af9c02974db36eb55d5f84acb35cc59b0e9c3e58b09128b04fdfc866ef",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": "BiocGenerics"
+    },
+    {
+      "package": "S7",
+      "version": "0.2.2",
+      "file": "S7_0.2.2.tar.gz",
+      "sha256": "6f33245dde05b74265b1c4d379e034bc3a8923d41e7b52e6e75a75ce97d42af7",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "scales",
+      "version": "1.4.0",
+      "file": "scales_1.4.0.tar.gz",
+      "sha256": "d55ef5f08c92652d7a95cfa27584024723ab17873f1b2577dd488cb7c883ceee",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": ["cli", "farver", "glue", "labeling", "lifecycle", "R6", "RColorBrewer", "rlang", "viridisLite"]
+    },
+    {
+      "package": "Seqinfo",
+      "version": "1.2.0",
+      "file": "Seqinfo_1.2.0.tar.gz",
+      "sha256": "f86693fd96ff24dc4f79c340040d68256be53690fe14f06330af5c356ea3a073",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": ["BiocGenerics", "S4Vectors", "IRanges"]
+    },
+    {
+      "package": "snow",
+      "version": "0.4-4",
+      "file": "snow_0.4-4.tar.gz",
+      "sha256": "84587f46f222a96f3e2fde10ad6ec6ddbd878f4e917cd926d632f61a87db13c9",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "SparseArray",
+      "version": "1.12.2",
+      "file": "SparseArray_1.12.2.tar.gz",
+      "sha256": "fb99856d3bb152ef63466f90b6df1336a7174dba495ccb05581b3489470059f8",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": ["Matrix", "BiocGenerics", "MatrixGenerics", "S4Vectors", "S4Arrays", "matrixStats", "IRanges", "XVector"]
+    },
+    {
+      "package": "statmod",
+      "version": "1.5.2",
+      "file": "statmod_1.5.2.tar.gz",
+      "sha256": "5f83d82043c5e26f1048fc0139580da1b7e40becf95fb4cb26ed3afcd46a581d",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "SummarizedExperiment",
+      "version": "1.42.0",
+      "file": "SummarizedExperiment_1.42.0.tar.gz",
+      "sha256": "40110b8dbb64e41e23adc8ac349a76a79e5cffcfd903eca2d6d9be344a24a71a",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": ["MatrixGenerics", "GenomicRanges", "Biobase", "Matrix", "BiocGenerics", "S4Vectors", "IRanges", "Seqinfo", "S4Arrays", "DelayedArray"]
+    },
+    {
+      "package": "vctrs",
+      "version": "0.7.3",
+      "file": "vctrs_0.7.3.tar.gz",
+      "sha256": "b45078413e06ac624dddb7221a3a43908b405c8abec09822cb86638d30b0435b",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": ["cli", "glue", "lifecycle", "rlang"]
+    },
+    {
+      "package": "viridisLite",
+      "version": "0.4.3",
+      "file": "viridisLite_0.4.3.tar.gz",
+      "sha256": "433be9bde66234dc76301fb4ffbbc9fc74bab5c14f4548d8ef2fc0065e121ef5",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "withr",
+      "version": "3.0.3",
+      "file": "withr_3.0.3.tar.gz",
+      "sha256": "d86c6454164fc85678bfc85e2a6cce42f7461d45fa9a87de71f376e7956c991e",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": []
+    },
+    {
+      "package": "XVector",
+      "version": "0.52.0",
+      "file": "XVector_0.52.0.tar.gz",
+      "sha256": "80b520c984e9da13fe06a2a6bdf712fffa6275705f3d0fb16af60eb5fb28609d",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": ["BiocGenerics", "S4Vectors", "IRanges"]
+    }
+  ],
+  "scope": "Resolved source bytes for build; not a clinical qualification or package-signature assertion"
+}

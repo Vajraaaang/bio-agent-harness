@@ -1,0 +1,56 @@
+[
+  {
+    "label": "baseline-trajectory_observed_increasing",
+    "analysis_fingerprint": null,
+    "artifact_count": 13,
+    "manifest_path": "/Users/vajraang/Documents/ChatGPT/bio-agent-harness/results/code-action-audit-2026-09-09.mcawtee8/final-controls/runs/baseline-trajectory_observed_increasing/audit/manifest.json",
+    "node_count": 4,
+    "root_hash": "8e9c50d380aad4fce07d1db35e7ce0b4b42e7ee2c70109a40d001d3a5f46c33f",
+    "schema_version": "devharness.execution-dag/1"
+  },
+  {
+    "label": "baseline-adversarial_observed_label_reversal",
+    "analysis_fingerprint": null,
+    "artifact_count": 13,
+    "manifest_path": "/Users/vajraang/Documents/ChatGPT/bio-agent-harness/results/code-action-audit-2026-09-09.mcawtee8/final-controls/runs/baseline-adversarial_observed_label_reversal/audit/manifest.json",
+    "node_count": 4,
+    "root_hash": "8b6e1f17e22afd0b068407fb9182823fa03177bccf47ece7674ec95dde95e986",
+    "schema_version": "devharness.execution-dag/1"
+  },
+  {
+    "label": "assisted-trajectory_observed_increasing",
+    "analysis_fingerprint": null,
+    "artifact_count": 36,
+    "manifest_path": "/Users/vajraang/Documents/ChatGPT/bio-agent-harness/results/code-action-audit-2026-09-09.mcawtee8/final-controls/runs/assisted-trajectory_observed_increasing/audit/manifest.json",
+    "node_count": 4,
+    "root_hash": "edaff183a6401569a662b988feda54e805b5f8308906d882c1c8d4f398bed3f3",
+    "schema_version": "devharness.execution-dag/1"
+  },
+  {
+    "label": "assisted-adversarial_observed_label_reversal",
+    "analysis_fingerprint": null,
+    "artifact_count": 36,
+    "manifest_path": "/Users/vajraang/Documents/ChatGPT/bio-agent-harness/results/code-action-audit-2026-09-09.mcawtee8/final-controls/runs/assisted-adversarial_observed_label_reversal/audit/manifest.json",
+    "node_count": 4,
+    "root_hash": "c81f7f0fcece777dd0e5bed4ac2243996f7da28df9d265083c1edf99b24f864c",
+    "schema_version": "devharness.execution-dag/1"
+  },
+  {
+    "label": "baseline-trajectory_observed_increasing-failure",
+    "analysis_fingerprint": null,
+    "artifact_count": 13,
+    "manifest_path": "/Users/vajraang/Documents/ChatGPT/bio-agent-harness/results/code-action-audit-2026-09-09.mcawtee8/final-controls/runs/baseline-trajectory_observed_increasing-failure/audit/manifest.json",
+    "node_count": 4,
+    "root_hash": "a0c98395adbe38a335d6ebd78854a5e4c1761cd2566e5343ce1e2ad4bc093554",
+    "schema_version": "devharness.execution-dag/1"
+  },
+  {
+    "label": "assisted-trajectory_observed_increasing-failure",
+    "analysis_fingerprint": null,
+    "artifact_count": 36,
+    "manifest_path": "/Users/vajraang/Documents/ChatGPT/bio-agent-harness/results/code-action-audit-2026-09-09.mcawtee8/final-controls/runs/assisted-trajectory_observed_increasing-failure/audit/manifest.json",
+    "node_count": 4,
+    "root_hash": "5bd31653afe36166e917a10a7a71706e31a25b09925b91c229148b181f8e53d6",
+    "schema_version": "devharness.execution-dag/1"
+  }
+]

@@ -1,0 +1,748 @@
+{
+  "version": "0.4.16",
+  "scope": "synthetic software verification; not clinical qualification",
+  "local_full_suite": {
+    "tests": 1991,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2,
+    "passed": 1989,
+    "seconds": 459.584
+  },
+  "installed_package_tests": {
+    "tests": 80,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 80,
+    "seconds": 36.085
+  },
+  "independent_review_tests": 16,
+  "independent_probe_groups": 11,
+  "visible_normalized_distribution_count": 78,
+  "recorded_environment": {
+    "python": "3.12.1",
+    "platform": "Darwin",
+    "machine": "arm64",
+    "packages": {
+      "numpy": "2.5.3",
+      "scipy": "1.18.1",
+      "pandas": "2.3.3",
+      "statsmodels": "0.14.6",
+      "pydeseq2": "0.5.4",
+      "scikit-learn": "1.9.0",
+      "zarr": "2.18.7",
+      "networkx": "3.6.1"
+    },
+    "thread_settings": {
+      "VECLIB_MAXIMUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1"
+    },
+    "environment_schema_version": "devbench.python-environment/2",
+    "distribution_versions": {
+      "anndata": "0.12.19",
+      "annotated-types": "0.8.0",
+      "anyio": "4.15.1",
+      "array-api-compat": "1.15.0",
+      "asciitree": "0.3.3",
+      "attrs": "26.1.0",
+      "certifi": "2026.7.22",
+      "cffi": "2.1.1",
+      "click": "8.5.0",
+      "cloudpickle": "3.1.2",
+      "contourpy": "1.3.3",
+      "cryptography": "50.0.1",
+      "cycler": "0.12.1",
+      "deprecated": "1.3.1",
+      "devharness": "0.4.16",
+      "fasteners": "0.20",
+      "fonttools": "4.64.0",
+      "formulaic": "1.2.2",
+      "formulaic-contrasts": "1.0.0",
+      "h11": "0.16.0",
+      "h5py": "3.16.0",
+      "httpcore": "1.0.9",
+      "httpx": "0.28.1",
+      "httpx-sse": "0.4.3",
+      "idna": "3.19",
+      "iniconfig": "2.3.0",
+      "interface-meta": "2.0.1",
+      "joblib": "1.6.0",
+      "jsonschema": "4.26.0",
+      "jsonschema-specifications": "2025.9.1",
+      "kiwisolver": "1.5.1",
+      "legacy-api-wrap": "1.5",
+      "matplotlib": "3.11.1",
+      "mcp": "1.29.1",
+      "narwhals": "2.25.0",
+      "natsort": "8.4.0",
+      "networkx": "3.6.1",
+      "numcodecs": "0.15.1",
+      "numpy": "2.5.3",
+      "packaging": "26.3",
+      "pandas": "2.3.3",
+      "patsy": "1.0.3",
+      "pillow": "12.3.0",
+      "pluggy": "1.6.0",
+      "psutil": "7.2.2",
+      "pycparser": "3.0",
+      "pydantic": "2.13.5",
+      "pydantic-core": "2.46.5",
+      "pydantic-settings": "2.15.0",
+      "pydeseq2": "0.5.4",
+      "pygments": "2.21.0",
+      "pyjwt": "2.13.0",
+      "pynacl": "1.6.2",
+      "pyparsing": "3.3.2",
+      "pytest": "9.1.1",
+      "python-dateutil": "2.9.0.post0",
+      "python-dotenv": "1.2.3",
+      "python-multipart": "0.0.32",
+      "pytz": "2026.3.post1",
+      "referencing": "0.37.0",
+      "rpds-py": "2026.6.3",
+      "scikit-learn": "1.9.0",
+      "scipy": "1.18.1",
+      "scverse-misc": "0.1.4",
+      "session-info": "1.0.1",
+      "session-info2": "0.4.2",
+      "six": "1.17.0",
+      "sse-starlette": "3.4.11",
+      "starlette": "1.6.0",
+      "statsmodels": "0.14.6",
+      "stdlib-list": "0.12.0",
+      "threadpoolctl": "3.6.0",
+      "typing-extensions": "4.16.0",
+      "typing-inspection": "0.4.4",
+      "tzdata": "2026.3",
+      "uvicorn": "0.52.4",
+      "wrapt": "2.4.0",
+      "zarr": "2.18.7"
+    },
+    "distribution_version_scope": "metadata_visible_on_python_search_path",
+    "native_library_identity_recorded": false
+  },
+  "actual_controls": [
+    {
+      "task_id": "trajectory_observed_increasing",
+      "condition": "assisted trusted program; no model participant",
+      "repetition": 0,
+      "passed": true,
+      "score": 1.0,
+      "elapsed_seconds": 0.12190812500193715,
+      "sampled_peak_memory_decimal_mb": 273.85856,
+      "successful_memory_samples": 2,
+      "root_hash": "e53e151a5c8cb98f435d2e0fbdc709dcd5b7a940d2a56ab45570f87dffa78a51"
+    },
+    {
+      "task_id": "adversarial_observed_label_reversal",
+      "condition": "assisted trusted program; no model participant",
+      "repetition": 0,
+      "passed": true,
+      "score": 1.0,
+      "elapsed_seconds": 0.07912116701481864,
+      "sampled_peak_memory_decimal_mb": 275.49696,
+      "successful_memory_samples": 2,
+      "root_hash": "47b0af2ee3ab9c357f92f4ee84d12c43db7f3810763a3c0d036b6e6950647643"
+    },
+    {
+      "task_id": "trajectory_observed_increasing",
+      "condition": "assisted trusted program; no model participant",
+      "repetition": 1,
+      "passed": true,
+      "score": 1.0,
+      "elapsed_seconds": 0.0768169590155594,
+      "sampled_peak_memory_decimal_mb": 277.446656,
+      "successful_memory_samples": 2,
+      "root_hash": "b6f3cd6791452895122fb851977f09a72f31b5f37099e06118719a2e1052032d"
+    },
+    {
+      "task_id": "adversarial_observed_label_reversal",
+      "condition": "assisted trusted program; no model participant",
+      "repetition": 1,
+      "passed": true,
+      "score": 1.0,
+      "elapsed_seconds": 0.07723450002958998,
+      "sampled_peak_memory_decimal_mb": 278.03648,
+      "successful_memory_samples": 2,
+      "root_hash": "7387495767f4eee36e9c2094e9313f324b2811210eb66feef3abebfba8d62bea"
+    }
+  ],
+  "control_checks": {
+    "attempted": 4,
+    "passed": 4,
+    "checks": [
+      {
+        "label": "trajectory_observed_increasing-0",
+        "manifest_verified": true,
+        "restore_verified": true,
+        "restored_answer_exact": true,
+        "task_snapshot_bound": true,
+        "numerical_tools_replayed": 1,
+        "replay_matched": true
+      },
+      {
+        "label": "adversarial_observed_label_reversal-0",
+        "manifest_verified": true,
+        "restore_verified": true,
+        "restored_answer_exact": true,
+        "task_snapshot_bound": true,
+        "numerical_tools_replayed": 1,
+        "replay_matched": true
+      },
+      {
+        "label": "trajectory_observed_increasing-1",
+        "manifest_verified": true,
+        "restore_verified": true,
+        "restored_answer_exact": true,
+        "task_snapshot_bound": true,
+        "numerical_tools_replayed": 1,
+        "replay_matched": true
+      },
+      {
+        "label": "adversarial_observed_label_reversal-1",
+        "manifest_verified": true,
+        "restore_verified": true,
+        "restored_answer_exact": true,
+        "task_snapshot_bound": true,
+        "numerical_tools_replayed": 1,
+        "replay_matched": true
+      }
+    ],
+    "pairs": [
+      {
+        "task_id": "trajectory_observed_increasing",
+        "answers_exact": true,
+        "datasets_exact": true
+      },
+      {
+        "task_id": "adversarial_observed_label_reversal",
+        "answers_exact": true,
+        "datasets_exact": true
+      }
+    ],
+    "frozen_inputs_unchanged": true,
+    "participant_model_calls": 0,
+    "original_captured_tool_calls": 4,
+    "restored_data_tool_recalculations": 4,
+    "replayed_tool_calls": 4,
+    "clinical_release_allowed": false,
+    "compliance_certified": false
+  },
+  "captured_patsy_metadata_drift_refused_before_restore": true,
+  "actual_dependency_upgrade_performed": false,
+  "unchanged_inputs": {
+    "task_definitions": 66,
+    "external_dependency_records": 83,
+    "all_unchanged": true,
+    "clinical_release_allowed": false
+  },
+  "cloud": {
+    "archive_sha256": "6c6374e906df5995ad36e457d9457d12d6c56e3babc81d9ea15e6f9f84616d10",
+    "manifest_entries_verified": 359,
+    "extracted_files": 360,
+    "tests": {
+      "tests": 1506,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "passed": 1505,
+      "seconds": 211.053
+    },
+    "targeted_audit_and_source_tests_passed": 22,
+    "runtime_identity_tests_passed": 16,
+    "post_execution_source_members_verified": 206,
+    "source_bundle_sha256": "608b683d195a9664b69729d35604cfab7e72c8117439a1e1c0488fe64a65cc38",
+    "reported_audit_roots": {
+      "continuous-repeat": "72891b3b3a3f7fd4d36ccfe8ed80b124b486b76a4985e4a28f1b52c110d1805d",
+      "continuous-run": "e80a57e09e658e2f19d744f258805b00b68ea610d55b46a07a3ac9d3ef27ae90",
+      "counts-repeat": "06c79ee21d43d973edf42b5b4d39058ec8cb78d89ebdc0cab5e866af0c65cff3",
+      "counts-run": "814d0439519312382d491ebf1d71048865839785c40023206e196c1c4aa9be98"
+    },
+    "configured_key_signature_checks_reported": 8,
+    "numerical_analyses": 4,
+    "exact_repeat_pairs": 2,
+    "r_references_completed_and_agreed": true,
+    "local_semantic_verification_pending": false,
+    "clinical_release_allowed": false,
+    "compliance_certified": false,
+    "local_semantic_verification_completed": true,
+    "initial_archive_verification_record": "results/colab-v0416-2026-09-09.1oomsf4p/archive-verification.json"
+  },
+  "cloud_local_semantics": {
+    "verified_at_utc": "2026-09-09T18:29:57.781507+00:00",
+    "checks": [
+      {
+        "run": "continuous-repeat",
+        "root_hash": "72891b3b3a3f7fd4d36ccfe8ed80b124b486b76a4985e4a28f1b52c110d1805d",
+        "semantic_verification_valid": true,
+        "fixture_signatures_verified": 2,
+        "runtime_source_files_matching_uploaded_bundle": 39
+      },
+      {
+        "run": "continuous-run",
+        "root_hash": "e80a57e09e658e2f19d744f258805b00b68ea610d55b46a07a3ac9d3ef27ae90",
+        "semantic_verification_valid": true,
+        "fixture_signatures_verified": 2,
+        "runtime_source_files_matching_uploaded_bundle": 39
+      },
+      {
+        "run": "counts-repeat",
+        "root_hash": "06c79ee21d43d973edf42b5b4d39058ec8cb78d89ebdc0cab5e866af0c65cff3",
+        "semantic_verification_valid": true,
+        "fixture_signatures_verified": 2,
+        "runtime_source_files_matching_uploaded_bundle": 39
+      },
+      {
+        "run": "counts-run",
+        "root_hash": "814d0439519312382d491ebf1d71048865839785c40023206e196c1c4aa9be98",
+        "semantic_verification_valid": true,
+        "fixture_signatures_verified": 2,
+        "runtime_source_files_matching_uploaded_bundle": 39
+      }
+    ],
+    "all_valid": true,
+    "runtime_source_file_comparisons": 156,
+    "clinical_release_allowed": false,
+    "compliance_certified": false
+  },
+  "colab_launch": {
+    "recorded_at_utc": "2026-09-09T18:25:44.206114+00:00",
+    "notebook_url": "https://colab.research.google.com/drive/1YDZQ5wdXdeTxiP9q_LcbUXGzoDecOx2l",
+    "browser": "Codex In-app Browser",
+    "tab_id": "13",
+    "run_all_clicks": 1,
+    "setup_seconds_observed": 86.31,
+    "setup_exit_code": 0,
+    "source_bundle_sha256_observed": "608b683d195a9664b69729d35604cfab7e72c8117439a1e1c0488fe64a65cc38",
+    "model_calls": 0,
+    "runtime_deleted": false,
+    "clinical_release_allowed": false
+  },
+  "cloud_environment": {
+    "environment": {
+      "dependencies": {
+        "PyNaCl": "1.6.2",
+        "cryptography": "50.0.1",
+        "h5py": "3.16.0",
+        "matplotlib": "3.11.1",
+        "numcodecs": "0.15.1",
+        "numpy": "2.5.3",
+        "pandas": "2.3.3",
+        "patsy": "1.0.3",
+        "psutil": "7.2.2",
+        "pydantic": "2.13.5",
+        "pydeseq2": "0.5.4",
+        "scikit-learn": "1.9.0",
+        "scipy": "1.18.1",
+        "statsmodels": "0.14.6",
+        "zarr": "2.18.7"
+      },
+      "implementation": "CPython",
+      "machine": "x86_64",
+      "plotting_backend": "Agg",
+      "python": "3.13.15",
+      "system": "Linux",
+      "threads": {
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
+        "VECLIB_MAXIMUM_THREADS": "1"
+      }
+    },
+    "environment_sha256": "eb3bb06c8f4bea7b6fca96d705c12a82c4f709a7198f944dd76968d57abf019b",
+    "implementation_sha256": "cec62e2f0b39d71b2e4b18174c9feee65721e0cba8cc79e44aa28a472fda0621",
+    "source": {
+      "devharness_controlled/__init__.py": "a77e79b3e191db36249420402c7e577a066483d56498d83ea9f74fb8425ffc9f",
+      "devharness_controlled/authority_contracts.py": "e7a468ad0c9d56c56c96d4ea00cff84483228feeb6769a230a680390ea2fa07b",
+      "devharness_controlled/authority_evidence.py": "4a3eac49d57fd053adad1f603c88d2852ead97aafbadd75adb97fd0905634024",
+      "devharness_controlled/authority_store.py": "087ef815b27983d88149c914e7f6216416da00d8551fb4804b082d890679263a",
+      "devharness_controlled/cli.py": "44234f9d672eb79937a635d732e3378a702e608dfabe7c49b4278afd932382a6",
+      "devharness_controlled/contracts.py": "5e3805f55eaff3dd0ba63980587cbf889edeeba1197cb3a1a995c761f2f6dac9",
+      "devharness_controlled/ed25519_validation.py": "e2ad82c8c2a0a1be1ea41b191dff7068a910a010be11fc674dbb85cfcf783f7a",
+      "devharness_controlled/executor.py": "2bdbf1c050d84ed45629dad196fa7ccbf097b5070ba354ea157c6a1da77deda4",
+      "devharness_controlled/native_contracts.py": "35a95471799b89cb45b25f35343f8c6a1452293203bedb448636346f30f8baed",
+      "devharness_controlled/native_effects.py": "650201b00d6ea5a677ad93676fe46cf07f5a4fcf7dba56897764017e451b690c",
+      "devharness_controlled/native_executor.py": "84eff7ec03e757d9c88db1047c74d084cc39c4ed950c365873e38d1b33dd396b",
+      "devharness_controlled/native_recovery.py": "c69be39dcc28bfbaf2111a05e7d01744d3ba398ab54233dc0574ff95e5cd01a8",
+      "devharness_controlled/native_results.py": "d194f1206fa99fd8a0d70d4c09282a87dc9bf054ada5863e262bc06c6c707341",
+      "devharness_controlled/native_runtime.py": "3d82c57e9f180c879730833bd5d651db97995e3926f19d82dec6ce882cc5b2fb",
+      "devharness_controlled/native_verification.py": "d16d546e32dc2e4b2840dc7d939707fea770e8e9519bc150c320c189b820d1a6",
+      "devharness_controlled/normalization_reference.py": "fbe06d36a16cffa2a5dd148ca915ba32f0d08353180aa67f7e342009a999f9a6",
+      "devharness_controlled/operated_native.py": "b4f46d80ffa2ab3bf33b529b6e26d78a41edd2703cbdda78a9ef9f09db56027a",
+      "devharness_controlled/qualification.py": "b8016b90cdd1175e5eb0e72c4609004f88389e9798b3c80c00f9afc14dee1d19",
+      "devharness_controlled/result_schema.py": "133361bf3b2b0a4b476d7894226efba283d9e6565d6228a01a6a7491f68fb2fc",
+      "devharness_controlled/run_registry.py": "306daec50a0db64d30be62d613bf652c199f580e9e351e18eb298fefc42670da",
+      "devharness_controlled/sqlite_schema.py": "62d009077fc8f2eb61ee40668d718d82d87724af405c9d3bdcf50cafe23c7cd5",
+      "devharness_controlled/trust.py": "63af4e06faaa5c6317b4bf73198f94c400ccde89c72efabcd2e805c1abde84d3",
+      "devharness_controlled/verification.py": "0584e59982f2de42990bdebac9878aa49e901df21b2e305569ff265793575c7e",
+      "devharness_core/__init__.py": "3ef8802fda0fb7c134927d55786367f7648ef07f35a0f587bce5a3b5617423ec",
+      "devharness_core/compactor.py": "b848d0b55400c01adcfc4edbef061f00a82330d9de40f780dc56f3db7cb2ae77",
+      "devharness_core/provenance.py": "774bcf1adebf22f66174853524c98ea719e025767f3a40f9a86c93240de50bfb",
+      "devharness_core/stages.py": "3bb977c97d8f2a1672709c02d5d36537fdf31daa3864bcd9b27b4d7f3becd6c3",
+      "devharness_core/storage.py": "f0126d0007773b512a7fd2ee9dbb6e02b4b80148e2abe053afd35db981143b21",
+      "devharness_core/watchdog.py": "8d0448c4079380a9b9b64fea634407133f9223bdd04eadafacf2b75dabb54555",
+      "devharness_server/__init__.py": "26de2ab987be2c1fdf4ce9063583d0664f4810358c8096e82bd93e1e40e9eb27",
+      "devharness_server/dispatcher.py": "e7745ab617b46f81415a16b8bfb89de304b3f0cb4547932e6d838354ce0013c7",
+      "devharness_server/normalization.py": "f482dc2f6ce012bae374c305698ad091f5747aa5c79649718c30d2e2e1dd708b",
+      "devharness_server/selection_mc.py": "c3cf93d171c5c7d77fb35cdbf89d9a7db4b2f828ba96a0dd4c99e3064bc8d82f",
+      "devharness_server/server.py": "0746c5fdcffbb6f8e4e5183dd4248aa6b288db02e50ac88783c56912c33bc040",
+      "devharness_server/tools_lineage.py": "799038e3466923bb8ed647e1fa6ab1937f61ffae0ab646ece562cfd65844b725",
+      "devharness_server/tools_network.py": "8101573cd4ccdf35c77544c2ee196041eebe0fb5d7dd1b7b34b68d38262f495c",
+      "devharness_server/tools_qc.py": "2df76bb575ddc2863ce96f7b70e856f42ea62eaac9236aef8e0dee0df2a69a88",
+      "devharness_server/tools_stat.py": "e5311df5ece20412f93613a7e1e804a168ab380e7602405c7baa06f80f9df1fb",
+      "devharness_server/tools_trajectory.py": "4ba553449c11213cc9157873515502633f091b1d16e18bd737124471a0773924"
+    }
+  },
+  "cloud_numerical_summary": {
+    "cases": {
+      "continuous": {
+        "outcome": {
+          "audit_verification": {
+            "anchored": true,
+            "compliance_certified": false,
+            "errors": [],
+            "root_hash": "e80a57e09e658e2f19d744f258805b00b68ea610d55b46a07a3ac9d3ef27ae90",
+            "valid": true
+          },
+          "clinical_release_allowed": false,
+          "controlled_verification": {
+            "analysis_completed": true,
+            "approval_signatures_verified": 2,
+            "authorization_scope": "configured keys at recorded event times; not new execution authorization",
+            "clinical_release_allowed": false,
+            "compliance_certified": false,
+            "controlled_evidence_valid": true,
+            "errors": [],
+            "execution_status": "analysis_complete_pending_review",
+            "identity_scope": "human identity, trusted clock, host execution attestation and retention not established",
+            "integrity_valid": true,
+            "root_hash": "e80a57e09e658e2f19d744f258805b00b68ea610d55b46a07a3ac9d3ef27ae90",
+            "schema_version": "controlled_evidence_verification/1",
+            "valid": true
+          },
+          "elapsed_seconds": 8.211578608999957,
+          "identity_scope": "configured-key approvals; coordinator OS identity remains caller-asserted",
+          "memory_measurement_scope": "unavailable; watchdog enforces worker limit",
+          "memory_peak_mb": null,
+          "plan_sha256": "2ee63ca45600108dbd3fc7d28d54556fed830bf26d6879d6f3ee02281b10ebbb",
+          "receipt": {
+            "analysis_fingerprint": "2ee63ca45600108dbd3fc7d28d54556fed830bf26d6879d6f3ee02281b10ebbb",
+            "artifact_count": 47,
+            "manifest_path": "/content/devharness-controlled-lmgs6dro/verification/continuous-run/audit/manifest.json",
+            "node_count": 6,
+            "root_hash": "e80a57e09e658e2f19d744f258805b00b68ea610d55b46a07a3ac9d3ef27ae90",
+            "schema_version": "devharness.execution-dag/1"
+          },
+          "schema_version": "controlled_execution/1",
+          "status": "analysis_complete_pending_review"
+        },
+        "projection_max_p_error": 9.43689570931383e-16,
+        "r_reference": {
+          "differences": {
+            "g000": {
+              "p_absolute_error": 4.889751797909625e-17,
+              "statistic_absolute_error": 4.618527782440651e-14
+            },
+            "g001": {
+              "p_absolute_error": 3.3306690738754696e-16,
+              "statistic_absolute_error": 3.552713678800501e-15
+            },
+            "g002": {
+              "p_absolute_error": 6.938893903907228e-16,
+              "statistic_absolute_error": 1.2434497875801753e-14
+            }
+          },
+          "numerical_agreement": true,
+          "reference": [
+            {
+              "gene": "g000",
+              "p_value": 0.0009627423343542,
+              "statistic": 8.15658104678236
+            },
+            {
+              "gene": "g001",
+              "p_value": 0.193230951919686,
+              "statistic": 1.72919059577218
+            },
+            {
+              "gene": "g002",
+              "p_value": 0.141931780697486,
+              "statistic": 2.03079988964388
+            }
+          ],
+          "scope": "fixed Gaussian F test",
+          "status": "completed",
+          "tolerances": {
+            "p_absolute": 1e-08,
+            "scope": "software comparison, not clinical acceptance",
+            "statistic_absolute": 0.0001
+          },
+          "version": "R version 4.6.1 (2026-06-24)"
+        },
+        "repeat_numerical_sha256_equal": true,
+        "repeat_outcome": {
+          "audit_verification": {
+            "anchored": true,
+            "compliance_certified": false,
+            "errors": [],
+            "root_hash": "72891b3b3a3f7fd4d36ccfe8ed80b124b486b76a4985e4a28f1b52c110d1805d",
+            "valid": true
+          },
+          "clinical_release_allowed": false,
+          "controlled_verification": {
+            "analysis_completed": true,
+            "approval_signatures_verified": 2,
+            "authorization_scope": "configured keys at recorded event times; not new execution authorization",
+            "clinical_release_allowed": false,
+            "compliance_certified": false,
+            "controlled_evidence_valid": true,
+            "errors": [],
+            "execution_status": "analysis_complete_pending_review",
+            "identity_scope": "human identity, trusted clock, host execution attestation and retention not established",
+            "integrity_valid": true,
+            "root_hash": "72891b3b3a3f7fd4d36ccfe8ed80b124b486b76a4985e4a28f1b52c110d1805d",
+            "schema_version": "controlled_evidence_verification/1",
+            "valid": true
+          },
+          "elapsed_seconds": 3.314788404000069,
+          "identity_scope": "configured-key approvals; coordinator OS identity remains caller-asserted",
+          "memory_measurement_scope": "unavailable; watchdog enforces worker limit",
+          "memory_peak_mb": null,
+          "plan_sha256": "2ee63ca45600108dbd3fc7d28d54556fed830bf26d6879d6f3ee02281b10ebbb",
+          "receipt": {
+            "analysis_fingerprint": "2ee63ca45600108dbd3fc7d28d54556fed830bf26d6879d6f3ee02281b10ebbb",
+            "artifact_count": 47,
+            "manifest_path": "/content/devharness-controlled-lmgs6dro/verification/continuous-repeat/audit/manifest.json",
+            "node_count": 6,
+            "root_hash": "72891b3b3a3f7fd4d36ccfe8ed80b124b486b76a4985e4a28f1b52c110d1805d",
+            "schema_version": "devharness.execution-dag/1"
+          },
+          "schema_version": "controlled_execution/1",
+          "status": "analysis_complete_pending_review"
+        }
+      },
+      "counts": {
+        "outcome": {
+          "audit_verification": {
+            "anchored": true,
+            "compliance_certified": false,
+            "errors": [],
+            "root_hash": "814d0439519312382d491ebf1d71048865839785c40023206e196c1c4aa9be98",
+            "valid": true
+          },
+          "clinical_release_allowed": false,
+          "controlled_verification": {
+            "analysis_completed": true,
+            "approval_signatures_verified": 2,
+            "authorization_scope": "configured keys at recorded event times; not new execution authorization",
+            "clinical_release_allowed": false,
+            "compliance_certified": false,
+            "controlled_evidence_valid": true,
+            "errors": [],
+            "execution_status": "analysis_complete_pending_review",
+            "identity_scope": "human identity, trusted clock, host execution attestation and retention not established",
+            "integrity_valid": true,
+            "root_hash": "814d0439519312382d491ebf1d71048865839785c40023206e196c1c4aa9be98",
+            "schema_version": "controlled_evidence_verification/1",
+            "valid": true
+          },
+          "elapsed_seconds": 5.311585726999965,
+          "identity_scope": "configured-key approvals; coordinator OS identity remains caller-asserted",
+          "memory_measurement_scope": "unavailable; watchdog enforces worker limit",
+          "memory_peak_mb": null,
+          "plan_sha256": "40325d88300551490dd44a8b7d1a5cd0a648f169e358261176d26a5ff8730048",
+          "receipt": {
+            "analysis_fingerprint": "40325d88300551490dd44a8b7d1a5cd0a648f169e358261176d26a5ff8730048",
+            "artifact_count": 47,
+            "manifest_path": "/content/devharness-controlled-lmgs6dro/verification/counts-run/audit/manifest.json",
+            "node_count": 6,
+            "root_hash": "814d0439519312382d491ebf1d71048865839785c40023206e196c1c4aa9be98",
+            "schema_version": "devharness.execution-dag/1"
+          },
+          "schema_version": "controlled_execution/1",
+          "status": "analysis_complete_pending_review"
+        },
+        "r_reference": {
+          "differences": {
+            "g000": {
+              "p_absolute_error": 1.697848347431525e-16,
+              "statistic_absolute_error": 6.972749417855084e-07
+            },
+            "g001": {
+              "p_absolute_error": 2.0086265902146635e-19,
+              "statistic_absolute_error": 8.88194051640312e-09
+            },
+            "g002": {
+              "p_absolute_error": 4.5702826610959915e-12,
+              "statistic_absolute_error": 9.151951161356919e-07
+            }
+          },
+          "numerical_agreement": true,
+          "reference": [
+            {
+              "gene": "g000",
+              "p_value": 4.97306750004577e-10,
+              "statistic": 46.2684094506522
+            },
+            {
+              "gene": "g001",
+              "p_value": 4.609767655814989e-11,
+              "statistic": 51.1211675943844
+            },
+            {
+              "gene": "g002",
+              "p_value": 1.03607474498264e-05,
+              "statistic": 25.8282263880943
+            }
+          ],
+          "scope": "fixed dispersion NB regression only",
+          "status": "completed",
+          "tolerances": {
+            "p_absolute": 1e-08,
+            "scope": "software comparison, not clinical acceptance",
+            "statistic_absolute": 0.0001
+          },
+          "version": "R version 4.6.1 (2026-06-24)"
+        },
+        "repeat_numerical_sha256_equal": true,
+        "repeat_outcome": {
+          "audit_verification": {
+            "anchored": true,
+            "compliance_certified": false,
+            "errors": [],
+            "root_hash": "06c79ee21d43d973edf42b5b4d39058ec8cb78d89ebdc0cab5e866af0c65cff3",
+            "valid": true
+          },
+          "clinical_release_allowed": false,
+          "controlled_verification": {
+            "analysis_completed": true,
+            "approval_signatures_verified": 2,
+            "authorization_scope": "configured keys at recorded event times; not new execution authorization",
+            "clinical_release_allowed": false,
+            "compliance_certified": false,
+            "controlled_evidence_valid": true,
+            "errors": [],
+            "execution_status": "analysis_complete_pending_review",
+            "identity_scope": "human identity, trusted clock, host execution attestation and retention not established",
+            "integrity_valid": true,
+            "root_hash": "06c79ee21d43d973edf42b5b4d39058ec8cb78d89ebdc0cab5e866af0c65cff3",
+            "schema_version": "controlled_evidence_verification/1",
+            "valid": true
+          },
+          "elapsed_seconds": 4.423320396999998,
+          "identity_scope": "configured-key approvals; coordinator OS identity remains caller-asserted",
+          "memory_measurement_scope": "unavailable; watchdog enforces worker limit",
+          "memory_peak_mb": null,
+          "plan_sha256": "40325d88300551490dd44a8b7d1a5cd0a648f169e358261176d26a5ff8730048",
+          "receipt": {
+            "analysis_fingerprint": "40325d88300551490dd44a8b7d1a5cd0a648f169e358261176d26a5ff8730048",
+            "artifact_count": 47,
+            "manifest_path": "/content/devharness-controlled-lmgs6dro/verification/counts-repeat/audit/manifest.json",
+            "node_count": 6,
+            "root_hash": "06c79ee21d43d973edf42b5b4d39058ec8cb78d89ebdc0cab5e866af0c65cff3",
+            "schema_version": "devharness.execution-dag/1"
+          },
+          "schema_version": "controlled_execution/1",
+          "status": "analysis_complete_pending_review"
+        }
+      }
+    },
+    "clinical_qualification": false,
+    "elapsed_seconds": 25.88308715900007,
+    "identity": {
+      "environment": {
+        "dependencies": {
+          "PyNaCl": "1.6.2",
+          "cryptography": "50.0.1",
+          "h5py": "3.16.0",
+          "matplotlib": "3.11.1",
+          "numcodecs": "0.15.1",
+          "numpy": "2.5.3",
+          "pandas": "2.3.3",
+          "patsy": "1.0.3",
+          "psutil": "7.2.2",
+          "pydantic": "2.13.5",
+          "pydeseq2": "0.5.4",
+          "scikit-learn": "1.9.0",
+          "scipy": "1.18.1",
+          "statsmodels": "0.14.6",
+          "zarr": "2.18.7"
+        },
+        "implementation": "CPython",
+        "machine": "x86_64",
+        "plotting_backend": "Agg",
+        "python": "3.13.15",
+        "system": "Linux",
+        "threads": {
+          "MKL_NUM_THREADS": "1",
+          "NUMEXPR_NUM_THREADS": "1",
+          "OMP_NUM_THREADS": "1",
+          "OPENBLAS_NUM_THREADS": "1",
+          "VECLIB_MAXIMUM_THREADS": "1"
+        }
+      },
+      "environment_sha256": "eb3bb06c8f4bea7b6fca96d705c12a82c4f709a7198f944dd76968d57abf019b",
+      "implementation_sha256": "cec62e2f0b39d71b2e4b18174c9feee65721e0cba8cc79e44aa28a472fda0621",
+      "source": {
+        "devharness_controlled/__init__.py": "a77e79b3e191db36249420402c7e577a066483d56498d83ea9f74fb8425ffc9f",
+        "devharness_controlled/authority_contracts.py": "e7a468ad0c9d56c56c96d4ea00cff84483228feeb6769a230a680390ea2fa07b",
+        "devharness_controlled/authority_evidence.py": "4a3eac49d57fd053adad1f603c88d2852ead97aafbadd75adb97fd0905634024",
+        "devharness_controlled/authority_store.py": "087ef815b27983d88149c914e7f6216416da00d8551fb4804b082d890679263a",
+        "devharness_controlled/cli.py": "44234f9d672eb79937a635d732e3378a702e608dfabe7c49b4278afd932382a6",
+        "devharness_controlled/contracts.py": "5e3805f55eaff3dd0ba63980587cbf889edeeba1197cb3a1a995c761f2f6dac9",
+        "devharness_controlled/ed25519_validation.py": "e2ad82c8c2a0a1be1ea41b191dff7068a910a010be11fc674dbb85cfcf783f7a",
+        "devharness_controlled/executor.py": "2bdbf1c050d84ed45629dad196fa7ccbf097b5070ba354ea157c6a1da77deda4",
+        "devharness_controlled/native_contracts.py": "35a95471799b89cb45b25f35343f8c6a1452293203bedb448636346f30f8baed",
+        "devharness_controlled/native_effects.py": "650201b00d6ea5a677ad93676fe46cf07f5a4fcf7dba56897764017e451b690c",
+        "devharness_controlled/native_executor.py": "84eff7ec03e757d9c88db1047c74d084cc39c4ed950c365873e38d1b33dd396b",
+        "devharness_controlled/native_recovery.py": "c69be39dcc28bfbaf2111a05e7d01744d3ba398ab54233dc0574ff95e5cd01a8",
+        "devharness_controlled/native_results.py": "d194f1206fa99fd8a0d70d4c09282a87dc9bf054ada5863e262bc06c6c707341",
+        "devharness_controlled/native_runtime.py": "3d82c57e9f180c879730833bd5d651db97995e3926f19d82dec6ce882cc5b2fb",
+        "devharness_controlled/native_verification.py": "d16d546e32dc2e4b2840dc7d939707fea770e8e9519bc150c320c189b820d1a6",
+        "devharness_controlled/normalization_reference.py": "fbe06d36a16cffa2a5dd148ca915ba32f0d08353180aa67f7e342009a999f9a6",
+        "devharness_controlled/operated_native.py": "b4f46d80ffa2ab3bf33b529b6e26d78a41edd2703cbdda78a9ef9f09db56027a",
+        "devharness_controlled/qualification.py": "b8016b90cdd1175e5eb0e72c4609004f88389e9798b3c80c00f9afc14dee1d19",
+        "devharness_controlled/result_schema.py": "133361bf3b2b0a4b476d7894226efba283d9e6565d6228a01a6a7491f68fb2fc",
+        "devharness_controlled/run_registry.py": "306daec50a0db64d30be62d613bf652c199f580e9e351e18eb298fefc42670da",
+        "devharness_controlled/sqlite_schema.py": "62d009077fc8f2eb61ee40668d718d82d87724af405c9d3bdcf50cafe23c7cd5",
+        "devharness_controlled/trust.py": "63af4e06faaa5c6317b4bf73198f94c400ccde89c72efabcd2e805c1abde84d3",
+        "devharness_controlled/verification.py": "0584e59982f2de42990bdebac9878aa49e901df21b2e305569ff265793575c7e",
+        "devharness_core/__init__.py": "3ef8802fda0fb7c134927d55786367f7648ef07f35a0f587bce5a3b5617423ec",
+        "devharness_core/compactor.py": "b848d0b55400c01adcfc4edbef061f00a82330d9de40f780dc56f3db7cb2ae77",
+        "devharness_core/provenance.py": "774bcf1adebf22f66174853524c98ea719e025767f3a40f9a86c93240de50bfb",
+        "devharness_core/stages.py": "3bb977c97d8f2a1672709c02d5d36537fdf31daa3864bcd9b27b4d7f3becd6c3",
+        "devharness_core/storage.py": "f0126d0007773b512a7fd2ee9dbb6e02b4b80148e2abe053afd35db981143b21",
+        "devharness_core/watchdog.py": "8d0448c4079380a9b9b64fea634407133f9223bdd04eadafacf2b75dabb54555",
+        "devharness_server/__init__.py": "26de2ab987be2c1fdf4ce9063583d0664f4810358c8096e82bd93e1e40e9eb27",
+        "devharness_server/dispatcher.py": "e7745ab617b46f81415a16b8bfb89de304b3f0cb4547932e6d838354ce0013c7",
+        "devharness_server/normalization.py": "f482dc2f6ce012bae374c305698ad091f5747aa5c79649718c30d2e2e1dd708b",
+        "devharness_server/selection_mc.py": "c3cf93d171c5c7d77fb35cdbf89d9a7db4b2f828ba96a0dd4c99e3064bc8d82f",
+        "devharness_server/server.py": "0746c5fdcffbb6f8e4e5183dd4248aa6b288db02e50ac88783c56912c33bc040",
+        "devharness_server/tools_lineage.py": "799038e3466923bb8ed647e1fa6ab1937f61ffae0ab646ece562cfd65844b725",
+        "devharness_server/tools_network.py": "8101573cd4ccdf35c77544c2ee196041eebe0fb5d7dd1b7b34b68d38262f495c",
+        "devharness_server/tools_qc.py": "2df76bb575ddc2863ce96f7b70e856f42ea62eaac9236aef8e0dee0df2a69a88",
+        "devharness_server/tools_stat.py": "e5311df5ece20412f93613a7e1e804a168ab380e7602405c7baa06f80f9df1fb",
+        "devharness_server/tools_trajectory.py": "4ba553449c11213cc9157873515502633f091b1d16e18bd737124471a0773924"
+      }
+    },
+    "model_service_calls": 0,
+    "schema_version": "controlled_software_verification/1",
+    "synthetic_only": true
+  },
+  "participant_model_calls": 0,
+  "participant_model_identifier": null,
+  "participant_tokens": null,
+  "participant_cost_usd": null,
+  "colab_peak_memory_mb": null,
+  "colab_billed_units": null,
+  "clinical_release_allowed": false,
+  "compliance_certified": false,
+  "evidence_roots": [
+    "results/runtime-identity-2026-09-09.oqm1j9qq",
+    "results/colab-v0416-2026-09-09.1oomsf4p"
+  ]
+}
