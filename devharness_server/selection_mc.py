@@ -15,6 +15,7 @@ from numbers import Integral
 import numpy as np
 import pandas as pd
 from scipy.stats import f
+from devharness_core.design_terms import uses_temporal_variable
 
 
 _MAX_BATCH_ELEMENTS = 2_000_000
@@ -259,7 +260,7 @@ class GaussianSelectionMC:
                 indices = list(range(sl.start, sl.stop))
                 covered.extend(indices)
                 terms[term] = [int(sl.start), int(sl.stop)]
-                if "numeric_time" in term:
+                if uses_temporal_variable(term):
                     temporal.extend(indices)
             if sorted(covered) != list(range(p)):
                 raise ValueError("Patsy term slices must cover every design column exactly once")
@@ -442,6 +443,7 @@ class GaussianSelectionMC:
             "p_value_resolution": 1 / (self._draws + 1),
             "rank_rule": "(1 + count(reference_conditional_p <= observed_conditional_p)) / (draws + 1)",
             "numerical_kernel_version": "householder_roundoff_v2",
+            "temporal_term_interpretation": "parsed_variable_identity/1",
             "numerical_resolution_policy": (
                 "Compact Householder residual tails must exceed propagated arithmetic and QR space-leakage "
                 "diagnostics; residual variance must be positive normal float64. The gamma_k rounding model "

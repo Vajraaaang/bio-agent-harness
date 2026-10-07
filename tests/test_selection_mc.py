@@ -492,12 +492,9 @@ def test_patsy_slices_must_be_complete_and_nonoverlapping():
 
 
 def test_maximum_column_count_and_condition_limit_are_supported():
-    from patsy import DesignInfo
-
     values = np.eye(129, 128)
     values[0, 0] = 1000
-    frame = pd.DataFrame(values, columns=[f"numeric_time_{i}" for i in range(128)])
-    frame.design_info = DesignInfo(list(frame.columns))
+    frame = dmatrix("0 + numeric_time", {"numeric_time": values}, return_type="dataframe")
     metadata = _kernel({128: ("numeric_time", frame, {})}, draws=1).metadata()
     assert metadata["candidate_dimensions"]["128"]["full_columns"] == 128
     assert metadata["candidate_dimensions"]["128"]["condition_number"] == pytest.approx(1000)
@@ -515,6 +512,9 @@ def test_matrix_hash_is_canonical_little_endian_and_sensitive_to_names():
         "Intercept", "C(batch)[T.1]", "I(numeric_time)", "I(numeric_time ** 2)",
     ], index=original.index)
     renamed.design_info = DesignInfo(list(renamed.columns))
+    # Preserve actual factor terms; expanded categorical column labels are not
+    # parseable formula factors and must not be used as term identities.
+    renamed.design_info.term_name_slices = original.design_info.term_name_slices.copy()
     changed = _kernel({2: (formula, renamed, diagnostics)}).metadata()["candidate_matrix_hashes"]["2"]
     assert changed != baseline
 
@@ -561,10 +561,9 @@ def test_exact_nuisance_only_responses_have_no_usable_residual_information(n, sc
 
 
 def _coordinate_design():
-    from patsy import DesignInfo
-
-    frame = pd.DataFrame(np.eye(8, 7), columns=[f"numeric_time_{i}" for i in range(7)])
-    frame.design_info = DesignInfo(list(frame.columns))
+    # A multicolumn temporal basis with authentic Patsy term identity, rather
+    # than unrelated variable names that only contain the time-name substring.
+    frame = dmatrix("0 + numeric_time", {"numeric_time": np.eye(8, 7)}, return_type="dataframe")
     return {7: ("0 + numeric_time", frame, {})}
 
 
@@ -607,12 +606,9 @@ def test_small_coordinate_residual_survives_dense_fitted_space_reparameterizatio
 
 
 def test_dense_high_rank_design_keeps_bounded_roundoff_diagnostics():
-    from patsy import DesignInfo
-
     rng = np.random.Generator(np.random.PCG64(812))
     values = np.linalg.qr(rng.normal(size=(129, 128)), mode="reduced")[0]
-    frame = pd.DataFrame(values, columns=[f"numeric_time_{i}" for i in range(128)])
-    frame.design_info = DesignInfo(list(frame.columns))
+    frame = dmatrix("0 + numeric_time", {"numeric_time": values}, return_type="dataframe")
     designs = {128: ("0 + numeric_time", frame, {})}
     y = rng.standard_normal(129)
     kernel = _kernel(designs, draws=3)

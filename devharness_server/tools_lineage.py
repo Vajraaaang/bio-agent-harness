@@ -7,7 +7,8 @@ import hashlib
 import io
 import json
 from pathlib import Path
-from typing import List
+from devharness_core.units import BIOLOGICAL_UNIT_COLUMNS
+from typing import List, Literal
 
 import numpy as np
 import pandas as pd
@@ -38,7 +39,7 @@ def _bounded_metadata(path: str) -> pd.DataFrame:
         content = handle.read(limit + 1)
     if len(content) > limit:
         raise ValueError("Metadata exceeds the 20 MB bounded inference limit")
-    metadata = pd.read_csv(io.BytesIO(content), dtype={"sample_id": str}, keep_default_na=False)
+    metadata = pd.read_csv(io.BytesIO(content), dtype={name: str for name in ("sample_id", *BIOLOGICAL_UNIT_COLUMNS)}, keep_default_na=False)
     if "sample_id" not in metadata or metadata["sample_id"].duplicated().any() or (metadata["sample_id"] == "").any():
         raise ValueError("Metadata requires distinct nonempty sample_id values")
     metadata.attrs["source_sha256"] = hashlib.sha256(content).hexdigest()
@@ -54,7 +55,7 @@ def _matrix_sha256(values: np.ndarray, genes: List[str], samples: List[str]) -> 
 
 def _lineage_worker(counts_path: str, metadata_path: str, root_sample_id: str,
                     max_cells: int, top_genes: int, n_components: int,
-                    n_neighbors: int, n_clusters: int, seed: int) -> dict:
+                    n_neighbors: int, n_clusters: int, seed: int, data_type: str = "auto") -> dict:
     from scipy.linalg import eigh
     from scipy.sparse import csr_matrix
     from scipy.sparse.csgraph import connected_components, dijkstra, minimum_spanning_tree
@@ -65,6 +66,8 @@ def _lineage_worker(counts_path: str, metadata_path: str, root_sample_id: str,
     from sklearn.preprocessing import StandardScaler
     import networkx as nx
 
+    if not isinstance(data_type, str) or data_type not in {"counts", "continuous", "auto"}:
+        raise ValueError("data_type must be counts, continuous or auto")
     metadata = _bounded_metadata(metadata_path)
     with ChunkedExpressionStore(counts_path) as store:
         if set(metadata["sample_id"]) != set(store.sample_names):
@@ -80,17 +83,22 @@ def _lineage_worker(counts_path: str, metadata_path: str, root_sample_id: str,
             selected = np.sort(np.r_[root, np.random.default_rng(seed).choice(rest, max_cells - 1, replace=False)])
         samples = [store.sample_names[int(i)] for i in selected]
         raw_variance, log_variance = [], []
-        is_counts = True
+        count_like = True
         # get_chunk selects sample columns *before* reading. iter_gene_chunks
         # would load all cells in a wide input, violating the bounded read.
         for start in range(0, len(store.gene_names), 128):
             block = np.asarray(store.get_chunk(slice(start, start + 128), selected), dtype=float)
             if not np.isfinite(block).all():
                 raise ValueError("Selected expression values must be finite")
-            nonnegative = np.all(block >= 0)
-            is_counts = is_counts and bool(nonnegative and np.all(block == np.floor(block)))
-            raw_variance.extend(np.var(block, axis=1).tolist())
-            log_variance.extend(np.var(np.log1p(np.maximum(block, 0)), axis=1).tolist())
+            valid_counts = bool(np.all(block >= 0) and np.all(block == np.floor(block)))
+            if data_type == "counts" and not valid_counts:
+                raise ValueError("declared counts require nonnegative integer-valued expression")
+            count_like = count_like and valid_counts
+            if data_type != "counts":
+                raw_variance.extend(np.var(block, axis=1).tolist())
+            if data_type != "continuous":
+                log_variance.extend(np.var(np.log1p(np.maximum(block, 0)), axis=1).tolist())
+        is_counts = data_type == "counts" or (data_type == "auto" and count_like)
         variance = np.asarray(log_variance if is_counts else raw_variance)
         if not np.isfinite(variance).all():
             raise ValueError("Expression variance overflowed; rescale the input")
@@ -169,12 +177,20 @@ def _lineage_worker(counts_path: str, metadata_path: str, root_sample_id: str,
             "root_sample_id": root_sample_id, "selected_gene_count": len(genes), "selected_genes": genes,
             "input_gene_count": total_genes, "input_sample_count": total_cells, "selected_sample_count": len(samples),
             "subsampled": total_cells > len(samples), "seed": seed, "transform": transform,
+            "requested_data_type": data_type, "resolved_data_type": "counts" if is_counts else "continuous",
+            "measurement_declaration": "legacy_auto_unverified" if data_type == "auto" else
+                "explicit_caller_declaration_not_experimental_provenance",
+            "measurement_validation_scope": "selected samples across input genes; excluded samples are not validated",
             "n_neighbors": neighbors, "n_components": components, "n_clusters": len(nodes),
             "pca_variance_explained": float(pca.explained_variance_ratio_.sum()),
             "counts_path": counts_path, "metadata_path": metadata_path,
             "metadata_sha256": metadata.attrs["source_sha256"], "selected_expression_sha256": selected_hash,
             "hash_scope": "selected numeric expression, ordered gene/sample IDs; complete metadata file",
             "sampling_time_used": False},
+        "warnings": ([{"code": "measurement_type_inferred_from_numeric_values", "severity": "warning",
+                       "message": "Legacy auto mode cannot distinguish counts from integer-valued normalized expression. "
+                                  "Use a reviewed explicit data_type declaration; numeric appearance is not measurement provenance."}]
+                     if data_type == "auto" else []),
         "limitations": ["Pseudotime is rooted expression geometry, not sampling time or an observed developmental clock.",
             "Cluster MST and branch partitions are exploratory and depend on root, preprocessing and resolution; they are not lineage-tracing evidence.",
             "Batch effects and cell composition can change the inferred geometry; no causal ancestry or clinical biomarker validation is established.",
@@ -183,12 +199,18 @@ def _lineage_worker(counts_path: str, metadata_path: str, root_sample_id: str,
 
 def infer_lineage(counts_path: str, metadata_path: str, root_sample_id: str,
                   max_cells: int = 500, top_genes: int = 200, n_components: int = 10,
-                  n_neighbors: int = 10, n_clusters: int = 6, seed: int = 0) -> dict:
+                  n_neighbors: int = 10, n_clusters: int = 6, seed: int = 0,
+                  data_type: Literal["counts", "continuous", "auto"] = "auto") -> dict:
     """Infer bounded, rooted expression pseudotime and a cluster MST in a worker.
 
     Return per-sample pseudotime, branch assignments, a directed cluster tree,
     preprocessing/input provenance and explicit exploratory limitations.
+    Declare counts or continuous from the reviewed input provenance. Continuous
+    input stays continuous even when integer-valued. Auto preserves legacy
+    behavior with an explicit warning; it is not verified measurement identity.
     """
+    if not isinstance(data_type, str) or data_type not in {"counts", "continuous", "auto"}:
+        raise ValueError("data_type must be counts, continuous or auto")
     for value, name, lower, upper in ((max_cells, "max_cells", 4, 1000), (top_genes, "top_genes", 2, 2000),
             (n_components, "n_components", 1, 50), (n_neighbors, "n_neighbors", 2, 100),
             (n_clusters, "n_clusters", 2, 32), (seed, "seed", 0, 2 ** 32 - 1)):
@@ -197,4 +219,4 @@ def infer_lineage(counts_path: str, metadata_path: str, root_sample_id: str,
         raise ValueError("root_sample_id must be a nonempty sample ID")
     return run_sandboxed(_lineage_worker, (str(Path(counts_path).expanduser().resolve()),
         str(Path(metadata_path).expanduser().resolve()), root_sample_id, max_cells, top_genes,
-        n_components, n_neighbors, n_clusters, seed), max_mem_mb=2000, timeout_sec=120)
+        n_components, n_neighbors, n_clusters, seed, data_type), max_mem_mb=2000, timeout_sec=120)

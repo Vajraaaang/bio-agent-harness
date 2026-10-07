@@ -1,0 +1,152 @@
+{
+  "record_format": "devbench.study.public_sources/1",
+  "registry_scope": "Source metadata and future reference proposals only; no acquisition or validation evidence",
+  "automatic_downloads": false,
+  "fallback_to_synthetic": false,
+  "raw_archive_downloads_permitted": false,
+  "sources": [
+    {
+      "source_id": "E-MTAB-6798",
+      "title": "Gene expression across mammalian organ development: mouse",
+      "source_kind": "public_processed",
+      "status": "not_acquired",
+      "primary_urls": [
+        "https://www.ebi.ac.uk/biostudies/arrayexpress/studies/E-MTAB-6798",
+        "https://www.nature.com/articles/s41586-019-1338-5"
+      ],
+      "measurement_type": "continuous",
+      "expression_units": "RPKM",
+      "candidate_processed_file": "Mouse.RPKM.txt",
+      "reference_scope": "Observed developmental expression and published collection-stage metadata; no latent temporal program, causal network or universal pseudotime truth",
+      "biological_unit_scope": "unverified",
+      "complete_causal_truth": false,
+      "complete_pseudotime_truth": false,
+      "metadata_requirements": [
+        "Sample-to-expression-column mapping and source metadata hash",
+        "Organ, organism, sex where available, and original chronological stage label",
+        "Documented conversion of developmental labels to a chronological numeric scale",
+        "Animal or donor identifiers and evidence distinguishing biological from technical replicates",
+        "Batch and library preparation provenance, including missingness",
+        "Predeclared bounded gene and sample selection, with no outcome-based marker filtering"
+      ],
+      "historical_cache_note": {
+        "reported_gene_count": 96,
+        "reported_sample_count": 35,
+        "biological_unit_provenance": "unknown",
+        "revalidated": false,
+        "scope": "Prior cache description only; this registry did not read, hash or validate that cache"
+      },
+      "selection_status": "not_selected",
+      "license_status": "pending_verification",
+      "input_sha256": null,
+      "metadata_sha256": null,
+      "acquisition_status": "not_authorized_or_performed"
+    },
+    {
+      "source_id": "GSE47774",
+      "title": "SEQC reference RNA, mixtures and ERCC controls",
+      "source_kind": "public_processed",
+      "status": "not_acquired",
+      "primary_urls": [
+        "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE47774",
+        "https://www.nature.com/articles/sdata201420",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC4574543/"
+      ],
+      "measurement_type": "raw_counts",
+      "expression_units": "read_counts",
+      "reference_scope": "Processed count tables with known A/B mixtures and ERCC titration controls; control-specific ratios and ordering, not all-gene biological or causal truth",
+      "biological_unit_scope": "pooled_reference_rna",
+      "complete_causal_truth": false,
+      "complete_pseudotime_truth": false,
+      "metadata_requirements": [
+        "Exact processed count table, quantification pipeline, feature identifiers and source hash",
+        "A/B reference source, C=3A+1B and D=1A+3B mixture definitions and preparation provenance",
+        "ERCC identifiers, input mixes and expected ratios from source metadata",
+        "Laboratory site, sequencing platform, library preparation and technical replicate identifiers",
+        "Pooled RNA and aliquot identities; library replicates must not become independent donors",
+        "Control-specific contrast and enrichment/normalization assumptions before scoring"
+      ],
+      "selection_status": "not_selected",
+      "license_status": "pending_verification",
+      "input_sha256": null,
+      "metadata_sha256": null,
+      "acquisition_status": "not_authorized_or_performed"
+    },
+    {
+      "source_id": "dyngen",
+      "title": "Spearheading future omics analyses using dyngen, a multi-modal simulator of single cells",
+      "source_kind": "future_simulator_reference",
+      "status": "reference_only",
+      "primary_urls": ["https://www.nature.com/articles/s41467-021-24152-2"],
+      "measurement_type": "raw_counts",
+      "expression_units": "simulator_dependent_counts",
+      "reference_scope": "Potential future mechanistic simulation with explicit generator lineage/network truth; not implemented or acquired here",
+      "biological_unit_scope": "simulated_cells_not_independent_donors",
+      "complete_causal_truth": false,
+      "complete_pseudotime_truth": false,
+      "metadata_requirements": [
+        "Pinned simulator version and license, configured network and kinetic assumptions",
+        "Explicit generation authorization and independent generation seeds",
+        "Cell lineage, simulation time, sampling and biological-unit conventions",
+        "Generator-private truth and separate model-misspecification assessment"
+      ],
+      "selection_status": "not_selected",
+      "license_status": "pending_verification",
+      "input_sha256": null,
+      "metadata_sha256": null,
+      "acquisition_status": "not_authorized_or_performed"
+    },
+    {
+      "source_id": "scDesign3",
+      "title": "scDesign3 generates realistic in silico data for multimodal single-cell and spatial omics",
+      "source_kind": "future_simulator_reference",
+      "status": "reference_only",
+      "primary_urls": ["https://www.nature.com/articles/s41587-023-01772-1"],
+      "measurement_type": "modality_dependent",
+      "expression_units": "configuration_dependent",
+      "reference_scope": "Potential future reference-fitted simulation with known configured distributions; reference fit does not establish biological causal truth",
+      "biological_unit_scope": "reference_dependent_unverified",
+      "complete_causal_truth": false,
+      "complete_pseudotime_truth": false,
+      "metadata_requirements": [
+        "Pinned simulator version, license and explicitly authorized public fitting reference",
+        "Reference source hash, selection rules and donor/cell nesting",
+        "Fitted distribution, covariates, dependence model and negative/positive control definitions",
+        "Separate fitting and evaluation cohorts to prevent reference leakage"
+      ],
+      "selection_status": "not_selected",
+      "license_status": "pending_verification",
+      "input_sha256": null,
+      "metadata_sha256": null,
+      "acquisition_status": "not_authorized_or_performed"
+    },
+    {
+      "source_id": "Perturb-seq",
+      "title": "Mapping information-rich genotype-phenotype landscapes with genome-scale Perturb-seq",
+      "source_kind": "future_public_perturbation_reference",
+      "status": "reference_only",
+      "primary_urls": [
+        "https://doi.org/10.1016/j.cell.2022.05.013",
+        "https://pubmed.ncbi.nlm.nih.gov/35688146/"
+      ],
+      "measurement_type": "raw_counts",
+      "expression_units": "UMI_counts_pending_file_selection",
+      "reference_scope": "Intervention-associated transcriptional responses under assayed contexts; no complete direct-regulatory-edge, promoter-binding or universal causal truth",
+      "biological_unit_scope": "cells_nested_in_experimental_replicates",
+      "complete_causal_truth": false,
+      "complete_pseudotime_truth": false,
+      "metadata_requirements": [
+        "Selected processed matrix and source hash, with bounded cell and gene selection",
+        "Guide identity, perturbation target, assignment confidence and control guides",
+        "Cell line, batch, experimental replicate and biological-unit nesting",
+        "Perturbation efficiency, collection timing and context-specific contrast definitions",
+        "Explicit off-target, indirect-effect and replicate-dependence limitations"
+      ],
+      "selection_status": "not_selected",
+      "license_status": "pending_verification",
+      "input_sha256": null,
+      "metadata_sha256": null,
+      "acquisition_status": "not_authorized_or_performed"
+    }
+  ]
+}

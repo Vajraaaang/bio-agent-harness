@@ -1,0 +1,1065 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RNA Workbench · local research</title><style nonce="__NONCE__">
+:root{color-scheme:light;--paper:#f7f7f5;--surface:#fff;--ink:#252723;--body:#353833;--muted:#676d63;--line:#e3e5df;--accent:#b15b3b;--accent-hover:#a95134;--soft:#f0f1ed;--warning:#8a641e;--bad:#aa3f35}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--body);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,textarea,select{font:inherit}button,input,textarea,select,summary,a{outline-offset:3px}button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent)}button{border:1px solid var(--accent);border-radius:7px;padding:9px 13px;background:var(--accent);color:#fff;cursor:pointer;font-weight:550}button:hover:not(:disabled){background:var(--accent-hover)}button.secondary{background:#fff;color:var(--body);border-color:var(--line)}button.secondary:hover:not(:disabled){background:var(--soft)}button:disabled{opacity:.45;cursor:not-allowed}input,textarea,select{width:100%;border:1px solid #d5d8d0;background:#fff;padding:9px 10px;border-radius:6px;color:var(--ink)}textarea{min-height:86px;resize:vertical}input[type=checkbox]{width:auto;flex:none;margin-top:4px}h1,h2,h3,p{margin:0}h1,h2,h3{color:var(--ink)}h2{font-size:20px;line-height:1.3;font-weight:550}h3{font-size:14px;line-height:1.4;font-weight:600;margin:16px 0 8px}p{margin-bottom:12px}a{color:var(--accent)}.shell{padding:8px;min-height:100vh}.layout{display:grid;grid-template-columns:218px minmax(420px,1fr) minmax(350px,32vw);gap:12px;align-items:start;height:calc(100vh - 16px)}.rail,.inspector{height:calc(100vh - 16px);background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 4px #23271d03}.rail{display:flex;flex-direction:column;overflow:hidden;padding:19px 12px 12px}.brand{padding:0 5px 23px}.brand h1,.login-brand{font:29px/1.12 Georgia,serif;letter-spacing:-1.15px;color:#20231f}.brand .muted{font-size:11px;margin-top:4px}.project-name{padding:10px 12px 15px;font-weight:600;display:flex;justify-content:space-between;align-items:center}.local-label{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:400}.workflow-nav{display:grid;gap:3px;margin:0 0 21px}.nav-button{background:transparent;color:var(--ink);border-color:transparent;font-weight:450;text-align:left;padding:9px 12px;border-radius:6px}.nav-button:hover:not(:disabled){background:var(--soft)}.nav-button[aria-current=page]{background:var(--soft);font-weight:600}.rail-jobs{border-top:1px solid var(--line);padding:15px 3px 10px;flex:1;min-height:80px;overflow:auto}.eyebrow{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}.rail-jobs>.eyebrow{padding:0 8px 7px}.jobs{display:grid;gap:4px}.job{font-size:12px;line-height:1.45;text-align:left;background:transparent;color:var(--body);border-color:transparent;padding:9px;width:100%;overflow-wrap:anywhere;font-weight:400}.job:hover:not(:disabled){background:var(--soft)}.job[aria-current=true]{background:var(--soft);border-color:var(--line)}.rail-note{font-size:11px;padding:0 8px;margin:12px 0 0;color:var(--muted)}.rail-footer{padding:12px 6px 0;border-top:1px solid var(--line)}.rail-footer .tag{font-size:10px;padding:3px 7px}.rail-footer .muted{font-size:10px;line-height:1.5;margin:8px 0 0}.workspace{min-width:0;max-height:calc(100vh - 16px);overflow:auto;padding:0 2px 18px}.workspace-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 10px 19px;min-height:76px}.workspace-header h2{font-size:15px;font-weight:500;margin-top:5px;max-width:100%;overflow-wrap:anywhere}.workspace-header .eyebrow{font-size:10px}.workspace-header>div{min-width:0}.inspector-toggle{display:none}.panel{padding:22px;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;scroll-margin-top:16px}.panel-head{display:flex;align-items:start;justify-content:space-between;gap:20px;margin-bottom:12px}.step{font-size:10px;letter-spacing:.6px;white-space:nowrap;color:var(--muted);padding-top:6px}.muted{color:var(--muted);font-size:12px}.tag,.status{display:inline-block;border:1px solid var(--line);background:var(--soft);padding:4px 8px;border-radius:5px;font-size:11px;color:var(--body);overflow-wrap:anywhere}.note{background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:10px 12px;font-size:12px;margin:12px 0}.fields{display:grid;grid-template-columns:1fr 1fr;gap:15px}.fields .wide{grid-column:1/-1}label{display:block;font-size:12px;font-weight:550;margin:0 0 6px}.check{display:flex;align-items:start;gap:8px;font-weight:400}.check span{flex:1}.field-note{font-size:11px;color:var(--muted);margin:5px 0 0}.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:15px}.error{color:var(--bad);white-space:pre-wrap}.message{min-height:18px;margin:9px 0 0;font-size:12px;overflow-wrap:anywhere}pre{margin:10px 0 0;padding:13px;background:#f6f6f3;border:1px solid var(--line);border-radius:6px;font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto}details{margin:13px 0}summary{cursor:pointer;font-size:12px;font-weight:550;color:var(--ink)}.empty{color:var(--muted);font-size:12px;padding:12px 0}.metrics{display:flex;gap:15px;flex-wrap:wrap;margin:0;padding:12px 16px;border-bottom:1px solid var(--line)}.metric{font-size:11px;display:flex;gap:5px;align-items:baseline}.metric b{color:var(--ink);font-size:13px;font-weight:600}.metric span{color:var(--muted)}#results{padding:0;border:0;background:transparent}.results-card{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}.figure-toolbar{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:9px;align-items:center}.figure-toolbar label{margin:0;color:var(--muted);font-size:10px}.figure-picker{flex:1;min-width:155px}.figure-picker select{font-size:12px;padding:6px 8px;margin-top:3px}.version-picker{display:flex;gap:5px;align-items:end}.version-picker select{font-size:11px;max-width:170px;padding:6px 5px}.version-picker button{padding:6px 9px;font-size:11px}.figure-heading{padding:14px 16px 9px;display:flex;gap:14px;align-items:start;justify-content:space-between}.figure-heading h3{font-size:13px;font-weight:550;margin:0;overflow-wrap:anywhere}.figure-heading .muted{font:10px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;margin:5px 0 0;overflow-wrap:anywhere}.figure-heading .actions{margin:0;flex-wrap:nowrap}.figure-heading button{font-size:11px;padding:6px 9px;white-space:nowrap}.figure-stage{min-height:365px;padding:10px 12px 4px}.figures{display:grid;gap:14px}.figures figure{margin:0;min-width:0}.figures img{display:block;width:100%;height:auto;max-height:calc(100vh - 330px);min-height:200px;object-fit:contain}.figures figcaption{font-size:10px;color:var(--muted);text-align:center;padding:8px 0 3px;overflow-wrap:anywhere}#presentation-preview{grid-template-columns:repeat(2,minmax(0,1fr))}.figure-foot{padding:10px 16px 14px;border-top:1px solid var(--line);margin-top:8px}.figure-foot .note{padding:0;border:0;background:transparent;margin:0;font-size:11px;color:var(--muted)}.figure-foot .check{font-size:11px;margin:9px 0 0}.result-summary{padding:12px 5px 0}.result-summary>.note{font-size:11px;line-height:1.6;background:transparent;border:0;padding:0 9px;margin:0}.result-summary>.actions{padding:0 8px}.downloads{display:flex;flex-wrap:wrap;gap:6px}.downloads button{font-size:10px;padding:6px 8px;overflow-wrap:anywhere}.report-artifacts{padding:0 8px}.inspector{min-width:0;display:flex;flex-direction:column;overflow:hidden}.inspector-head{display:flex;gap:9px;justify-content:space-between;align-items:center;min-height:57px;padding:14px 15px;border-bottom:1px solid var(--line)}.inspector-head>div{min-width:0}.inspector-head h2{font-size:13px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.inspector-head .muted{margin:3px 0 0;font-size:10px}.inspector-tabs{display:flex;gap:1px;padding:0 8px;border-bottom:1px solid var(--line);overflow-x:auto;flex-shrink:0;min-height:43px}.inspector-tabs button{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;color:var(--muted);padding:11px 7px 9px;font-size:11px;white-space:nowrap;font-weight:450}.inspector-tabs button:hover:not(:disabled){background:var(--soft)}.inspector-tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}.inspector-body{flex:1;overflow:auto;min-height:0}.inspector-panel{padding:16px 14px}.inspector-panel>h3:first-child{margin-top:0}.inspector-panel pre{max-height:none;margin-top:10px}.inspector-panel .fields{gap:11px}.inspector-panel label{font-size:11px}.inspector-panel input,.inspector-panel select{font-size:12px;padding:7px 8px}.inspector-panel .actions button{width:100%;font-size:12px}.inspector-panel .note{font-size:11px;line-height:1.6}.inspector-panel .muted{font-size:11px}.inspector-panel #presentation-versions{display:grid}.inspector-panel #presentation-versions button{text-align:left}.code-heading{display:flex;justify-content:space-between;gap:12px;align-items:center}.code-heading h3{margin:0}.code-heading button{font-size:10px;padding:6px 8px}.code-content{background:#f6f6f4!important;font-size:11px!important;line-height:1.8!important;white-space:pre!important;overflow-x:auto!important;overflow-wrap:normal!important;min-height:300px;border-radius:0!important;border-left:0!important;border-right:0!important;margin-left:-14px!important;margin-right:-14px!important;padding:15px!important}.inspector-close{display:none;padding:5px 9px!important;font-size:11px}.inspector-footer{padding:10px 14px;border-top:1px solid var(--line);color:var(--muted);font-size:10px}.login-heading{max-width:680px;margin:60px auto 22px}.login-heading p{margin-top:10px}.login-heading[hidden]{display:none}#login{max-width:680px;margin:0 auto}#login .actions input{flex:1;min-width:200px}.footer{font-size:10px;color:var(--muted);padding:14px 10px 0;line-height:1.6}.advanced-display{padding-top:3px}.advanced-display .fields{margin-top:13px}#app[hidden],[hidden]{display:none!important}
+@media(min-width:1500px){.layout{grid-template-columns:240px minmax(510px,1fr) minmax(450px,38vw);gap:14px}.rail{padding:22px 13px 13px}.brand h1{font-size:31px}.workspace-header{padding-top:18px}.figure-stage{min-height:440px}.inspector-tabs button{font-size:12px;padding-left:10px;padding-right:10px}}
+@media(max-width:1120px){.layout{grid-template-columns:200px minmax(0,1fr)}.inspector{display:none;position:fixed;right:8px;top:8px;bottom:8px;width:min(460px,calc(100vw - 24px));z-index:10;box-shadow:-12px 0 36px #26281d15}.inspector.is-open{display:flex}.inspector-toggle,.inspector-close{display:block}.workspace{padding-right:2px}.figure-stage{min-height:420px}.figures img{max-height:calc(100vh - 330px)}}
+@media(max-width:680px){.shell{padding:6px}.layout{display:block;height:auto}.rail{height:auto;padding:12px;margin-bottom:10px}.brand{padding:0 3px 9px}.brand h1{font-size:26px}.brand .muted,.project-name,.rail-footer,.rail-note{display:none}.workflow-nav{display:flex;gap:3px;margin:0;overflow-x:auto}.nav-button{padding:7px 8px;font-size:11px;white-space:nowrap}.rail-jobs{padding:10px 0 0;border:0;max-height:130px}.rail-jobs>.eyebrow{font-size:9px;padding-left:5px}.jobs{display:flex;overflow-x:auto}.job{min-width:150px;width:190px;font-size:10px;padding:7px}.workspace{max-height:none;overflow:visible}.workspace-header{padding:8px 7px 13px;min-height:60px}.workspace-header h2{font-size:14px}.panel{padding:17px}.fields{grid-template-columns:1fr}.panel-head h2{font-size:18px}.step{font-size:9px}.inspector{top:6px;right:6px;height:calc(100dvh - 12px);width:calc(100vw - 12px)}.display-fields{grid-template-columns:1fr 1fr}.figure-toolbar{padding:10px;align-items:end;gap:8px}.figure-picker{min-width:140px}.version-picker select{max-width:150px}.figure-heading{padding:12px 10px;display:block}.figure-heading .actions{margin-top:8px}.figure-stage{min-height:265px;padding:5px}.figures img{min-height:180px;max-height:70vh}.metrics{gap:11px;padding:10px}.metric{font-size:10px}.metric b{font-size:12px}.figure-foot{padding:10px}#presentation-preview{grid-template-columns:1fr}.login-heading{margin:35px 12px 20px}#login{margin:0 5px}.footer{padding:10px 5px}.report-artifacts{padding:0 3px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+
+.inspector-tabs:not(.all-tabs) button:not(#tab-analyst):not(#tab-display){display:none}.inspector-head #evidence-toggle{font-size:10px;padding:6px 9px;margin-left:auto}.inspector-tabs:not(.all-tabs){padding-left:12px}.inspector-tabs:not(.all-tabs) button{padding-left:12px;padding-right:12px;font-size:12px}.analyst-panel{padding:19px 16px;min-height:100%}.analyst-timeline{display:grid;gap:18px}.analyst-welcome{padding:9px 1px}.analyst-welcome h3{font-size:21px;font-weight:500;letter-spacing:-.5px;line-height:1.4;margin:14px 0 14px}.analyst-welcome p{font-size:12px;line-height:1.7;color:var(--muted)}.flow-steps{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:14px 0 17px;font-size:10px;color:var(--body)}.flow-steps span{color:#a4a89e}.analyst-message{font-size:12px;line-height:1.7;overflow-wrap:anywhere}.analyst-message p{margin:7px 0 0;white-space:pre-wrap}.analyst-message .message-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}.analyst-message.user-message{background:#eeefe9;border-radius:13px 13px 4px 13px;padding:13px 15px;margin-left:23px}.analyst-message.record-message{padding:0 1px}.analyst-message.record-message strong{display:block;font-size:13px;line-height:1.55;color:var(--ink);font-weight:550;margin:5px 0 0}.analyst-message.record-message .record-action{font-size:11px;margin-top:11px;padding:6px 10px;background:#fff;color:var(--body);border-color:var(--line)}.analyst-message.record-message .record-action:hover{background:var(--soft)}.analyst-message .record-status{display:inline-block;font-size:10px;line-height:1.4;border-radius:4px;padding:4px 6px;border:1px solid var(--line);color:var(--muted);margin-top:9px;background:var(--soft)}.analyst-message.failure-message{padding:13px;border:1px solid #e8d5cc;border-radius:9px;background:#fffaf6}.analyst-message.failure-message strong{color:var(--bad)}.analyst-composer{padding:12px 12px 7px;border-top:1px solid var(--line);background:#fff}.composer-card{border:1px solid #dadcd5;border-radius:13px;padding:12px 12px 10px;box-shadow:0 3px 12px #25272306}.composer-card label{font-size:10px;letter-spacing:.3px;color:var(--muted);font-weight:400;margin:0 0 3px}.composer-card textarea{border:0;border-radius:0;padding:5px 0;min-height:83px;max-height:170px;resize:vertical;font-size:13px;line-height:1.6}.composer-card textarea:focus-visible{outline:0}.composer-card:focus-within{border-color:#bdc2b7;box-shadow:0 0 0 2px #eef0e9}.composer-actions{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:7px}.composer-actions button{font-size:11px;padding:7px 10px}.composer-actions button.secondary{border:0;background:transparent;padding-left:0;color:var(--muted)}.composer-scope{font-size:10px;text-align:center;color:var(--muted);line-height:1.5;margin:8px 5px 0}.analyst-composer .message{font-size:10px;min-height:0;margin:5px 0 0}.analyst-composer .message:empty{display:none}#data-context>summary{font-size:13px;margin:3px 0 18px;font-weight:550}#data-context{margin:16px 0}.workflow-panel .panel-head{margin-bottom:12px}.inspector-footer{font-size:9px;padding-top:7px;padding-bottom:7px}.workspace-header h2{font-weight:550}
+@media(max-width:680px){.analyst-panel{padding:16px}.analyst-welcome h3{font-size:19px}.analyst-composer{padding:10px}.composer-card textarea{min-height:72px}}
+.zoom-picker{width:100px;flex:none}.zoom-picker label{font-size:11px;margin-bottom:3px}#figure-stage{overflow:auto}#figure-stage[data-scale="native"] .figures{display:block;width:max-content;max-width:none}#figure-stage[data-scale="native"] .figures figure{width:max-content;max-width:none}#figure-stage[data-scale="native"] .figures img{width:auto;max-width:none;max-height:none}#figure-stage[data-scale="native"] #presentation-preview{display:flex;gap:16px}
+.proposal-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0}.proposal-summary div{padding:12px;border:1px solid var(--line);border-radius:8px;background:#fafbf8}.proposal-summary span{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}.proposal-summary strong{font-size:13px;font-weight:550;overflow-wrap:anywhere}@media(max-width:680px){.proposal-summary{grid-template-columns:1fr}}
+.project-name{display:block;padding-bottom:13px;overflow-wrap:anywhere}.project-name .local-label{display:block;margin-top:3px}.project-search{padding:0 5px 15px}.project-search label{font-size:11px;color:var(--muted);margin-bottom:5px}.project-search input{font-size:12px;background:#fafbf8}.workflow-nav{margin-bottom:14px}.nav-new{margin:0 4px 13px}.rail-jobs{padding-top:13px}.activity-control{width:100%;font-size:11px;text-align:left;margin-bottom:9px}.selection-nav{display:flex;gap:3px;border-bottom:1px solid var(--line);padding:0 0 12px;margin-bottom:16px}.selection-nav button{font-size:12px;padding:6px 10px}.workspace-notice{font-size:11px;line-height:1.6;margin:0 8px 13px}.workspace-notice:empty{display:none}.collection-panel{padding:26px}.collection-panel>p{margin-top:10px;color:var(--muted);font-size:12px;line-height:1.75}.collection-panel h2{font:27px/1.3 Georgia,serif;letter-spacing:-.5px}.object-list{display:grid;gap:9px;margin:20px 0}.object-row{display:block;width:100%;text-align:left;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--body);padding:15px 16px;white-space:pre-line;font-size:12px;line-height:1.9;font-weight:400;overflow-wrap:anywhere}.object-row::first-line{font-size:14px;font-weight:550;color:var(--ink)}.object-row:hover:not(:disabled){background:#f5f6f1;border-color:#bec5b6}.object-row:focus-visible{outline-offset:2px}.object-row[aria-current=true]{border-color:#b15b3b}.collection-tools{display:flex;gap:12px;align-items:center;margin:18px 0}.collection-tools label{margin:0;color:var(--muted);font-size:12px}.collection-tools select{width:auto;font-size:12px}.overview-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:25px 0}.overview-stat{border:1px solid var(--line);background:#fafbf8;border-radius:8px;padding:16px 12px}.overview-stat strong{display:block;font:28px Georgia,serif;margin-bottom:5px}.overview-stat span{font-size:11px;color:var(--muted)}.overview-lede{max-width:55ch}.overview-section{margin-top:28px}.section-caption{display:flex;justify-content:space-between;align-items:baseline}.section-caption h3{font-size:14px;margin:0}.section-caption span{font-size:11px;color:var(--muted)}.project-settings{padding-top:14px;margin-top:20px;border-top:1px solid var(--line)}.project-settings summary{font-size:12px;color:var(--muted)}.project-settings .actions{margin-top:12px}.project-settings input{max-width:290px}.result-origin{margin:0;padding:10px 18px;background:#fafbf8;border-bottom:1px solid var(--line);font-size:10px;color:var(--muted);overflow-wrap:anywhere}.context-facts{font-size:12px;line-height:1.8;white-space:pre-line;overflow-wrap:anywhere}.collection-note{border-top:1px solid var(--line);padding-top:16px;font-size:11px;color:var(--muted);line-height:1.7}.workspace-save-status{font-size:10px;color:var(--muted);margin-top:7px}.save-workspace{font-size:11px;padding:6px 9px}.rail{overflow:auto}.rail-jobs{flex:1;min-height:150px}.collection-panel .downloads{margin-top:15px}
+@media(max-width:680px){.collection-panel{padding:19px}.overview-stats{gap:7px}.overview-stat{padding:12px 8px}.project-search{max-width:320px}.rail-jobs{min-height:0}.selection-nav{flex-wrap:wrap}.collection-tools{flex-wrap:wrap}}
+.work-kind{display:block;width:fit-content;font-size:9px;line-height:1.4;letter-spacing:.3px;border:1px solid var(--line);border-radius:4px;padding:2px 5px;color:var(--muted);margin-bottom:5px}.work-title{display:block}
+.scientific-section{border-top:1px solid var(--line);margin-top:24px;padding-top:22px}.scientific-section h3{font:21px/1.3 Georgia,serif;margin:0 0 9px}.scientific-section>p{font-size:12px;color:var(--muted)}.scientific-section .fields{margin-top:14px}.scientific-section details{margin-top:17px}.scientific-facts{white-space:pre-line;overflow-wrap:anywhere;font-size:12px;line-height:1.8}.scientific-exact{font:10px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;color:var(--muted)}.scientific-cards{display:grid;gap:9px;margin:14px 0}.scientific-card{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fafbf8;font-size:12px;white-space:pre-line;overflow-wrap:anywhere}.scientific-links{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;margin:9px 0}.scientific-inspector{overflow:auto;padding:18px 15px;flex:1}.scientific-inspector h3:first-child{margin-top:0}.scientific-inspector pre{max-height:360px}.scientific-step{font-size:10px;letter-spacing:.8px;color:var(--muted);display:block;margin-bottom:6px}.scientific-message{border-left:3px solid var(--line);padding-left:10px}.scientific-message:empty{display:none}.scientific-json{min-height:180px;font:11px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace}.scientific-grant{margin:16px 0 5px;padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:7px}.scientific-grant label{margin:0}.scientific-summary{margin:12px 0}.scientific-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.scientific-toolbar button{font-size:12px}.scientific-preview{max-height:300px}
+</style></head><body><div class="shell">
+<header id="session-heading" class="login-heading"><div class="login-brand">RNA Workbench</div><p class="muted">A local workspace for recorded analysis and figure evidence.</p></header>
+<section id="login" class="panel">
+    <h2>Connect to your local session</h2>
+    <p>The launch URL carries a session token in its fragment. You can also paste the token from your terminal here.</p>
+    <label for="token">Session token</label>
+    <div class="actions"><input id="token" type="password" autocomplete="off" spellcheck="false"><button id="connect" type="button">Connect</button></div>
+    <p id="login-error" class="message error" role="alert"></p>
+  </section>
+<div id="app" class="layout" hidden>
+<aside class="rail" aria-label="Workspace navigation">
+  <div class="brand"><h1>RNA Workbench</h1><div class="muted">Local research</div></div>
+  <div class="project-name"><span id="project-name">RNA research</span><span class="local-label">Local project</span></div>
+  <button id="nav-register" class="secondary nav-new" type="button">＋ New analysis</button>
+  <div class="project-search"><label for="workspace-search">Search project records</label><input id="workspace-search" type="search" maxlength="500" placeholder="Question, run, file or identity"></div>
+  <nav class="workflow-nav" aria-label="Project">
+    <button id="nav-overview" class="nav-button" type="button" aria-current="page">Overview</button>
+    <button id="nav-data" class="nav-button" type="button">Inputs</button>
+    <button id="nav-analyses" class="nav-button" type="button">Analyses &amp; plans</button>
+    <button id="nav-runs" class="nav-button" type="button">Runs <span id="runs-count"></span></button>
+    <button id="nav-library" class="nav-button" type="button">Results</button>
+    <button id="nav-files" class="nav-button" type="button">Files &amp; exports</button>
+  </nav>
+  <div class="rail-jobs"><div class="eyebrow">Recent work</div><div id="jobs" class="jobs"></div></div>
+  <div class="rail-footer"><button id="activity-control" type="button" class="secondary activity-control">Activity</button><span id="planning-mode" class="tag">Proposal selection</span><p id="model-access" class="muted">Connect to inspect proposal selection.</p></div>
+</aside>
+<main class="workspace">
+  <header class="workspace-header"><div><div id="workspace-kicker" class="eyebrow">Local analysis</div><h2><span id="workspace-title">New analysis</span></h2></div><button id="toggle-inspector" class="secondary inspector-toggle" type="button" aria-controls="inspector" aria-expanded="false">Evidence</button></header>
+  <p id="workspace-message" class="workspace-notice" role="status"></p>
+  <nav id="selection-nav" class="selection-nav" aria-label="Selected analysis" hidden><button id="nav-review" class="nav-button" type="button">Plan &amp; decision</button><button id="nav-execute" class="nav-button" type="button">Execution</button><button id="nav-results" class="nav-button" type="button">Figures</button></nav>
+  <section id="overview" class="panel collection-panel"><span class="eyebrow">RESEARCH PROJECT</span><h2 id="overview-name">RNA research</h2><p class="overview-lede">Keep your question, data and evidence together. Review a plan, follow its execution, then explore the results.</p><div id="overview-stats" class="overview-stats"></div><div class="overview-section"><div class="section-caption"><h3>Continue your research</h3><span>Recent work</span></div><div id="overview-recent" class="object-list"></div></div><div class="collection-note">This project is a local, single-user workspace. Saved results retain their source runs and review context; recency does not make a result canonical.</div><details class="project-settings"><summary>Project details</summary><label for="project-name-input">Project name</label><div class="actions"><input id="project-name-input" maxlength="120"><button id="save-project-name" class="secondary" type="button">Save name</button></div><p id="project-identity" class="field-note"></p></details></section>
+  <section id="search" class="panel collection-panel" hidden><h2>Search project records</h2><p>Match questions, operation states, input locations and recorded identities. Results link to their original analysis context.</p><div id="search-list" class="object-list"></div></section>
+  <section id="data" class="panel collection-panel" hidden><h2>Inputs</h2><p>Verified content and uninspected registrations. Hashes identify file content; every registered location stays visible. These groups are not logical datasets or dataset versions.</p><div id="data-list" class="object-list"></div></section>
+  <section id="analyses" class="panel collection-panel" hidden><h2>Analyses &amp; plans</h2><p>Saved questions and their frozen analysis plans. Open a record to inspect its input, operator decision and execution limits.</p><div id="scientific-entry" class="note" hidden><p>Connect studies, exact dataset versions, method plans and reviewed results.</p><button id="open-scientific" type="button">Open scientific analyses</button></div><div id="analysis-list" class="object-list"></div></section>
+  <section id="scientific" class="panel collection-panel" hidden>
+    <span class="eyebrow">SCIENTIFIC WORKSPACE</span><h2>From question to reviewed evidence</h2><p>Select exact data and analysis versions, prepare a trial, then inspect its evidence before accepting a result.</p>
+    <div class="scientific-toolbar"><button id="scientific-back" type="button" class="secondary">All analyses &amp; plans</button><button id="scientific-refresh" type="button" class="secondary">Refresh evidence</button></div>
+    <p id="scientific-message" class="message scientific-message" role="status" aria-live="polite"></p><p id="scientific-recovery" class="note" hidden></p>
+    <div id="scientific-setup" class="note" hidden><p>Connect scientific records to this project. Existing method history is preserved, and saved locations gain exact version references.</p><button id="scientific-initialize" type="button">Initialize scientific workspace</button></div>
+    <div id="scientific-content" hidden>
+      <section id="scientific-data-question" class="scientific-section"><span class="scientific-step">01 / DATA</span><h3>What data do I have?</h3>
+        <label for="scientific-study">Study</label><select id="scientific-study"><option value="">Select a study</option></select><p id="scientific-study-aim" class="scientific-facts scientific-summary"></p>
+        <details><summary>Create or edit a study</summary><form id="scientific-study-form"><div class="fields"><div><label for="scientific-study-name">Study name</label><input id="scientific-study-name" required maxlength="200"></div><div><label for="scientific-study-aim-input">Scientific aim</label><textarea id="scientific-study-aim-input" required maxlength="8000"></textarea></div></div><div class="actions"><button id="scientific-create-study" type="submit">Create study</button><button id="scientific-update-study" type="button" class="secondary" disabled>Update selected study</button></div></form></details>
+        <label for="scientific-dataset">Dataset · exact version</label><select id="scientific-dataset"><option value="">Select a dataset version</option></select><p id="scientific-dataset-summary" class="scientific-facts scientific-summary"></p>
+        <p id="scientific-data-context" class="scientific-facts scientific-summary"></p><div class="scientific-cards"><div id="scientific-data-observed" class="scientific-card"></div><div id="scientific-data-inferred" class="scientific-card"></div><div id="scientific-data-unknowns" class="scientific-card"></div></div>
+        <details><summary>Register a dataset or add a version</summary><form id="scientific-dataset-form"><div class="fields">
+          <div><label for="scientific-dataset-name">Dataset name</label><input id="scientific-dataset-name" required maxlength="200"></div><div><label for="scientific-classification">Data classification</label><select id="scientific-classification"><option value="unclassified">Unclassified</option><option value="synthetic">Synthetic</option><option value="public">Public</option><option value="private">Private</option></select></div>
+          <div class="wide"><label for="scientific-dataset-path">Absolute input path</label><input id="scientific-dataset-path" placeholder="/absolute/allowed-inputs/counts.json" autocomplete="off"></div><div><label for="scientific-artifact-type">File type</label><select id="scientific-artifact-type"><option value="json">JSON</option><option value="table">Table</option><option value="anndata">AnnData</option><option value="file">Other file</option></select></div><div><label for="scientific-assay">Assay, from experimental records</label><input id="scientific-assay" placeholder="Bulk RNA-seq, scRNA-seq, snRNA-seq…" maxlength="200"></div>
+          <div class="wide"><label for="scientific-unknowns">Unresolved scientific questions · one per line</label><textarea id="scientific-unknowns" maxlength="8000"></textarea></div>
+        </div><details><summary>Advanced scientific metadata and input members</summary><label for="scientific-observed">Additional observed metadata (JSON object)</label><textarea id="scientific-observed" class="scientific-json" spellcheck="false" placeholder='{"independent_samples": true}'></textarea><label for="scientific-members">Explicit named input members (JSON object, optional)</label><textarea id="scientific-members" class="scientific-json" spellcheck="false" placeholder='{"dataset":{"path":"/absolute/allowed-inputs/counts.json","artifact_type":"json"}}'></textarea><p class="field-note">Named members replace the single input path. A retained artifact may be referenced explicitly by artifact_id.</p></details>
+        <label class="check"><input id="scientific-add-version" type="checkbox"><span>Add a version to the selected logical dataset.</span></label><button id="scientific-register-dataset" type="submit">Register dataset version</button></form></details>
+        <details><summary>Dataset name and physical locations</summary><form id="scientific-dataset-details"><label for="scientific-rename">Dataset display name</label><input id="scientific-rename" maxlength="200"><button id="scientific-rename-dataset" type="button" class="secondary">Rename dataset</button><label for="scientific-locations">Physical member locations (JSON object)</label><textarea id="scientific-locations" spellcheck="false" placeholder='{"dataset":"/absolute/path/counts.json"}'></textarea><button id="scientific-save-locations" type="submit" class="secondary">Save locations</button><p class="field-note">Names and physical locations do not change the selected scientific version or its retained content.</p></form></details>
+      </section>
+      <section id="scientific-objective-question" class="scientific-section"><span class="scientific-step">02 / QUESTION</span><h3>What question am I investigating?</h3>
+        <label for="scientific-analysis">Analysis · exact version</label><select id="scientific-analysis"><option value="">Select an analysis version</option></select><p id="scientific-analysis-summary" class="scientific-facts scientific-summary"></p><p id="scientific-reference-message" class="message" role="status"></p>
+        <details><summary>Create an analysis</summary><form id="scientific-analysis-form"><label for="scientific-analysis-name">Analysis name</label><input id="scientific-analysis-name" required maxlength="200"><label for="scientific-objective">Scientific objective</label><textarea id="scientific-objective" required maxlength="8000"></textarea><p class="field-note">This bounded workflow plans quality-control trials.</p><details><summary>Advanced: earlier invocation</summary><label for="scientific-earlier-invocation">Use a verified earlier invocation</label><select id="scientific-earlier-invocation"><option value="">Start a new analysis definition</option></select><p class="field-note">The service verifies the retained receipt before creating a new analysis version from this invocation. Earlier accepted method history is preserved. Importing its result remains a separate explicit action.</p></details><button id="scientific-create-analysis" type="submit">Create analysis</button></form></details>
+        <label for="scientific-evaluation-purpose">Purpose of the new planning session</label><select id="scientific-evaluation-purpose"><option value="method_selection">Choose appropriate methods</option><option value="execution_verification">Verify a prespecified implementation</option></select><p class="field-note">Verifying that a procedure runs does not establish that it is the best method for the scientific question.</p>
+        <details><summary>Optional explicit parameter requirements</summary><label for="scientific-parameter-requirements">Confirmed requirements (JSON list)</label><textarea id="scientific-parameter-requirements" class="scientific-json" spellcheck="false" placeholder='[{"name":"parameter_name","value":4,"evidence":"Exact instruction or source reference requiring this value"}]'></textarea><p class="field-note">Leave blank when the question does not prescribe parameter values. A method or parameter mentioned in prose is not itself a requirement.</p><label class="check"><input id="scientific-parameter-confirmation" type="checkbox"><span>I confirm that these exact values are explicit requirements and their evidence identifies the instruction or source.</span></label><p class="field-note">This records a caller declaration; it is not authenticated proof of human authorship.</p></details>
+        <div class="actions"><button id="scientific-create-plan" type="button" disabled>Plan these exact versions</button></div>
+        <label for="scientific-plan">Retained planning session</label><select id="scientific-plan"><option value="">Select a planning session</option></select><p id="scientific-plan-summary" class="scientific-exact"></p><p id="scientific-plan-purpose-summary" class="scientific-facts scientific-summary"></p>
+      </section>
+      <section id="scientific-method-question" class="scientific-section"><span class="scientific-step">03 / METHODS AND TRIAL</span><h3>Which methods are appropriate, and why?</h3><p>Scientific fit, assumptions and alternatives precede implementation availability. Trial criteria are declared before observing outcomes.</p>
+        <p id="scientific-mode" class="note"></p><div id="scientific-model-permission" class="scientific-grant" hidden><label class="check"><input id="scientific-model-grant" type="checkbox"><span>Authorize a model session for the next planning action using this selected context.</span></label></div>
+        <div class="actions"><button id="scientific-science" type="button" disabled>Explore scientific candidates</button><button id="scientific-resolve" type="button" class="secondary" disabled>Resolve available methods</button><button id="scientific-design" type="button" class="secondary" disabled>Draft trials</button></div>
+        <div id="scientific-candidates" class="scientific-cards"></div>
+        <details><summary>Draft an implementation</summary><p class="field-note">A generated draft is unexecuted and unreviewed. It does not gain trust by being generated.</p><form id="scientific-source-form"><label for="scientific-source-candidate">Scientific candidate</label><select id="scientific-source-candidate"><option value="">Select a candidate</option></select><label for="scientific-source-method">Pinned custom method interface</label><select id="scientific-source-method"><option value="">Select an interface version</option></select><label for="scientific-source-reason">Why this implementation is needed</label><textarea id="scientific-source-reason" required maxlength="8000"></textarea><button id="scientific-draft-source" type="submit" disabled>Generate unexecuted source draft</button></form><pre id="scientific-source-drafts">No implementation drafts.</pre></details>
+        <h4>Predeclare a bounded trial</h4><p>Inspect the proposed inputs, criteria, parameters and resource limits before freezing the trial.</p>
+        <label for="scientific-trial-proposal">Trial draft</label><select id="scientific-trial-proposal"><option value="">Select a proposed trial</option></select><p id="scientific-trial-summary" class="scientific-facts scientific-summary"></p><details id="scientific-trial-editor"><summary>Advanced trial draft editor</summary><label for="scientific-trial-json">Editable trial specification (JSON)</label><textarea id="scientific-trial-json" class="scientific-json" spellcheck="false"></textarea><p class="field-note">Input bindings must exactly match the chosen dataset manifest. Declaration freezes this specification; editing this draft later does not modify the declared trial.</p></details><button id="scientific-declare" type="button" disabled>Declare trial</button>
+        <label for="scientific-experiment">Declared trial</label><select id="scientific-experiment"><option value="">Select a declared trial</option></select><p id="scientific-trial-criteria" class="scientific-facts scientific-summary"></p><details><summary>Frozen trial specification</summary><pre id="scientific-frozen-trial">No declared trial selected.</pre></details>
+        <div class="scientific-grant"><label class="check"><input id="scientific-data-grant" type="checkbox"><span>Authorize data execution for this one run within its recorded limits.</span></label></div><p id="scientific-execution-permission" class="field-note"></p>
+        <div class="actions"><button id="scientific-run" type="button" disabled>Run declared trial</button><button id="scientific-rerun" type="button" class="secondary" disabled>Rerun selected analysis version</button><button id="scientific-new-rerun" type="button" class="secondary" hidden>Prepare another rerun</button></div>
+      </section>
+      <section id="scientific-outcome-question" class="scientific-section"><span class="scientific-step">04 / OBSERVATIONS</span><h3>What happened?</h3><p>Inspect actual run status, recorded metrics and linked outputs. Missing or failed measurements remain unavailable.</p>
+        <label for="scientific-run-select">Retained run</label><select id="scientific-run-select"><option value="">Select a run</option></select><p id="scientific-run-summary" class="scientific-facts scientific-summary"></p><div class="actions"><button id="scientific-recover" type="button" class="secondary" disabled>Reconcile retained evidence</button></div><p class="field-note">Reconciliation reads retained evidence. It never restarts a worker. Unknown worker liveness stays unknown.</p><div id="scientific-operations" class="scientific-cards"></div>
+        <p id="scientific-observed-metrics" class="scientific-facts scientific-summary"></p>
+        <label for="scientific-result">Result · exact version</label><select id="scientific-result"><option value="">Select a result version</option></select><p id="scientific-result-summary" class="scientific-facts scientific-summary"></p><div id="scientific-artifacts" class="downloads"></div><pre id="scientific-output-preview" class="scientific-preview" hidden></pre><p id="scientific-artifact-message" class="message" role="status"></p><p id="scientific-plot-message" class="field-note">No verified plot available in this view; preview a linked output to inspect it.</p><div id="scientific-plot-preview" class="figures"></div><details open><summary>Validation and retained execution evidence</summary><pre id="scientific-validation">Select a result or run to inspect validation evidence.</pre></details>
+      </section>
+      <section id="scientific-conclusion-question" class="scientific-section"><span class="scientific-step">05 / CONCLUSIONS AND UNCERTAINTY</span><h3>What can I conclude—and what remains uncertain?</h3>
+        <p id="scientific-recommendation" class="scientific-facts scientific-summary"></p><div class="actions"><button id="scientific-recommend" type="button" class="secondary" disabled>Request recommendation</button></div><p class="field-note">Uses the next explicitly authorized model action when live planning is enabled. Abstention does not require data execution.</p>
+        <p id="scientific-evidence-assessment" class="scientific-facts scientific-summary"></p><p id="scientific-conclusion-unknowns" class="scientific-facts scientific-summary"></p><p class="note">Accepting a result records your review and starts no computation. It does not establish the best method, independent scientific validation, or promotion of implementation trust.</p>
+        <form id="scientific-review-form"><label for="scientific-review-rationale">Review rationale</label><textarea id="scientific-review-rationale" required maxlength="8000"></textarea><label class="check"><input id="scientific-warning-ack" type="checkbox"><span>I reviewed the exact output, validation findings and limitations, including any warnings.</span></label><label for="scientific-select-role">Optional canonical role within this study</label><input id="scientific-select-role" maxlength="200" placeholder="Leave empty to accept without selecting a role"><div class="actions"><button id="scientific-accept" type="button" disabled>Accept reviewed result</button><button id="scientific-reject" type="button" class="secondary" disabled>Reject result</button></div></form><div id="scientific-review-history" class="scientific-cards"></div>
+      </section>
+      <details class="scientific-section"><summary>Explicitly import a legacy record</summary><p class="field-note">Select a retained record and supply its scientific context. Missing mappings or insufficient evidence remain unresolved.</p><form id="scientific-import-form"><button id="scientific-use-earlier-import" type="button" class="secondary" disabled>Use selected earlier invocation</button><label for="scientific-import-kind">Record source</label><select id="scientific-import-kind"><option value="method_run">Method run</option><option value="workbench_job">Workbench job</option></select><label for="scientific-import-id">Existing record identity</label><input id="scientific-import-id" required maxlength="200"><label class="check"><input id="scientific-import-mappings" type="checkbox"><span>Explicitly map this record to the selected Study, DatasetVersion and AnalysisVersion.</span></label><button id="scientific-import" type="submit">Inspect and import selected record</button></form><pre id="scientific-imports">No explicit imports.</pre></details>
+    </div>
+  </section>
+  <section id="runs" class="panel collection-panel" hidden><h2>Runs &amp; activity</h2><p>Execution attempts are separate from plans. Presentation renders keep the original scientific analysis fixed.</p><div class="collection-tools"><label for="run-filter">Show</label><select id="run-filter"><option value="all">All attempts</option><option value="active">Active</option><option value="attention">Needs attention</option><option value="analysis">Analysis runs</option><option value="presentation">Presentation renders</option></select><button id="refresh-project" class="secondary" type="button">Refresh activity</button></div><h3>Pending work &amp; attention</h3><div id="activity-list" class="object-list"></div><h3>Execution history</h3><div id="run-list" class="object-list"></div></section>
+  <section id="library" class="panel collection-panel" hidden><h2>Results</h2><p>Completed analysis outputs and separate presentation versions. Each opens with its source run, exact artifact identity and recorded review context.</p><div id="result-list" class="object-list"></div><p class="collection-note">These are retained outputs, not promoted canonical results. Independent scientific review remains separately unqualified.</p></section>
+  <section id="files" class="panel collection-panel" hidden><h2>Files &amp; exports</h2><p>Verified exports from completed analyses. Original inputs remain in their registered locations; materialized files do not define scientific result identity.</p><div id="file-bundles" class="object-list"></div><h3 id="files-heading">Select an analysis to inspect its files</h3><div id="file-downloads" class="downloads"></div><p id="files-message" class="message" role="status"></p></section>
+<section id="register" class="panel workflow-panel" hidden>
+        <div class="panel-head"><h2>Set up your analysis</h2><span class="step">DATA CONTEXT</span></div>
+        <p>Connect a local scRNA count matrix to the question in your analyst panel. Review its provenance before preparing the plan.</p>
+        <details><summary>Input roots and frozen execution profile</summary><pre id="config"></pre></details>
+        <form id="registration"><details id="data-context" open><summary>Local dataset and provenance</summary>
+          <div class="fields">
+            <div class="wide"><label for="proposal-mode">Plan source</label><select id="proposal-mode"><option value="operator">Operator-created plan</option><option id="agent-proposal" value="agent" disabled>Agent selection unavailable</option></select><p class="field-note">Proposal selection does not execute an analysis. Every plan requires operator review.</p></div>
+            <div class="wide"><label for="source">Absolute H5AD path</label><input id="source" required placeholder="/absolute/allowed-inputs/cells.h5ad" autocomplete="off"></div>
+            <div class="wide"><label for="digest">Expected file SHA-256</label><input id="digest" required pattern="[0-9a-f]{64}" maxlength="64" spellcheck="false"><p class="field-note">The existing inspection checks this retained identity. A checksum does not establish experimental truth.</p></div>
+            
+            <div><label for="assay">Declared assay</label><select id="assay" required><option value="">Select from experimental records</option><option value="scrna">scRNA — supported profile</option><option value="snrna">snRNA — unsupported here</option><option value="bulk">Bulk — use the separate contrast interface</option></select></div>
+            <div><label for="measurement">Declared measurement</label><select id="measurement" required><option value="">Select from provenance</option><option value="umi_counts">UMI counts — supported profile</option><option value="normalized_expression">Normalized expression — unsupported here</option><option value="non_umi_counts">Non-UMI counts — unsupported here</option></select></div>
+            <div class="wide"><label for="counts">Count provenance</label><textarea id="counts" required maxlength="4000" placeholder="Quantification protocol, preprocessing and which stored layer contains the counts"></textarea></div>
+            <div><label for="capture">Capture-unit column</label><input id="capture" required maxlength="200" placeholder="Column established by experimental records"></div>
+            <div><label class="check"><input id="capture-confirmed" type="checkbox"><span>Experimental records establish these capture units. A batch label alone is insufficient.</span></label></div>
+            <div class="wide"><label for="annotation">Annotation provenance and limitations</label><textarea id="annotation" required maxlength="4000" placeholder="Marker or model provenance, or explicitly describe what is unavailable"></textarea></div>
+          </div>
+          <div class="note">This registered workflow supports QC, integration, clustering and available annotation. It does not test differential expression, reconstruct lineage, or qualify causal or clinical conclusions.</div>
+          </details><button id="register-button" type="submit">Prepare analysis plan</button>
+          <p id="register-message" class="message" aria-live="polite"></p>
+        </form>
+      </section><section id="review" class="panel workflow-panel" hidden>
+        <div class="panel-head"><h2>Review the frozen plan</h2><span class="step">02 / REVIEW</span></div>
+        <p id="plan-empty" class="empty">Register an input or select a retained job to see its recorded plan.</p>
+        <div id="plan" hidden>
+          <p><span id="plan-status" class="status"></span> <span id="plan-author" class="tag"></span></p>
+          <p id="plan-question"></p>
+          <details id="planning-result" open hidden><summary>Planner decision and evidence</summary><pre id="planning-record"></pre></details>
+          <div id="proposal-summary" class="proposal-summary" hidden></div>
+          <details id="proposal-record" hidden><summary>Input preview, declarations and settings</summary><pre id="plan-record"></pre></details>
+          <p id="approval-note" class="muted" hidden>Operator approval records your review of this plan. It is separate from independent scientific review, authenticated approval and permission to execute.</p>
+          <p id="operator-review-record" class="note" hidden></p>
+          <form id="review-form" hidden>
+            <div class="fields"><div><label for="reviewer">Operator label</label><input id="reviewer" required maxlength="200" autocomplete="off"></div><div><label for="decision">Decision</label><select id="decision"><option value="needs_information">Needs information</option><option value="approve">Approve</option><option value="reject">Reject</option></select></div><div class="wide"><label for="rationale">Rationale / missing information</label><textarea id="rationale" required maxlength="4000"></textarea></div></div>
+            <h3>Explicit confirmations for approval</h3><div id="confirmations"></div>
+            <div class="actions"><button id="review-button" type="submit">Record operator decision</button></div>
+            <p id="review-message" class="message" aria-live="polite"></p>
+          </form>
+          <p id="revision-note" class="note" hidden>Submit updated information above to address a clarification, refusal or review decision. Identical requests may reuse the previous record.</p>
+        </div>
+      </section><section id="execute" class="panel workflow-panel" hidden>
+        <div class="panel-head"><h2>Run &amp; inspect</h2><span class="step">03 / EXECUTION</span></div>
+        <p id="execution-permission" class="muted"></p>
+        <p id="run-status" class="status">No job selected</p>
+        <div class="actions"><button id="run-button" type="button" disabled>Execute approved plan</button><button id="cancel-button" type="button" class="secondary" disabled>Cancel operation</button><button id="resume-button" type="button" class="secondary" disabled>Resume eligible operation</button><button id="refresh" type="button" class="secondary">Refresh evidence</button></div>
+        <p id="run-message" class="message" aria-live="polite"></p>
+        <p class="muted">Open Execution Log to inspect the retained operation, failure and worker records.</p>
+        <p class="muted">One job runs at a time within the recorded limits. An interrupted or failed job keeps its evidence; no automatic retry or budget expansion occurs.</p>
+      </section>
+<section id="results" class="workflow-panel" hidden>
+  <p id="results-empty" class="panel empty">Verified complete results are not available for the selected job.</p>
+  <div id="result-view" hidden>
+    <div class="results-card">
+      <p id="result-origin" class="result-origin"></p>
+      <div class="figure-toolbar">
+        <div class="figure-picker"><label for="figure-select">Recorded figure</label><select id="figure-select"></select></div>
+        <div class="version-picker"><button id="version-prev" class="secondary" type="button" aria-label="Previous presentation version" disabled>Previous</button><div><label for="version-select">Version</label><select id="version-select"><option value="">Original</option></select></div><button id="version-next" class="secondary" type="button" aria-label="Next presentation version" disabled>Next</button></div>
+        <div class="zoom-picker"><label for="figure-zoom">Figure size</label><select id="figure-zoom"><option value="fit">Fit canvas</option><option value="native">Actual pixels</option></select></div>
+      </div>
+      <div class="figure-heading"><div><h3><span id="figure-filename">Recorded figure</span></h3><p id="figure-root"></p></div><div class="actions"><button id="figure-download" class="secondary" type="button" disabled>Download image</button><button id="edit-display" class="secondary" type="button">Edit display</button></div></div>
+      <div id="metrics" class="metrics"></div>
+      <div class="figure-stage" id="figure-stage"><div id="figures" class="figures"></div><div id="presentation-preview" class="figures" hidden></div><p id="version-status" class="message" aria-live="polite"></p></div>
+      <div class="figure-foot"><p id="figure-context" class="note"></p><label class="check"><input id="compare-version" type="checkbox" disabled><span>Compare with the original analysis figure</span></label></div>
+    </div>
+    <div class="result-summary"><p id="result-scope" class="note"></p><div class="actions"><button id="archive" type="button" class="secondary">Download analysis evidence</button><button id="revision-archive" type="button" class="secondary" disabled>Download presentation evidence</button></div><details class="report-artifacts"><summary>Report artifacts</summary><div id="downloads" class="downloads"></div></details><p id="download-message" class="message" aria-live="polite"></p></div>
+  </div>
+</section>
+<footer class="footer">Research use · Backed scRNA route · Biological validity and independent scientific review remain separately unqualified. Bulk analyses use the existing bounded contrast interface.</footer>
+</main>
+<aside id="inspector" class="inspector" aria-label="Artifact evidence inspector">
+  <header class="inspector-head"><div><h2><span id="inspector-title">Analyst</span></h2><p id="inspector-subtitle" class="muted">Local operator workflow</p></div><button id="evidence-toggle" class="secondary" type="button" aria-controls="evidence-tabs" aria-expanded="false">Evidence</button><button id="close-inspector" class="secondary inspector-close" type="button" aria-label="Close evidence inspector">Close</button></header>
+  <div id="evidence-tabs" class="inspector-tabs" role="tablist" aria-label="Analyst and evidence views"><button id="tab-analyst" type="button" role="tab" aria-selected="true" aria-controls="panel-analyst" tabindex="0">Analyst</button>
+    <button id="tab-code" type="button" role="tab" aria-selected="false" aria-controls="panel-code" tabindex="-1">Code</button>
+    <button id="tab-execution" type="button" role="tab" aria-selected="false" aria-controls="panel-execution" tabindex="-1">Execution Log</button>
+    <button id="tab-messages" type="button" role="tab" aria-selected="false" aria-controls="panel-messages" tabindex="-1">Discussion</button>
+    <button id="tab-provenance" type="button" role="tab" aria-selected="false" aria-controls="panel-provenance" tabindex="-1">Provenance</button>
+    <button id="tab-environment" type="button" role="tab" aria-selected="false" aria-controls="panel-environment" tabindex="-1">Environment</button>
+    <button id="tab-review" type="button" role="tab" aria-selected="false" aria-controls="panel-review" tabindex="-1">Review</button>
+    <button id="tab-display" type="button" role="tab" aria-selected="false" aria-controls="panel-display" tabindex="-1">Display</button>
+  </div>
+  <div id="legacy-inspector-body" class="inspector-body"><section id="panel-analyst" class="inspector-panel analyst-panel" role="tabpanel" aria-labelledby="tab-analyst" tabindex="0"><div id="analyst-timeline" class="analyst-timeline"><div class="analyst-welcome"><span class="eyebrow">YOUR LOCAL WORKSPACE</span><h3>A question, with a clear path to evidence.</h3><p>Connect your dataset in the canvas, then describe what you want to investigate below.</p><div class="flow-steps">Proposal <span>→</span> Approval <span>→</span> Run <span>→</span> Results</div><p class="muted">This session uses an operator-created plan. Your approval controls when the recorded analysis runs.</p></div></div></section>
+    <section id="panel-code" class="inspector-panel" role="tabpanel" aria-labelledby="tab-code" tabindex="0" hidden><div class="code-heading"><h3>Executed notebook</h3><button id="notebook-download" class="secondary" type="button" disabled>Download notebook</button></div><p id="notebook-message" class="muted">The verified executed notebook will appear after a completed analysis.</p><pre id="notebook-code" class="code-content">No executed notebook selected.</pre><details><summary>Figure source and generating records</summary><pre id="code-record"></pre></details></section>
+    <section id="panel-execution" class="inspector-panel" role="tabpanel" aria-labelledby="tab-execution" tabindex="0" hidden><h3 id="execution-context">Analysis execution</h3><p class="muted">Recorded attempts for this analysis, including failed or interrupted work. This is not an interactive terminal.</p><pre id="execution-record">No execution record.</pre><h3>Selected presentation attempt</h3><pre id="revision-record">No presentation attempt selected.</pre></section>
+    <section id="panel-messages" class="inspector-panel" role="tabpanel" aria-labelledby="tab-messages" tabindex="0" hidden><h3>Recorded discussion context</h3><p class="muted">The original question and planning decisions are retained below. Anchored comments and side conversations are not available in this local increment.</p><p id="model-message" class="muted">No model conversation is selected.</p><pre id="inspector-messages">Select a retained job to inspect its recorded question and decisions.</pre></section>
+    <section id="panel-provenance" class="inspector-panel" role="tabpanel" aria-labelledby="tab-provenance" tabindex="0" hidden><h3>Where this result came from</h3><p id="provenance-summary" class="context-facts">Select a result to inspect its provenance.</p><details><summary>Exact identities and relationships</summary><pre id="provenance-record"></pre></details><p class="muted">A presentation version inherits the source analysis and its review context. Latest does not imply canonical or independently validated.</p></section>
+    <section id="panel-environment" class="inspector-panel" role="tabpanel" aria-labelledby="tab-environment" tabindex="0" hidden><h3>Recorded environment</h3><p class="muted">The frozen local profile and recorded renderer identity. No interactive kernel is connected.</p><pre id="inspector-environment"></pre></section>
+    <section id="panel-review" class="inspector-panel" role="tabpanel" aria-labelledby="tab-review" tabindex="0" hidden><h3>Review evidence</h3><p id="inspector-review-context" class="note">No review evidence selected.</p><details open><summary>Deterministic output checks</summary><pre id="result-review">No completed output checks.</pre></details><details><summary>Results and diagnostics</summary><pre id="result-report">No completed result report.</pre></details></section>
+    <section id="panel-display" class="inspector-panel" role="tabpanel" aria-labelledby="tab-display" tabindex="0" hidden><h3>Figure presentation</h3><p id="display-base" class="note">Style based on the original analysis figure.</p><p class="muted">Save a separate presentation version. Scientific data, population and analysis settings remain fixed.</p>
+<form id="presentation-form">
+            <div class="fields display-fields">
+              <div><label for="presentation-author">Author label</label><input id="presentation-author" value="Operator" maxlength="200" required><p class="field-note">A recorded label, not an authenticated signature.</p></div>
+              <div><label for="point-size">Point size</label><input id="point-size" type="number" min="1" max="24" step="1" value="4" required></div>
+              <div><label for="figure-opacity">Point opacity</label><input id="figure-opacity" type="number" min="0.1" max="1" step="0.05" value="0.65" required></div>
+              <div><label for="figure-font">Font size</label><input id="figure-font" type="number" min="8" max="28" value="9" required></div>
+            </div><details class="advanced-display"><summary>More display options</summary><div class="fields display-fields">
+              <div><label for="figure-width">Width (pixels)</label><input id="figure-width" type="number" min="320" max="2400" value="770" required></div>
+              <div><label for="figure-height">Height (pixels)</label><input id="figure-height" type="number" min="320" max="2400" value="550" required></div>
+              <div><label for="legend-position">Legend position</label><select id="legend-position"><option value="best">Automatic</option><option value="upper right">Upper right</option><option value="upper left">Upper left</option><option value="lower right">Lower right</option><option value="lower left">Lower left</option><option value="none">Hidden</option></select></div>
+              <div><label for="figure-label">Reposition an existing label</label><select id="figure-label"><option value="">Keep label positions</option></select><p class="field-note">Label wording and scientific meaning stay fixed.</p></div>
+              <div><label for="label-x">Label horizontal position (axes fraction)</label><input id="label-x" type="number" min="-0.5" max="1.5" step="0.01" value="0.5"></div>
+              <div><label for="label-y">Label vertical position (axes fraction)</label><input id="label-y" type="number" min="-0.5" max="1.5" step="0.01" value="1.05"></div>
+            </div>
+            </details><div class="actions"><button id="presentation-submit" type="submit" disabled>Save presentation version</button></div>
+          </form>
+      <p id="presentation-message" class="message" aria-live="polite"></p><details><summary>Source data and scientific meaning</summary><pre id="figure-evidence"></pre></details><details><summary>All presentation attempts</summary><div id="presentation-versions" class="downloads"></div></details>
+    </section>
+  </div>
+  <section id="scientific-inspector" class="scientific-inspector" aria-label="Exact scientific evidence" hidden>
+    <span class="eyebrow">SELECTED SCIENTIFIC CONTEXT</span><h3>Exact versions and evidence</h3><p id="scientific-inspector-summary" class="scientific-facts"></p><div id="scientific-exact-links" class="scientific-links"></div>
+    <details open><summary>Method origin and trust</summary><pre id="scientific-methods">No method selected.</pre><label for="scientific-method-source">Method source version</label><select id="scientific-method-source"><option value="">Select a method version</option></select><button id="scientific-source-preview" type="button" class="secondary" disabled>Inspect verified source</button><p id="scientific-source-message" class="message" role="status"></p><pre id="scientific-source-code" hidden></pre></details>
+    <details><summary>Dataset manifest and analysis definition</summary><pre id="scientific-context-record"></pre></details>
+    <details open><summary>Run, attempts and receipts</summary><pre id="scientific-attempts">No run selected.</pre></details>
+    <details><summary>Validation, result review and scoped selection</summary><pre id="scientific-review-evidence"></pre></details>
+    <details><summary>Planning record and unexecuted source drafts</summary><pre id="scientific-planning-evidence"></pre></details>
+    <p class="field-note">Local review labels record the current research decision. They do not establish independent scientific or clinical validation.</p>
+  </section>
+  <div id="analyst-composer" class="analyst-composer">
+  <div class="composer-card"><label for="question">Biological question</label><textarea id="question" form="registration" required maxlength="8000" placeholder="What would you like to investigate in your dataset?"></textarea><div class="composer-actions"><button id="composer-context" class="secondary" type="button">Data context</button><button id="composer-submit" type="button">Prepare plan</button></div></div><p id="composer-message" class="message" aria-live="polite"></p><p id="composer-scope" class="composer-scope">A plan is prepared before an analysis can run.</p>
+</div><div class="inspector-footer"><button id="save-workspace" type="button" class="secondary save-workspace">Save location &amp; draft</button><div id="workspace-save-status" class="workspace-save-status">Navigation and question drafts save to this local project.</div></div>
+</aside>
+</div></div>
+<script nonce="__NONCE__">
+
+(() => {
+  'use strict';
+  const el=id=>document.getElementById(id), json=value=>JSON.stringify(value,null,2);
+  const confirmationLabels={question_and_scope:'The question fits this supported workflow.',input_provenance:'I reviewed count and annotation provenance.',capture_units:'I reviewed the experimental capture-unit mapping.',settings_and_limits:'I reviewed the frozen settings and resource limits.',interpretation_limits:'I reviewed the interpretation and qualification limits.'};
+  const active=new Set(['queued','inspecting','planning','recording_review','preparing','running','cancel_requested','finalizing']);
+  let token=location.hash.slice(1), config=null, selected=null, state=null, timer=null, loadedResult=null, figureState=null, revisionTimer=null;
+  const imageURLs=[];
+  const views=['overview','data','analyses','scientific','runs','library','files','search','register','review','execute','results'], tabs=['analyst','code','execution','messages','provenance','environment','review','display'];
+  const detailViews=['register','review','execute','results'];
+  const attention=new Set(['awaiting_operator_review','operation_failed','failed','recovery_required','cancelled','interrupted','interrupted_service','needs_information','awaiting_information','refusal','invalid_proposal','rejected','completed_review_failed','infrastructure_failure','execution_failure_unclassified']);
+  let currentView='overview', inspectorTab='analyst', inspectorOpen=false, resultsData=null, notebookLoaded=null, selectedRevisionId='', selectedRevisionRecord=null, figureGeneration=0;
+  let workspaceRecord=null, allJobs=[], restoringWorkspace=true, saveChain=Promise.resolve(), lastSavedUI='', saveBlocked=false, draftTimer=null, jobsTimer=null;
+  let navigationGeneration=0;
+  let scientificCatalog=null, scientificBusy=false, scientificTimer=null, scientificGeneration=0;
+  let scientificSelection={study_id:null,dataset_ref:null,analysis_ref:null,result_ref:null,scientific_run_id:null,planner_session_id:null};
+  let scientificResolved={}, scientificExperiment='', scientificDraftKey='', scientificActionMessage='', scientificActionError=false;
+  const scientificRequests=new Map();
+  let scientificPlotURL=null, scientificPreviewReference='', scientificPreviewGeneration=0;
+  function showView(name,automatic=false){
+    if(!views.includes(name))return;if(!automatic){navigationGeneration++;if(!restoringWorkspace)clearScientificDeepLink();}currentView=name;
+    for(const view of views){el(view).hidden=view!==name;if(el('nav-'+view))el('nav-'+view).setAttribute('aria-current',view===name?'page':'false');}
+    const names={overview:'Project overview',data:'Inputs',analyses:'Analyses & plans',scientific:'Scientific analyses',runs:'Runs & activity',library:'Results',files:'Files & exports',search:'Project search',register:'New analysis',review:'Review the frozen plan',execute:'Run & inspect',results:'Figure workspace'};
+    el('workspace-title').textContent=name==='results'&&state?state.question:names[name];
+    el('workspace-kicker').textContent=({register:'Local analysis',review:'Plan and operator decision',execute:'Controlled execution',results:'Results / recorded figures'})[name]||'Local project / '+(workspaceRecord?workspaceRecord.project.name:'RNA research');
+    el('selection-nav').hidden=!selected||!['review','execute','results'].includes(name);
+    if(['review','execute','scientific'].includes(name))el('nav-analyses').setAttribute('aria-current','page');
+    if(name==='results')el('nav-library').setAttribute('aria-current','page');
+    const scientific=name==='scientific';el('scientific-inspector').hidden=!scientific;el('legacy-inspector-body').hidden=scientific;el('evidence-tabs').hidden=scientific;el('evidence-toggle').hidden=scientific;el('analyst-composer').hidden=scientific||inspectorTab!=='analyst';inspectRecords();
+  }
+  function viewForStatus(status){
+    if(status.startsWith('completed_review_'))return 'results';
+    return ['approved','preparing','running','cancel_requested','finalizing','operation_failed','failed','recovery_required','cancelled','interrupted','interrupted_service','infrastructure_failure','execution_failure_unclassified'].includes(status)?'execute':'review';
+  }
+  function openInspector(value){inspectorOpen=value;el('inspector').classList.toggle('is-open',value);el('toggle-inspector').setAttribute('aria-expanded',String(value));}
+  function showInspectorTab(name,focus=false){
+    if(!tabs.includes(name))return;inspectorTab=name;el('analyst-composer').hidden=currentView==='scientific'||name!=='analyst';if(name!=='analyst'&&name!=='display'){el('evidence-tabs').classList.toggle('all-tabs',true);el('evidence-toggle').setAttribute('aria-expanded','true');}
+    for(const tab of tabs){el('panel-'+tab).hidden=tab!==name;el('tab-'+tab).setAttribute('aria-selected',String(tab===name));el('tab-'+tab).tabIndex=tab===name?0:-1;}
+    if(focus)el('tab-'+name).focus();inspectRecords();
+    if(name==='code')loadNotebook();
+  }
+  for(const view of views)if(el('nav-'+view))el('nav-'+view).onclick=()=>{showView(view);if(view==='register'){showInspectorTab('analyst');openInspector(true);}return rememberWorkspace();};
+  for(const tab of tabs){el('tab-'+tab).onclick=()=>{showInspectorTab(tab);return rememberWorkspace();};el('tab-'+tab).onkeydown=event=>{
+    const visible=el('evidence-toggle').getAttribute&&el('evidence-toggle').getAttribute('aria-expanded')==='true'?tabs:['analyst','display'];const position=visible.indexOf(tab);let next=null;
+    if(event.key==='ArrowRight')next=visible[(position+1)%visible.length];
+    if(event.key==='ArrowLeft')next=visible[(position+visible.length-1)%visible.length];
+    if(event.key==='Home')next=visible[0];if(event.key==='End')next=visible[visible.length-1];
+    if(next){event.preventDefault();showInspectorTab(next,true);rememberWorkspace();}
+  };}
+  el('toggle-inspector').onclick=()=>{openInspector(!inspectorOpen);rememberWorkspace();};el('close-inspector').onclick=()=>{openInspector(false);rememberWorkspace();};
+  el('evidence-toggle').onclick=()=>{const expanded=el('evidence-toggle').getAttribute('aria-expanded')!=='true';el('evidence-tabs').classList.toggle('all-tabs',expanded);el('evidence-toggle').setAttribute('aria-expanded',String(expanded));showInspectorTab(expanded?'code':'analyst');rememberWorkspace();};
+  el('composer-context').onclick=()=>{showView('register');el('data-context').open=true;message('composer-message','Review your local dataset and provenance in the canvas.');};
+  el('composer-submit').onclick=()=>{showView('register');el('data-context').open=true;if(el('registration').reportValidity()){message('composer-message','Preparing the recorded plan…');el('registration').requestSubmit();}else message('composer-message','Complete the required data context and biological question to prepare a plan.');};
+  el('register-button').onclick=()=>{el('data-context').open=true;showInspectorTab('analyst');openInspector(true);};
+  el('edit-display').onclick=()=>{showInspectorTab('display');openInspector(true);rememberWorkspace();};
+  function inspectRecords(){
+    if(currentView==='scientific'){inspectScientific();return;}
+    const figure=currentFigure(), revision=selectedRevisionRecord;
+    el('inspector-title').textContent=inspectorTab==='analyst'?'Analyst':figure&&figure.image?figure.image.path.split('/').pop():'Analysis evidence';
+    el('inspector-subtitle').textContent=inspectorTab==='analyst'?'Recorded question and analysis activity':revision?'Presentation '+revision.id.slice(0,8)+' · '+revision.status.replaceAll('_',' '):state?state.status.replaceAll('_',' '):'Select a retained job';
+    el('code-record').textContent=figure?json({plot_data:figure.plot_data,analysis_binding:figure.analysis_binding,renderer_identity:figure.renderer_identity,parent_root:figureState.parent_root}):'No figure source records selected.';
+    el('revision-record').textContent=revision?json(revision):'No presentation attempt selected.';el('display-base').textContent=revision&&revision.status==='completed_presentation'?'Style based on presentation '+revision.id.slice(0,8)+'. The original scientific parent stays fixed.':'Style based on the original analysis figure.';
+    el('inspector-messages').textContent=state?json({question:state.question,planner_decision:state.planning_result||null,operator_decision:state.review||null}):'Select a retained job to inspect its recorded question and decisions.';
+    el('model-message').textContent=state&&state.model_sessions_attempted>0?'This pane shows retained planning and operator decisions, not a live conversation.':'No model conversation was recorded for this operation.';
+    el('inspector-environment').textContent=json({local_profile:config,job_runtime:state&&state.runtime_identity||null,renderer:figure&&figure.renderer_identity||null});
+    const input=state&&state.proposal&&state.proposal.external_input;
+    el('execution-context').textContent=state?'Analysis execution · '+state.id.slice(0,8):'Analysis execution';
+    el('result-origin').textContent=state?'Source analysis '+state.id.slice(0,8)+(revision?' → presentation '+revision.id.slice(0,8):' · original result')+' · '+state.status.replaceAll('_',' '):'';
+    el('provenance-summary').textContent=state?'Analysis: '+state.question+'\nSource record: '+state.id+(revision?'\nPresentation attempt: '+revision.id:'')+'\nInput: '+(input?input.path:state.source||'No inspected input')+'\nReview: '+state.status.replaceAll('_',' '):'Select a result to inspect its provenance.';
+    el('provenance-record').textContent=state?json({project_id:workspaceRecord&&workspaceRecord.project.id,analysis_record:state.id,input:input||null,proposal_root:state.proposal_receipt&&state.proposal_receipt.root_hash,operator_review_root:state.review_receipt&&state.review_receipt.root_hash,analysis_bundle_root:figureState&&figureState.parent_root,figure_id:figure&&figure.figure_id,plot_data:figure&&figure.plot_data,presentation_attempt:revision&&revision.id,presentation_receipt:revision&&revision.execution,scientific_review:state.scientific_review||'unavailable'}):'No artifact selected.';
+    renderAnalyst();
+    el('inspector-review-context').textContent=state?'Parent outcome: '+state.status.replaceAll('_',' ')+'. '+(state.scientific_review==='not_performed_by_this_service'?'Independent scientific review was not performed by this service.':'Scientific review: '+(state.scientific_review||'unavailable')+'.')+(revision?' Presentation inherits parent review context; it is not a new scientific review.':''):'No review evidence selected.';
+  }
+
+  function renderAnalyst(){
+    const timeline=el('analyst-timeline');if(!state){if(selected){timeline.replaceChildren();const p=document.createElement('p');p.className='empty';p.textContent='Loading the selected job and its retained evidence…';timeline.append(p);}return;}timeline.replaceChildren();
+    function record(label,title,text,kind='record-message',action=null){
+      const article=document.createElement('article');article.className='analyst-message '+kind;
+      const heading=document.createElement('div');heading.className='message-label';heading.textContent=label;article.append(heading);
+      if(title){const strong=document.createElement('strong');strong.textContent=title;article.append(strong);}
+      if(text){const body=document.createElement('p');body.textContent=text;article.append(body);}
+      if(action){const button=document.createElement('button');button.type='button';button.className='record-action';button.textContent=action.label;button.onclick=action.run;article.append(button);}
+      timeline.append(article);return article;
+    }
+    record('Your question',null,state.question||'No question recorded.','user-message');
+    const status=state.status.replaceAll('_',' '),failed=['operation_failed','failed','recovery_required','cancelled','interrupted'].includes(state.status);
+    if(state.planning_result){
+      const result=state.planning_result,decision=result.decision||{};
+      const questions=Array.isArray(decision.questions)?decision.questions.join('\n'):'';
+      const reason=typeof result.reason==='string'?result.reason:typeof decision.rationale==='string'?decision.rationale:questions;
+      record('Recorded planner decision',String(result.status||state.status).replaceAll('_',' '),reason||'The retained planner decision is available with the plan.', 'record-message',{label:'Inspect decision',run:()=>showView('review')});
+    }else if(state.proposal){record('Plan recorded','Frozen analysis plan','This record binds the declared input, workflow settings and execution limits.','record-message',{label:'Review plan',run:()=>showView('review')});}
+    if(state.review){record('Operator decision',String(state.review.decision||'Decision recorded').replaceAll('_',' '),state.review.rationale||'The operator decision has been recorded.');}
+    let title='Recorded operation',description='Status: '+status,action={label:'Inspect operation',run:()=>showView('execute')};
+    if(state.status==='approved'){title='Plan approved';description='The recorded analysis is ready. Execution begins only when you choose Execute approved plan in the canvas.';action={label:'Open run controls',run:()=>showView('execute')};}
+    else if(state.status==='awaiting_operator_review'){title='Approval required';description='Review the input provenance, scientific scope and frozen limits in the canvas.';action={label:'Review and decide',run:()=>showView('review')};}
+    else if(state.status.startsWith('completed_review_')){title=state.status==='completed_review_passed'?'Analysis completed':'Analysis completed with review findings';description='The recorded figures and verified evidence bundle are available. Deterministic output checks are separate from independent scientific review.';action={label:'Open figures',run:()=>showView('results')};}
+    else if(active.has(state.status)){title='Operation in progress';description='Status: '+status+'. The local workbench is polling the retained operation. One job runs at a time.';}
+    else if(failed){title='Operation needs attention';description=state.error&&state.error.message||state.execution&&state.execution.reason||'Status: '+status+'. Retained evidence is available; no automatic retry occurs.';}
+    else if(['awaiting_information','needs_information','refusal','invalid_proposal','rejected'].includes(state.status)){title='Plan needs attention';description='Status: '+status+'. Inspect the recorded decision before preparing another plan.';action={label:'Inspect plan',run:()=>showView('review')};}
+    record('Workbench record',title,description,failed?'record-message failure-message':'record-message',action);
+    if(selectedRevisionRecord){record('Presentation record',selectedRevisionRecord.status.replaceAll('_',' '),selectedRevisionRecord.error?selectedRevisionRecord.error.message:'A separate presentation attempt retains the original analysis and its scientific review context.');}
+    el('composer-submit').textContent=state?'Prepare new plan':'Prepare plan';
+    el('composer-scope').textContent=config&&config.model_access?'Uses the selected plan source. Every analysis requires operator review.':'Operator-created plan · No model conversation is requested.';
+  }
+
+  async function loadNotebook(){
+    if(!selected||!resultsData||!resultsData.artifacts.some(item=>item.name==='notebook.ipynb'))return;
+    const id=selected;if(notebookLoaded===id)return;notebookLoaded=id;
+    message('notebook-message','Loading the verified executed notebook…');
+    try{const notebook=await read('/api/jobs/'+id+'/artifact?name=notebook.ipynb');if(id!==selected)return;
+      const cells=Array.isArray(notebook.cells)?notebook.cells.filter(cell=>cell.cell_type==='code'):[];
+      let content=cells.map((cell,index)=>'# Cell '+(index+1)+' · execution '+(cell.execution_count==null?'not recorded':cell.execution_count)+'\n'+(Array.isArray(cell.source)?cell.source.join(''):String(cell.source||''))).join('\n\n');
+      const truncated=content.length>160000;content=content.slice(0,160000);
+      el('notebook-code').textContent=content||'No code cells were recorded.';message('notebook-message','Read-only code from the verified notebook. '+(truncated?'Preview is bounded; download the notebook for all cells.':'Saved outputs remain in the downloadable notebook.'));
+    }catch(error){if(id===selected){notebookLoaded=null;message('notebook-message',error.message,true);}}
+  }
+  el('notebook-download').onclick=()=>download('notebook.ipynb');
+  if(location.hash) history.replaceState(null,'',location.pathname+(location.search||''));
+  function message(id,text,error=false){el(id).textContent=text;el(id).classList.toggle('error',error);}
+  async function api(path,body){
+    const options={headers:{'X-Workbench-Token':token},cache:'no-store',credentials:'omit'};
+    if(body!==undefined){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
+    const response=await fetch(path,options);
+    if(!response.ok){let detail;try{detail=await response.json();}catch{detail={message:'Local request failed.'};}const error=Error(detail.message);error.status=response.status;throw error;}
+    return response;
+  }
+  async function read(path){return (await api(path)).json();}
+  function workspaceLocation(){const ui={selected_job:selected||'',view:currentView==='scientific'&&workspaceRecord&&workspaceRecord.schema_version!==3?'analyses':currentView,figure:currentFigure()?currentFigure().figure_id:'',selected_revision:selectedRevisionId,parent_root:figureState?figureState.parent_root:'',tab:inspectorTab,zoom:el('figure-zoom').value||'fit',search:el('workspace-search').value,run_filter:el('run-filter').value||'all',question_draft:el('question').value,inspector_open:inspectorOpen,evidence_open:el('evidence-toggle').getAttribute('aria-expanded')==='true'};if(workspaceRecord&&workspaceRecord.schema_version===3){Object.assign(ui,scientificSelection);for(const key of ['study_id','scientific_run_id','planner_session_id'])ui[key]=ui[key]||'';}return ui;}
+  function rememberWorkspace(extra={}){
+    if(restoringWorkspace||!workspaceRecord||saveBlocked)return Promise.resolve();
+    const ui=workspaceLocation(),encoded=json(ui);
+    saveChain=saveChain.then(async()=>{
+      if(saveBlocked||(!extra.name&&encoded===lastSavedUI))return;
+      try{workspaceRecord=await (await api('/api/workspace',{expected_revision:workspaceRecord.revision,ui,...extra})).json();lastSavedUI=encoded;renderProjectIdentity(extra.name!==undefined);message('workspace-save-status','Location and question draft saved locally.');}
+      catch(error){saveBlocked=error.status===409;message('workspace-message',error.message+(saveBlocked?' Copy any unsaved draft before reloading this page.':' Try saving again.'),true);message('workspace-save-status','Not saved. Your local draft is still visible.',true);}
+    });return saveChain;
+  }
+  function renderProjectIdentity(updateName=false){
+    if(!workspaceRecord)return;const project=workspaceRecord.project;
+    el('project-name').textContent=project.name;el('overview-name').textContent=project.name;
+    if(updateName)el('project-name-input').value=project.name;el('project-identity').textContent='Project '+project.id+' · single-user local workspace';
+  }
+  async function restoreWorkspace(){
+    restoringWorkspace=true;workspaceRecord=await read('/api/workspace');renderProjectIdentity(true);const saved=workspaceRecord.ui||{};
+    for(const key of Object.keys(scientificSelection))scientificSelection[key]=workspaceRecord.schema_version===3?(saved[key]||null):null;
+    el('question').value=saved.question_draft||'';el('workspace-search').value=saved.search||'';el('run-filter').value=saved.run_filter||'all';el('figure-zoom').value=saved.zoom||'fit';el('figure-stage').dataset.scale=el('figure-zoom').value;
+    renderProjectViews();let unavailable='';
+    if(saved.selected_job){
+      if(allJobs.some(job=>job.id===saved.selected_job)){
+        await select(saved.selected_job);
+        if(saved.parent_root&&(!figureState||saved.parent_root!==figureState.parent_root))unavailable='The saved artifact source has changed or is unavailable. Choose a result explicitly to inspect another version.';
+        else if(saved.figure){
+          if(figureState&&figureState.figures.some(figure=>figure.figure_id===saved.figure)){
+            el('figure-select').value=saved.figure;await figureChanged();
+            if(saved.selected_revision){
+              if(figureRevisions().some(revision=>revision.id===saved.selected_revision))await showRevision(selected,saved.selected_revision);
+              else unavailable='The saved artifact version is unavailable. Choose a result explicitly to inspect another version.';
+            }
+          }else unavailable='The saved artifact is unavailable. Choose a result explicitly to inspect another version.';
+        }
+      }else unavailable='The saved analysis is unavailable in this project. Choose a retained record to continue.';
+    }
+    if(unavailable){resetResults();el('results-empty').textContent=unavailable;}
+    if(config.scientific&&config.scientific.enabled)await restoreScientific(saved);
+    const notices=[workspaceRecord.recovery_notice,unavailable].filter(Boolean);if(notices.length)message('workspace-message',notices.join(' '),Boolean(unavailable));
+    showView(scientificDeepLink()?'scientific':saved.view==='scientific'&&!(config.scientific&&config.scientific.enabled)?'analyses':saved.view||'overview');showInspectorTab(saved.tab||'analyst');openInspector(saved.inspector_open===true);
+    if(saved.evidence_open){el('evidence-tabs').classList.toggle('all-tabs',true);el('evidence-toggle').setAttribute('aria-expanded','true');}
+    lastSavedUI=json(workspaceLocation());restoringWorkspace=false;if(scientificDeepLink()){lastSavedUI='';await rememberWorkspace();}
+  }
+  el('save-workspace').onclick=()=>{clearTimeout(draftTimer);return rememberWorkspace();};
+  el('save-project-name').onclick=()=>{const name=el('project-name-input').value.trim();if(!name){message('workspace-message','Enter a project name before saving.',true);return;}return rememberWorkspace({name});};
+  el('question').oninput=()=>{clearTimeout(draftTimer);message('workspace-save-status','Saving question draft…');draftTimer=setTimeout(()=>rememberWorkspace(),400);};
+  el('question').onblur=()=>{clearTimeout(draftTimer);rememberWorkspace();};
+  el('workspace-search').oninput=()=>{renderProjectViews();showView(el('workspace-search').value.trim()?'search':'overview');rememberWorkspace();};
+  el('run-filter').onchange=()=>{renderProjectViews();rememberWorkspace();};
+  el('activity-control').onclick=()=>{showView('runs');return rememberWorkspace();};
+  el('refresh-project').onclick=()=>jobs().catch(error=>message('workspace-message',error.message,true));
+
+  function matchesSearch(job){const query=el('workspace-search').value.trim().toLowerCase();return !query||[job.id,job.question,job.status,job.figure_id,job.input&&job.input.path,job.input&&job.input.sha256,job.proposal_root,job.bundle_root].filter(Boolean).join(' ').toLowerCase().includes(query);}
+  function objectRow(target,title,description,action){const row=document.createElement('button');row.type='button';row.className='object-row';row.textContent=title+'\n'+description;row.onclick=action;el(target).append(row);return row;}
+  function emptyList(target,text){if(el(target).children.length)return;const p=document.createElement('p');p.className='empty';p.textContent=text;el(target).append(p);}
+  async function openRecord(job,view){
+    const navigation=++navigationGeneration;
+    await select(job.parent_job||job.id,navigation);
+    if(navigation!==navigationGeneration)return;
+    if(job.parent_job&&selected===job.parent_job&&figureState){
+      if(!figureState.figures.some(figure=>figure.figure_id===job.figure_id)){message('workspace-message','The selected presentation figure is unavailable.',true);return;}
+      el('figure-select').value=job.figure_id;await figureChanged();if(navigation!==navigationGeneration)return;await showRevision(selected,job.id);
+    }
+    if(selected!==(job.parent_job||job.id)||navigation!==navigationGeneration)return;
+    if(view)showView(view,true);if(view==='execute'){showInspectorTab('execution');openInspector(true);}
+    await rememberWorkspace();
+  }
+  function renderProjectViews(){
+    const native=allJobs.filter(job=>job.operation_kind!=='presentation'),matching=allJobs.filter(matchesSearch),live=allJobs.filter(job=>active.has(job.status)),needs=allJobs.filter(job=>attention.has(job.status));
+    el('activity-control').textContent=live.length+' active · '+needs.length+' need attention';el('runs-count').textContent=live.length?'('+live.length+' active)':'';
+    for(const id of ['overview-recent','analysis-list','data-list','activity-list','run-list','result-list','file-bundles','overview-stats','search-list'])el(id).replaceChildren();
+    const datasets=new Map();
+    for(const job of native){if(!job.input||!job.input.path)continue;const key=job.input.sha256||'unverified:'+job.id;if(!datasets.has(key))datasets.set(key,[]);datasets.get(key).push(job);}
+    for(const [value,label] of [[datasets.size,'input groups'],[native.length,'analysis requests'],[allJobs.filter(job=>job.status.startsWith('completed_')).length,'saved outputs']]){const card=document.createElement('div'),count=document.createElement('strong'),caption=document.createElement('span');card.className='overview-stat';count.textContent=String(value);caption.textContent=label;card.append(count,caption);el('overview-stats').append(card);}
+    for(const job of native.filter(matchesSearch)){
+      const description=job.status.replaceAll('_',' ')+' · '+job.id.slice(0,8)+(job.review_decision?' · decision: '+job.review_decision:'');
+      objectRow('analysis-list',job.question,description,()=>openRecord(job,'review'));
+    }
+    for(const group of datasets.values()){
+      if(!group.some(matchesSearch))continue;const job=group[0],input=job.input,paths=[...new Set(group.map(item=>item.input.path))];
+      objectRow('data-list',input.path.split('/').pop(),(input.sha256?'SHA-256 '+input.sha256:'Identity not yet verified')+'\n'+paths.join('\n')+'\n'+group.length+' analysis record'+(group.length===1?'':'s'),()=>openRecord(job,'review'));
+    }
+    const filter=el('run-filter').value||'all';
+    const visibleRun=(job,status)=>filter==='all'||filter==='active'&&active.has(status)||filter==='attention'&&attention.has(status)||filter===(job.operation_kind||'analysis');
+    for(const job of matching){
+      const kind=job.operation_kind==='presentation'?'Presentation render':'Analysis run';
+      if(el('overview-recent').children.length<3)objectRow('overview-recent',job.question,(job.operation_kind==='presentation'?'Presentation':'Analysis request')+' · '+job.status.replaceAll('_',' ')+' · '+job.id.slice(0,8),()=>openRecord(job,job.operation_kind==='presentation'?'results':undefined));
+      objectRow('search-list',job.question,(job.operation_kind==='presentation'?'Presentation attempt':'Analysis request')+' · '+job.status.replaceAll('_',' ')+'\n'+job.id,()=>openRecord(job,job.operation_kind==='presentation'?'results':undefined));
+      if((active.has(job.status)||attention.has(job.status)||job.status==='awaiting_operator_review')&&visibleRun(job,job.status))objectRow('activity-list',job.question,job.status.replaceAll('_',' ')+' · '+(job.operation_kind==='presentation'?'Presentation attempt':'Analysis request')+' · '+job.id.slice(0,8)+(job.worker_liveness==='unknown'?' · worker liveness unknown':''),()=>openRecord(job,job.operation_kind==='presentation'?'results':undefined));
+      const history=job.execution_history||[],pending=job.pending_execution===true||active.has(job.status)&&(job.operation_kind==='presentation'||['preparing','running'].includes(job.status));
+      const attempts=[...history];if(pending&&!['finalizing'].includes(job.status))attempts.push({attempt:history.length+1,status:job.status});
+      for(const attempt of attempts){const status=attempt.status||job.status;if(!visibleRun(job,status))continue;objectRow('run-list',kind+' · attempt '+attempt.attempt+' · '+job.question,status.replaceAll('_',' ')+' · '+job.id.slice(0,8)+(Number.isFinite(attempt.elapsed_sec)?' · '+attempt.elapsed_sec.toFixed(1)+' s':''),()=>openRecord(job,'execute'));}
+      if(job.status.startsWith('completed_review_')||job.status==='completed_presentation'){
+        objectRow('result-list',job.question,(job.operation_kind==='presentation'?'Presentation · '+job.figure_id+' · parent '+job.parent_job.slice(0,8):'Analysis output')+' · '+job.status.replaceAll('_',' ')+'\n'+job.id,()=>openRecord(job,'results'));
+        if(job.operation_kind!=='presentation')objectRow('file-bundles',job.question,'Analysis evidence · '+job.id.slice(0,8),()=>openRecord(job,'files'));
+      }
+    }
+    for(const id of ['analysis-list','data-list','activity-list','run-list','result-list','file-bundles','overview-recent','search-list'])emptyList(id,'No matching '+({'analysis-list':'analyses','data-list':'registered inputs','activity-list':'pending work or attention records','run-list':'execution attempts','result-list':'completed outputs','file-bundles':'completed analysis exports','overview-recent':'recent work','search-list':'project records'})[id]+'.');
+  }
+  function scientificRows(name){return scientificCatalog&&scientificCatalog[name]||[];}
+  function scientificRefKey(ref){return ref?[ref.object_type,ref.object_id,ref.version_id].join('|'):'';}
+  function scientificParseRef(value){if(!value)return null;const [object_type,object_id,version_id]=value.split('|');return {object_type,object_id,version_id};}
+  function scientificShort(value){return String(value||'unavailable').slice(0,12);}
+  function scientificRecord(kind){const record=scientificResolved[kind];return record&&record.record||null;}
+  function scientificLogical(kind,ref=scientificSelection[kind+'_ref']){return ref?scientificRows(kind==='analysis'?'analyses':kind+'s').find(row=>row[kind+'_id']===ref.object_id):null;}
+  function scientificPlan(){return scientificRows('plans').find(row=>row.session_id===scientificSelection.planner_session_id)||null;}
+  function scientificRun(){return scientificRows('runs').find(row=>row.run_id===scientificSelection.scientific_run_id)||null;}
+  function scientificValidation(){const result=scientificRecord('result');return result&&(result.validation||scientificRows('validations').find(row=>row.validation_id===result.validation_id))||null;}
+  function scientificResultStatus(version,logical){
+    const reviews=scientificRows('reviews').filter(row=>row.result_version_id===version.version_id).sort((a,b)=>(b.base_revision||0)-(a.base_revision||0));
+    if(reviews.length)return reviews[0].decision;
+    return logical&&scientificRefKey(logical.ref)===scientificRefKey(version.ref)?logical.review_status:'unreviewed historical version';
+  }
+  function scientificDeepLink(){
+    if(!(config&&config.scientific&&config.scientific.enabled)||!location.search)return null;
+    const query=new URLSearchParams(location.search),object_type=query.get('object_type'),object_id=query.get('object_id'),version_id=query.get('version_id');
+    return ['dataset','analysis','result'].includes(object_type)&&/^[0-9a-f]{32}$/.test(object_id||'')&&/^[0-9a-f]{64}$/.test(version_id||'')?{object_type,object_id,version_id}:null;
+  }
+  function scientificSetMessage(text,error=false){scientificActionMessage=text;scientificActionError=error;message('scientific-message',text,error);}
+  function clearScientificDeepLink(){if(config&&config.scientific&&config.scientific.enabled&&location.search)history.replaceState(null,'',location.pathname);}
+  function scientificClearGrants(){el('scientific-data-grant').checked=false;el('scientific-model-grant').checked=false;el('scientific-warning-ack').checked=false;el('scientific-parameter-confirmation').checked=false;}
+  function hydrateScientificLabels(){
+    const study=scientificRows('studies').find(row=>row.study_id===scientificSelection.study_id),dataset=scientificLogical('dataset');
+    if(study){el('scientific-study-name').value=study.name;el('scientific-study-aim-input').value=study.aim;}
+    if(dataset){el('scientific-rename').value=dataset.name;el('scientific-locations').value=json(dataset.locations||{});}
+  }
+  function scientificOptions(id,rows,value,placeholder){
+    const select=el(id);select.replaceChildren();const empty=document.createElement('option');empty.value='';empty.textContent=placeholder;select.append(empty);
+    for(const row of rows){const option=document.createElement('option');option.value=row.value;option.textContent=row.label;select.append(option);}
+    if(value&&!rows.some(row=>row.value===value)){const missing=document.createElement('option');missing.value=value;missing.textContent='Unavailable · '+value;select.append(missing);}
+    select.value=value||'';
+  }
+  function scientificVersionOptions(kind){
+    const logical=scientificRows(kind==='analysis'?'analyses':kind+'s').filter(row=>!scientificSelection.study_id||row.study_id===scientificSelection.study_id);
+    return scientificRows(kind+'_versions').filter(version=>logical.some(row=>row[kind+'_id']===version[kind+'_id'])).map(version=>{
+      const row=logical.find(item=>item[kind+'_id']===version[kind+'_id']);
+      return {value:scientificRefKey(version.ref),label:(row.name||version.interpretation||'Result')+' · '+scientificShort(version.version_id)+(kind==='result'?' · '+scientificResultStatus(version,row):'')};
+    });
+  }
+  async function restoreScientific(saved){
+    scientificClearGrants();scientificExperiment='';scientificDraftKey='';scientificRequests.clear();
+    for(const key of Object.keys(scientificSelection))scientificSelection[key]=workspaceRecord.schema_version===3?(saved[key]||null):null;
+    const linked=scientificDeepLink();if(linked){for(const key of Object.keys(scientificSelection))scientificSelection[key]=null;scientificSelection[linked.object_type+'_ref']=linked;}
+    await refreshScientific();
+    if(linked){const logical=scientificLogical(linked.object_type,linked),record=scientificRecord(linked.object_type);if(logical)scientificSelection.study_id=logical.study_id;if(linked.object_type==='result'&&record)scientificSelection.scientific_run_id=record.run_id;renderScientific();}
+    hydrateScientificLabels();
+  }
+  async function refreshScientific(){
+    if(!(config&&config.scientific&&config.scientific.enabled))return;
+    clearTimeout(scientificTimer);const generation=++scientificGeneration;
+    try{
+      const catalog=await read('/api/scientific');if(generation!==scientificGeneration)return;scientificCatalog=catalog;
+      const resolved=await Promise.all(['dataset','analysis','result'].map(async kind=>{
+        const ref=scientificSelection[kind+'_ref'];if(!ref)return [kind,null];
+        const query=new URLSearchParams(ref).toString();
+        try{return [kind,{reference:ref,record:await read('/api/scientific/resolve?'+query)}];}
+        catch(error){return [kind,{reference:ref,error:error.message}];}
+      }));
+      if(generation!==scientificGeneration)return;scientificResolved=Object.fromEntries(resolved);renderScientific();
+      if(scientificRows('operations').some(row=>['queued','running'].includes(row.status)))scientificTimer=setTimeout(()=>refreshScientific(),1800);
+    }catch(error){if(generation===scientificGeneration)scientificSetMessage(error.message,true);}
+  }
+  function scientificReady(){return !!scientificCatalog&&scientificCatalog.initialized===true&&workspaceRecord&&workspaceRecord.schema_version===3&&!scientificBusy;}
+  function scientificExecutionDescriptor(action){return action==='run_trial'?{session_id:scientificSelection.planner_session_id,experiment_id:scientificExperiment}:{analysis_ref:scientificSelection.analysis_ref,dataset_ref:scientificSelection.dataset_ref};}
+  function scientificRequestKey(action){return action+':'+JSON.stringify(scientificExecutionDescriptor(action));}
+  function scientificValue(value,missing='Not provided'){return value===undefined||value===null?missing:typeof value==='string'?value:JSON.stringify(value);}
+  function scientificLines(value,missing='Not recorded'){return Array.isArray(value)&&value.length?value.map(item=>scientificValue(item)).join('; '):missing;}
+  function scientificCanonical(value){return JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);}
+  function renderScientificData(dataset){
+    const metadata=dataset&&dataset.manifest.metadata||{},observed=metadata.observed||{},inferred=metadata.inferred||{};
+    const groups=[['Samples and recorded labels',['samples','sample_count','sample_labels','n_samples','specimens','specimen_count']],['Biological units and replication',['biological_unit','biological_units','experimental_unit','experimental_units','biological_replicates','biological_replication','donors','donor_count','subject_ids','subjects','independent_samples']],['Groups and contrasts',['groups','conditions','treatment','group_column','contrasts']],['Measurements',['assay','measurement','measurement_type','raw_counts','layer','expression_layer','count_type']],['QC concerns',['qc_concerns','quality_control','qc','warnings','missing_data']]];
+    el('scientific-data-context').textContent=groups.map(([label,keys])=>{const supplied=keys.filter(key=>Object.prototype.hasOwnProperty.call(observed,key));return label+': '+(supplied.length?supplied.map(key=>key.replaceAll('_',' ')+' = '+scientificValue(observed[key])).join('; '):'Not provided');}).join('\n')+'\n\nSample labels and row counts do not establish independent biological replication. Content hashes identify bytes; they do not verify experimental or scientific claims.';
+    const entries=value=>Object.entries(value).map(([key,item])=>key.replaceAll('_',' ')+': '+scientificValue(item)).join('\n');
+    el('scientific-data-observed').textContent='Provided observations\n'+(Object.keys(observed).length?entries(observed):'No observations supplied.');
+    el('scientific-data-inferred').textContent='Provided inferences · not established observations\n'+(Object.keys(inferred).length?entries(inferred):'Not provided.');
+    el('scientific-data-unknowns').textContent='Recorded unknowns\n'+scientificUnknowns(metadata.unknowns);
+  }
+  function scientificUnknowns(unknowns){return Array.isArray(unknowns)&&unknowns.length?unknowns.map(item=>typeof item==='string'?item:(item.field||'Unspecified field')+': '+(item.impact||'Impact not recorded')+(item.blocking===true?' · blocking':item.blocking===false?' · recorded as nonblocking':' · blocking status not recorded')).join('\n'):'No unknowns recorded; completeness is not established.';}
+  function renderScientificPurpose(plan){
+    if(!plan){el('scientific-plan-purpose-summary').textContent='No retained planning session selected. New sessions default to method selection; no parameter requirements are inferred.';return;}
+    const purpose=plan.evaluation_purpose,known=['method_selection','execution_verification'].includes(purpose);
+    const requirements=plan.user_parameter_requirements;
+    el('scientific-plan-purpose-summary').textContent='Retained evaluation purpose: '+(known?purpose==='method_selection'?'method selection':'execution verification':'unverified — not recorded for this historical plan')+'\n'+(Array.isArray(requirements)?requirements.length?'Caller-declared parameter requirements:\n'+requirements.map(item=>item.name+' = '+scientificValue(item.value)+' · evidence: '+item.evidence).join('\n'):'No caller-declared parameter requirements recorded.':'User parameter requirements: unverified — no retained requirement record.')+(known?'':'\nMethod-selection conclusions remain unqualified.');
+  }
+  function scientificParameterOrigin(parameter,plan){
+    if(parameter.origin!=='user')return 'Origin: '+(parameter.origin?parameter.origin.replaceAll('_',' '):'unverified / not recorded');
+    const requirement=(Array.isArray(plan.user_parameter_requirements)?plan.user_parameter_requirements:[]).find(item=>item&&Object.keys(item).sort().join(',')==='evidence,name,value'&&item.name===parameter.name&&scientificCanonical(item.value)===scientificCanonical(parameter.value)&&typeof item.evidence==='string'&&item.evidence.trim());
+    return requirement?'Origin: recorded user requirement (caller-declared) · evidence: '+requirement.evidence:'Unverified user attribution — no exact matching retained user requirement.';
+  }
+  function renderScientificCandidates(plan){
+    el('scientific-candidates').replaceChildren();
+    const resolved=plan&&plan.candidates||[],frozen=plan&&plan.scientific_candidates;
+    const candidates=Array.isArray(frozen)?frozen.map(row=>({...row,...resolved.find(item=>item.name===row.name)})):resolved;
+    if(!candidates.length){const empty=document.createElement('p');empty.className='empty';empty.textContent=plan&&Array.isArray(frozen)?'No scientifically appropriate candidates were recorded. No winner is inferred.':'No scientific candidates recorded yet.';el('scientific-candidates').append(empty);return;}
+    for(const candidate of candidates){
+      const card=document.createElement('div');card.className='scientific-card';
+      const method=scientificRows('methods').find(row=>row.version_id===candidate.method_version_id),contract=method&&method.contract,source=candidate.source;
+      const assumptions=(candidate.assumptions||[]).map(item=>item.statement+' · '+item.status+(item.hard_precondition?' · hard precondition':'')+' · evidence: '+scientificValue(item.evidence,'Not provided'));
+      const parameters=(candidate.parameter_candidates||[]).map(item=>item.name+' = '+scientificValue(item.value)+' · '+scientificParameterOrigin(item,plan)+'\n  Rationale: '+scientificValue(item.rationale));
+      card.textContent=[candidate.name,'Method family: '+scientificValue(candidate.method_family),'Scientific rationale: '+scientificValue(candidate.scientific_rationale||candidate.rationale),'Source: '+(source?[source.type,source.reference,source.version,source.commit].filter(Boolean).join(' · '):'Not recorded'),'Dataset fit: '+scientificValue(candidate.dataset_fit)+' · Objective fit: '+scientificValue(candidate.objective_fit),'Assumptions: '+(assumptions.length?assumptions.join('\n  '):'Not recorded'),'Expected inputs: '+scientificLines(candidate.expected_inputs),'Known failure modes: '+scientificLines(candidate.known_failure_modes),'Tradeoffs: '+scientificLines(candidate.tradeoffs),'Other recorded candidates: '+scientificLines(candidates.filter(row=>row.name!==candidate.name).map(row=>row.name)),'Parameters: '+(parameters.length?parameters.join('\n  '):'No parameter proposals recorded'),'Applicability: '+scientificValue(candidate.applicability,'Not assessed')+' · Blockers: '+scientificLines(candidate.blockers,'No blocker record supplied'),'Availability: '+scientificValue(candidate.availability,'Not resolved')+' · implementation confidence: '+scientificValue(candidate.implementation_confidence,'Not assessed'),contract?'Method origin: '+scientificValue(contract.provenance&&contract.provenance.origin)+' · lifecycle: '+contract.lifecycle+' · trust: '+contract.implementation_trust:'Method binding: '+(candidate.method_version_id||'unresolved')].join('\n');
+      el('scientific-candidates').append(card);
+    }
+  }
+  function scientificMetricOrigin(source){
+    const kind=source&&source.kind;
+    return kind==='output_json'?'Method-reported output; not independent scientific validation':kind==='runtime'?'Controller-measured execution diagnostic; not scientific quality':kind==='validation'?'Deterministic output check; not independent scientific validation':'Origin unverified / not recorded';
+  }
+  function renderScientificCriteria(experiment){
+    let draft=null;try{draft=el('scientific-trial-json').value.trim()?JSON.parse(el('scientific-trial-json').value):null;}catch{}
+    const trial=experiment||draft;
+    el('scientific-trial-criteria').textContent=trial?(experiment?'Declared criteria':'Proposed criteria — not yet declared')+'\n'+scientificLines((trial.metrics||[]).map(metric=>metric.name+' · '+metric.category+' · '+metric.direction+' · '+scientificValue(metric.interpretation)+' · '+scientificMetricOrigin(trial.metric_sources&&trial.metric_sources[metric.name])),'No evaluation criteria recorded.')+'\nPopulation / subset: '+scientificValue(trial.subset_spec)+'\nValidity rationale: '+scientificValue(trial.subset_validity&&trial.subset_validity.rationale)+'\nResource limits: '+scientificValue(trial.resource_limits):'Predeclared criteria: no trial selected. Evaluation criteria must be frozen before outcomes are observed.';
+  }
+  function renderScientificOutcomes(plan,run){
+    const selectedRun=scientificSelection.scientific_run_id,linkedSession=run&&run.trigger&&run.trigger.request&&run.trigger.request.session_id;
+    const context=linkedSession?scientificRows('plans').find(row=>row.session_id===linkedSession):plan;
+    const controllers=new Set(scientificRows('attempts').filter(row=>row.run_id===selectedRun).map(row=>row.controller_id));
+    const outcomes=(context&&context.results||[]).filter(row=>!selectedRun||controllers.has(row.provenance&&row.provenance.run_id));
+    if(!outcomes.length){el('scientific-observed-metrics').textContent='No recorded trial metrics are linked to '+(selectedRun?'this exact run.':'the selected planning session.')+' Missing measurements are not successful estimates.';return;}
+    el('scientific-observed-metrics').textContent=(selectedRun?'Recorded metrics for the selected run':'Recorded trial outcomes for the selected planning session')+'\n'+outcomes.map(row=>{
+      const trial=(context.experiments||[]).find(item=>item.id===row.experiment_id),metrics=Object.entries(row.metric_values||{});
+      return row.candidate+' · '+row.experiment_id+' · '+row.status+'\n'+(metrics.length?metrics.map(([name,value])=>{const metric=trial&&(trial.metrics||[]).find(item=>item.name===name);return name+': '+scientificValue(value,'Unavailable')+' · '+scientificMetricOrigin(trial&&trial.metric_sources&&trial.metric_sources[name])+(metric?'\n  Criterion: '+metric.category+' / '+metric.direction+' · '+metric.interpretation:'\n  Predeclared criterion unavailable');}).join('\n'):'No metric values recorded.')+'\nWarnings: '+scientificLines(row.warnings)+'\nFailures: '+scientificLines(row.failures);
+    }).join('\n\n');
+  }
+  function renderScientificConclusion(plan,dataset){
+    const recommendation=plan&&plan.recommendation,assessment=plan&&plan.recommendation_evidence_assessment;
+    el('scientific-recommendation').textContent=recommendation?[
+      recommendation.choice?'Recorded recommendation: '+recommendation.choice:'No recommendation · abstention',
+      'Rationale: '+scientificValue(recommendation.rationale,'Not recorded'),
+      'Confidence: '+scientificValue(recommendation.confidence,'Not recorded')+' · scientific confidence: '+scientificValue(recommendation.scientific_confidence,'Not recorded')+' · implementation confidence: '+scientificValue(recommendation.implementation_confidence,'Not recorded'),
+      'Confidence basis: '+scientificValue(recommendation.confidence_basis,'Not recorded'),
+      'Tradeoffs: '+scientificLines(recommendation.tradeoffs),'Alternatives / next evidence: '+scientificLines(recommendation.alternatives),
+      'Uncertainties: '+scientificLines(recommendation.unknowns||recommendation.uncertainties),
+      'Recorded trials considered: '+scientificLines(recommendation.tests_run),'Advice only; review and acceptance remain explicit.'
+    ].join('\n'):'No recommendation recorded. Scientific conclusions and implementation confidence remain unqualified until evidence is assessed.';
+    el('scientific-evidence-assessment').textContent=assessment?[
+      'Controller-owned evidence assessment · '+scientificValue(assessment.scope),
+      'Evaluation purpose: '+scientificValue(assessment.evaluation_purpose),
+      'Independent scientific validation: '+(assessment.independent_scientific_validation===false?'not performed':scientificValue(assessment.independent_scientific_validation,'Not recorded')),
+      'Implemented eligible candidates: '+scientificLines(assessment.eligible_implemented_candidates),
+      'Unavailable candidates: '+scientificLines(assessment.unavailable_candidates),
+      ...(assessment.candidates||[]).map(row=>row.candidate+' · comparison evidence floor: '+(row.meets_evidence_floor===true?'met':row.meets_evidence_floor===false?'not met':'unverified')+'\nReasons: '+scientificLines(row.reasons)+'\nLimitations: '+scientificLines(row.limitations)+'\nComparable declared trials: '+scientificLines((row.comparable_experiments||[]).map(trial=>trial.experiment_id+' · '+scientificLines(trial.candidates)+' · '+scientificLines((trial.metrics||[]).map(metric=>metric.name+' / '+metric.category+' / '+metric.direction+' · '+scientificMetricOrigin(metric.source)+' · values: '+scientificValue(metric.values)))))),
+      'Assessment limitations: '+scientificLines(assessment.limitations),
+      'Meeting an evidence floor is not proof of the best method or scientific optimality.'
+    ].join('\n'):'No controller-owned evidence assessment is retained for this plan. Comparative conclusions remain unqualified.';
+    const unknowns=dataset&&dataset.manifest.metadata&&dataset.manifest.metadata.unknowns;
+    el('scientific-conclusion-unknowns').textContent='Dataset uncertainties still recorded\n'+scientificUnknowns(unknowns);
+  }
+  function scientificResolutionComplete(plan){return !!plan&&((plan.selection_history||[]).some(row=>row.phase==='method_capability_resolution'&&row.status==='accepted')||(plan.candidates||[]).length>0);}
+  function renderScientific(){
+    if(!scientificCatalog)return;
+    const ready=scientificReady(),study=scientificRows('studies').find(row=>row.study_id===scientificSelection.study_id),dataset=scientificRecord('dataset'),analysis=scientificRecord('analysis'),result=scientificRecord('result'),plan=scientificPlan(),run=scientificRun(),settings=config.scientific;
+    el('scientific-setup').hidden=scientificCatalog.initialized&&workspaceRecord&&workspaceRecord.schema_version===3;el('scientific-content').hidden=!scientificCatalog.initialized;el('scientific-initialize').disabled=scientificBusy;el('scientific-initialize').textContent=scientificCatalog.initialized?'Enable exact version restoration':'Initialize scientific workspace';
+    const recovery=scientificCatalog.recovery_notice||settings.recovery_notice;el('scientific-recovery').hidden=!recovery;el('scientific-recovery').textContent=typeof recovery==='string'?recovery:recovery?json(recovery):'';
+    message('scientific-message',scientificActionMessage,scientificActionError);
+    scientificOptions('scientific-study',scientificRows('studies').map(row=>({value:row.study_id,label:row.name})),scientificSelection.study_id,'Select a study');
+    el('scientific-study-aim').textContent=study?study.aim:scientificSelection.study_id?'The saved study is unavailable. Its identity is retained.':'Select or create a study.';
+    for(const kind of ['dataset','analysis','result'])scientificOptions('scientific-'+kind,scientificVersionOptions(kind),scientificRefKey(scientificSelection[kind+'_ref']),'Select '+(kind==='analysis'?'an':'a')+' '+kind+' version');
+    const datasetName=scientificLogical('dataset'),analysisName=scientificLogical('analysis'),resultName=scientificLogical('result');
+    el('scientific-dataset-summary').textContent=dataset?(datasetName&&datasetName.name||'Dataset')+' · '+(dataset.manifest.metadata.data_classification||'unclassified')+'\n'+Object.keys(dataset.manifest.members).length+' immutable input member(s) · version '+scientificShort(dataset.version_id):'Choose an exact dataset version to establish input bindings.';
+    renderScientificData(dataset);
+    el('scientific-analysis-summary').textContent=analysis?(analysis.definition.task&&analysis.definition.task.scientific_objective||analysisName&&analysisName.name||'Recorded analysis')+'\nVersion '+scientificShort(analysis.version_id)+' · '+(analysis.definition.method_version_ids.length?'frozen execution definition':'unplanned question'):'Choose or create an analysis.';
+    const missing=['dataset','analysis','result'].filter(kind=>scientificResolved[kind]&&scientificResolved[kind].error).map(kind=>kind[0].toUpperCase()+kind.slice(1)+' version unavailable: '+scientificResolved[kind].error);
+    if(scientificSelection.planner_session_id&&!plan)missing.push('Saved planning session unavailable; no replacement was selected.');
+    if(scientificSelection.scientific_run_id&&!run)missing.push('Saved run unavailable; no replacement was selected.');
+    message('scientific-reference-message',missing.join('\n'),missing.length>0);
+    const sameStudy=datasetName&&analysisName&&datasetName.study_id===analysisName.study_id&&(!scientificSelection.study_id||datasetName.study_id===scientificSelection.study_id);
+    el('scientific-create-plan').disabled=!ready||!dataset||!analysis||!sameStudy;
+    for(const id of ['scientific-create-study','scientific-create-analysis','scientific-register-dataset','scientific-import'])el(id).disabled=!ready||(id!=='scientific-create-study'&&!study);
+    el('scientific-update-study').disabled=!ready||!study;
+    scientificOptions('scientific-earlier-invocation',scientificRows('legacy_method_runs').map(row=>({value:row.run_id,label:row.method_name+' · '+row.status+' · '+scientificShort(row.run_id)})),el('scientific-earlier-invocation').value,'Start a new analysis definition');
+    el('scientific-use-earlier-import').disabled=!ready||!scientificRows('legacy_method_runs').some(row=>row.run_id===el('scientific-earlier-invocation').value);
+    for(const id of ['scientific-rename-dataset','scientific-save-locations'])el(id).disabled=!ready||!datasetName;
+    scientificOptions('scientific-plan',scientificRows('plans').filter(row=>!scientificSelection.study_id||row.scientific_anchors.study_id===scientificSelection.study_id).map(row=>({value:row.session_id,label:(row.context&&row.context.task.scientific_objective||'Planning session')+' · '+scientificShort(row.session_id)})),scientificSelection.planner_session_id,'Select a planning session');
+    el('scientific-plan-summary').textContent=plan?'Session '+plan.session_id+'\nDataset '+plan.scientific_anchors.dataset_versions.map(ref=>scientificShort(ref.version_id)).join(', ')+' · analysis '+scientificShort(plan.scientific_anchors.analysis_version.version_id):'Planning sessions preserve their exact starting context.';
+    renderScientificPurpose(plan);
+    const fixture=settings.planning_mode==='recorded_fixture',live=settings.planning_mode==='codex-cli',modelAllowed=fixture||live&&settings.model_execution_allowed&&el('scientific-model-grant').checked;
+    el('scientific-mode').textContent=fixture?'Recorded fixture planning · No live model session is used.':live?'Live Codex planning · Each action requires fresh model authorization.':'Scientific planning is disabled for this service.';
+    el('scientific-model-permission').hidden=!live;el('scientific-model-grant').disabled=!ready||!live||!settings.model_execution_allowed;
+    const canPlan=ready&&!!plan&&modelAllowed&&!plan.selection_in_progress;
+    el('scientific-science').disabled=!canPlan||plan&&plan.scientific_candidates!=null;
+    el('scientific-resolve').disabled=!canPlan||!plan.scientific_candidates||Boolean(plan.experiments&&plan.experiments.length);
+    el('scientific-design').disabled=!canPlan||!(plan.candidates||[]).length||Boolean(plan.results&&plan.results.length);
+    el('scientific-recommend').disabled=!canPlan||!scientificResolutionComplete(plan);
+    el('scientific-draft-source').disabled=!canPlan||Boolean(plan.experiments&&plan.experiments.length);
+    renderScientificCandidates(plan);renderScientificConclusion(plan,dataset);
+    scientificOptions('scientific-source-candidate',(plan&&plan.candidates||[]).map(row=>({value:row.name,label:row.name})),el('scientific-source-candidate').value,'Select a candidate');
+    scientificOptions('scientific-source-method',scientificRows('methods').filter(row=>row.contract.lifecycle==='custom'&&row.contract.implementation.kind==='oci').map(row=>({value:row.version_id,label:row.contract.name+' · '+scientificShort(row.version_id)+' · '+row.contract.implementation_trust})),el('scientific-source-method').value,'Select an interface version');
+    el('scientific-source-drafts').textContent=plan&&plan.implementation_drafts&&plan.implementation_drafts.length?json(plan.implementation_drafts):'No implementation drafts.';
+    const proposals=plan&&(plan.trial_designs||[]).flatMap((design,index)=>(design.proposals||[]).map((spec,position)=>({value:index+':'+position,label:spec.id+' · '+spec.candidates.join(', ')})))||[];
+    scientificOptions('scientific-trial-proposal',proposals,scientificDraftKey,'Select a proposed trial');
+    scientificOptions('scientific-experiment',(plan&&plan.experiments||[]).map(row=>({value:row.id,label:row.id+' · '+row.status})),scientificExperiment,'Select a declared trial');
+    const experiment=plan&&(plan.experiments||[]).find(row=>row.id===scientificExperiment);el('scientific-frozen-trial').textContent=experiment?json(experiment):'No declared trial selected.';
+    renderScientificCriteria(experiment);
+    const trialRef=plan&&plan.scientific_trial_definitions&&plan.scientific_trial_definitions[scientificExperiment];
+    const trialContext=!!plan&&plan.scientific_anchors.dataset_versions.some(ref=>scientificRefKey(ref)===scientificRefKey(scientificSelection.dataset_ref))&&(!trialRef||scientificRefKey(trialRef)===scientificRefKey(scientificSelection.analysis_ref));
+    el('scientific-declare').disabled=!ready||!plan||!el('scientific-trial-json').value.trim();
+    const granted=ready&&settings.data_execution_allowed&&el('scientific-data-grant').checked;
+    el('scientific-data-grant').disabled=!ready||!settings.data_execution_allowed;
+    el('scientific-execution-permission').textContent=settings.data_execution_allowed?'Service permission is enabled. This checkbox authorizes only the next run request and is cleared after submission.':'Data execution is disabled for this service. Planning and evidence remain available.';
+    const trialRequest=scientificRequests.get(scientificRequestKey('run_trial')),rerunRequest=scientificRequests.get(scientificRequestKey('rerun'));
+    el('scientific-run').disabled=!granted||!dataset||!analysis||!experiment||!trialContext||experiment.status!=='declared'||Boolean(trialRequest&&trialRequest.confirmed);
+    el('scientific-rerun').disabled=!granted||!dataset||!analysis||!sameStudy||!analysis.definition.method_version_ids.length||Boolean(rerunRequest&&rerunRequest.confirmed);
+    el('scientific-new-rerun').hidden=!(rerunRequest&&rerunRequest.confirmed);el('scientific-new-rerun').disabled=!ready;
+    scientificOptions('scientific-run-select',scientificRows('runs').filter(row=>!scientificSelection.study_id||row.study_id===scientificSelection.study_id).map(row=>({value:row.run_id,label:scientificShort(row.run_id)+' · '+row.status+' · analysis '+scientificShort(row.analysis_version_id)})),scientificSelection.scientific_run_id,'Select a run');
+    const attempts=scientificRows('attempts').filter(row=>row.run_id===scientificSelection.scientific_run_id);
+    el('scientific-run-summary').textContent=run?'Recorded run: '+run.status+'\n'+attempts.length+' execution attempt(s) · analysis version '+scientificShort(run.analysis_version_id)+(attempts.some(row=>row.worker_liveness==='unknown')?'\nWorker liveness is unknown.':''):'Select a retained run to inspect attempts, failures and receipts.';
+    renderScientificOutcomes(plan,run);
+    el('scientific-recover').disabled=!ready||!run;
+    renderScientificOperations();
+    const validation=scientificValidation(),runValidations=scientificRows('validations').filter(row=>row.run_id===scientificSelection.scientific_run_id);
+    const currentResult=result&&resultName&&scientificRefKey(resultName.ref)===scientificRefKey(result.ref);
+    el('scientific-result-summary').textContent=result?result.interpretation+'\nReview of this version: '+scientificResultStatus(result,resultName)+' · validation: '+(validation&&validation.status||'unavailable')+'\nResult version '+scientificShort(result.version_id)+' · run '+scientificShort(result.run_id)+(currentResult?'':'\nHistorical interpretation. Review requires the current result version to be selected explicitly.'):'Select an exact result version. Failed and incomplete evidence remains in the run inspector.';
+    el('scientific-validation').textContent=validation?json(validation):runValidations.length?json(runValidations):'No retained validation evidence for this selection.';
+    el('scientific-accept').disabled=!ready||!currentResult||!validation||validation.status!=='passed'||!el('scientific-warning-ack').checked||Boolean(resultName&&resultName.review_status==='accepted');
+    el('scientific-reject').disabled=!ready||!currentResult;
+    renderScientificArtifacts(result);el('scientific-review-history').replaceChildren();
+    for(const review of scientificRows('reviews').filter(row=>result&&row.result_id===result.result_id)){const card=document.createElement('div');card.className='scientific-card';card.textContent=review.decision+' · version '+scientificShort(review.result_version_id)+' · '+(review.actor||'local review')+'\n'+review.rationale;el('scientific-review-history').append(card);}
+    el('scientific-imports').textContent=scientificRows('imports').length?json(scientificRows('imports')):'No explicit imports.';if(currentView==='scientific')inspectScientific();
+  }
+  function renderScientificOperations(){
+    el('scientific-operations').replaceChildren();
+    const rows=scientificRows('operations').filter(row=>!scientificSelection.scientific_run_id||!row.run_id||row.run_id===scientificSelection.scientific_run_id).slice(-12).reverse();
+    for(const operation of rows){
+      const card=document.createElement('div');card.className='scientific-card';const unavailable=operation.value&&operation.value.unavailable||[];
+      card.textContent=operation.action.replaceAll('_',' ')+' · '+operation.status.replaceAll('_',' ')+(operation.error?'\n'+operation.error.message:'')+(operation.notice?'\n'+operation.notice:'')+(unavailable.length?'\nEvidence needs attention:\n'+unavailable.map(row=>(row.trial_status?row.trial_status+' · ':'')+row.message+(row.failures&&row.failures.length?' · '+row.failures.join('; '):'')).join('\n'):'')+(operation.status==='completed'&&operation.run_id?'\nProcessing finished. Inspect the run and validation outcome before review.':'');el('scientific-operations').append(card);
+    }
+  }
+  function inspectScientific(){
+    const dataset=scientificRecord('dataset'),analysis=scientificRecord('analysis'),result=scientificRecord('result'),plan=scientificPlan(),run=scientificRun();
+    el('inspector-title').textContent='Scientific evidence';el('inspector-subtitle').textContent='Exact versions · retained evidence';
+    el('scientific-inspector-summary').textContent=['dataset','analysis','result'].map(kind=>{const ref=scientificSelection[kind+'_ref'];return kind[0].toUpperCase()+kind.slice(1)+': '+(ref?scientificShort(ref.object_id)+' / '+scientificShort(ref.version_id):'not selected');}).join('\n');
+    el('scientific-exact-links').replaceChildren();for(const kind of ['dataset','analysis','result']){const ref=scientificSelection[kind+'_ref'];if(!ref)continue;const link=document.createElement('a');link.textContent='Exact '+kind+' link';link.href=location.pathname+'?'+new URLSearchParams(ref).toString();el('scientific-exact-links').append(link);}
+    const methodIds=new Set([...(analysis&&analysis.definition.method_version_ids||[]),...(plan&&plan.candidates||[]).map(row=>row.method_version_id)]);
+    const methods=scientificRows('methods').filter(row=>methodIds.has(row.version_id)).map(row=>({name:row.contract.name,version_id:row.version_id,origin:row.contract.provenance&&row.contract.provenance.origin,lifecycle:row.contract.lifecycle,implementation_trust:row.contract.implementation_trust,implementation:row.contract.implementation,environment:row.contract.environment}));
+    el('scientific-methods').textContent=methods.length?json(methods):'No resolved method version selected.';
+    scientificOptions('scientific-method-source',methods.map(row=>({value:row.version_id,label:row.name+' · '+scientificShort(row.version_id)+' · '+row.implementation_trust})),el('scientific-method-source').value,'Select a method version');el('scientific-source-preview').disabled=!methods.some(row=>row.version_id===el('scientific-method-source').value);
+    el('scientific-context-record').textContent=json({selected_references:scientificSelection,dataset:dataset||scientificResolved.dataset,analysis:analysis||scientificResolved.analysis});
+    el('scientific-attempts').textContent=json({run,attempts:scientificRows('attempts').filter(row=>row.run_id===scientificSelection.scientific_run_id),operations:scientificRows('operations').filter(row=>row.run_id&&row.run_id===scientificSelection.scientific_run_id)});
+    el('scientific-review-evidence').textContent=json({result:result||scientificResolved.result,validation:scientificValidation(),reviews:scientificRows('reviews').filter(row=>result&&row.result_id===result.result_id),selections:scientificRows('selections').filter(row=>row.study_id===scientificSelection.study_id)});
+    el('scientific-planning-evidence').textContent=plan?json(plan):'No exact planning session selected.';
+  }
+  function renderScientificArtifacts(result){
+    const reference=scientificRefKey(scientificSelection.result_ref);
+    if(reference!==scientificPreviewReference||!result){scientificPreviewReference=reference;scientificPreviewGeneration++;clearScientificPlot();el('scientific-output-preview').hidden=true;el('scientific-output-preview').textContent='';message('scientific-artifact-message','');}
+    if(!scientificPlotURL)el('scientific-plot-message').textContent='No verified plot available in this view; preview a linked output to inspect it.';
+    el('scientific-artifacts').replaceChildren();if(!result)return;
+    for(const identity of result.artifact_ids||[]){for(const preview of [true,false]){const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=(preview?'Preview output ':'Download output ')+scientificShort(identity);button.onclick=()=>scientificArtifact(identity,preview);el('scientific-artifacts').append(button);}}
+  }
+  function clearScientificPlot(){if(scientificPlotURL)URL.revokeObjectURL(scientificPlotURL);scientificPlotURL=null;el('scientific-plot-preview').replaceChildren();el('scientific-plot-message').textContent='No verified plot available in this view; preview a linked output to inspect it.';}
+  async function scientificArtifactBytes(response,limit){
+    const reader=response.body.getReader();let size=0;const parts=[];
+    for(;;){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.byteLength;if(size>limit){await reader.cancel();throw Error('This output exceeds the bounded preview limit ('+(limit/1024)+' KiB). Use its verified download.');}parts.push(chunk.value);}
+    return parts;
+  }
+  async function scientificArtifact(identity,preview){
+    const expected=scientificRefKey(scientificSelection.result_ref),generation=preview?++scientificPreviewGeneration:scientificPreviewGeneration;
+    const current=()=>expected===scientificRefKey(scientificSelection.result_ref)&&generation===scientificPreviewGeneration&&(!preview||scientificRecord('result'));
+    if(preview){clearScientificPlot();el('scientific-output-preview').hidden=true;}
+    try{
+      const response=await api('/api/scientific/artifacts/'+encodeURIComponent(identity));
+      if(preview){
+        const type=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase(),raster=/^image\/(png|jpeg|webp|gif)$/.test(type);
+        if(!raster&&!/json|text|csv|tsv/.test(type)){await response.body.cancel();throw Error('This output is available as a verified download. Preview supports text and bounded raster images; active image/document formats are not displayed.');}
+        const parts=await scientificArtifactBytes(response,raster?8*1024*1024:262144);
+        if(!current())return;
+        if(raster){
+          const url=URL.createObjectURL(new Blob(parts,{type})),figure=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');scientificPlotURL=url;
+          img.alt='Verified linked raster artifact '+identity;caption.textContent='Retained raster output · '+scientificShort(identity)+' · no scientific interpretation added';
+          img.onload=()=>{if(current())el('scientific-plot-message').textContent='Verified linked raster output. Its scientific interpretation and validation require separate review.';};
+          img.onerror=()=>{if(current()){clearScientificPlot();message('scientific-artifact-message','The retained bytes could not be displayed as a raster image.',true);}};
+          img.src=url;figure.append(img,caption);el('scientific-plot-preview').append(figure);el('scientific-plot-message').textContent='Loading verified raster bytes…';message('scientific-artifact-message','Verified raster bytes loaded for preview (8 MiB maximum).');
+        }else{const text=await new Blob(parts).text();if(!current())return;el('scientific-output-preview').textContent=text;el('scientific-output-preview').hidden=false;message('scientific-artifact-message','Verified output preview.');}
+      }else{const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=identity;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);message('scientific-artifact-message','Verified output download prepared.');}
+    }catch(error){if(current())message('scientific-artifact-message',error.message,true);}
+  }
+  async function scientificAction(action,payload={},onSuccess=null){
+    if(scientificBusy||!scientificCatalog)return null;
+    scientificBusy=true;scientificGeneration++;clearTimeout(scientificTimer);clearScientificDeepLink();scientificSetMessage('Recording '+action.replaceAll('_',' ')+'…');renderScientific();
+    try{
+      const value=await (await api('/api/scientific',{action,expected_revision:scientificCatalog.revision,actor:'local-researcher',...payload})).json();
+      if(onSuccess)await onSuccess(value);
+      scientificSetMessage(value.operation_id?'Request recorded. Inspect retained activity and evidence as it becomes available.':action==='accept_result'?'Result acceptance recorded. No computation was started.':action==='reject_result'?'Result rejection recorded.':action==='recover_run'?'Retained evidence reconciled. No execution was restarted.':'Scientific record saved.');
+      await refreshScientific();await rememberWorkspace();return value;
+    }catch(error){scientificSetMessage(error.message,true);return null;}
+    finally{scientificBusy=false;renderScientific();}
+  }
+  async function scientificSelect(kind,ref){
+    clearScientificDeepLink();scientificSelection[kind+'_ref']=ref;scientificClearGrants();
+    if(kind!=='result'){scientificSelection.planner_session_id=null;scientificSelection.scientific_run_id=null;scientificSelection.result_ref=null;scientificExperiment='';scientificDraftKey='';el('scientific-trial-json').value='';}
+    else{const version=scientificRows('result_versions').find(row=>scientificRefKey(row.ref)===scientificRefKey(ref));scientificSelection.scientific_run_id=version?version.run_id:null;el('scientific-output-preview').hidden=true;el('scientific-output-preview').textContent='';message('scientific-artifact-message','');}
+    await refreshScientific();if(kind==='dataset')hydrateScientificLabels();await rememberWorkspace();
+  }
+  async function scientificModelAction(action,extra={}){
+    const settings=config.scientific,live=settings.planning_mode==='codex-cli';
+    if(!scientificPlan()||settings.planning_mode==='disabled'||live&&(!settings.model_execution_allowed||!el('scientific-model-grant').checked)){scientificSetMessage('Select a planning session and explicitly authorize the next model action when live planning is enabled.',true);return;}
+    const payload={session_id:scientificSelection.planner_session_id,...extra};if(live)payload.allow_model_execution=true;
+    el('scientific-model-grant').checked=false;await scientificAction(action,payload);
+  }
+  async function scientificExecute(action){
+    if(scientificBusy)return;
+    if(!el('scientific-data-grant').checked||!config.scientific.data_execution_allowed){scientificSetMessage('Explicitly authorize this run using the data-execution checkbox.',true);return;}
+    const descriptor=scientificExecutionDescriptor(action),key=scientificRequestKey(action);
+    if(!scientificRecord('dataset')||!scientificRecord('analysis')||action==='run_trial'&&(!descriptor.session_id||!descriptor.experiment_id)){scientificSetMessage('Select available exact data and analysis versions and the execution context first.',true);return;}
+    let request=scientificRequests.get(key);if(!request){request={idempotency_key:crypto.randomUUID(),confirmed:false};scientificRequests.set(key,request);}
+    el('scientific-data-grant').checked=false;
+    await scientificAction(action,{...descriptor,idempotency_key:request.idempotency_key,allow_data_execution:true},value=>{request.confirmed=true;scientificSelection.scientific_run_id=value.run_id||scientificSelection.scientific_run_id;});
+  }
+  async function scientificReview(action){
+    if(!scientificRecord('result'))return;const rationale=el('scientific-review-rationale').value.trim();
+    if(!rationale){scientificSetMessage('Enter a review rationale before recording a decision.',true);return;}
+    if(action==='accept_result'&&!el('scientific-warning-ack').checked){scientificSetMessage('Review and acknowledge the exact output, validation findings and limitations first.',true);return;}
+    const payload={result_ref:scientificSelection.result_ref,rationale};
+    if(action==='accept_result'){payload.acknowledge_warnings=true;const role=el('scientific-select-role').value.trim();if(role)payload.select_role=role;}
+    el('scientific-warning-ack').checked=false;await scientificAction(action,payload);
+  }
+  function scientificJSON(id,fallback){const text=el(id).value.trim();return text?JSON.parse(text):fallback;}
+  el('open-scientific').onclick=async()=>{showView('scientific');await refreshScientific();await rememberWorkspace();};
+  el('scientific-back').onclick=()=>{showView('analyses');return rememberWorkspace();};
+  el('scientific-refresh').onclick=()=>refreshScientific();
+  el('scientific-initialize').onclick=async()=>{await saveChain;return scientificAction('initialize',{},async()=>{workspaceRecord=await read('/api/workspace');lastSavedUI='';renderProjectIdentity();});};
+  el('scientific-study').onchange=async()=>{
+    clearScientificDeepLink();
+    scientificSelection={study_id:el('scientific-study').value||null,dataset_ref:null,analysis_ref:null,result_ref:null,scientific_run_id:null,planner_session_id:null};scientificClearGrants();scientificExperiment='';scientificDraftKey='';el('scientific-trial-json').value='';
+    const study=scientificRows('studies').find(row=>row.study_id===scientificSelection.study_id);if(study){el('scientific-study-name').value=study.name;el('scientific-study-aim-input').value=study.aim;}
+    await refreshScientific();await rememberWorkspace();
+  };
+  el('scientific-study-form').onsubmit=event=>{event.preventDefault();return scientificAction('create_study',{name:el('scientific-study-name').value.trim(),aim:el('scientific-study-aim-input').value.trim()},value=>{for(const key of Object.keys(scientificSelection))scientificSelection[key]=null;scientificSelection.study_id=value.study_id;scientificExperiment='';scientificDraftKey='';el('scientific-trial-json').value='';scientificClearGrants();});};
+  el('scientific-update-study').onclick=()=>scientificAction('update_study',{study_id:scientificSelection.study_id,name:el('scientific-study-name').value.trim(),aim:el('scientific-study-aim-input').value.trim()});
+  for(const kind of ['dataset','analysis','result'])el('scientific-'+kind).onchange=()=>scientificSelect(kind,scientificParseRef(el('scientific-'+kind).value));
+  el('scientific-dataset-form').onsubmit=async event=>{
+    event.preventDefault();try{
+      const observed=scientificJSON('scientific-observed',{});if(!observed||Array.isArray(observed)||typeof observed!=='object')throw Error('Observed metadata must be a JSON object.');
+      if(el('scientific-assay').value.trim())observed.assay=el('scientific-assay').value.trim();
+      const members=scientificJSON('scientific-members',{dataset:{path:el('scientific-dataset-path').value.trim(),artifact_type:el('scientific-artifact-type').value}});
+      const payload={study_id:scientificSelection.study_id,name:el('scientific-dataset-name').value.trim(),members,metadata:{observed,inferred:{},unknowns:el('scientific-unknowns').value.split('\n').map(text=>text.trim()).filter(Boolean),data_classification:el('scientific-classification').value}};
+      if(el('scientific-add-version').checked){if(!scientificSelection.dataset_ref)throw Error('Select the logical dataset before adding a version.');payload.dataset_id=scientificSelection.dataset_ref.object_id;}
+      await scientificAction('register_dataset',payload,value=>{scientificSelection.dataset_ref=value.ref;scientificSelection.planner_session_id=null;scientificSelection.result_ref=null;scientificSelection.scientific_run_id=null;scientificClearGrants();});
+    }catch(error){scientificSetMessage(error.message,true);}
+  };
+  el('scientific-rename-dataset').onclick=()=>scientificSelection.dataset_ref&&scientificAction('rename_dataset',{dataset_id:scientificSelection.dataset_ref.object_id,name:el('scientific-rename').value.trim()});
+  el('scientific-dataset-details').onsubmit=event=>{event.preventDefault();try{return scientificSelection.dataset_ref&&scientificAction('set_dataset_locations',{dataset_id:scientificSelection.dataset_ref.object_id,locations:scientificJSON('scientific-locations',{})});}catch(error){scientificSetMessage(error.message,true);}};
+  el('scientific-analysis-form').onsubmit=event=>{
+    event.preventDefault();const payload={study_id:scientificSelection.study_id,name:el('scientific-analysis-name').value.trim(),objective:el('scientific-objective').value.trim(),computational_task:'quality_control'};
+    const source=el('scientific-earlier-invocation').value;
+    if(source){const earlier=scientificRows('legacy_method_runs').find(row=>row.run_id===source);if(!earlier){scientificSetMessage('The selected earlier invocation is unavailable. Choose an available record explicitly.',true);return;}payload.legacy_analysis_id=earlier.analysis_id;payload.execution_source_run_id=earlier.run_id;}
+    return scientificAction('create_analysis',payload,value=>{scientificSelection.analysis_ref=value.ref;scientificSelection.planner_session_id=null;scientificSelection.scientific_run_id=null;scientificSelection.result_ref=null;scientificExperiment='';scientificDraftKey='';el('scientific-trial-json').value='';scientificClearGrants();});
+  };
+  el('scientific-earlier-invocation').onchange=renderScientific;
+  el('scientific-parameter-requirements').oninput=()=>{el('scientific-parameter-confirmation').checked=false;};
+  el('scientific-create-plan').onclick=()=>{
+    if(el('scientific-create-plan').disabled)return;
+    try{
+      const input=el('scientific-parameter-requirements').value.trim();
+      const requirements=input?JSON.parse(input,(_key,value)=>{if(typeof value==='number'&&!Number.isFinite(value))throw Error('Parameter requirements must contain finite JSON values.');return value;}):[];
+      if(!Array.isArray(requirements)||requirements.length>64||requirements.some(item=>!item||typeof item!=='object'||Object.keys(item).sort().join(',')!=='evidence,name,value'||typeof item.name!=='string'||!item.name.trim()||typeof item.evidence!=='string'||!item.evidence.trim())||new Set(requirements.map(item=>item.name)).size!==requirements.length)throw Error('Use at most 64 unique requirements, each with exactly name, value and nonblank evidence.');
+      if(requirements.length&&!el('scientific-parameter-confirmation').checked)throw Error('Explicitly confirm that these values are requirements supported by the cited instruction or source.');
+      const payload={analysis_ref:scientificSelection.analysis_ref,dataset_ref:scientificSelection.dataset_ref,evaluation_purpose:el('scientific-evaluation-purpose').value,user_parameter_requirements:requirements};
+      return scientificAction('create_plan',payload,value=>{scientificSelection.planner_session_id=value.session_id;scientificExperiment='';scientificDraftKey='';el('scientific-trial-json').value='';scientificClearGrants();});
+    }catch(error){scientificSetMessage(error.message,true);}
+  };
+  el('scientific-plan').onchange=async()=>{
+    clearScientificDeepLink();
+    scientificSelection.planner_session_id=el('scientific-plan').value||null;const plan=scientificPlan();scientificClearGrants();scientificExperiment='';scientificDraftKey='';el('scientific-trial-json').value='';
+    if(plan){scientificSelection.analysis_ref=plan.scientific_anchors.analysis_version;scientificSelection.dataset_ref=plan.scientific_anchors.dataset_versions[0]||null;scientificSelection.result_ref=null;scientificSelection.scientific_run_id=null;}
+    await refreshScientific();await rememberWorkspace();
+  };
+  for(const [id,action] of [['science','science'],['resolve','resolve'],['design','design_trials'],['recommend','recommend']])el('scientific-'+id).onclick=()=>scientificModelAction(action);
+  el('scientific-model-grant').onchange=renderScientific;el('scientific-data-grant').onchange=renderScientific;el('scientific-warning-ack').onchange=renderScientific;
+  el('scientific-source-form').onsubmit=event=>{event.preventDefault();return scientificModelAction('draft_method',{candidate:el('scientific-source-candidate').value,method_version_id:el('scientific-source-method').value,justification:el('scientific-source-reason').value.trim()});};
+  el('scientific-method-source').onchange=()=>{el('scientific-source-code').hidden=true;el('scientific-source-code').textContent='';message('scientific-source-message','');inspectScientific();};
+  el('scientific-source-preview').onclick=async()=>{const version=el('scientific-method-source').value;if(!version)return;try{const method=await read('/api/scientific/methods/'+encodeURIComponent(version));if(version!==el('scientific-method-source').value)return;el('scientific-source-code').textContent=method.source_text||'No source preview is available for this method.';el('scientific-source-code').hidden=false;message('scientific-source-message',(method.source_scope||'Read-only retained source')+(method.source_truncated?' · preview truncated':'')+(method.source_sha256?' · SHA-256 '+method.source_sha256:'')+' · No source execution was requested.');}catch(error){message('scientific-source-message',error.message,true);}};
+  el('scientific-trial-proposal').onchange=()=>{
+    scientificDraftKey=el('scientific-trial-proposal').value;const plan=scientificPlan(),[index,position]=scientificDraftKey.split(':').map(Number),draft=scientificDraftKey&&plan&&plan.trial_designs[index].proposals[position];
+    el('scientific-trial-json').value=draft?json(draft):'';el('scientific-trial-summary').textContent=draft?draft.id+' · '+draft.candidates.join(', ')+'\nParameters: '+json(draft.parameters)+'\nResource limits: '+json(draft.resource_limits)+'\nCriteria: '+json(draft.metrics):'';scientificClearGrants();renderScientific();
+  };
+  el('scientific-trial-json').oninput=()=>{el('scientific-declare').disabled=!scientificReady()||!scientificPlan()||!el('scientific-trial-json').value.trim();const plan=scientificPlan();renderScientificCriteria(plan&&(plan.experiments||[]).find(row=>row.id===scientificExperiment));};
+  el('scientific-declare').onclick=async()=>{try{const spec=scientificJSON('scientific-trial-json',null);if(!spec)throw Error('Choose or enter a trial draft first.');await scientificAction('declare_trial',{session_id:scientificSelection.planner_session_id,spec},value=>{scientificSelection.analysis_ref=value.analysis_ref;scientificExperiment=value.experiment.id;scientificClearGrants();});}catch(error){scientificSetMessage(error.message,true);}};
+  el('scientific-experiment').onchange=async()=>{clearScientificDeepLink();scientificExperiment=el('scientific-experiment').value;scientificClearGrants();const plan=scientificPlan(),ref=plan&&plan.scientific_trial_definitions&&plan.scientific_trial_definitions[scientificExperiment];if(ref)scientificSelection.analysis_ref=ref;await refreshScientific();await rememberWorkspace();};
+  el('scientific-run').onclick=()=>scientificExecute('run_trial');el('scientific-rerun').onclick=()=>scientificExecute('rerun');
+  el('scientific-new-rerun').onclick=()=>{scientificRequests.delete(scientificRequestKey('rerun'));scientificClearGrants();scientificSetMessage('A separate rerun can now be authorized for the selected exact versions.');renderScientific();};
+  el('scientific-run-select').onchange=async()=>{clearScientificDeepLink();scientificSelection.scientific_run_id=el('scientific-run-select').value||null;scientificSelection.result_ref=null;scientificClearGrants();await refreshScientific();await rememberWorkspace();};
+  el('scientific-recover').onclick=()=>scientificSelection.scientific_run_id&&scientificAction('recover_run',{run_id:scientificSelection.scientific_run_id});
+  el('scientific-accept').onclick=()=>scientificReview('accept_result');el('scientific-reject').onclick=()=>scientificReview('reject_result');
+  el('scientific-review-form').onsubmit=event=>event.preventDefault();
+  el('scientific-import-form').onsubmit=event=>{event.preventDefault();const payload={source_kind:el('scientific-import-kind').value,source_id:el('scientific-import-id').value.trim()};if(el('scientific-import-mappings').checked)payload.mappings={study_id:scientificSelection.study_id,dataset_ref:scientificSelection.dataset_ref,analysis_ref:scientificSelection.analysis_ref};return scientificAction('import_legacy',payload);};
+  el('scientific-use-earlier-import').onclick=()=>{const earlier=scientificRows('legacy_method_runs').find(row=>row.run_id===el('scientific-earlier-invocation').value);if(!earlier)return;el('scientific-import-kind').value='method_run';el('scientific-import-id').value=earlier.run_id;el('scientific-import-mappings').checked=false;scientificSetMessage('Earlier invocation selected for import. Review its exact dataset and analysis mappings before submitting.');};
+
+  function proposalMode(){
+    const agent=el('proposal-mode').value==='agent', selection=config.proposal_selection;
+    el('planning-mode').textContent=agent?selection.label:'Operator-created plan';
+    el('model-access').textContent=agent?(selection.mode==='recorded_fixture'?'Recorded fixture decisions. No live agent or external model session is requested.':'Live Codex proposal selection is permitted. Operator review is required before execution.'):'No live agent decisions are requested for operator-created plans.';
+  }
+  async function connect(){
+    if(el('connect').disabled)return;el('connect').disabled=true;
+    if(el('token').value)token=el('token').value.trim();
+    try{
+      config=await read('/api/config');el('token').value='';message('login-error','Restoring your local workspace…');
+      el('config').textContent=json(config);el('execution-permission').textContent=config.execution_allowed?'This server was started with explicit data-execution permission. An approved plan is still required.':'Inspection and review are available. Execution is disabled because this server was started without data-execution permission.';
+      const selection=config.proposal_selection||{mode:'disabled',available:false,label:'Agent selection unavailable'};
+      el('agent-proposal').textContent=selection.label;el('agent-proposal').disabled=selection.available!==true||!['recorded_fixture','codex'].includes(selection.mode)||(selection.mode==='codex'&&config.model_access!==true);
+      if(el('agent-proposal').disabled)el('proposal-mode').value='operator';proposalMode();
+      el('scientific-entry').hidden=!(config.scientific&&config.scientific.enabled);
+      await jobs();await restoreWorkspace();inspectRecords();
+      el('login').hidden=true;el('session-heading').hidden=true;el('app').hidden=false;
+    }catch(error){message('login-error',error.message,true);}finally{el('connect').disabled=false;}
+  }
+  async function jobs(){
+    clearTimeout(jobsTimer);const data=await read('/api/jobs');allJobs=data.jobs.sort((a,b)=>String(b.updated_at||'').localeCompare(String(a.updated_at||''))||a.id.localeCompare(b.id));el('jobs').replaceChildren();
+    const recent=allJobs.slice(0,3);
+    if(!recent.length){const p=document.createElement('p');p.className='empty';p.textContent='No retained work yet.';el('jobs').append(p);}
+    for(const job of recent){const button=document.createElement('button'),badge=document.createElement('span'),title=document.createElement('span');button.className='job';button.type='button';button.setAttribute('aria-current',String(job.id===selected||job.id===selectedRevisionId));badge.className='work-kind';badge.textContent=job.operation_kind==='presentation'?'Presentation':'Analysis request';title.className='work-title';title.textContent=job.question;button.append(badge,title);button.onclick=()=>openRecord(job,job.operation_kind==='presentation'?'results':undefined);el('jobs').append(button);}
+    renderProjectViews();if(allJobs.some(job=>active.has(job.status)))jobsTimer=setTimeout(()=>jobs().catch(error=>message('workspace-message',error.message,true)),2400);
+  }
+  function resetResults(){
+    loadedResult=null;figureState=null;resultsData=null;notebookLoaded=null;selectedRevisionId='';selectedRevisionRecord=null;figureGeneration++;
+    clearTimeout(revisionTimer);for(const url of imageURLs)URL.revokeObjectURL(url);imageURLs.length=0;
+    el('result-view').hidden=true;el('results-empty').hidden=false;el('figures').replaceChildren();el('presentation-preview').replaceChildren();el('presentation-versions').replaceChildren();el('presentation-submit').disabled=true;
+    el('results-empty').textContent='Verified complete results are not available for the selected job.';el('file-downloads').replaceChildren();el('files-heading').textContent='Select a completed analysis to inspect its files';message('files-message','');
+    el('version-select').replaceChildren();const original=document.createElement('option');original.value='';original.textContent='Original';el('version-select').append(original);el('version-select').value='';
+    for(const id of ['version-prev','version-next','figure-download','revision-archive','compare-version','notebook-download'])el(id).disabled=true;
+    el('compare-version').checked=false;el('presentation-preview').hidden=true;el('figures').hidden=false;
+    el('notebook-code').textContent='No executed notebook selected.';message('notebook-message','The verified executed notebook will appear after a completed analysis.');message('version-status','');message('presentation-message','');
+    el('result-review').textContent='No completed output checks.';el('result-report').textContent='No completed result report.';el('execution-record').textContent='Loading selected job…';inspectRecords();
+  }
+  async function select(id,navigation=++navigationGeneration){
+    clearTimeout(timer);selected=id;state=null;resetResults();
+    el('plan').hidden=true;el('review-form').hidden=true;el('plan-empty').hidden=false;el('plan-empty').textContent='Loading selected job…';
+    for(const control of ['run-button','cancel-button','resume-button'])el(control).disabled=true;
+    await refresh(navigation);
+    if(id===selected&&state&&navigation===navigationGeneration){showView(viewForStatus(state.status),true);await rememberWorkspace();}
+  }
+  async function refresh(navigation=navigationGeneration){
+    clearTimeout(timer);
+    if(!selected){await jobs();return;}
+    try{
+      const id=selected, observed=await read('/api/jobs/'+id);if(id!==selected)return;const priorStatus=state&&state.status;state=observed;render();if(navigation===navigationGeneration&&state.status!==priorStatus&&(detailViews.includes(currentView)||priorStatus===null))showView(viewForStatus(state.status),true);await jobs();
+      if(state.operation_kind==='presentation'&&state.parent_job){await select(state.parent_job,navigation);return;}
+      if(state.status.startsWith('completed_review_')&&loadedResult!==selected){await results();if(id===selected&&navigation===navigationGeneration&&detailViews.includes(currentView))showView('results',true);}
+      if(active.has(state.status))timer=setTimeout(refresh,1800);
+    }catch(error){message('run-message',error.message,true);}
+  }
+  function render(){
+    el('plan-empty').hidden=true;el('plan').hidden=false;
+    el('plan-status').textContent=state.status.replaceAll('_',' ');el('plan-question').textContent=state.question;
+    el('plan-author').textContent=({operator_created_recorded_plan:'Operator-created plan',recorded_fixture:'Recorded fixture plan',codex_agent:'Live Codex agent plan'})[state.plan_author]||'Plan author unavailable';
+    el('planning-result').hidden=!state.planning_result;el('planning-record').textContent=state.planning_result?json(state.planning_result):'';
+    for(const id of ['proposal-record','approval-note','review-form'])el(id).hidden=!state.proposal;
+    el('plan-record').textContent=state.proposal?json(state.proposal):'';
+    const summary=el('proposal-summary');summary.replaceChildren();summary.hidden=!state.proposal;
+    if(state.proposal){const plan=state.proposal,parameters=plan.configuration&&plan.configuration.parameters||{},preview=plan.preview||{};
+      const rows=[['Input preview',Number.isFinite(preview.cells)&&Number.isFinite(preview.genes)?preview.cells.toLocaleString()+' cells · '+preview.genes.toLocaleString()+' genes':'See the recorded input preview'],
+        ['Proposed workflow',parameters.workflow==='scrna_qc_integration_annotation/1'?'QC, embeddings, clustering and annotation evidence':parameters.workflow||'Recorded workflow'],
+        ['Integration',parameters.correction==='none'?'Not requested':parameters.correction||'See recorded settings'],
+        ['Execution limits',plan.configuration&&Number.isFinite(plan.configuration.run_timeout_seconds)&&Number.isFinite(parameters.memory_mb)?plan.configuration.run_timeout_seconds+' s total · '+parameters.memory_mb+' MiB per worker':'See recorded limits']];
+      for(const [label,value] of rows){const card=document.createElement('div'),caption=document.createElement('span'),text=document.createElement('strong');caption.textContent=label;text.textContent=value;card.append(caption,text);summary.append(card);}
+    }
+    const reviewable=Boolean(state.proposal)&&['awaiting_operator_review','needs_information'].includes(state.status)&&!state.review_receipt;
+    el('review-form').hidden=!reviewable;
+    el('operator-review-record').hidden=!state.review;
+    el('operator-review-record').textContent=state.review?'Recorded decision: '+state.review.decision+' · '+state.review.reviewer+'. '+state.review.rationale:'';
+    for(const field of el('review-form').elements)field.disabled=!reviewable;
+    el('revision-note').hidden=!['needs_information','rejected','awaiting_information','refusal','invalid_proposal'].includes(state.status);
+    el('run-status').textContent=state.status.replaceAll('_',' ');el('run-button').disabled=state.status!=='approved'||!config.execution_allowed;
+    el('cancel-button').disabled=state.cancellable!==true;el('resume-button').disabled=state.resumable!==true;
+    el('execution-record').textContent=json({id:state.id,status:state.status,attempts:state.execution_history||[],completed_analysis:state.completed_analysis,execution:state.execution||null,error:state.error||null,operator_review:state.review||null,scientific_review:state.scientific_review,model_sessions_attempted:state.model_sessions_attempted,worker_liveness:state.worker_liveness,cancellable:state.cancellable,resumable:state.resumable});
+    inspectRecords();
+    if(state.error)message('run-message',state.error.message,true);
+    else if(state.execution&&state.execution.reason)message('run-message',state.execution.reason,true);
+    else if(state.status==='recovery_required')message('run-message','Recovery requires an explicit eligible action. Worker liveness: '+(state.worker_liveness||'unknown')+'. Nothing restarts automatically.');
+    else message('run-message',active.has(state.status)?'The recorded operation is in progress. This page polls local state.':'');
+  }
+  for(const [key,label] of Object.entries(confirmationLabels)){const row=document.createElement('label');row.className='check';const input=document.createElement('input');input.type='checkbox';input.dataset.confirmation=key;const text=document.createElement('span');text.textContent=label;row.append(input,text);el('confirmations').append(row);}
+  el('registration').onsubmit=async event=>{
+    event.preventDefault();el('register-button').disabled=true;el('composer-submit').disabled=true;message('register-message','Registering the local input…');message('composer-message','Registering the local input…');
+    const request={proposal_mode:el('proposal-mode').value,source:el('source').value.trim(),expected_sha256:el('digest').value.trim(),question:el('question').value.trim(),declarations:{assay:el('assay').value,measurement:el('measurement').value,count_provenance:el('counts').value.trim(),capture_unit_key:el('capture').value.trim(),capture_units_confirmed:el('capture-confirmed').checked,annotation_provenance:el('annotation').value.trim()}};
+    try{const job=await (await api('/api/jobs',request)).json();message('register-message',job.cached?'Retained job reused for this request. No new job was created.':'Request registered. Status: '+job.status.replaceAll('_',' ')+'.');await select(job.id);message('composer-message',job.cached?'Retained request reused.':'Question and dataset context recorded.');showInspectorTab('analyst');}catch(error){message('register-message',error.message,true);message('composer-message',error.message,true);}finally{el('register-button').disabled=false;el('composer-submit').disabled=false;}
+  };
+  el('review-form').onsubmit=async event=>{
+    event.preventDefault();if(!selected)return;
+    const confirmations={};for(const input of el('confirmations').querySelectorAll('input'))confirmations[input.dataset.confirmation]=input.checked;
+    try{await api('/api/jobs/'+selected+'/review',{reviewer:el('reviewer').value.trim(),decision:el('decision').value,rationale:el('rationale').value.trim(),confirmations});message('review-message','Decision submitted for recording.');await refresh();}catch(error){message('review-message',error.message,true);}
+  };
+  el('run-button').onclick=async()=>{const id=selected,navigation=navigationGeneration;el('run-button').disabled=true;try{await api('/api/jobs/'+id+'/run',{});if(id!==selected)return;if(navigation===navigationGeneration)showView('execute',true);await refresh(navigation);}catch(error){if(id===selected){if(state)render();message('run-message',error.message,true);}}};
+  async function recoveryAction(action,eligibility){
+    if(!selected||!state||state[eligibility]!==true)return;
+    el('cancel-button').disabled=true;el('resume-button').disabled=true;
+    try{await api('/api/jobs/'+selected+'/'+action,{});await refresh();}catch(error){if(state)render();message('run-message',error.message,true);}
+  }
+  el('cancel-button').onclick=()=>recoveryAction('cancel','cancellable');el('resume-button').onclick=()=>recoveryAction('resume','resumable');
+  el('proposal-mode').onchange=proposalMode;
+  async function download(name){
+    try{const path='/api/jobs/'+selected+(name==='archive'?'/archive':'/artifact?name='+encodeURIComponent(name));const response=await api(path);const blob=await response.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name==='archive'?'scRNA-evidence.bundle.zip':name.split('/').pop();document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);message('download-message','Verified download prepared.');message('files-message','Verified download prepared.');}catch(error){message('download-message',error.message,true);message('files-message',error.message,true);}
+  }
+  async function results(){
+    const id=selected, data=await read('/api/jobs/'+id+'/results');if(id!==selected)return;loadedResult=id;resultsData=data;
+    el('results-empty').hidden=true;el('result-view').hidden=false;el('result-report').textContent=json(data.report);el('result-review').textContent=json(data.deterministic_review);
+    el('result-scope').textContent='Bundle integrity verified. Computational concordance is not annotation accuracy. Output checks are deterministic; independent scientific review was not performed by this service.';
+    el('metrics').replaceChildren();for(const [label,key] of [['input cells','cells_input'],['retained cells','cells_retained'],['selected features','HVG_count']]){const div=document.createElement('div');div.className='metric';const value=document.createElement('b'),caption=document.createElement('span');value.textContent=data.report[key]==null?'Unavailable':data.report[key].toLocaleString();caption.textContent=label;div.append(value,caption);el('metrics').append(div);}
+    el('files-heading').textContent='Files & exports · '+state.question;
+    for(const target of ['downloads','file-downloads']){el(target).replaceChildren();for(const artifact of data.artifacts){const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=artifact.name;button.onclick=()=>download(artifact.name);el(target).append(button);}}
+    const archiveButton=document.createElement('button');archiveButton.className='secondary';archiveButton.textContent='Download analysis evidence';archiveButton.type='button';archiveButton.onclick=()=>download('archive');el('file-downloads').append(archiveButton);
+    el('notebook-download').disabled=!data.artifacts.some(item=>item.name==='notebook.ipynb');
+    await loadFigureControls(id);inspectRecords();if(inspectorTab==='code')await loadNotebook();
+  }
+  function currentFigure(){return figureState&&figureState.figures.find(item=>item.figure_id===el('figure-select').value);}
+  function currentDisplayOptions(){
+    const figure=currentFigure();if(!figure)return null;
+    const options=JSON.parse(JSON.stringify(figure.display_options));
+    if(selectedRevisionRecord&&selectedRevisionRecord.status==='completed_presentation'&&selectedRevisionRecord.figure_id===figure.figure_id&&selectedRevisionRecord.request){
+      const saved=selectedRevisionRecord.request.display_options||{};for(const key of Object.keys(options))if(Object.prototype.hasOwnProperty.call(saved,key))options[key]=JSON.parse(JSON.stringify(saved[key]));
+    }
+    return options;
+  }
+  function hydrateDisplayOptions(options){if(!options)return;for(const [id,key] of [['point-size','point_size'],['figure-opacity','opacity'],['figure-font','font_size'],['figure-width','width'],['figure-height','height'],['legend-position','legend_position']])el(id).value=String(options[key]);el('figure-label').value='';el('label-x').value='0.5';el('label-y').value='1.05';}
+
+  async function figureChanged(){
+    const figure=currentFigure();el('presentation-submit').disabled=!figure;selectedRevisionId='';selectedRevisionRecord=null;
+    el('compare-version').checked=false;el('compare-version').disabled=true;el('revision-archive').disabled=true;
+    if(figure){
+      const options=figure.display_options;
+      for(const [id,key] of [['point-size','point_size'],['figure-opacity','opacity'],['figure-font','font_size'],['figure-width','width'],['figure-height','height'],['legend-position','legend_position']])el(id).value=String(options[key]);
+      el('figure-evidence').textContent=json({parent_root:figureState.parent_root,parent_status:figureState.parent_status,...figure});
+      el('figure-context').textContent='Analysis observations: '+figure.analysis_n+' · Rendered observations: '+figure.rendered_n+' · Parent review: '+figureState.parent_status.replaceAll('_',' ')+'.';
+    }
+    el('figure-label').replaceChildren();const unchanged=document.createElement('option');unchanged.value='';unchanged.textContent='Keep label positions';el('figure-label').append(unchanged);
+    for(const label of figure&&figure.labels||[]){const option=document.createElement('option');option.value=label.label_id;option.textContent=label.text;el('figure-label').append(option);}el('figure-label').value='';
+    renderVersions(figureState?figureState.revisions:[],selected);await showOriginal();inspectRecords();
+  }
+  async function loadFigureControls(id){
+    const data=await read('/api/jobs/'+id+'/figures');if(id!==selected)return;
+    if(figureState&&figureState.parent_root===data.parent_root){figureState=data;renderVersions(data.revisions,id);if(selectedRevisionId)await showRevision(id,selectedRevisionId);return;}
+    figureState=data;el('figure-select').replaceChildren();
+    for(const figure of data.figures){const option=document.createElement('option');option.value=figure.figure_id;option.textContent=figure.figure_id.replaceAll('_',' ');el('figure-select').append(option);}
+    const preferred=data.figures.find(item=>/uncorrected|embedding|umap/.test(item.figure_id))||data.figures[0];el('figure-select').value=preferred?preferred.figure_id:'';
+    if(!data.figures.length){el('figure-context').textContent=data.reason;el('figure-evidence').textContent='';}
+    await figureChanged();renderVersions(data.revisions,id);
+  }
+  function figureRevisions(){const order=item=>item.state_history&&item.state_history[0]&&item.state_history[0].at||item.updated_at||item.id;return figureState?figureState.revisions.filter(item=>item.figure_id===el('figure-select').value).sort((a,b)=>order(a).localeCompare(order(b))||a.id.localeCompare(b.id)):[];}
+  function renderVersionNavigator(){
+    const revisions=figureRevisions();el('version-select').replaceChildren();
+    const original=document.createElement('option');original.value='';original.textContent='v1 · Original';el('version-select').append(original);
+    let version=1;for(const [index,revision] of revisions.entries()){const option=document.createElement('option');option.value=revision.id;option.textContent=revision.status==='completed_presentation'?'v'+(++version)+' · Presentation':'Attempt '+(index+1)+' · '+revision.status.replaceAll('_',' ');el('version-select').append(option);}
+    const keys=['',...revisions.map(item=>item.id)];if(!keys.includes(selectedRevisionId)){selectedRevisionId='';selectedRevisionRecord=null;}
+    el('version-select').value=selectedRevisionId;const position=keys.indexOf(selectedRevisionId);el('version-prev').disabled=position<=0;el('version-next').disabled=position>=keys.length-1;
+  }
+  function renderVersions(revisions,id){
+    el('presentation-versions').replaceChildren();clearTimeout(revisionTimer);renderVersionNavigator();
+    for(const revision of figureRevisions()){
+      const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=revision.status.replaceAll('_',' ')+' · '+revision.id.slice(0,8);button.onclick=async()=>{selectedRevisionId=revision.id;renderVersionNavigator();await showRevision(id,revision.id);await rememberWorkspace();};el('presentation-versions').append(button);
+      if(revision.cancellable){const cancel=document.createElement('button');cancel.type='button';cancel.className='secondary';cancel.textContent='Cancel presentation '+revision.id.slice(0,8);cancel.onclick=async()=>{try{await api('/api/jobs/'+id+'/figure-revisions/'+revision.id+'/cancel',{});if(id===selected)await loadFigureControls(id);}catch(error){if(id===selected)message('presentation-message',error.message,true);}};el('presentation-versions').append(cancel);}
+    }
+    if(revisions.some(item=>active.has(item.status)))revisionTimer=setTimeout(()=>{if(id===selected)loadFigureControls(id).catch(error=>message('presentation-message',error.message,true));},1200);
+  }
+  async function presentationImage(id,path,caption,target,stamp){
+    const response=await api(path),url=URL.createObjectURL(await response.blob());if(id!==selected||stamp!==figureGeneration){URL.revokeObjectURL(url);return;}
+    imageURLs.push(url);const figure=document.createElement('figure'),img=document.createElement('img'),text=document.createElement('figcaption');img.src=url;img.alt=caption;text.textContent=caption;figure.append(img,text);el(target).append(figure);
+  }
+  async function showOriginal(){
+    const id=selected,figure=currentFigure(),stamp=++figureGeneration;selectedRevisionId='';selectedRevisionRecord=null;hydrateDisplayOptions(figure&&figure.display_options);
+    el('version-select').value='';el('presentation-preview').hidden=true;el('presentation-preview').replaceChildren();el('figures').hidden=false;el('figures').replaceChildren();
+    el('compare-version').disabled=true;el('compare-version').checked=false;el('revision-archive').disabled=true;message('version-status','');
+    const fallback=resultsData&&resultsData.artifacts.find(item=>item.name.endsWith('.png'));const path=figure&&figure.image?figure.image.path:fallback&&fallback.name;
+    el('figure-download').disabled=!path;el('figure-filename').textContent=path?path.split('/').pop():'No recorded figure';
+    el('figure-root').textContent=figureState?'Original analysis · version 1':'';el('figure-root').setAttribute('title',figureState?'Verified analysis root '+figureState.parent_root:'');
+    renderVersionNavigator();inspectRecords();
+    if(!path){const p=document.createElement('p');p.className='empty';p.textContent='No previewable PNG figure is available; inspect the recorded artifacts and diagnostics.';el('figures').append(p);return;}
+    try{await presentationImage(id,'/api/jobs/'+id+'/artifact?name='+encodeURIComponent(path),'Original analysis · '+(figure?figure.figure_id:path),'figures',stamp);}catch(error){if(id===selected&&stamp===figureGeneration)message('version-status',error.message,true);}
+  }
+  async function showRevision(id,revisionId){
+    const stamp=++figureGeneration;
+    try{
+      const revision=await read('/api/jobs/'+id+'/figure-revisions/'+revisionId);if(id!==selected||stamp!==figureGeneration||!currentFigure()||revision.figure_id!==currentFigure().figure_id)return;
+      selectedRevisionId=revisionId;selectedRevisionRecord=revision;hydrateDisplayOptions(currentDisplayOptions());renderVersionNavigator();inspectRecords();
+      const complete=revision.status==='completed_presentation';el('compare-version').disabled=!complete;el('revision-archive').disabled=!complete;el('figure-download').disabled=!complete;
+      message('presentation-message',revision.status.replaceAll('_',' ')+(revision.error?' · '+revision.error.message:''),Boolean(revision.error));
+      message('version-status',complete?'Saved presentation · scientific analysis unchanged':revision.status.replaceAll('_',' ')+(revision.error?' · '+revision.error.message:''),Boolean(revision.error));
+      el('figures').replaceChildren();el('presentation-preview').replaceChildren();const compare=complete&&el('compare-version').checked;el('figures').hidden=compare;el('presentation-preview').hidden=!compare;
+      const original=currentFigure();el('figure-filename').textContent=original.image?original.image.path.split('/').pop():revision.figure_id;el('figure-root').textContent='Saved presentation · '+revisionId.slice(0,8);el('figure-root').setAttribute('title','Verified parent root '+figureState.parent_root);
+      if(!complete){const p=document.createElement('p');p.className='empty';p.textContent='This attempt has no completed presentation image. Its status and failure evidence remain in Execution Log.';el('figures').append(p);return;}
+      if(compare&&original.image)await presentationImage(id,'/api/jobs/'+id+'/artifact?name='+encodeURIComponent(original.image.path),'Original analysis · '+revision.figure_id,'presentation-preview',stamp);
+      await presentationImage(id,'/api/jobs/'+id+'/figure-revisions/'+revisionId+'/image','Presentation · '+revisionId.slice(0,8),compare?'presentation-preview':'figures',stamp);
+    }catch(error){if(id===selected&&stamp===figureGeneration)message('presentation-message',error.message,true);}
+  }
+  async function downloadPresentation(kind){
+    const id=selected,revision=selectedRevisionRecord;if(!id||!revision||revision.status!=='completed_presentation')return;
+    try{const response=await api('/api/jobs/'+id+'/figure-revisions/'+revision.id+'/'+kind),url=URL.createObjectURL(await response.blob());if(id!==selected){URL.revokeObjectURL(url);return;}
+      const link=document.createElement('a');link.href=url;link.download=kind==='archive'?'presentation-evidence.zip':revision.figure_id+'-presentation.png';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);message('download-message','Verified presentation download prepared.');
+    }catch(error){if(id===selected)message('download-message',error.message,true);}
+  }
+  el('version-select').onchange=async()=>{selectedRevisionId=el('version-select').value;renderVersionNavigator();if(selectedRevisionId)await showRevision(selected,selectedRevisionId);else await showOriginal();await rememberWorkspace();};
+  function moveVersion(delta){const keys=['',...figureRevisions().map(item=>item.id)],position=keys.indexOf(selectedRevisionId),next=position+delta;if(next<0||next>=keys.length)return;el('version-select').value=keys[next];el('version-select').onchange();}
+  el('version-prev').onclick=()=>moveVersion(-1);el('version-next').onclick=()=>moveVersion(1);
+  el('compare-version').onchange=()=>{if(selectedRevisionId)showRevision(selected,selectedRevisionId);};
+  el('revision-archive').onclick=()=>downloadPresentation('archive');
+  el('figure-download').onclick=()=>{if(selectedRevisionRecord)return downloadPresentation('image');const figure=currentFigure(),fallback=resultsData&&resultsData.artifacts.find(item=>item.name.endsWith('.png'));const path=figure&&figure.image?figure.image.path:fallback&&fallback.name;if(path)return download(path);};
+  el('figure-select').onchange=async()=>{await figureChanged();await rememberWorkspace();};
+  el('figure-zoom').onchange=()=>{el('figure-stage').dataset.scale=el('figure-zoom').value;rememberWorkspace();};
+  el('presentation-form').onsubmit=async event=>{
+    event.preventDefault();const figure=currentFigure();if(!figure||!selected)return;const id=selected;el('presentation-submit').disabled=true;
+    const options=currentDisplayOptions();
+    for(const [control,key] of [['point-size','point_size'],['figure-opacity','opacity'],['figure-font','font_size'],['figure-width','width'],['figure-height','height']])options[key]=Number(el(control).value);
+    options.legend_position=el('legend-position').value;
+    if(el('figure-label').value)options.label_positions[el('figure-label').value]={x:Number(el('label-x').value),y:Number(el('label-y').value)};
+    try{const result=await (await api('/api/jobs/'+id+'/figure-revisions',{figure_id:figure.figure_id,expected_parent_root:figureState.parent_root,display_options:options,author_label:el('presentation-author').value.trim()})).json();if(id!==selected)return;message('presentation-message',result.cached?'Retained presentation request reused.':'Presentation version queued; scientific analysis remains unchanged.');await loadFigureControls(id);}catch(error){message('presentation-message',error.message,true);}finally{if(id===selected)el('presentation-submit').disabled=!currentFigure();}
+  };
+  el('archive').onclick=()=>download('archive');el('refresh').onclick=()=>refresh();el('connect').onclick=connect;
+  if(token)connect();
+})();
+
+</script>
+</body></html>

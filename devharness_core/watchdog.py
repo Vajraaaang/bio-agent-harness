@@ -1,6 +1,8 @@
 """Spawn-based isolation with process-tree RSS monitoring and safe transport."""
 
 import multiprocessing
+import contextvars
+from contextlib import contextmanager
 import ctypes
 import errno
 from collections import deque
@@ -25,6 +27,32 @@ _MB = 1024.0 * 1024.0
 _INITIAL_CHILD_PID_CAPACITY = 64
 _MAX_DESCENDANT_PROCESSES = 4096
 THREAD_ENVIRONMENT_KEYS = ("VECLIB_MAXIMUM_THREADS", "OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")
+_WORKER_LIMITS = contextvars.ContextVar("coordinator_worker_limits", default=None)
+_WORKER_SCRATCH = contextvars.ContextVar("coordinator_worker_scratch", default=None)
+_WORKER_GROWTH_WINDOW = contextvars.ContextVar("coordinator_growth_window", default=None)
+_WORKER_CANCELLATION = contextvars.ContextVar("coordinator_cancellation", default=())
+
+
+class WorkerCancelled(RuntimeError):
+    """The owning coordinator requested cancellation, not a resource failure."""
+
+
+@contextmanager
+def cancel_workers_on(event):
+    """Add a coordinator stop event without relaxing any parent resource policy."""
+    if not isinstance(event, threading.Event):
+        raise TypeError("Cancellation requires a coordinator threading.Event")
+    record = {"workers": []}
+    token = _WORKER_CANCELLATION.set((*_WORKER_CANCELLATION.get(), (event, record)))
+    try:
+        yield record
+    finally:
+        _WORKER_CANCELLATION.reset(token)
+
+
+def _raise_if_cancelled():
+    if any(event.is_set() for event, _ in _WORKER_CANCELLATION.get()):
+        raise WorkerCancelled("Execution cancelled by its owning coordinator")
 
 
 def configure_worker_environment() -> dict:
@@ -50,6 +78,66 @@ def _positive_finite(value: Any, name: str) -> float:
 
 class HarnessResourceInterrupt(Exception):
     """A worker exceeded its resource budget and was stopped."""
+
+
+def _validated_growth_window(value):
+    if isinstance(value, Real) and not isinstance(value, bool) and value == 0:
+        return 0.0
+    number = _positive_finite(value, "growth_window_seconds")
+    if number > 1:
+        raise ValueError("growth_window_seconds must be a finite number from 0 to 1")
+    return number
+
+
+def _effective_growth_window(requested):
+    window = _validated_growth_window(requested)
+    parent = _WORKER_GROWTH_WINDOW.get()
+    return window if parent is None else min(window, parent)
+
+
+@contextmanager
+def worker_limits(*, deadline: float, max_mem_mb: float, max_growth_mb_per_sec: float = 1500,
+                  scratch_dir: Optional[Path] = None, growth_window_seconds: float = 0):
+    """Apply stricter coordinator limits to workers started in this context.
+
+    The deadline is an absolute monotonic time. Nested contexts cannot relax
+    an existing limit. This does not start a process or configure an OS sandbox.
+    """
+    limits = (_positive_finite(deadline, "deadline"),
+              _positive_finite(max_mem_mb, "max_mem_mb"),
+              _positive_finite(max_growth_mb_per_sec, "max_growth_mb_per_sec"))
+    growth_window = _effective_growth_window(growth_window_seconds)
+    parent = _WORKER_LIMITS.get()
+    if parent is not None:
+        limits = tuple(min(a, b) for a, b in zip(limits, parent))
+    scratch = _WORKER_SCRATCH.get()
+    if scratch_dir is not None:
+        requested = Path(scratch_dir)
+        if not requested.is_absolute() or not requested.is_dir() or requested.is_symlink():
+            raise ValueError("Worker scratch must be an existing absolute controlled directory")
+        requested = requested.resolve()
+        if scratch is not None and not requested.is_relative_to(scratch):
+            raise ValueError("Nested worker scratch cannot leave its controlled parent")
+        scratch = requested
+    token = _WORKER_LIMITS.set(limits)
+    scratch_token = _WORKER_SCRATCH.set(scratch)
+    growth_token = _WORKER_GROWTH_WINDOW.set(growth_window)
+    try:
+        yield
+    finally:
+        _WORKER_LIMITS.reset(token)
+        _WORKER_SCRATCH.reset(scratch_token)
+        _WORKER_GROWTH_WINDOW.reset(growth_token)
+
+
+def _effective_worker_limits(max_mem_mb, timeout_sec, max_growth_mb_per_sec):
+    limits = _WORKER_LIMITS.get()
+    if limits is None:
+        return max_mem_mb, timeout_sec, max_growth_mb_per_sec
+    remaining = limits[0] - time.monotonic()
+    if remaining <= 0:
+        raise HarnessResourceInterrupt("Coordinator deadline exhausted before worker launch")
+    return min(max_mem_mb, limits[1]), min(timeout_sec, remaining), min(max_growth_mb_per_sec, limits[2])
 
 
 class RemoteWorkerError(RuntimeError):
@@ -171,17 +259,31 @@ class MemoryWatchdog:
     ``observe`` contains the deterministic budget decision. A triggered monitor
     terminates its observed process tree; the supervising caller raises the
     public exception on its own thread.
+
+    Growth uses consecutive samples by default. An explicit window up to one
+    second measures sustained growth once that duration is observed; absolute
+    RSS is still checked on every sample, including before the window is full.
     """
 
     def __init__(self, target_pid: int, max_mem_mb: float = 8000,
-                 max_growth_mb_per_sec: float = 1500, poll_interval: float = 0.1) -> None:
+                 max_growth_mb_per_sec: float = 1500, poll_interval: float = 0.1,
+                 *, growth_window_seconds: float = 0, record_samples: bool = False) -> None:
         self.target_pid = target_pid
         self.max_mem_mb = _positive_finite(max_mem_mb, "max_mem_mb")
         self.max_growth_mb_per_sec = _positive_finite(max_growth_mb_per_sec, "max_growth_mb_per_sec")
         self.poll_interval = _positive_finite(poll_interval, "poll_interval")
+        self.growth_window_seconds = _validated_growth_window(growth_window_seconds)
+        self._growth_history = deque()
         self.triggered = False
         self.reason = ""
         self.peak_rss_mb = 0.0
+        self.sample_count = 0
+        self.legacy_exceeding_intervals = 0
+        self.peak_legacy_growth = None
+        self.peak_active_growth = None
+        self._first_observed_time = None
+        self._recorded_samples = [] if record_samples else None
+        self._trace_truncated = False
         self._previous: Optional[Tuple[float, float]] = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -210,19 +312,63 @@ class MemoryWatchdog:
     def observe(self, rss_mb: float, timestamp: Optional[float] = None) -> bool:
         """Record one observation and set an interruption flag if necessary."""
         now = time.monotonic() if timestamp is None else timestamp
+        if self._first_observed_time is None:
+            self._first_observed_time = now
+        self.sample_count += 1
+        if self._recorded_samples is not None:
+            if len(self._recorded_samples) < 40000:
+                self._recorded_samples.append([now-self._first_observed_time, rss_mb])
+            else:
+                self._trace_truncated = True
+        if self._previous is not None and now > self._previous[0]:
+            legacy_growth = (rss_mb-self._previous[1])/(now-self._previous[0])
+            self.peak_legacy_growth = legacy_growth if self.peak_legacy_growth is None else max(self.peak_legacy_growth, legacy_growth)
+            if rss_mb <= self.max_mem_mb and legacy_growth > self.max_growth_mb_per_sec:
+                self.legacy_exceeding_intervals += 1
         self.peak_rss_mb = max(self.peak_rss_mb, rss_mb)
         if rss_mb > self.max_mem_mb:
             self.reason = "Worker memory limit exceeded ({:.1f} > {:.1f} MB)".format(rss_mb, self.max_mem_mb)
-        elif self._previous is not None:
-            old_time, old_rss = self._previous
-            elapsed = now - old_time
-            growth = (rss_mb - old_rss) / elapsed if elapsed > 0 else 0.0
-            if growth > self.max_growth_mb_per_sec:
-                self.reason = "Worker memory growth limit exceeded ({:.1f} MB/s)".format(growth)
+        else:
+            growth = None
+            if self.growth_window_seconds:
+                self._growth_history.append((now, rss_mb))
+                cutoff = now-self.growth_window_seconds
+                while len(self._growth_history) > 1 and self._growth_history[1][0] <= cutoff:
+                    self._growth_history.popleft()
+                old_time, old_rss = self._growth_history[0]
+                elapsed = now-old_time
+                if elapsed >= self.growth_window_seconds:
+                    growth = (rss_mb-old_rss)/elapsed
+            elif self._previous is not None:
+                old_time, old_rss = self._previous
+                elapsed = now-old_time
+                growth = (rss_mb-old_rss)/elapsed if elapsed > 0 else 0.0
+            if growth is not None:
+                self.peak_active_growth = growth if self.peak_active_growth is None else max(self.peak_active_growth, growth)
+                if growth > self.max_growth_mb_per_sec:
+                    self.reason = "Worker memory growth limit exceeded ({:.1f} MB/s)".format(growth)
         self._previous = (now, rss_mb)
         if self.reason:
             self.triggered = True
         return self.triggered
+
+    def observation_report(self):
+        return {"sample_count": self.sample_count,
+            "sampled_peak_RSS_MiB": self.peak_rss_mb if self.sample_count else None,
+            "RSS_limit_MiB": self.max_mem_mb,
+            "growth_limit_MiB_per_second": self.max_growth_mb_per_sec,
+            "growth_window_seconds": self.growth_window_seconds,
+            "poll_interval_seconds": self.poll_interval,
+            "active_growth_guard_fired": self.triggered and self.reason.startswith("Worker memory growth limit exceeded"),
+            "RSS_guard_fired": self.triggered and self.reason.startswith("Worker memory limit exceeded"),
+            "monitor_triggered": self.triggered, "reason": self.reason or None,
+            "peak_active_growth_MiB_per_second": self.peak_active_growth,
+            "peak_legacy_interval_growth_MiB_per_second": self.peak_legacy_growth,
+            "legacy_exceeding_intervals": self.legacy_exceeding_intervals,
+            "legacy_rule_would_reject_observed_trace": bool(self.legacy_exceeding_intervals),
+            "samples_elapsed_seconds_RSS_MiB": self._recorded_samples,
+            "trace_truncated": self._trace_truncated,
+            "scope": "legacy growth rule evaluated on the same observed RSS samples; not an independently executed counterfactual run"}
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -249,11 +395,14 @@ class MemoryWatchdog:
         if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join(timeout=2)
 
-    def terminate_tree(self) -> None:
+    def terminate_tree(self) -> dict:
+        inventory_unknown = []
         try:
             self.sample_rss_mb()
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError):
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
             pass
+        except (psutil.AccessDenied, OSError):
+            inventory_unknown.append(self.target_pid)
         with self._lock:
             processes = list(self._known.values())
         # The root may already have exited after acknowledging its result. Its
@@ -265,14 +414,33 @@ class MemoryWatchdog:
                     if child.pid not in known_pids:
                         processes.append(child)
                         known_pids.add(child.pid)
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError):
+            except (psutil.NoSuchProcess, psutil.ZombieProcess):
                 continue
+            except (psutil.AccessDenied, OSError):
+                inventory_unknown.append(process.pid)
         _terminate_processes(processes, self.target_pid)
+        remaining, unknown = [], inventory_unknown
+        for process in processes:
+            try:
+                if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                    remaining.append(process.pid)
+            except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                pass
+            except (psutil.AccessDenied, OSError):
+                unknown.append(process.pid)
+        return {"coverage":"observed_process_tree", "observed_pids":[p.pid for p in processes],
+                "remaining_pids":remaining, "unknown_pids":unknown,
+                "verified_stopped":not remaining and not unknown}
 
 
 def _worker_entry(target_fn: Callable[..., Any], args: Tuple[Any, ...], kwargs: Dict[str, Any],
                   results: Any, spool_path: str, release_event: Optional[Any] = None) -> None:
     output = Path(spool_path).resolve()
+    # Keep numerical libraries' temporary products beside the coordinator-owned
+    # result spool rather than in shared platform scratch directories.
+    for name in ("TMPDIR", "TMP", "TEMP", "JOBLIB_TEMP_FOLDER"):
+        os.environ[name] = str(output.parent)
+    tempfile.tempdir = None
     try:
         value = target_fn(*args, **kwargs)
         try:
@@ -300,12 +468,15 @@ def _worker_entry(target_fn: Callable[..., Any], args: Tuple[Any, ...], kwargs: 
         # Keep the root discoverable until the parent captures its final child
         # tree. Bound the wait so a disappeared parent cannot retain this worker
         # indefinitely. The normal acknowledgement arrives immediately.
-        release_event.wait(timeout=30)
+        # A Semaphore release never waits for a receiver acknowledgement.
+        # Event.set() can deadlock if cleanup kills its registered waiter.
+        release_event.acquire(timeout=30)
 
 
 def run_sandboxed(target_fn: Callable[..., Any], args: Tuple[Any, ...] = (),
                   kwargs: Optional[Dict[str, Any]] = None, max_mem_mb: float = 8000,
-                  timeout_sec: float = 300, max_growth_mb_per_sec: float = 1500) -> Any:
+                  timeout_sec: float = 300, max_growth_mb_per_sec: float = 1500,
+                  growth_window_seconds: float = 0, diagnostics: Optional[Dict[str, Any]] = None) -> Any:
     """Run an importable callable in a spawned child and return its result.
 
     A Queue carries a bounded result envelope; large serialized results use a
@@ -314,26 +485,41 @@ def run_sandboxed(target_fn: Callable[..., Any], args: Tuple[Any, ...] = (),
     notebook users should call the dispatcher, whose workers are importable.
     This is resource isolation, not a security boundary for untrusted Python.
     """
+    _raise_if_cancelled()
     max_mem_mb = _positive_finite(max_mem_mb, "max_mem_mb")
     timeout_sec = _positive_finite(timeout_sec, "timeout_sec")
     max_growth_mb_per_sec = _positive_finite(max_growth_mb_per_sec, "max_growth_mb_per_sec")
+    max_mem_mb, timeout_sec, max_growth_mb_per_sec = _effective_worker_limits(
+        max_mem_mb, timeout_sec, max_growth_mb_per_sec)
+    growth_window_seconds = _effective_growth_window(growth_window_seconds)
+    if diagnostics is not None and type(diagnostics) is not dict:
+        raise ValueError("diagnostics must be a dictionary or None")
     configure_worker_environment()
     context = multiprocessing.get_context("spawn")
     results = context.Queue(maxsize=1)
-    release_event = context.Event()
-    spool_directory = tempfile.TemporaryDirectory(prefix="devharness-result-")
+    release_event = context.Semaphore(0)
+    spool_directory = tempfile.TemporaryDirectory(prefix="devharness-result-", dir=_WORKER_SCRATCH.get())
     spool_path = Path(spool_directory.name).resolve() / "result.pickle"
     worker = context.Process(target=_worker_entry,
                              args=(target_fn, tuple(args), kwargs or {}, results, str(spool_path), release_event))
     monitor: Optional[MemoryWatchdog] = None
     started = time.monotonic()
+    final_rss = None
+    scoped_worker = None
     try:
         worker.start()
-        monitor = MemoryWatchdog(worker.pid, max_mem_mb, max_growth_mb_per_sec).start()
+        scoped_worker = {"pid": worker.pid, "cleanup": {"verified_stopped":False, "coverage":"not_observed"}}
+        for _, scope in _WORKER_CANCELLATION.get():
+            scope["workers"].append(scoped_worker)
+        monitor_options = ({"growth_window_seconds": growth_window_seconds} if growth_window_seconds else {})
+        if diagnostics is not None:
+            monitor_options["record_samples"] = True
+        monitor = MemoryWatchdog(worker.pid, max_mem_mb, max_growth_mb_per_sec, **monitor_options).start()
         message = None
         while message is None:
             if monitor.triggered:
                 raise HarnessResourceInterrupt(monitor.reason)
+            _raise_if_cancelled()
             if time.monotonic() - started >= timeout_sec:
                 raise HarnessResourceInterrupt("Worker timed out after {:.3g} seconds".format(timeout_sec))
             try:
@@ -348,13 +534,14 @@ def run_sandboxed(target_fn: Callable[..., Any], args: Tuple[Any, ...] = (),
                         raise RemoteWorkerError("Worker exited without a result (exit code {})".format(worker.exitcode)) from None
         if monitor.triggered:
             raise HarnessResourceInterrupt(monitor.reason)
+        _raise_if_cancelled()
         try:
             final_rss = monitor.sample_rss_mb()
         except (psutil.Error, OSError) as exc:
             raise HarnessResourceInterrupt("Worker memory monitoring failed: " + str(exc)) from exc
         if final_rss > max_mem_mb:
             raise HarnessResourceInterrupt("Worker memory limit exceeded during final process-tree inspection")
-        release_event.set()
+        release_event.release()
         worker.join(timeout=0.2)
         try:
             if message[0] == "inline":
@@ -368,12 +555,27 @@ def run_sandboxed(target_fn: Callable[..., Any], args: Tuple[Any, ...] = (),
             raise HarnessResourceInterrupt(record[1])
         if record[0] == "error":
             raise RemoteWorkerError("{}: {}\n{}".format(record[1], record[2], record[3]))
+        if diagnostics is not None:
+            diagnostics["supervisor_status"] = "completed"
         return record[1]
+    except BaseException as error:
+        if diagnostics is not None:
+            diagnostics.update(supervisor_status="cancelled" if isinstance(error, WorkerCancelled) else "failed",
+                               exception_type=type(error).__name__)
+        raise
     finally:
         if monitor is not None:
             monitor.stop()
-            monitor.terminate_tree()
-        release_event.set()
+            if diagnostics is not None:
+                diagnostics.update(monitor=monitor.observation_report(),
+                    final_inspection_RSS_MiB=final_rss,
+                    supervisor_elapsed_seconds=time.monotonic()-started)
+            cleanup = monitor.terminate_tree()
+            if scoped_worker is not None:
+                scoped_worker["cleanup"] = cleanup
+            if diagnostics is not None:
+                diagnostics["cleanup"] = cleanup
+        release_event.release()
         if worker.pid is not None:
             if worker.is_alive():
                 worker.terminate()
@@ -381,6 +583,15 @@ def run_sandboxed(target_fn: Callable[..., Any], args: Tuple[Any, ...] = (),
             if worker.is_alive():
                 worker.kill()
                 worker.join(timeout=1)
+            if scoped_worker is not None:
+                cleanup = scoped_worker["cleanup"]
+                if worker.is_alive():
+                    cleanup["verified_stopped"] = False
+                elif cleanup.get("coverage") == "observed_process_tree":
+                    # join() is authoritative for our direct child. Preserve
+                    # unknown inventories/descendants rather than clearing them.
+                    cleanup["remaining_pids"] = [pid for pid in cleanup["remaining_pids"] if pid != worker.pid]
+                    cleanup["verified_stopped"] = not cleanup["remaining_pids"] and not cleanup["unknown_pids"]
             worker.close()
         results.close()
         results.cancel_join_thread()

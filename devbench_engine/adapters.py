@@ -41,17 +41,25 @@ def _signal_owned_process_group(process: subprocess.Popen, signum: int) -> None:
             pass
 
 
-def _answer_object(value: object) -> dict:
+def _answer_limit_label(max_bytes: int) -> str:
+    if type(max_bytes) is not int or not 1 <= max_bytes <= 8_000_000:
+        raise ValueError("Answer byte budget must be an integer between 1 and 8000000")
+    return "1 MB" if max_bytes == _MAX_ANSWER_BYTES else f"{max_bytes} bytes"
+
+
+def _answer_object(value: object, *, max_bytes: int = _MAX_ANSWER_BYTES) -> dict:
+    limit_label = _answer_limit_label(max_bytes)
     if not isinstance(value, dict):
         raise ValueError("final_discovery.json must contain a JSON object")
     # This also rejects overflowed JSON numbers such as 1e999.
     encoded = json.dumps(value, allow_nan=False, separators=(",", ":")).encode()
-    if len(encoded) > _MAX_ANSWER_BYTES:
-        raise ValueError("final_discovery.json exceeds 1 MB")
+    if len(encoded) > max_bytes:
+        raise ValueError("final_discovery.json exceeds " + limit_label)
     return value
 
 
-def _read_answer(workspace: Path, filename: str = "final_discovery.json") -> dict:
+def _read_answer(workspace: Path, filename: str = "final_discovery.json", *, max_bytes: int = _MAX_ANSWER_BYTES) -> dict:
+    limit_label = _answer_limit_label(max_bytes)
     artifact = workspace / filename
     try:
         descriptor = os.open(artifact, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -63,12 +71,12 @@ def _read_answer(workspace: Path, filename: str = "final_discovery.json") -> dic
         details = os.fstat(handle.fileno())
         if not stat.S_ISREG(details.st_mode):
             raise ValueError("final_discovery.json must be a regular file")
-        if details.st_size > _MAX_ANSWER_BYTES:
-            raise ValueError("final_discovery.json exceeds 1 MB")
-        content = handle.read(_MAX_ANSWER_BYTES + 1)
-    if len(content) > _MAX_ANSWER_BYTES:
-        raise ValueError("final_discovery.json exceeds 1 MB")
-    return _plain_json_object(content)
+        if details.st_size > max_bytes:
+            raise ValueError("final_discovery.json exceeds " + limit_label)
+        content = handle.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise ValueError("final_discovery.json exceeds " + limit_label)
+    return _plain_json_object(content, max_bytes=max_bytes)
 
 
 def _fresh_workspace(workspace_dir: Path) -> Path:
@@ -168,6 +176,9 @@ class _OutputCapture:
         self.on_event = on_event
         self.tail = bytearray()
         self.bytes_seen = 0
+        self.dropped_event_lines = 0
+        self.malformed_event_lines = 0
+        self.non_object_event_lines = 0
         self.error: Optional[Exception] = None
         self.thread = threading.Thread(target=self._run, daemon=True, name="devbench-cli-output")
 
@@ -194,6 +205,7 @@ class _OutputCapture:
                         if len(pending) > _MAX_EVENT_BYTES:
                             pending.clear()
                             dropping = True
+                            self.dropped_event_lines += 1
                     if index < len(pieces) - 1:
                         if not dropping:
                             self._event(bytes(pending))
@@ -207,13 +219,25 @@ class _OutputCapture:
     def _event(self, line: bytes) -> None:
         try:
             record = json.loads(line)
+            json.dumps(record, allow_nan=False)
         except (ValueError, UnicodeError):
+            self.malformed_event_lines += 1
             return
         if isinstance(record, dict):
             self.on_event(record)
+        else:
+            self.non_object_event_lines += 1
 
     def text(self) -> str:
         return bytes(self.tail).decode("utf-8", errors="replace")[-_TAIL_BYTES:]
+
+
+def local_schema_prompt(instruction, schema_path):
+    """One pure native/local response wrapper shared with admission counters."""
+    return (instruction + "\nReturn exactly one plain JSON object matching " + str(schema_path)
+            + ". NO Markdown, code fences, prose, or trailing text. The original workspace "
+            "answer_schema.json is authoritative; preserve its dynamic map keys and optional fields. "
+            "Every answer is validated locally against that original schema before acceptance.")
 
 
 class CodexCLIAdapter(AgentAdapter):
@@ -400,6 +424,12 @@ class CodexCLIAdapter(AgentAdapter):
         _validate_schema(answer, self._active_schema_definition)
         return answer
 
+    def _output_path(self, workspace: Path, temporary: Path, phase: str, final: bool) -> Path:
+        return workspace / "final_discovery.json" if final else temporary / (phase + ".json")
+
+    def _discard_failed_output(self, output: Path) -> None:
+        output.unlink(missing_ok=True)
+
     def _finish_turn(self, started: float, event_start: int, error: Optional[Exception],
                      continuity: str, answer: Optional[dict]) -> None:
         observed = self.events[event_start:]
@@ -471,7 +501,7 @@ class CodexCLIAdapter(AgentAdapter):
                     self._turn_usage, self._turn_result = None, None
                     self._last_process_measurements = {}
                     final = index == len(self.phases) - 1
-                    output = workspace / "final_discovery.json" if final else temporary / (phase + ".json")
+                    output = self._output_path(workspace, temporary, phase, final)
                     output.unlink(missing_ok=True)
                     self._active_schema_definition = original_schema if final else PHASE_SCHEMA
                     compatible = strict_schema_compatible(self._active_schema_definition)
@@ -484,10 +514,7 @@ class CodexCLIAdapter(AgentAdapter):
                     prompt = instruction if len(self.phases) == 1 else phase_prompt(
                         instruction, phase, self.condition, carry_forward if index and not resume else None)
                     if self._schema_enforcement == "local":
-                        prompt += ("\nReturn exactly one plain JSON object matching " + str(active_schema)
-                                   + ". NO Markdown, code fences, prose, or trailing text. The original workspace "
-                                   "answer_schema.json is authoritative; preserve its dynamic map keys and optional fields. "
-                                   "Every answer is validated locally against that original schema before acceptance.")
+                        prompt = local_schema_prompt(prompt, active_schema)
                     command = self._command(executable, workspace, active_schema, output, resume)
                     turn_started, event_start = time.monotonic(), len(self.events)
                     answer, error = None, None
@@ -499,7 +526,7 @@ class CodexCLIAdapter(AgentAdapter):
                         carry_forward = answer
                     except Exception as caught:
                         error = caught
-                        output.unlink(missing_ok=True)
+                        self._discard_failed_output(output)
                         self._observe({"type": "error", "error": str(caught)[:2000], "source": "adapter"})
                         raise
                     finally:
@@ -511,6 +538,9 @@ class CodexCLIAdapter(AgentAdapter):
             if self._session_id:
                 self.metadata["session_id"] = self._session_id
 
+    def _process_observation(self, phase: str, error=None) -> None:
+        """Optional payload-free lifecycle hook for protected coordinators."""
+
     def _run_process(self, command: List[str], workspace: Path, environment: Dict[str, str],
                      instruction: str, timeout_sec: float,
                      parse_events: bool = True) -> Tuple[int, str, str]:
@@ -519,6 +549,7 @@ class CodexCLIAdapter(AgentAdapter):
         monitor = None
         captures: List[_OutputCapture] = []
         try:
+            self._process_observation("process_startup")
             # A temporary input file avoids deadlocking a large prompt on stdin
             # while stdout/stderr need draining, and never invokes a shell.
             with tempfile.TemporaryFile() as prompt:
@@ -527,6 +558,7 @@ class CodexCLIAdapter(AgentAdapter):
                 process = subprocess.Popen(command, cwd=str(workspace), env=environment, stdin=prompt,
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
                 monitor = MemoryWatchdog(process.pid, max_mem_mb=self.max_mem_mb).start()
+                self._process_observation("wait")
                 captures = [_OutputCapture(process.stdout, self._event if parse_events else None),
                             _OutputCapture(process.stderr)]
                 for capture in captures:
@@ -545,6 +577,11 @@ class CodexCLIAdapter(AgentAdapter):
         except KeyboardInterrupt as error:
             raise HarnessResourceInterrupt(self.backend_name + " execution was interrupted") from error
         finally:
+            try:
+                self._process_observation("process_cleanup", sys.exc_info()[1])
+            except BaseException as observation_error:
+                # Telemetry failure must never prevent owned-process cleanup.
+                self.metadata["process_observation_error"] = type(observation_error).__name__
             if process is not None:
                 _signal_owned_process_group(process, signal.SIGTERM)
             if monitor is not None:
@@ -571,22 +608,33 @@ class CodexCLIAdapter(AgentAdapter):
             if captures and parse_events:
                 safe_tail = json.dumps(self.events[-4:], allow_nan=False)[-_TAIL_BYTES:]
                 self.metadata.update(stdout_tail=safe_tail, stderr_tail=captures[1].text())
+                counts = {name: getattr(captures[0], name) for name in (
+                    "dropped_event_lines", "malformed_event_lines", "non_object_event_lines")}
+                complete = not any(counts.values()) and all(
+                    item.error is None and not item.thread.is_alive() for item in captures)
+                self.metadata["event_capture_complete"] = self.metadata.get("event_capture_complete", True) and complete
+                previous = self.metadata.get("event_capture_loss", {})
+                self.metadata["event_capture_loss"] = {name: previous.get(name, 0) + count for name, count in counts.items()}
+                self._last_process_measurements["event_capture_complete"] = complete
             self.metadata["duration_sec"] = time.monotonic() - started
         for capture in captures:
             if capture.error is not None:
                 raise RuntimeError(self.backend_name + " output capture failed: " + str(capture.error))
             if capture.thread.is_alive():
                 raise RuntimeError(self.backend_name + " output stream did not close after process cleanup")
+        if self.metadata.get("process_observation_error"):
+            raise RuntimeError(self.backend_name + " process lifecycle capture failed")
         return process.returncode, captures[0].text(), captures[1].text()
 
 
 
-def _plain_json_object(content: object) -> dict:
+def _plain_json_object(content: object, *, max_bytes: int = _MAX_ANSWER_BYTES) -> dict:
     """Accept exactly one finite JSON object, with no fences or duplicate keys."""
+    limit_label = _answer_limit_label(max_bytes)
     if not isinstance(content, (str, bytes)):
         raise ValueError("CLI result must contain a plain JSON object")
-    if len(content if isinstance(content, bytes) else content.encode("utf-8")) > _MAX_ANSWER_BYTES:
-        raise ValueError("final_discovery.json exceeds 1 MB")
+    if len(content if isinstance(content, bytes) else content.encode("utf-8")) > max_bytes:
+        raise ValueError("final_discovery.json exceeds " + limit_label)
 
     def unique_object(pairs):
         result = {}
@@ -596,7 +644,7 @@ def _plain_json_object(content: object) -> dict:
             result[key] = value
         return result
 
-    return _answer_object(json.loads(content, object_pairs_hook=unique_object))
+    return _answer_object(json.loads(content, object_pairs_hook=unique_object), max_bytes=max_bytes)
 
 
 def _validate_schema(answer: dict, schema: dict) -> None:

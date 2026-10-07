@@ -349,6 +349,7 @@ class ExecutionDAG:
         self._lock = threading.RLock()
         self._node_ids, self._artifacts = [], {}
         self._receipt = None
+        self._checkpointed = False
         self._identity = {"run_id": str(uuid.uuid4()), "actor_id": actor_id,
                           "identity_assurance": "caller-asserted", "created_at_utc": _now()}
         _atomic_bytes(self.root_dir / "ledger.json", canonical_json(self._identity), allow_existing=False)
@@ -359,6 +360,8 @@ class ExecutionDAG:
     def _check_open(self):
         if self._receipt is not None:
             raise RuntimeError("Execution ledger has been finalized")
+        if self._checkpointed:
+            raise RuntimeError("Execution ledger is suspended at a checkpoint; use verified resume")
         for name in ("objects", "nodes"):
             if (self.root_dir / name).is_symlink() or not (self.root_dir / name).is_dir():
                 raise ValueError("Invalid evidence storage directory")
@@ -428,6 +431,16 @@ class ExecutionDAG:
             self._node_ids.append(node_id)
             return node_id
 
+    def _manifest_record(self, analysis_fingerprint):
+        if analysis_fingerprint is not None and not _is_digest(analysis_fingerprint):
+            raise ValueError("Invalid analysis fingerprint")
+        record = {"schema_version": SCHEMA_VERSION, "canonicalization": CANONICALIZATION,
+                  **self._identity, "finalized_at_utc": _now(), "node_ids": list(self._node_ids),
+                  "node_count": len(self._node_ids), "artifacts": list(self._artifacts.values()),
+                  "analysis_fingerprint": analysis_fingerprint}
+        record["root_hash"] = _digest(record)
+        return record
+
     def finalize(self, *, analysis_fingerprint: Optional[str] = None) -> dict:
         """Seal a manifest and return a receipt; retain its root outside this store."""
         with self._lock:
@@ -437,14 +450,8 @@ class ExecutionDAG:
                     raise ValueError("Finalized evidence has been altered")
                 return _copy_json(self._receipt)
             self._check_open()
-            if analysis_fingerprint is not None and not _is_digest(analysis_fingerprint):
-                raise ValueError("Invalid analysis fingerprint")
-            manifest = {"schema_version": SCHEMA_VERSION, "canonicalization": CANONICALIZATION,
-                        **self._identity, "finalized_at_utc": _now(), "node_ids": list(self._node_ids),
-                        "node_count": len(self._node_ids), "artifacts": list(self._artifacts.values()),
-                        "analysis_fingerprint": analysis_fingerprint}
-            root_hash = _digest(manifest)
-            manifest["root_hash"] = root_hash
+            manifest = self._manifest_record(analysis_fingerprint)
+            root_hash = manifest["root_hash"]
             manifest_path = self.root_dir / "manifest.json"
             _atomic_bytes(manifest_path, canonical_json(manifest))
             _atomic_bytes(self.root_dir / "root.sha256", (root_hash + "\n").encode("ascii"))
@@ -456,6 +463,98 @@ class ExecutionDAG:
                              "artifact_count": len(self._artifacts),
                              "analysis_fingerprint": analysis_fingerprint}
             return _copy_json(self._receipt)
+
+    def checkpoint(self, destination: PathLike, *, max_bytes: int, max_entries: int,
+                   analysis_fingerprint: Optional[str] = None) -> dict:
+        """Seal a bounded copy and suspend this writer without finalizing it.
+
+        The original working store can later acquire a verified new writer. The
+        copied store remains finalized, so its retained receipt continues to
+        verify after more nodes are appended to the working store. Limits cover
+        the completed payload/inventory, including sealing metadata; temporary
+        atomic-publication directory entries are not retained payload.
+        """
+        with self._lock:
+            self._check_open()
+            if any((self.root_dir / name).exists() or (self.root_dir / name).is_symlink()
+                   for name in ("manifest.json", "root.sha256")):
+                raise ValueError("Working ledger already contains finalization evidence")
+            destination = _absolute(destination)
+            byte_limit, entry_limit = _limit(max_bytes, "max_bytes"), _limit(max_entries, "max_entries")
+            if byte_limit is None or entry_limit is None:
+                raise ValueError("Checkpoint copy bounds are required")
+            # _now() always uses a fixed-width UTC microsecond timestamp. While
+            # this lock is held, the eventual manifest has this exact length.
+            sealing_bytes = len(canonical_json(self._manifest_record(analysis_fingerprint))) + 65
+            if byte_limit <= sealing_bytes or entry_limit <= 2:
+                raise ArtifactLimitError("Checkpoint bounds cannot hold sealing metadata")
+            copy_artifact(self.root_dir, destination, max_bytes=byte_limit-sealing_bytes, max_entries=entry_limit-2)
+            snapshot = type(self).__new__(type(self))
+            snapshot.root_dir = destination
+            snapshot._lock = threading.RLock()
+            snapshot._identity = _copy_json(self._identity)
+            snapshot._node_ids = list(self._node_ids)
+            snapshot._artifacts = _copy_json(self._artifacts)
+            snapshot._receipt, snapshot._checkpointed = None, False
+            receipt = snapshot.finalize(analysis_fingerprint=analysis_fingerprint)
+            self._checkpointed = True
+            return receipt
+
+    @classmethod
+    def resume(cls, working_root: PathLike, checkpoint_manifest: PathLike, *, expected_root: str):
+        """Reopen exactly a verified working prefix with a single-use claim.
+
+        This preserves the ledger identity; it never opens the finalized copy
+        for writing. Claims serialize cooperating local coordinators only, not
+        hostile owners or independently copied stores on different hosts. A
+        failed/stale claim is retained and must not be automatically discarded.
+        """
+        if not _is_digest(expected_root):
+            raise ValueError("Resume requires a retained checkpoint root")
+        root, checkpoint = _absolute(working_root), _absolute(checkpoint_manifest)
+        if root.is_relative_to(checkpoint.parent) or checkpoint.parent.is_relative_to(root):
+            raise ValueError("Working ledger and checkpoint must not overlap")
+        report = verify_execution(checkpoint, expected_root)
+        if not report["valid"]:
+            raise ValueError("Checkpoint verification failed: " + "; ".join(report["errors"]))
+        if any((root / name).exists() or (root / name).is_symlink()
+               for name in ("manifest.json", "root.sha256")):
+            raise ValueError("A finalized working ledger cannot be resumed")
+        manifest = _read_json(checkpoint)
+        identity = {key: manifest[key] for key in ("run_id", "actor_id", "identity_assurance", "created_at_utc")}
+        if _read_json(root / "ledger.json") != identity:
+            raise ValueError("Working ledger identity differs from checkpoint")
+        for folder in ("nodes", "objects"):
+            if (root / folder).is_symlink() or not (root / folder).is_dir():
+                raise ValueError("Invalid working evidence directory")
+            if {path.name for path in (root / folder).iterdir()} != {path.name for path in (checkpoint.parent / folder).iterdir()}:
+                raise ValueError("Working evidence inventory differs from checkpoint")
+        for node_id in manifest["node_ids"]:
+            if _read_json(root / "nodes" / (node_id + ".json")) != _read_json(checkpoint.parent / "nodes" / (node_id + ".json")):
+                raise ValueError("Working node differs from checkpoint")
+        checked = {}
+        for reference in manifest["artifacts"]:
+            _verify_artifact(reference, root, checked)
+        # The claim is outside the ledger so it can be captured as an artifact.
+        # Exclusive publication resolves concurrent resume attempts before any
+        # new scientific/model work can receive the returned writer.
+        claim = root.parent / ("." + root.name + "-resume-" + expected_root + ".json")
+        _atomic_bytes(claim, canonical_json({"format": "devharness.resume-claim/1",
+            "checkpoint_root": expected_root, "run_id": identity["run_id"],
+            "claim_id": str(uuid.uuid4()), "claimed_at_utc": _now()}), allow_existing=False)
+        resumed = cls.__new__(cls)
+        resumed.root_dir, resumed._lock = root, threading.RLock()
+        resumed._identity = _copy_json(identity)
+        resumed._node_ids = list(manifest["node_ids"])
+        resumed._artifacts = {_digest(reference): _copy_json(reference) for reference in manifest["artifacts"]}
+        resumed._receipt, resumed._checkpointed = None, False
+        checkpoint_ref = resumed.add_artifact(checkpoint, max_bytes=MAX_JSON_BYTES)
+        claim_ref = resumed.add_artifact(claim, max_bytes=MAX_JSON_BYTES)
+        resumed.append("execution.resumed", {"checkpoint_root": expected_root,
+            "checkpoint_manifest": checkpoint_ref, "claim": claim_ref,
+            "identity_assurance": "caller-asserted; no renewed execution authorization"},
+            parents=(() if not resumed._node_ids else (resumed._node_ids[-1],)))
+        return resumed
 
 
 def _is_digest(value) -> bool:

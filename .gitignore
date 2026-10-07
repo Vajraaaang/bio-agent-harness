@@ -1,5 +1,7 @@
 .venv/
 .venv310/
+.venv-analysis/
+.venv-colab-operator/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -12,3 +14,11 @@ devbench-audit/
 benchmarks/cache/
 .coverage
 .env
+tmp/
+biology-authorized-*/
+workbench_runs/
+
+# Local environments and publication worktrees
+.venv*/
+.github-publication-*/
+output/

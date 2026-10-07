@@ -1,5 +1,6 @@
 """Read workspace data without copying an expression matrix into pandas."""
 from pathlib import Path
+from devharness_core.units import BIOLOGICAL_UNIT_COLUMNS
 from typing import Union
 
 import pandas as pd
@@ -26,7 +27,7 @@ def read_metadata(path: PathLike) -> pd.DataFrame:
     """Read at most 20 MB and 100,000 metadata rows, preserving biological IDs."""
     source = bounded_metadata_path(path)
     frame = pd.read_csv(source, nrows=100001,
-                        dtype={name: str for name in ("sample_id", "specimen_id", "subject_id", "donor_id")})
+                        dtype={name: str for name in ("sample_id", *BIOLOGICAL_UNIT_COLUMNS)})
     if len(frame) > 100000:
         raise ValueError("Metadata exceeds the 100,000-row SDK limit")
     return frame

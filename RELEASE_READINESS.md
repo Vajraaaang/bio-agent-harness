@@ -1,3 +1,17 @@
+# Latest research development snapshot — 2026-10-07
+
+This update publishes the latest local source for `0.5.0.dev0`, including the scientific workbench, method contracts/planner, discovery evaluation support, and RNA tracing/qualification tooling. It is a draft review snapshot. Existing verified 0.4.17 release evidence remains historical evidence for that release, not qualification of this update.
+
+Fresh controlled synthetic software verification passed for both continuous expression and counts: repeated numerical outputs were identical, audit checks passed, and the configured R references agreed. These checks do not establish comparative scientific validity, hosted-service qualification, or clinical readiness.
+
+The broader software test run was bounded and stopped near 30% after sandbox failures/setup errors; it is incomplete and no full-suite pass is claimed. The first setup failure was a notebook kernel socket blocked by the sandbox. Rerunning `tests/test_analysis_bundle.py` with local socket/process permissions passed all three tests in 43.55 seconds. The remaining observed failures were not resolved or fully classified. No unrelated bugfixes are included in this source synchronization.
+
+`git diff --cached --check` reported four existing local whitespace findings in `devbench/analysis/assets/workbench-ui.html`, `devbench/analysis/plotting.py`, `tests/test_biology_preparation.py`, and `tests/test_planted_discovery.py`. Their source bytes are preserved. The copied-file manifest passed independent path-exclusion checks and SHA-256 verification for all 779 copied files.
+
+`PUBLICATION_MANIFEST.json` records SHA-256 identities for the copied local files and the original GitHub parent commit. Virtual environments, downloaded data/cache directories, local run directories, captured source trees, and integration validation outputs are excluded. Existing curated release evidence is retained.
+
+## Historical 0.4.17 release readiness
+
 # Release readiness and known issues
 
 This is the verified **0.4.17 research software snapshot**. It is not qualified for clinical production, patient use, GxP compliance or regulatory biomarker validation.

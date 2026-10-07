@@ -1,0 +1,30 @@
+{
+  "schema_version": "discovery_review/1",
+  "requires_executed_alternatives": true,
+  "ai_qualification": "AI review is not qualified independent scientific or clinical validation",
+  "gene_q_is_claim_fdr": false,
+  "criteria": [
+    "input quality and biological-unit independence",
+    "objective and requirement attribution",
+    "actual executed competing explanations",
+    "receipt-supported estimand, contrast, scope and limitations",
+    "calibrated conclusion or supported refusal"
+  ],
+  "excluded_fields": [
+    "arm",
+    "agent_arm",
+    "provider",
+    "provider_id",
+    "agent_model",
+    "agent_id",
+    "model_id",
+    "family",
+    "seed",
+    "truth",
+    "prior_votes"
+  ],
+  "repeatability": "same-input canonical complete output; empty/failed runs NA; stable errors retained",
+  "decision_scope": "software evidence review only; qualified independent science and clinical validation pending",
+  "preserve_statistical_model_descriptors": true,
+  "receipt_content_validation": "Recompute model_record and fit_result/diagnostic_result content hashes; compare estimates, fit status, reason and contrast against trusted result content; preserve coverage and failures"
+}

@@ -96,7 +96,8 @@ def test_default_mode_is_numerically_and_structurally_unchanged(tmp_path):
     assert before == explicit
     assert "selection_adjustment" not in before
     assert all("by_q_value" not in gene for gene in before["genes"].values())
-    assert before["provenance"]["parameters"]["statistical_method_version"] == "temporal_glm/2_gaussian_F"
+    assert before["provenance"]["parameters"]["statistical_method_version"] == "temporal_glm/4_exact_terms_and_effect_scale"
+    assert before["provenance"]["parameters"]["temporal_term_interpretation"] == "parsed_variable_identity/1"
 
 
 def test_constant_genes_do_not_claim_simulated_reference_or_informative_test(tmp_path):

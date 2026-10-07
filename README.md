@@ -1,5 +1,3 @@
-> **Research release — clinical production is not qualified.** Read [release readiness and unresolved findings](RELEASE_READINESS.md) before use.
-
 # DevHarness / DevBench
 
 Transcriptomics research tools, controlled numerical workflows, and executable agent benchmarks.
@@ -7,6 +5,50 @@ Transcriptomics research tools, controlled numerical workflows, and executable a
 **Status: research software. Clinical release is held.** The project implements statistical and record-integrity controls; it has not established clinical assay validity, qualified operations, or GxP/21 CFR Part 11 compliance. The [requirements and evidence map](docs/requirements-verification.md) states what is implemented, what was measured, and what remains missing.
 
 [Methods and results](reports/selection-calibration/README.md) · [Controlled execution](docs/controlled-execution.md) · [Clinical qualification gaps](docs/clinical-production-goal.md) · [Colab notebook](notebooks/controlled_verification.ipynb)
+
+The [extensible-methods backend](docs/extensible-methods.md) adds immutable method contracts for existing registered tools and custom OCI steps, branch runs, scientific previews, explicit revision-checked acceptance and replay. Access it through `devbench-analyze methods`. Custom execution remains exploratory until review; implementation trust is preserved separately.
+
+The [scientific-method planner](docs/scientific-method-planner.md) generates candidates before revealing the registry, preserves unavailable options, checks observed preconditions, freezes trial diagnostics and separates recommendations from scoped approvals and experimental recipes. Access it through `devbench-analyze methods planner`; model, network and data execution each require explicit authorization.
+
+## RNA-seq Analysis Workbench
+
+The [research-use workbench milestone](reports/rna-workbench-completion/2026-09-22/README.md) connects questions, explicit input/design admission, proposals, operator review, controlled analysis, evidence packets and recorded scientific review. Its [support matrix](docs/analysis-episodes.md) covers bounded bulk count/continuous contrasts and donor-aware cellular counts, alongside the separate backed scRNA workflow. e11 remains an unfinished integration case; these small local checks do not establish live-agent benefit or scientific calibration.
+
+Use the [local scRNA interface](docs/workbench-ui.md) for registration, reviewed execution, results and verified exports. Bulk and cellular contrast workflows use the [episode interfaces](docs/analysis-episodes.md). [Scientific-review packets](docs/scientific-review.md), the [current status ledger](docs/rna-workbench-status.md) and [offline evaluation preparation](docs/workbench-evaluation.md) state their evidence and authorization limits. No live study is authorized by preparing a configuration.
+
+## Three-condition study under development
+
+**Latest measured result:** the [revised six-slot Codex pilot](results/scientific-preparation-2026-09-14/proposed-pilot/revised-run-review/report.md) completed six analysis sessions and six permission preflights, with **zero accepted answers**. Optional participants made no trusted tool calls; enforced participants made 20 actual calls across repeated executions. This did not establish biological accuracy or harness benefit. The [subsequent seam remediation](reports/benchmark-redesign/seam-remediation-2026-09-15.md) adds execution versions, last-successful binding, common pre-submission validation and full offline fixture-agent tests. Study receipts have an explicit [integrity-only scope](docs/study-evidence-scope.md); numerical replay is not a supported study capability.
+
+The [corrected launch runbook](reports/benchmark-redesign/six-slot-pilot-runbook.md) pins the verified CLI build, prepares evaluation cohorts only, and pauses after the first worker for a receipt-bound coordinator decision. The same process continues; restarting the command is not a resume operation. Its historical authorization/status text predates the measured pilot linked above; every new live cycle still needs a bounded execution scope.
+
+The [review-design revision](reports/benchmark-redesign/qc-rubric-change-rationale.md) replaces the unexecuted proposal with two cohorts per case and two repetitions, retains independent reviewer ratings, and reports agreement, blinding and cutoff sensitivity. See the separate [custom instruction snapshot](reports/benchmark-redesign/custom-participant-instructions.md). The revised 24-slot/48-session proposal requires a new execution budget; no runs are authorized or queued.
+
+The [instrument follow-up](reports/benchmark-redesign/instrument-followup.md) adds cohort-level Monte Carlo SE, repeated-run outcome variance, explicit small-pilot limits, and hash-bound human reasoning adjudication. Quantitative success alone is not presented as a reviewed biological insight. These are offline instrument changes; actual repeatability and case-specific detection floors remain unmeasured.
+
+Standalone unscored permission checks are reachable through [`--preflight-only`](docs/preflight-only.md) on all three study run commands. The earlier [live validation](reports/benchmark-redesign/live-permission-validation.md) includes successful baseline, optional and enforced permission receipts, preserved genuine socket failures, and verified CLI-reported model identity. The subsequent six-slot pilot is separate and produced no accepted scientific answers.
+
+Optional [LangSmith tracking](docs/langsmith.md) exports redacted traces after measurement. Prepare a local preview with `devbench-study langsmith-export`, review its payload, and explicitly authorize `langsmith-upload` with that payload's SHA-256. Existing run commands perform no uploads, and no LLM evaluator is enabled.
+
+The [benchmark setup verification](reports/benchmark-redesign/READINESS.md), [biological configuration dashboard](reports/benchmark-redesign/biology-dashboard-ready/index.html), and separate [public reference dashboard](reports/benchmark-redesign/public-dashboard/index.html) describe configured coverage. Their empty performance views are not the latest measured pilot report. The biological catalog has 97 configured cases; public results remain separate.
+
+The [scientific preparation assessment](reports/benchmark-redesign/scientific-preparation.md) documents corrected enrichment/background and motif-reference handling, explicit interval availability, complete-family BH bookkeeping, and inspectable model selection. It includes executed local checks and the frozen plan subsequently used for the measured six-slot pilot.
+
+The [robustness research assessment](reports/benchmark-redesign/robustness-research.md) addresses the independent review's permission and scientific concerns. Current study launches require an explicitly authorized `codex exec` permission control and verified runtime model identity before scoring. Probe usage is recorded separately. Evidence applies to the recorded local CLI/runtime; new scored attempts still require their own checks.
+
+The `0.5.0.dev0` development path adds a separate comparison of **baseline**, **optional DevHarness**, and **enforced DevHarness**. Baseline participants receive ordinary Python analysis libraries. Optional participants may use, combine, or ignore the supplied tools. Enforced reports require applicable coordinator-recorded checks and numerical claims that agree with the tool results they cite. Historical `assisted` runs retain their original guided-assistance meaning.
+
+The project has executed **small local synthetic numerical/storage fixtures**, unscored permission probes, and the scored-slot synthetic pilot described above. It has not established a successful biological-agent comparison or statistically analyzed the real public cohorts in this study path. Processed public source formats and hashes were checked. The [research review](reports/benchmark-redesign/research-review.md) distinguishes methodological support from empirical calibration and biological validation.
+
+Create configuration and an empty report only, using a fresh absolute output path outside system temporary directories:
+
+```sh
+python -m devbench.study.cli plan --stage smoke --output /absolute/project/results/proposed-study
+```
+
+The command writes a private plan and a separate public report. Keep the private plan, preparation receipts and grading references inaccessible to participants. Generation seeds and the model are deliberately unassigned in the default plan. `prepare-data`, `run`, and analysis of nonempty records require their explicit authorization flags; planning does not imply permission to execute them. The broader orchestration and numerical paths remain under review.
+
+The [three-condition workflow guide](docs/three-condition-study.md) documents the evidence boundaries. A separate [plan-only Colab notebook](notebooks/three_condition_study.ipynb) prepares the same empty report from an existing repository checkout; it has not been executed in Colab for this revision.
 
 ## What the project does
 

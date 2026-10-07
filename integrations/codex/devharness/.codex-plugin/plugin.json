@@ -1,0 +1,31 @@
+{
+  "name": "devharness",
+  "version": "0.1.0",
+  "description": "Local RNA-seq research workflows using the existing DevHarness scientific tools.",
+  "author": {
+    "name": "DevHarness contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "rna-seq",
+    "scrna-seq",
+    "transcriptomics",
+    "research"
+  ],
+  "interface": {
+    "displayName": "DevHarness",
+    "shortDescription": "RNA-seq research through Codex.",
+    "longDescription": "Guide supported RNA-seq workflows, run installed scientific tools, and review numerical evidence. Research software; not clinically qualified.",
+    "developerName": "DevHarness contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Inspect my RNA-seq input and metadata.",
+      "Propose a supported RNA-seq analysis.",
+      "Review my analysis results and evidence."
+    ]
+  }
+}
