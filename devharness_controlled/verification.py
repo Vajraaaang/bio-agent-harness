@@ -27,7 +27,8 @@ from .result_schema import validate_accepted_result
 STAGES = ("attempt_started", "plan_approvals_verified", "inputs_preserved",
           "numerical_execution_started", "numerical_execution_returned")
 WORKER = "devharness_controlled.executor._controlled_worker"
-METHOD = "temporal_glm/2_gaussian_F"
+METHOD = "temporal_glm/4_exact_terms_and_effect_scale"
+LEGACY_METHOD = "temporal_glm/2_gaussian_F"
 
 
 def _require(condition, message):
@@ -161,10 +162,14 @@ def _check_result(plan, evidence, event, completed, identity):
     result = evidence.json("numerical-result.json")
     analysis = result["analysis"]
     parameters = analysis["provenance"]["parameters"]
+    method = parameters.get("statistical_method_version")
+    _require(method in {METHOD, LEGACY_METHOD}, "Unsupported retained numerical method version")
     expected = {"formula_str": _formula(plan), "time_col": plan.time_column, "gene_list": list(plan.hypothesis_genes),
-                "statistical_method_version": METHOD, "selection_criterion": "fixed", "spline_dfs": [plan.spline_df],
+                "statistical_method_version": method, "selection_criterion": "fixed", "spline_dfs": [plan.spline_df],
                 "data_type": plan.data_type, "calibration_max_genes": len(plan.calibration_genes) or len(plan.hypothesis_genes),
                 "strict": True, "glm_maxiter": 200, "glm_tol": 1e-8}
+    if method == METHOD:
+        expected["temporal_term_interpretation"] = "parsed_variable_identity/1"
     if plan.categorical_covariates:
         expected["categorical_columns"] = list(plan.categorical_covariates)
     _require(canonical_json(parameters) == canonical_json(expected), "Returned numerical parameters differ from plan")
@@ -198,16 +203,18 @@ def _check_result(plan, evidence, event, completed, identity):
              and type(design["rank"]) is int and design["rank"] == design["num_parameters"]
              and _finite(design["condition_number"]) and 0 < design["condition_number"] <= 1000,
              "Invalid accepted design")
-    _check_statistics(plan, analysis, len(samples), design)
     formula = re.sub(r"\bnumeric_time\b", f"cr(numeric_time, df={plan.spline_df}, constraints='center')", _formula(plan))
+    if method == METHOD:
+        from devharness_core.design_terms import temporal_spline_formula
+        formula = temporal_spline_formula(_formula(plan), plan.spline_df)
+    _check_statistics(plan, analysis, len(samples), design, formula)
     validate_accepted_result(plan, result, rows, formula)
 
 
-def _check_statistics(plan, analysis, sample_count, design):
+def _check_statistics(plan, analysis, sample_count, design, formula):
     from scipy.stats import chi2, f
 
     p_values, q_values = [], []
-    formula = re.sub(r"\bnumeric_time\b", f"cr(numeric_time, df={plan.spline_df}, constraints='center')", _formula(plan))
     _require(analysis["formula"] == formula, "Returned formula differs from locked design")
     for name in plan.hypothesis_genes:
         gene = analysis["genes"][name]

@@ -13,6 +13,7 @@ from typing import Dict, Optional
 import numpy as np
 
 from devharness_core.stages import parse_stages
+from devharness_core.units import declared_unit_counts
 from devharness_core.storage import ChunkedExpressionStore
 from devharness_core.watchdog import run_sandboxed
 from devharness_server.tools_lineage import _bounded_int, _bounded_metadata, _matrix_sha256
@@ -165,11 +166,16 @@ def _contrast(report: dict, metadata, contrast: dict, time_col: str) -> None:
     if not all(group_counts.values()):
         _add(report, "invalid_contrast", "error", "At least one requested contrast level has no measured samples; no model was fitted")
         return
-    independent = {level: (int(subset.loc[subset[column].astype(str) == level, "specimen_id"].nunique())
-                          if "specimen_id" in subset else None) for level in (numerator, denominator)}
-    metrics["contrast"]["specimen_counts"] = independent
+    independent = {}
+    for level in (numerator, denominator):
+        counts, incomplete = declared_unit_counts(subset.loc[subset[column].astype(str) == level])
+        independent[level] = min(counts.values()) if counts and not incomplete else None
+    metrics["contrast"]["specimen_counts"] = {
+        level: int(subset.loc[subset[column].astype(str) == level, "specimen_id"].nunique())
+        if "specimen_id" in subset else None for level in (numerator, denominator)}
+    metrics["contrast"]["declared_biological_unit_counts"] = independent
     if any(count is not None and count < 2 for count in independent.values()):
-        _add(report, "insufficient_independent_replicates", "error", "Each requested group needs at least two declared specimens to estimate biological replication")
+        _add(report, "insufficient_independent_replicates", "error", "Each requested group needs at least two declared biological units; unique specimens cannot erase a shared donor or biological unit")
         return
     y = (subset[column].astype(str) == numerator).astype(float)
     # Residualization checks estimability against batch intercepts and numeric
@@ -243,12 +249,16 @@ def _audit_worker(counts_path: str, metadata_path: str, time_col: str,
                 _add(report, "high_dropout", "warning", "Observed zero fraction exceeds the configured threshold; zeros alone do not establish a dropout mechanism")
             if profile["unique_expression_profiles"] < n:
                 _add(report, "duplicate_expression_profiles", "warning", "Exact repeated expression profiles were measured; inspect technical duplication before treating samples as independent")
-            if "specimen_id" in metadata and all(metadata["specimen_id"].astype(str).str.strip()):
-                effective = int(metadata["specimen_id"].nunique())
+            unit_counts, incomplete_units = declared_unit_counts(metadata)
+            metrics["declared_unit_counts"] = unit_counts
+            metrics["incomplete_unit_columns"] = incomplete_units
+            metrics["independence_established"] = False
+            if unit_counts and not incomplete_units:
+                effective = min(unit_counts.values())
                 metrics["effective_sample_count"] = effective
-                metrics["declared_specimen_count"] = effective
+                metrics["declared_specimen_count"] = unit_counts.get("specimen_id")
                 if effective < n:
-                    _add(report, "repeated_specimens", "warning", "Multiple cells/samples share specimen IDs; cell count is not the count of declared biological replicates")
+                    _add(report, "repeated_specimens", "warning", "Multiple observations share a declared biological identity; sample count is not independent replicate count")
             else:
                 metrics["effective_sample_count"] = None
                 _add(report, "independence_unverified", "warning", "Complete specimen IDs are unavailable; biological replicate count cannot be inferred from cell IDs")

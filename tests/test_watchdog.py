@@ -3,10 +3,13 @@
 import multiprocessing
 import ctypes
 import errno
+import json
 import os
 import pickle
+from pathlib import Path
 import subprocess
 import sys
+import threading
 import time
 
 import psutil
@@ -68,6 +71,125 @@ def worker_resource_guard():
 def worker_return_with_descendant():
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
     return child.pid
+
+
+def worker_report_with_descendant(pid_path, raises):
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    Path(pid_path).write_text(json.dumps({"worker": os.getpid(), "child": child.pid}))
+    if raises:
+        raise ValueError("reported failure before supervisor interruption")
+    return child.pid
+
+
+def reported_worker_cleanup_scenario(pid_path, interruption, raises):
+    """Run in an outer subprocess so a cleanup deadlock cannot hang pytest."""
+    import devharness_core.watchdog as module
+
+    context = multiprocessing.get_context("spawn")
+    make_queue, make_process = context.Queue, context.Process
+    start_monitor = module.MemoryWatchdog.start
+    state, diagnostics = {}, {}
+    cancellation = threading.Event()
+
+    def start(monitor):
+        state["monitor"] = monitor
+        return start_monitor(monitor)
+
+    def process(*args, **kwargs):
+        state["release"] = kwargs["args"][-1]
+        state["worker"] = make_process(*args, **kwargs)
+        return state["worker"]
+
+    def result_queue(*args, **kwargs):
+        results = make_queue(*args, **kwargs)
+        receive = results.get
+
+        def get(*args, **kwargs):
+            message = receive(*args, **kwargs)
+            signal = state["release"]
+            # In the original Event implementation, prove the real worker has
+            # registered a Condition waiter before interrupting its parent.
+            if hasattr(signal, "_cond"):
+                end = time.monotonic() + 5
+                while signal._cond._sleeping_count._semlock._get_value() < 1:
+                    if time.monotonic() >= end:
+                        raise AssertionError("Worker did not register its release waiter")
+                    time.sleep(.005)
+            assert state["worker"].is_alive()
+            if interruption == "timeout":
+                raise module.HarnessResourceInterrupt("Worker timed out at reported-result boundary")
+            if interruption == "cancelled":
+                cancellation.set()
+            if interruption == "monitor":
+                raise module.HarnessResourceInterrupt("Worker memory monitoring failed at reported-result boundary")
+            if interruption == "worker_killed":
+                # A dead root cannot be enumerated. Retain its observed tree
+                # before simulating abrupt death, as the real sampler does.
+                state["monitor"].sample_rss_mb()
+                state["worker"].kill()
+                state["worker"].join(timeout=2)
+                assert not state["worker"].is_alive()
+            return message
+
+        results.get = get
+        return results
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(context, "Queue", result_queue)
+        patch.setattr(context, "Process", process)
+        patch.setattr(module.MemoryWatchdog, "start", start)
+        with module.cancel_workers_on(cancellation):
+            try:
+                value = module.run_sandboxed(worker_report_with_descendant,
+                    (pid_path, raises), timeout_sec=15, max_mem_mb=512, diagnostics=diagnostics)
+                outcome = {"value": value}
+            except (module.HarnessResourceInterrupt, module.WorkerCancelled, module.RemoteWorkerError) as exc:
+                outcome = {"exception_type": type(exc).__name__, "message": str(exc)}
+    print(json.dumps({"outcome": outcome, "diagnostics": diagnostics}, allow_nan=False), flush=True)
+
+
+@pytest.mark.parametrize("interruption", ["timeout", "cancelled", "monitor", "worker_killed"])
+@pytest.mark.parametrize("raises", [False, True], ids=["reported_result", "reported_error"])
+def test_reported_worker_cleanup_is_bounded_after_interruption(tmp_path, interruption, raises):
+    pid_path = tmp_path / "pids.json"
+    code = (
+        f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parent)!r}); "
+        "from test_watchdog import reported_worker_cleanup_scenario; "
+        f"reported_worker_cleanup_scenario({str(pid_path)!r}, {interruption!r}, {raises!r})"
+    )
+    live_before_fixture_cleanup = []
+    try:
+        completed = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                                   text=True, timeout=10, check=True)
+    except subprocess.TimeoutExpired:
+        pytest.fail("Supervisor cleanup hung after a worker reported and entered its release wait")
+    finally:
+        # Cleanup is scoped to this fixture's exact worker/descendant PIDs even
+        # when the outer deadline catches the original deadlock.
+        if pid_path.exists():
+            for pid in json.loads(pid_path.read_text()).values():
+                try:
+                    process = psutil.Process(pid)
+                    if process.status() != psutil.STATUS_ZOMBIE:
+                        live_before_fixture_cleanup.append(pid)
+                        process.kill()
+                        process.wait(timeout=2)
+                except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                    pass
+    report = json.loads(completed.stdout)
+    assert live_before_fixture_cleanup == [], "Supervisor left fixture processes running"
+    observations = report["diagnostics"]
+    assert observations["cleanup"]["verified_stopped"] is True, report
+    assert observations["cleanup"]["coverage"] == "observed_process_tree"
+    assert observations["supervisor_elapsed_seconds"] < 8
+    expected = ("WorkerCancelled" if interruption == "cancelled" else
+                "RemoteWorkerError" if interruption == "worker_killed" and raises else
+                None if interruption == "worker_killed" else "HarnessResourceInterrupt")
+    assert report["outcome"].get("exception_type") == expected, report
+    assert observations["supervisor_status"] == ("cancelled" if interruption == "cancelled" else
+                                                "failed" if expected else "completed")
+    for pid in json.loads(pid_path.read_text()).values():
+        assert not psutil.pid_exists(pid) or psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
 
 
 def worker_return_with_grandchild():

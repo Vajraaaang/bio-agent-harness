@@ -10,35 +10,43 @@ import sysconfig
 import venv
 
 from devharness_core.watchdog import configure_worker_environment
+from .runtime_dependencies import BULK_REQUIREMENTS, EXCLUDED_PREFIXES, resolve_dependencies
 
 RUNTIME_PACKAGES = ("devharness", "devharness_core", "devharness_server")
-COORDINATOR_NAMES = ("devbench", "devharness", "benchmarks", "experiments", "scripts", "tests",
-                     "__editable__", "sitecustomize", "usercustomize", "_virtualenv")
+COORDINATOR_NAMES = EXCLUDED_PREFIXES
 
 
-def stage_python(workspace: Path, *, assisted: bool = True) -> dict:
+def stage_python(workspace: Path, *, assisted: bool = True, profile: str = "host") -> dict:
     """Link third-party dependencies individually; copy only runtime source.
 
     This avoids exposing this project's editable-install hook or installed grader
     packages through sys.path. It is not a hostile-code filesystem read sandbox.
     Codex's own workspace policy remains responsible for process permissions.
     """
+    if profile not in {"host", "bulk"}:
+        raise ValueError("Unknown participant runtime profile")
+    if profile == "bulk" and assisted:
+        raise ValueError("The bulk profile supports broker-based studies, not copied SDK execution")
     workspace = Path(workspace).resolve()
     environment = workspace / ".venv"
     if environment.exists() or environment.is_symlink():
         raise FileExistsError("Participant .venv must be new")
     configure_worker_environment()
-    venv.EnvBuilder(with_pip=False, symlinks=True).create(environment)
     source_site = Path(sysconfig.get_path("purelib")).resolve()
+    sources, distributions = (resolve_dependencies(source_site, BULK_REQUIREMENTS)
+                              if profile == "bulk" else (sorted(source_site.iterdir()), {}))
+    venv.EnvBuilder(with_pip=False, symlinks=True).create(environment)
     target_site = environment / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
     target_site.mkdir(parents=True, exist_ok=True)
     linked = []
-    for source in sorted(source_site.iterdir()):
-        name = source.name
+    for source in sources:
+        name = source.relative_to(source_site).as_posix()
         if (name.startswith(COORDINATOR_NAMES) or name.startswith(".")
                 or name.endswith(".pth") or name == "__pycache__"):
             continue
-        (target_site / name).symlink_to(source, target_is_directory=source.is_dir())
+        target = target_site / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.symlink_to(source, target_is_directory=source.is_dir())
         linked.append(name)
     copied = {}
     if assisted:
@@ -75,6 +83,8 @@ def stage_python(workspace: Path, *, assisted: bool = True) -> dict:
     if check.returncode:
         raise RuntimeError("Participant interpreter probe failed: " + check.stderr[-2000:])
     return {"python": str(python), "probe": json.loads(check.stdout),
+            "runtime_profile": profile, "dependency_distributions": distributions,
+            "dependency_requirements": list(BULK_REQUIREMENTS) if profile == "bulk" else [],
             "linked_dependency_entries": linked, "runtime_source_hashes": copied,
             "dependency_mode": "individual_third_party_symlinks_without_editable_hooks",
             "pythonpath_isolation": "project coordinator modules excluded; not an OS read sandbox"}

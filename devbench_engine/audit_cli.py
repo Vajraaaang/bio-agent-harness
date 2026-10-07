@@ -36,6 +36,10 @@ class AuditError(ValueError):
     """Evidence cannot safely support the requested audit operation."""
 
 
+class StudyReplayOutOfScope(AuditError):
+    """Study receipt verification is separate from ExecutionDAG replay."""
+
+
 def _absolute(value: PathLike) -> Path:
     path = Path(value).expanduser()
     if not path.is_absolute():
@@ -71,6 +75,12 @@ def _verified_bundle(manifest_path: PathLike, expected_root_hash: str) -> dict:
     _require(isinstance(expected_root_hash, str) and _ROOT_PATTERN.fullmatch(expected_root_hash),
              "A separately retained SHA-256 root is required")
     path = _absolute(manifest_path)
+    declared = _read_json(path)
+    if isinstance(declared, dict) and declared.get("record_format") in {
+            "devbench.study.tool-receipts/1", "devbench.study.tool-receipts/2"}:
+        raise StudyReplayOutOfScope(
+            "Study tool receipts are an integrity-only contract. Use devbench-study verify-tools; "
+            "numerical replay of study receipts is out of scope.")
     report = verify_execution(path, expected_root_hash)
     _require(report["valid"] and report["anchored"], "Evidence verification failed: " + "; ".join(report["errors"]))
     manifest = _read_json(path)
@@ -379,7 +389,10 @@ def replay_execution(manifest_path: PathLike, expected_root_hash: str, output_di
             os.fsync(target.fileno())
     except (OSError, ValueError, TypeError, KeyError, OverflowError, ImportError, RuntimeError) as error:
         report["passed"] = False
-        report["status"] = "unreplayable"
+        report["status"] = "out_of_scope" if isinstance(error, StudyReplayOutOfScope) else "unreplayable"
+        if isinstance(error, StudyReplayOutOfScope):
+            report["reason_code"] = "study_receipts_integrity_only"
+            report["recommended_verifier"] = "devbench-study verify-tools"
         report["errors"].append(str(error)[:2000])
     return report
 

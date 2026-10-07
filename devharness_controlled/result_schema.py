@@ -1,4 +1,4 @@
-"""Accepted-result contract for temporal_glm/2_gaussian_F evidence.
+"""Versioned accepted-result contracts for fixed temporal GLM evidence.
 
 This checks the complete exposed gene-fit structure and internal invariants.
 It does not establish calibration, clinical validity or genuine host execution.
@@ -41,6 +41,9 @@ def _notices(record):
 def validate_accepted_result(plan, result, metadata_rows, formula):
     _require(type(result) is dict and set(result) == {"analysis", "input_validation"}, "Unexpected accepted-result structure")
     analysis = result["analysis"]
+    method = analysis["provenance"]["parameters"].get("statistical_method_version")
+    current = method == "temporal_glm/4_exact_terms_and_effect_scale"
+    _require(current or method == "temporal_glm/2_gaussian_F", "Unsupported fixed temporal result version")
     _require(type(analysis) is dict and set(analysis) == ANALYSIS_FIELDS, "Unknown or missing analysis fields")
     _notices(analysis)
     samples = result["input_validation"]["sample_ids"]
@@ -56,12 +59,37 @@ def validate_accepted_result(plan, result, metadata_rows, formula):
     _require(len(columns) == parameter_count, "Coefficient dimension does not match approved covariates")
     times = [float(row[plan.time_column]) for row in metadata_rows]
     _require(all(_number(t) for t in times) and min(times) < max(times), "Invalid preserved numeric times")
+    if current:
+        import numpy as np
+        import pandas as pd
+        from patsy import dmatrix, build_design_matrices
+        frame = pd.DataFrame(metadata_rows).set_index("sample_id").loc[samples].copy()
+        frame["numeric_time"] = frame[plan.time_column].astype(float)
+        for covariate in plan.continuous_covariates:
+            frame[covariate] = frame[covariate].astype(float)
+        design = dmatrix(formula, frame, return_type="dataframe")
+        time_grid = sorted(set(times))
+        prediction = frame.iloc[[0] * len(time_grid)].copy()
+        prediction["numeric_time"] = time_grid
+        prediction_design = np.asarray(build_design_matrices([design.design_info], prediction)[0])
     for gene in analysis["genes"].values():
-        _require(type(gene) is dict and set(gene) == GENE_FIELDS, "Unknown or missing accepted gene fields")
+        expected_fields = GENE_FIELDS | ({"time_grid", "predicted_curve"} if current else set())
+        _require(type(gene) is dict and set(gene) == expected_fields, "Unknown or missing accepted gene fields")
         _notices(gene)
         coefficients = gene["coefficients"]
         _require(type(coefficients) is dict and set(coefficients) == columns
                  and all(_number(value) for value in coefficients.values()), "Invalid accepted coefficients")
+        if current:
+            curve = gene["predicted_curve"]
+            _require(type(gene["time_grid"]) is list and gene["time_grid"] == time_grid
+                     and type(curve) is list and len(curve) == len(time_grid) and all(_number(value) for value in curve),
+                     "Invalid recorded prediction grid")
+            predicted = prediction_design @ np.asarray([coefficients[name] for name in design.columns])
+            if plan.data_type == "counts":
+                predicted = np.exp(predicted)
+            _require(all(_close(actual, float(expected)) for actual, expected in zip(curve, predicted))
+                     and _close(curve[0], gene["predicted_start"]) and _close(curve[-1], gene["predicted_end"]),
+                     "Recorded curve differs from accepted coefficients")
         for name in ("predicted_start", "predicted_end", "effect_difference", "endpoint_contrast_se", "time_start", "time_end", "wald_statistic"):
             _require(_number(gene[name]), "Invalid numeric gene field: " + name)
         _require(gene["endpoint_contrast_se"] >= 0 and gene["wald_statistic"] >= 0, "Negative uncertainty or Wald statistic")
@@ -75,7 +103,9 @@ def validate_accepted_result(plan, result, metadata_rows, formula):
         start, end = gene["predicted_start"], gene["predicted_end"]
         if plan.data_type == "counts":
             _require(start > 0 and end > 0, "Nonpositive NB endpoint mean")
-        if start > 0 and end > 0:
+        if current and plan.data_type == "continuous":
+            _require(gene["log2_fold_change"] is None, "Generic continuous expression has no abundance fold-change scale")
+        elif start > 0 and end > 0:
             _require(_close(gene["log2_fold_change"], (math.log(end)-math.log(start))/math.log(2)), "Inconsistent endpoint fold change")
         else:
             _require(gene["log2_fold_change"] is None, "Undefined Gaussian log-fold-change")

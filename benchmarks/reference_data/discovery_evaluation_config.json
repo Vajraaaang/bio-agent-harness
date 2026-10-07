@@ -1,0 +1,123 @@
+{
+  "schema_version": "discovery_evaluation/1",
+  "parameters": {
+    "gene_jaccard": {
+      "value": 0.5,
+      "source_kind": "assistant_choice",
+      "source_ref": "2026-10-03 benchmark repair coordinator specification",
+      "status": "frozen_for_software_readiness"
+    },
+    "sample_jaccard": {
+      "value": 0.7,
+      "source_kind": "assistant_choice",
+      "source_ref": "2026-10-03 benchmark repair coordinator specification",
+      "status": "frozen_for_software_readiness"
+    },
+    "gene_q_alpha": {
+      "value": 0.05,
+      "source_kind": "assistant_choice",
+      "source_ref": "2026-10-03 benchmark repair coordinator specification",
+      "status": "frozen_for_software_readiness"
+    },
+    "specific_recall": {
+      "value": 0.67,
+      "source_kind": "assistant_choice",
+      "source_ref": "2026-10-03 benchmark repair coordinator specification",
+      "status": "frozen_for_software_readiness"
+    },
+    "naive_advantage": {
+      "value": 0.33,
+      "source_kind": "assistant_choice",
+      "source_ref": "2026-10-03 benchmark repair coordinator specification",
+      "status": "frozen_for_software_readiness"
+    },
+    "decoy_attribution": {
+      "value": 0.9,
+      "source_kind": "assistant_choice",
+      "source_ref": "2026-10-03 benchmark repair coordinator specification",
+      "status": "frozen_for_software_readiness"
+    },
+    "qualified_design_fraction": {
+      "value": 0.8333333333333334,
+      "source_kind": "assistant_choice",
+      "source_ref": "2026-10-03 benchmark repair coordinator specification",
+      "status": "frozen_for_software_readiness"
+    },
+    "repeatability_median": {
+      "value": 0.7,
+      "source_kind": "assistant_choice",
+      "source_ref": "2026-10-03 benchmark repair coordinator specification",
+      "status": "frozen_for_software_readiness"
+    },
+    "unsupported_asserted_null_discoveries": {
+      "value": 0,
+      "source_kind": "assistant_choice",
+      "source_ref": "2026-10-03 benchmark repair coordinator specification",
+      "status": "frozen_for_software_readiness"
+    },
+    "design_aware_noninferiority_margin": {
+      "value": 0,
+      "source_kind": "assistant_choice",
+      "source_ref": "2026-10-03 benchmark repair coordinator specification",
+      "status": "frozen_for_software_readiness"
+    },
+    "null_interval_confidence": {
+      "value": 0.95,
+      "source_kind": "assistant_choice",
+      "source_ref": "claims lane exact-binomial software summary",
+      "status": "frozen_for_software_readiness"
+    }
+  },
+  "campaign_budget": null,
+  "campaign_approval_status": "pending",
+  "case_presentations_before_repeats": 21,
+  "qualified_design_case_count": 9,
+  "presentation_families": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F-known",
+    "F-unknown"
+  ],
+  "development_seeds_per_presentation": 3,
+  "superseded_presentation_proposal": 18,
+  "criteria": {
+    "gene_jaccard": 0.5,
+    "sample_jaccard": 0.7,
+    "gene_q_alpha": 0.05,
+    "specific_recall": 0.67,
+    "naive_advantage": 0.33,
+    "decoy_attribution": 0.9,
+    "qualified_design_fraction": 0.8333333333333334,
+    "repeatability_median": 0.7,
+    "unsupported_asserted_null_discoveries": 0,
+    "design_aware_noninferiority_margin": 0
+  },
+  "primary_confidences": [
+    "high",
+    "moderate"
+  ],
+  "low_confidence_policy": "retain asserted discoveries and errors as sensitivity; hypotheses earn no discovery credit",
+  "limits": "Gene BH q-values are not claim-level FDR; Jaccard identity matching is not gene precision or FDR certification. Zero unsupported asserted null discoveries is an operational rule, not a BH guarantee. No expert/design-aware superiority or clinical validation is established.",
+  "freeze_status": "frozen_for_software_readiness",
+  "external_native_smoke": "NOT_RUN",
+  "agent_performance": "NOT_RUN",
+  "native_campaign_budget_status": "pending",
+  "matching": {
+    "priority": [
+      "maximum_cardinality",
+      "maximum_fixed_overlap_weight",
+      "stable_ID_order"
+    ],
+    "gene_overlap_weight": 1,
+    "sample_overlap_weight": 1,
+    "overlap_weight_precision": 0.001,
+    "source_kind": "assistant_choice",
+    "status": "frozen_for_software_readiness"
+  },
+  "presentation_allocation_status": "proposal; future campaign budget and dispatch approval pending",
+  "receipt_trust_boundary": "Trusted coordinator custody and artifact content/provenance verification; raw SHA roots are not electronic signatures or authenticated human identity",
+  "null_interpretation": "No supported discovery under the tested analysis; no proof of absence of biology. Require complete content-bound fit coverage and matching available estimates."
+}

@@ -5,42 +5,26 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import stat
 import time
 
 from devbench_engine.adapters import CodexCLIAdapter, _read_answer, _validate_schema
+from .execution_capture import script_invocation
 
 
-def _file_hash(path: Path):
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 1_000_000:
-        return None
-    data = path.read_bytes()
-    return hashlib.sha256(data).hexdigest() if len(data) <= 1_000_000 else None
-
-
-def script_invocation(command, workspace: Path, python: Path) -> bool:
-    """Recognize a direct successful Python/solve.py invocation, not prose/echo.
-
-    Shell wrappers and an explicit leading cd are supported. Arbitrary compound
-    shell syntax is deliberately not treated as proof of script execution.
-    """
-    if not isinstance(command, str) or len(command) > 16_000:
-        return False
+def _file_hash(path: Path, *, max_bytes=1_000_000):
+    if type(max_bytes) is not int or not 1 <= max_bytes <= 8_000_000:
+        raise ValueError("Invalid artifact byte budget")
     try:
-        parts = shlex.split(command)
-        if len(parts) == 3 and Path(parts[0]).name in {"sh", "bash", "zsh"} and parts[1] in {"-c", "-lc"}:
-            parts = shlex.split(parts[2])
-        if len(parts) >= 4 and parts[0] == "cd" and parts[2] == "&&":
-            if Path(parts[1]).resolve() != workspace:
-                return False
-            parts = parts[3:]
-        if len(parts) != 2:
-            return False
-        exe, script = (Path(value) if Path(value).is_absolute() else workspace / value for value in parts)
-        # Compare lexical interpreter paths: resolving venv symlinks would make
-        # the host/base interpreter indistinguishable from the staged one.
-        return exe.absolute() == python.absolute() and script.resolve() == workspace / "solve.py"
-    except (ValueError, OSError):
-        return False
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as handle:
+            details = os.fstat(handle.fileno())
+            if not stat.S_ISREG(details.st_mode) or details.st_size > max_bytes:
+                return None
+            data = handle.read(max_bytes + 1)
+        return hashlib.sha256(data).hexdigest() if len(data) <= max_bytes else None
+    except OSError:
+        return None
 
 
 class CodeActionAdapter(CodexCLIAdapter):
@@ -48,12 +32,37 @@ class CodeActionAdapter(CodexCLIAdapter):
     backend_name = "Codex Code-as-Action"
 
     def __init__(self, executable="codex", timeout_sec=90, model=None, max_mem_mb=8000,
-                 condition="assisted"):
+                 condition="assisted", artifact_max_bytes=1_000_000):
+        if type(artifact_max_bytes) is not int or not 1 <= artifact_max_bytes <= 8_000_000:
+            raise ValueError("Invalid code-action artifact byte budget")
         super().__init__(executable=executable, timeout_sec=timeout_sec, model=model,
                          max_mem_mb=max_mem_mb, max_turns=1, condition=condition)
         self.workspace = None
         self.python = None
         self.command_events = []
+        self.artifact_max_bytes = artifact_max_bytes
+        self.execution_observer = None
+        self._command_contexts = {}
+        self._command_sequence = 0
+        self.require_command_starts = False
+
+    def _execution_context(self, item, *, started):
+        key = item.get("id")
+        if key is not None and key in self._command_contexts:
+            return self._command_contexts[key]
+        self._command_sequence += 1
+        if self._command_sequence > 128:
+            raise RuntimeError("Code-action execution windows exceed capture limit")
+        context = {"execution_id": f"execution-{self._command_sequence:04d}",
+                   "sequence": self._command_sequence, "cli_item_id": key,
+                   "command_sha256": hashlib.sha256(str(item.get("command", "")).encode()).hexdigest(),
+                   "start_observed": started,
+                   "script_invocation_candidate": script_invocation(item.get("command"), self.workspace, self.python)}
+        if key is not None:
+            self._command_contexts[key] = context
+        if started and self.execution_observer is not None:
+            self.execution_observer("started", dict(context))
+        return context
 
     def _environment(self):
         environment = super()._environment()
@@ -82,6 +91,9 @@ class CodeActionAdapter(CodexCLIAdapter):
 
     def _event(self, record):
         item = record.get("item", {})
+        if (isinstance(item, dict) and record.get("type") == "item.started"
+                and item.get("type") == "command_execution"):
+            self._execution_context(item, started=True)
         if isinstance(item, dict) and record.get("type") == "item.completed":
             if item.get("type") == "command_execution":
                 if len(self.command_events) >= 128:
@@ -89,12 +101,19 @@ class CodeActionAdapter(CodexCLIAdapter):
                 command = item.get("command")
                 direct = script_invocation(command, self.workspace, self.python)
                 succeeded = item.get("status") == "completed" and item.get("exit_code") == 0
-                self.command_events.append({"command": str(command)[:16_000],
+                context = self._execution_context(item, started=False)
+                if (context["start_observed"] and context["command_sha256"] !=
+                        hashlib.sha256(str(command).encode()).hexdigest()):
+                    raise RuntimeError("CLI command changed between its start and completion")
+                event = {**context, "command": str(command)[:16_000],
                     "exit_code": item.get("exit_code"), "status": item.get("status"),
                     "direct_script_invocation": direct, "succeeded": succeeded,
-                    "script_sha256_at_completion": _file_hash(self.workspace / "solve.py") if direct and succeeded else None,
-                    "answer_sha256_at_completion": _file_hash(self.workspace / "final_discovery.json") if direct and succeeded else None,
-                    "output_excerpt": str(item.get("aggregated_output", ""))[:3000]})
+                    "script_sha256_at_completion": _file_hash(self.workspace / "solve.py", max_bytes=self.artifact_max_bytes) if direct and succeeded else None,
+                    "answer_sha256_at_completion": _file_hash(self.workspace / "final_discovery.json", max_bytes=self.artifact_max_bytes) if direct and succeeded else None,
+                    "output_excerpt": str(item.get("aggregated_output", ""))[:3000]}
+                self.command_events.append(event)
+                if self.execution_observer is not None:
+                    self.execution_observer("completed", event)
             elif item.get("type") == "mcp_tool_call":
                 self.metadata["mcp_attempts"] += 1
                 if "cancel" in str(item.get("error", item.get("result", ""))).lower():
@@ -104,12 +123,22 @@ class CodeActionAdapter(CodexCLIAdapter):
     def _observe_script_execution(self):
         """Execution evidence is independent of the enclosing CLI exit status."""
         try:
-            script_hash = _file_hash(self.workspace / "solve.py")
-            answer_hash = _file_hash(self.workspace / "final_discovery.json")
-            self.metadata["script_execution_observed"] = any(
-                event["direct_script_invocation"] and event["succeeded"] and script_hash and answer_hash
-                and event["script_sha256_at_completion"] == script_hash
-                and event["answer_sha256_at_completion"] == answer_hash for event in self.command_events)
+            script_hash = _file_hash(self.workspace / "solve.py", max_bytes=self.artifact_max_bytes)
+            answer_hash = _file_hash(self.workspace / "final_discovery.json", max_bytes=self.artifact_max_bytes)
+            executions = [event for event in self.command_events if event["direct_script_invocation"]]
+            successful = [event for event in executions if event["succeeded"]]
+            last = successful[-1] if successful else None
+            bound = bool(last and script_hash and answer_hash
+                         and (not self.require_command_starts or last.get("start_observed") is True)
+                         and last["script_sha256_at_completion"] == script_hash
+                         and last["answer_sha256_at_completion"] == answer_hash)
+            self.metadata.update(script_execution_observed=bound,
+                script_executions=[{key: event.get(key) for key in (
+                    "execution_id", "sequence", "cli_item_id", "start_observed", "command_sha256",
+                    "succeeded", "exit_code", "script_sha256_at_completion", "answer_sha256_at_completion")}
+                    for event in executions],
+                last_successful_execution_id=last.get("execution_id") if last else None,
+                final_execution_id=last.get("execution_id") if bound else None)
         except Exception as error:
             self.metadata["script_execution_observed"] = False
             self.metadata["script_execution_observation_error"] = f"{type(error).__name__}: {error}"[:1000]
@@ -120,6 +149,7 @@ class CodeActionAdapter(CodexCLIAdapter):
         if not self.python.is_file():
             raise RuntimeError("Code-action requires a staged .venv/bin/python")
         self.tool_events, self.events, self.command_events = [], [], []
+        self._command_contexts, self._command_sequence = {}, 0
         self._trace_bytes = 0
         self._session_id = None
         self._phase = "code_action"
@@ -133,7 +163,7 @@ class CodeActionAdapter(CodexCLIAdapter):
             "mcp_attempts": 0, "mcp_cancellations": 0, "script_execution_observed": False,
             "inference_dispatch_attempted": False,
             "evidence_scope": "CLI command completions plus matching script/answer hashes; workspace SDK trace is untrusted"}
-        original_schema = _read_answer(self.workspace, "answer_schema.json")
+        original_schema = _read_answer(self.workspace, "answer_schema.json", max_bytes=self.artifact_max_bytes)
         executable = shutil.which(self.executable)
         if not executable:
             raise RuntimeError("Codex executable unavailable")
@@ -165,7 +195,7 @@ class CodeActionAdapter(CodexCLIAdapter):
                 raise RuntimeError("Codex exited with status " + str(status))
             if not self.metadata["script_execution_observed"]:
                 raise RuntimeError("No successful direct solve.py execution with matching captured script and answer hashes")
-            answer = _read_answer(self.workspace)
+            answer = _read_answer(self.workspace, max_bytes=self.artifact_max_bytes)
             _validate_schema(answer, original_schema)
             return answer
         except Exception as caught:

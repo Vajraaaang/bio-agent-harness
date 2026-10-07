@@ -20,13 +20,18 @@ import numpy as np
 import pandas as pd
 
 from devharness_core.stages import parse_stages
+from devharness_core.units import BIOLOGICAL_UNIT_COLUMNS, UNKNOWN_UNIT_MARKERS
 from devharness_core.storage import ChunkedExpressionStore
 from devharness_core.watchdog import run_sandboxed
+from devharness_core.design_terms import (
+    specified_temporal_df, temporal_spline_formula,
+    uses_temporal_variable as _uses_temporal_variable,
+)
 
 
 def _metadata(path: str, time_col: str = "embryonic_age", categorical_columns=()) -> pd.DataFrame:
     metadata = pd.read_csv(Path(path).expanduser().resolve(),
-                           dtype={name: str for name in ("sample_id", "specimen_id", "subject_id", "donor_id", *categorical_columns)})
+                           dtype={name: str for name in ("sample_id", *BIOLOGICAL_UNIT_COLUMNS, *categorical_columns)})
     if time_col in metadata:
         metadata["numeric_time"] = parse_stages(metadata[time_col])
     elif "numeric_time" in metadata:
@@ -154,12 +159,7 @@ def _gaussian_residual_operators(designs):
 
 def _spline_formula(formula: str, df: int = 3) -> str:
     """Replace only the temporal natural spline, preserving nuisance covariates."""
-    if "numeric_time" not in formula:
-        raise ValueError("formula_str must contain numeric_time for the temporal test")
-    marker = "__DEVHARNESS_TIME_SPLINE__"
-    formula = re.sub(r"cr\(\s*numeric_time\s*(?:,[^()]*)?\)", marker, formula)
-    formula = re.sub(r"\bnumeric_time\b", marker, formula)
-    return formula.replace(marker, f"cr(numeric_time, df={df}, constraints='center')")
+    return temporal_spline_formula(formula, df)
 
 
 def _aligned_metadata(store, metadata_path, time_col, categorical_columns=()):
@@ -231,27 +231,30 @@ def _fit_candidate(values, design, alpha, offset):
 def _effect_estimate(fitted, design, metadata, discrete):
     from patsy import build_design_matrices
 
-    comparison = metadata.iloc[[0, 0]].copy()
-    comparison["numeric_time"] = [metadata["numeric_time"].min(), metadata["numeric_time"].max()]
+    time_grid = sorted(float(value) for value in metadata["numeric_time"].unique())
+    comparison = metadata.iloc[[0] * len(time_grid)].copy()
+    comparison["numeric_time"] = time_grid
     prediction_design = np.asarray(build_design_matrices([design.design_info], comparison)[0])
     linear = prediction_design @ np.asarray(fitted.params)
     predicted = np.exp(linear) if discrete else linear
-    contrast = prediction_design[1] - prediction_design[0]
+    contrast = prediction_design[-1] - prediction_design[0]
     variance = float(contrast @ np.asarray(fitted.cov_params()) @ contrast)
     if not np.isfinite(predicted).all() or not np.isfinite(variance) or variance < -1e-10:
         raise ValueError("contrast_nonfinite: Endpoint estimates or covariance are invalid")
-    log2fc = float((linear[1] - linear[0]) / np.log(2)) if discrete else (
-        float((np.log(predicted[1]) - np.log(predicted[0])) / np.log(2)) if np.all(predicted > 0) else None)
-    difference = float(predicted[1] - predicted[0])
+    # Generic continuous inputs may already be logged or standardized. Positive
+    # predictions alone do not establish an abundance-ratio measurement scale.
+    log2fc = float((linear[-1] - linear[0]) / np.log(2)) if discrete else None
+    difference = float(predicted[-1] - predicted[0])
     if not np.isfinite(difference) or (log2fc is not None and not np.isfinite(log2fc)):
         raise ValueError("nonfinite_statistical_output: Endpoint effect estimate overflowed")
-    return {"predicted_start": float(predicted[0]), "predicted_end": float(predicted[1]),
+    return {"predicted_start": float(predicted[0]), "predicted_end": float(predicted[-1]),
+            "time_grid": time_grid, "predicted_curve": predicted.tolist(),
             "effect_difference": difference, "log2_fold_change": log2fc,
             "endpoint_contrast_se": float(np.sqrt(max(variance, 0))),
             "effect_scale": "log_mean" if discrete else "expression_units",
             "reference_batch": str(metadata.iloc[0]["batch"]) if "batch" in metadata else None,
             "contrast_note": "First sample nuisance covariates held fixed at both endpoints; count library factor=1",
-            "time_start": float(comparison["numeric_time"].iloc[0]), "time_end": float(comparison["numeric_time"].iloc[1])}
+            "time_start": time_grid[0], "time_end": time_grid[-1]}
 
 
 def _replication_diagnostics(metadata):
@@ -268,11 +271,11 @@ def _replication_diagnostics(metadata):
 
 def _biological_unit_diagnostics(metadata):
     """Check every declared unit level; unique specimens cannot erase repeated subjects."""
-    columns = [name for name in ("specimen_id", "subject_id", "donor_id") if name in metadata]
+    columns = [name for name in BIOLOGICAL_UNIT_COLUMNS if name in metadata]
     repeated, incomplete, unique_counts = [], [], {}
     for name in columns:
         values = metadata[name].astype("string").str.strip()
-        observed = values[values.notna() & ~values.str.lower().isin(["", "unknown", "unverified", "not_available", "n/a"])]
+        observed = values[values.notna() & ~values.str.lower().isin(UNKNOWN_UNIT_MARKERS)]
         unique_counts[name] = int(observed.nunique())
         if observed.duplicated().any():
             repeated.append(name)
@@ -313,8 +316,7 @@ def _fit_worker(counts_path: str, metadata_path: str, formula: str, time_col: st
     if inference_mode == "gaussian_selection_mc" and selection_criterion == "fixed":
         raise ValueError("fixed criterion uses conditional analytic inference; choose aic, bic, or gcv for selection MC")
     if selection_criterion == "fixed" and spline_dfs is None:
-        match = re.search(r"cr\(\s*numeric_time\s*,\s*df\s*=\s*(\d+)", formula)
-        spline_dfs = [int(match.group(1)) if match else 3]
+        spline_dfs = [specified_temporal_df(formula)]
     dfs = [2, 3, 4, 5] if spline_dfs is None else spline_dfs
     if (not dfs or any(isinstance(df, bool) or not isinstance(df, int) or df not in {2, 3, 4, 5} for df in dfs)
             or len(set(dfs)) != len(dfs)):
@@ -322,14 +324,15 @@ def _fit_worker(counts_path: str, metadata_path: str, formula: str, time_col: st
     if selection_criterion == "fixed" and len(dfs) != 1:
         raise ValueError("fixed selection requires exactly one spline df")
     parameters = {"formula_str": formula, "time_col": time_col, "gene_list": genes,
-                  "statistical_method_version": "temporal_glm/2_gaussian_F",
+                  "statistical_method_version": "temporal_glm/4_exact_terms_and_effect_scale",
+                  "temporal_term_interpretation": "parsed_variable_identity/1",
                   "selection_criterion": selection_criterion, "spline_dfs": sorted(dfs),
                   "data_type": data_type, "calibration_max_genes": calibration_max_genes, "strict": strict,
                   "glm_maxiter": 200, "glm_tol": 1e-8}
     if categorical_columns:
         parameters["categorical_columns"] = list(categorical_columns)
     if inference_mode == "gaussian_selection_mc":
-        parameters.update(statistical_method_version="temporal_glm/3_gaussian_selection_mc",
+        parameters.update(statistical_method_version="temporal_glm/4_gaussian_selection_mc_exact_terms",
                           inference_mode=inference_mode, monte_carlo_draws=monte_carlo_draws,
                           monte_carlo_seed=monte_carlo_seed)
     with ChunkedExpressionStore(counts_path) as store:
@@ -430,7 +433,10 @@ def _fit_worker(counts_path: str, metadata_path: str, formula: str, time_col: st
                 selected = {"coefficients": dict(zip(design.columns, coefficients.tolist())), "wald_statistic": 0.0,
                             "p_value": 1.0, "status": "no_information", "predicted_start": float(y[0]),
                             "predicted_end": float(y[0]), "effect_difference": 0.0,
-                            "log2_fold_change": None if y[0] == 0 else 0.0,
+                            "time_grid": sorted(float(value) for value in metadata["numeric_time"].unique()),
+                            "predicted_curve": [float(y[0])] * metadata["numeric_time"].nunique(),
+                            "reference_batch": str(metadata.iloc[0]["batch"]) if "batch" in metadata else None,
+                            "log2_fold_change": None,
                             "test_statistic": None, "test_distribution": "not_tested",
                             "test_df_num": None, "test_df_denom": None}
                 per_gene_diagnostics.append({"code": "no_expression_information", "severity": "warning",
@@ -475,7 +481,7 @@ def _fit_worker(counts_path: str, metadata_path: str, formula: str, time_col: st
                 fitted = fitted_candidates[df]
                 transformed, design, design_diagnostics = designs[df]
                 temporal = [i for term, sl in design.design_info.term_name_slices.items()
-                            if "numeric_time" in term for i in range(sl.start, sl.stop)]
+                            if _uses_temporal_variable(term) for i in range(sl.start, sl.stop)]
                 with warnings.catch_warnings(record=True) as wald_warnings:
                     warnings.simplefilter("always")
                     # Gaussian variance is estimated from the same samples.
@@ -515,7 +521,7 @@ def _fit_worker(counts_path: str, metadata_path: str, formula: str, time_col: st
                         wald_statistic_scope="Conditional selected-model F quadratic; not the Monte Carlo rank statistic",
                         endpoint_inference_scope="Selected-model estimates and conditional SEs; no selection-adjusted interval",
                     )
-            temporal_count = sum(sl.stop - sl.start for term, sl in design.design_info.term_name_slices.items() if "numeric_time" in term)
+            temporal_count = sum(sl.stop - sl.start for term, sl in design.design_info.term_name_slices.items() if _uses_temporal_variable(term))
             if len(design) - design.shape[1] <= 3:
                 per_gene_diagnostics.append({"code": "low_residual_df", "severity": "warning",
                                              "message": "At most three residual degrees of freedom; asymptotic inference is unstable"})
@@ -604,7 +610,7 @@ Use ``fixed`` with one spline df for prespecified inference. Default candidates
 are 2,3,4,5; AIC/BIC apply to either family, GCV only to Gaussian data. Existing
 five positional arguments and per-gene test/coefficient keys are preserved.
 The returned warnings and inference_scope are part of the statistical result.
-Repeated specimen_id/subject_id/donor_id values block inference: strict mode
+Repeated biological_unit_id/specimen_id/subject_id/donor_id values block inference: strict mode
 raises, while non-strict mode returns failed genes with null p/q. Preaggregate
 according to the experimental design or use an externally validated model for
 repeated measures. No clustered or longitudinal covariance adjustment is made;

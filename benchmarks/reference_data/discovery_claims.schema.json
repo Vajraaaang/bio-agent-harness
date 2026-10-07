@@ -1,0 +1,500 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "discovery_claims/1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "discovery_claims/1"
+    },
+    "status": {
+      "enum": [
+        "analysis_complete",
+        "null_result",
+        "scientific_refusal",
+        "operational_failure"
+      ]
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_id",
+          "type",
+          "assertion_status",
+          "confidence",
+          "scope",
+          "direction",
+          "factor",
+          "contrast",
+          "genes",
+          "samples",
+          "evidence_refs",
+          "selection_scope",
+          "limitations",
+          "issue_code",
+          "effect_direction_by_level"
+        ],
+        "properties": {
+          "claim_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "enum": [
+              "gene_set_effect",
+              "sample_subgroup",
+              "interaction",
+              "design_issue",
+              "abstention"
+            ]
+          },
+          "assertion_status": {
+            "enum": [
+              "discovery",
+              "hypothesis"
+            ]
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "moderate",
+              "low"
+            ]
+          },
+          "scope": {
+            "enum": [
+              "marginal_association",
+              "adjusted_association",
+              "subgroup_association",
+              "interaction",
+              "design_diagnostic",
+              "causal"
+            ]
+          },
+          "direction": {
+            "enum": [
+              "positive",
+              "negative",
+              "mixed",
+              "not_applicable"
+            ]
+          },
+          "factor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contrast": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "genes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "samples": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "minItems": 1
+          },
+          "selection_scope": {
+            "enum": [
+              "fixed",
+              "exploratory"
+            ]
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "issue_code": {
+            "enum": [
+              null,
+              "non_identifiable_design",
+              "technical_replicates",
+              "missing_independence_provenance",
+              "invalid_design",
+              "invalid_contrast",
+              "insufficient_biological_units",
+              "fit_failure"
+            ]
+          },
+          "effect_direction_by_level": {
+            "type": "object",
+            "additionalProperties": {
+              "enum": [
+                "positive",
+                "negative",
+                "mixed",
+                "not_applicable"
+              ]
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "enum": [
+                    "gene_set_effect",
+                    "sample_subgroup",
+                    "interaction"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "genes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "uniqueItems": true,
+                  "minItems": 1
+                },
+                "factor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "contrast": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "issue_code": {
+                  "type": "null"
+                },
+                "direction": {
+                  "enum": [
+                    "positive",
+                    "negative",
+                    "mixed"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "sample_subgroup"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "samples": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "uniqueItems": true,
+                  "minItems": 1
+                },
+                "scope": {
+                  "const": "subgroup_association"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "interaction"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "effect_direction_by_level": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "enum": [
+                      "positive",
+                      "negative",
+                      "mixed",
+                      "not_applicable"
+                    ]
+                  },
+                  "minProperties": 2
+                },
+                "scope": {
+                  "const": "interaction"
+                },
+                "direction": {
+                  "const": "mixed"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "enum": [
+                    "design_issue",
+                    "abstention"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "issue_code": {
+                  "enum": [
+                    "non_identifiable_design",
+                    "technical_replicates",
+                    "missing_independence_provenance",
+                    "invalid_design",
+                    "invalid_contrast",
+                    "insufficient_biological_units",
+                    "fit_failure"
+                  ]
+                },
+                "genes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "uniqueItems": true,
+                  "maxItems": 0
+                },
+                "scope": {
+                  "const": "design_diagnostic"
+                },
+                "direction": {
+                  "const": "not_applicable"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "gene_statistics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "gene_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contrast_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "fitted",
+              "failed"
+            ]
+          },
+          "p": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "q": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "effect": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "effect_scale": {
+            "const": "log2"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "minItems": 1
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "gene_id",
+          "contrast_id",
+          "status",
+          "p",
+          "q",
+          "effect",
+          "effect_scale",
+          "evidence_refs",
+          "reason"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "fitted"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "p": {
+                  "type": "number"
+                },
+                "q": {
+                  "type": "number"
+                },
+                "effect": {
+                  "type": "number"
+                },
+                "reason": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "p": {
+                  "type": "null"
+                },
+                "q": {
+                  "type": "null"
+                },
+                "effect": {
+                  "type": "null"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "execution_evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "error": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "status",
+    "claims",
+    "gene_statistics",
+    "limitations",
+    "execution_evidence_refs",
+    "error"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "operational_failure"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "type": "object"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "error": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -8,6 +8,10 @@ The authoritative development records are versioned result directories. Test cou
 
 ## Execution paths
 
+The [scientific preparation update](../reports/benchmark-redesign/scientific-preparation.md) records prospective fixes to enrichment/motif references, interval availability, multiplicity-family accounting and model-selection diagnostics. It links current local verification, public-source limits and an unexecuted pilot proposal. Historical measured answers and grades were not rewritten.
+
+The separate `0.5.0.dev0` study path now has [live local permission evidence](../reports/benchmark-redesign/live-permission-validation.md) for baseline, optional and enforced conditions, retained genuine denials, and one verified CLI-reported runtime model identity. These unscored controls establish neither biological performance nor clinical readiness. Historical test counts below remain version-specific.
+
 | Path | Implemented purpose and evidence | Qualification boundary |
 |---|---|---|
 | Primary CodeActionRunner | Version-2 records use the shared execution DAG, bounded pre-execution input/SDK snapshots, private task identity, retained observations/errors and a saved outcome receipt. Six final-source script controls and their restored inputs were checked. | Participant traces remain untrusted observations and cannot supply numerical tool replay. Complete staged inputs can be restored without executing scripts; this is not host isolation or clinical release authority. |

@@ -1,0 +1,301 @@
+{
+  "actual_tool_events": [
+    {
+      "arguments": {
+        "counts_path": "<demo-root>/.runtime-diagnostics/counts.csv",
+        "max_cells": 24,
+        "metadata_path": "<demo-root>/.runtime-diagnostics/balanced.csv",
+        "n_neighbors": 5,
+        "seed": 128,
+        "time_col": "embryonic_age",
+        "top_genes": 30
+      },
+      "elapsed_sec": 1.445476332999533,
+      "finished_at_utc": "2026-10-07T07:22:35.588523+00:00",
+      "result": {
+        "diagnostics": [],
+        "limitations": [
+          "Thresholds are configurable exploratory diagnostics, not clinical validation or GxP release criteria.",
+          "Specimen IDs identify declared units; metadata alone cannot establish biological independence or causal identification.",
+          "Neighborhood loss can reflect oversmoothing, correction of nuisance variation, or a different representation; it is not proof of biological information loss.",
+          "Reference variance ratios assume matching measurement units and preprocessing; global rescaling alone changes variance ratios.",
+          "Sampling labels are checked as metadata and are not treated as true pseudotime. No contrast model is fitted by this audit."
+        ],
+        "metrics": {
+          "all_zero_expression": false,
+          "column_sum_summary": {
+            "maximum": 649.0,
+            "median": 594.0,
+            "minimum": 553.0
+          },
+          "declared_specimen_count": null,
+          "declared_unit_counts": {
+            "subject_id": 24
+          },
+          "distinct_observed_times": 2,
+          "effective_sample_count": 24,
+          "gene_count": 30,
+          "incomplete_unit_columns": [],
+          "independence_established": false,
+          "library_size_summary": {
+            "maximum": 649.0,
+            "median": 594.0,
+            "minimum": 553.0
+          },
+          "missing_value_count": 0,
+          "negative_value_count": 0,
+          "nonfinite_value_count": 0,
+          "nonnegative_integer_expression": true,
+          "raw_representation_rank": 23,
+          "sample_count": 24,
+          "unique_expression_profiles": 24,
+          "zero_expression_samples": 0,
+          "zero_fraction": 0.0
+        },
+        "provenance": {
+          "algorithm": "chunked expression QC / declared-specimen checks / bounded PCA and neighborhood diagnostics",
+          "candidate_embedding_path": null,
+          "counts_path": "<demo-root>/.runtime-diagnostics/counts.csv",
+          "expression_hash_scope": "complete scanned numeric matrix plus ordered gene and sample IDs",
+          "expression_sha256": "ad3369137acb6f90e1e1ea3cbdcc04076fc55399dc0878fabc7af63666a279c1",
+          "geometry_sample_count": 24,
+          "geometry_sample_ids_sha256": "bc3fd660e934cd3cfbeda60797360c4db678180ba1ba288febea7293f999d516",
+          "geometry_selected_genes": [
+            "gene_00",
+            "gene_02",
+            "gene_07",
+            "gene_22",
+            "gene_15",
+            "gene_24",
+            "gene_26",
+            "gene_11",
+            "gene_14",
+            "gene_09",
+            "gene_21",
+            "gene_23",
+            "gene_16",
+            "gene_13",
+            "gene_05",
+            "gene_18",
+            "gene_29",
+            "gene_12",
+            "gene_03",
+            "gene_25",
+            "gene_08",
+            "gene_17",
+            "gene_27",
+            "gene_04",
+            "gene_28",
+            "gene_01",
+            "gene_10",
+            "gene_06",
+            "gene_20",
+            "gene_19"
+          ],
+          "geometry_subsampled": false,
+          "max_cells": 24,
+          "metadata_path": "<demo-root>/.runtime-diagnostics/balanced.csv",
+          "metadata_sha256": "4dff4b43186c2e4100db099cef35f50845422b0567e1c767ad70a80d7dcb1b84",
+          "reference_counts_path": null,
+          "seed": 128,
+          "selected_expression_sha256": "45bcd698234ad3f927712b039103c2fcca26809772dfe1c943d92109523ef14e",
+          "top_genes": 30
+        },
+        "status": "pass",
+        "thresholds": {
+          "dropout_warning": 0.5,
+          "neighborhood_retention_warning": 0.6,
+          "rank_relative_tolerance": 1e-08,
+          "trustworthiness_warning": 0.8,
+          "variance_retention_warning": 0.2
+        }
+      },
+      "started_at_utc": "2026-10-07T07:22:34.143037+00:00",
+      "succeeded": true,
+      "tool_name": "audit_expression_quality"
+    },
+    {
+      "arguments": {
+        "formula_str": "1 + numeric_time + C(batch)",
+        "metadata_csv_path": "<demo-root>/.runtime-diagnostics/balanced.csv",
+        "time_col": "embryonic_age"
+      },
+      "elapsed_sec": 0.573016334004933,
+      "finished_at_utc": "2026-10-07T07:22:36.161614+00:00",
+      "result": {
+        "aliased_columns": [],
+        "condition_number": 92.879188368443,
+        "is_full_rank": true,
+        "num_parameters": 3,
+        "rank": 3
+      },
+      "started_at_utc": "2026-10-07T07:22:35.588592+00:00",
+      "succeeded": true,
+      "tool_name": "validate_design_matrix"
+    },
+    {
+      "arguments": {
+        "formula_str": "1 + numeric_time + C(batch)",
+        "metadata_csv_path": "<demo-root>/.runtime-diagnostics/confounded.csv",
+        "time_col": "embryonic_age"
+      },
+      "elapsed_sec": 0.5701108750072308,
+      "finished_at_utc": "2026-10-07T07:22:36.731779+00:00",
+      "result": {
+        "aliased_columns": [
+          "Intercept"
+        ],
+        "condition_number": null,
+        "is_full_rank": false,
+        "num_parameters": 3,
+        "rank": 2
+      },
+      "started_at_utc": "2026-10-07T07:22:36.161666+00:00",
+      "succeeded": true,
+      "tool_name": "validate_design_matrix"
+    }
+  ],
+  "balanced_design": {
+    "aliased_columns": [],
+    "condition_number": 92.879188368443,
+    "is_full_rank": true,
+    "num_parameters": 3,
+    "rank": 3
+  },
+  "checks": {
+    "actual_tool_calls": 3,
+    "balanced_full_rank": true,
+    "confounded_rank_deficient": true
+  },
+  "conclusion": "Observed software controls only; no estimates fitted, no causal batch-adjusted effect claimed",
+  "confounded_design": {
+    "aliased_columns": [
+      "Intercept"
+    ],
+    "condition_number": null,
+    "is_full_rank": false,
+    "num_parameters": 3,
+    "rank": 2
+  },
+  "criteria_frozen_before_execution": {
+    "balanced_design": "full rank",
+    "confounded_design": "rank deficient; do not infer a causal batch-adjusted age effect",
+    "qc": "retain actual diagnostic status, including unavailable or warning findings"
+  },
+  "data": {
+    "genes": 30,
+    "groups": "12 generated samples at each of two nominal stages; balanced batch versus fully confounded batch",
+    "measurement": "generated Poisson integer counts",
+    "samples": 24,
+    "seed": 128,
+    "units": "24 separately generated synthetic units; subject declarations come from generator, not sample label uniqueness",
+    "unknowns": "No real biological cohort, experimental quality or calibrated clinical diagnostic thresholds"
+  },
+  "method_scope": "Pre-fit diagnostic checks only; no method selection, significance test or biological recommendation",
+  "objective": "Check recorded QC and detect a fully confounded design before any fit",
+  "publication_normalization": {
+    "host_paths": "Local checkout paths replaced with <repo-root> or <demo-root>; observations, numerical results and hashes unchanged",
+    "original_record_retention": "Excluded .runtime-publication-originals directory",
+    "original_record_sha256": "28c7e514b4fd6b17d5124a81bd11b28f663b567cbd03b5a9378e095b4d0fbdb4"
+  },
+  "qc": {
+    "diagnostics": [],
+    "limitations": [
+      "Thresholds are configurable exploratory diagnostics, not clinical validation or GxP release criteria.",
+      "Specimen IDs identify declared units; metadata alone cannot establish biological independence or causal identification.",
+      "Neighborhood loss can reflect oversmoothing, correction of nuisance variation, or a different representation; it is not proof of biological information loss.",
+      "Reference variance ratios assume matching measurement units and preprocessing; global rescaling alone changes variance ratios.",
+      "Sampling labels are checked as metadata and are not treated as true pseudotime. No contrast model is fitted by this audit."
+    ],
+    "metrics": {
+      "all_zero_expression": false,
+      "column_sum_summary": {
+        "maximum": 649.0,
+        "median": 594.0,
+        "minimum": 553.0
+      },
+      "declared_specimen_count": null,
+      "declared_unit_counts": {
+        "subject_id": 24
+      },
+      "distinct_observed_times": 2,
+      "effective_sample_count": 24,
+      "gene_count": 30,
+      "incomplete_unit_columns": [],
+      "independence_established": false,
+      "library_size_summary": {
+        "maximum": 649.0,
+        "median": 594.0,
+        "minimum": 553.0
+      },
+      "missing_value_count": 0,
+      "negative_value_count": 0,
+      "nonfinite_value_count": 0,
+      "nonnegative_integer_expression": true,
+      "raw_representation_rank": 23,
+      "sample_count": 24,
+      "unique_expression_profiles": 24,
+      "zero_expression_samples": 0,
+      "zero_fraction": 0.0
+    },
+    "provenance": {
+      "algorithm": "chunked expression QC / declared-specimen checks / bounded PCA and neighborhood diagnostics",
+      "candidate_embedding_path": null,
+      "counts_path": "<demo-root>/.runtime-diagnostics/counts.csv",
+      "expression_hash_scope": "complete scanned numeric matrix plus ordered gene and sample IDs",
+      "expression_sha256": "ad3369137acb6f90e1e1ea3cbdcc04076fc55399dc0878fabc7af63666a279c1",
+      "geometry_sample_count": 24,
+      "geometry_sample_ids_sha256": "bc3fd660e934cd3cfbeda60797360c4db678180ba1ba288febea7293f999d516",
+      "geometry_selected_genes": [
+        "gene_00",
+        "gene_02",
+        "gene_07",
+        "gene_22",
+        "gene_15",
+        "gene_24",
+        "gene_26",
+        "gene_11",
+        "gene_14",
+        "gene_09",
+        "gene_21",
+        "gene_23",
+        "gene_16",
+        "gene_13",
+        "gene_05",
+        "gene_18",
+        "gene_29",
+        "gene_12",
+        "gene_03",
+        "gene_25",
+        "gene_08",
+        "gene_17",
+        "gene_27",
+        "gene_04",
+        "gene_28",
+        "gene_01",
+        "gene_10",
+        "gene_06",
+        "gene_20",
+        "gene_19"
+      ],
+      "geometry_subsampled": false,
+      "max_cells": 24,
+      "metadata_path": "<demo-root>/.runtime-diagnostics/balanced.csv",
+      "metadata_sha256": "4dff4b43186c2e4100db099cef35f50845422b0567e1c767ad70a80d7dcb1b84",
+      "reference_counts_path": null,
+      "seed": 128,
+      "selected_expression_sha256": "45bcd698234ad3f927712b039103c2fcca26809772dfe1c943d92109523ef14e",
+      "top_genes": 30
+    },
+    "status": "pass",
+    "thresholds": {
+      "dropout_warning": 0.5,
+      "neighborhood_retention_warning": 0.6,
+      "rank_relative_tolerance": 1e-08,
+      "trustworthiness_warning": 0.8,
+      "variance_retention_warning": 0.2
+    }
+  },
+  "scope": "Synthetic software diagnostic control; no fit or biological validation",
+  "source_of_requirements": "User authorized experiments; exact simulation and formula are assistant-selected software controls"
+}

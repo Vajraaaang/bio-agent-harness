@@ -1,0 +1,71 @@
+{
+  "controller_failure": {
+    "message": "PermissionError: [Errno 1] Operation not permitted",
+    "type": "RemoteWorkerError"
+  },
+  "data": {
+    "cells": 80,
+    "genes": 60,
+    "groups": "Two planted marker blocks of 40 cells each; alternating synthetic capture labels",
+    "input_sha256": "6ca692ad5b2c414f787140fe37c105a8ff7dc69e0759b1cbeaaefca5fc157d04",
+    "measurement": "artificial integer counts",
+    "quality_concerns": "Tiny idealized fixture; doublet estimates may be unavailable; toy markers are not experimental identity validation",
+    "seed": 128,
+    "units": "Generated cells; no independent donor or animal claims"
+  },
+  "elapsed_seconds": 2.664,
+  "failure": {
+    "message": "[Errno 1] Operation not permitted",
+    "type": "PermissionError"
+  },
+  "input_unchanged": true,
+  "job_id": "1d151d6c9fce4d678870b4da4596ecff",
+  "method_scope": "Fixed existing backed scRNA workflow, no model calls, no scientific method recommendation",
+  "model_sessions_attempted": 0,
+  "objective": "Show the current reviewed local UI workflow and retain actual QC/embedding/report evidence",
+  "operator_correction": "Repeat same synthetic profile in a fresh attempt with local loopback access for Jupyter kernel and HTTP server; preserve sandbox-denied attempt",
+  "operator_interventions": [
+    {
+      "decision": "approve",
+      "rationale": "Assistant-created offline software demonstration; confirms generated inputs/profile/scope; no independent scientific approval",
+      "review_status": "approved"
+    }
+  ],
+  "parameters": {
+    "correction": "none",
+    "counts_layer": null,
+    "mad_limit": null,
+    "markers": {
+      "B": [
+        "Ms4a1",
+        "Cd79a",
+        "Cd79b",
+        "Cd19"
+      ],
+      "T": [
+        "Cd3d",
+        "Cd3e",
+        "Trac",
+        "Il7r"
+      ]
+    },
+    "memory_mb": 1024,
+    "min_genes": 3,
+    "n_pcs": 8,
+    "n_top_genes": 30,
+    "seed": 128,
+    "stage_timeout_seconds": 90
+  },
+  "previous_attempt": "ui-demo-attempt01.json records a retained missing counts-layer setup failure and correction",
+  "proposal_status": "awaiting_operator_review",
+  "publication_normalization": {
+    "host_paths": "Local checkout paths replaced with <repo-root> or <demo-root>; observations, numerical results and hashes unchanged",
+    "original_record_retention": "Excluded .runtime-publication-originals directory",
+    "original_record_sha256": "6d0fae03df4b5c996fd196298d7c44d1a2be147845e4cddfd6fc00defa41b6cb"
+  },
+  "requirement_source": "User authorized demonstration experiments; exact fixture/profile are assistant-selected from documented tests",
+  "run_timeout_seconds": 180,
+  "scientific_review": "not_performed_by_this_service",
+  "scope": "Synthetic software demonstration; not biological validation or method comparison",
+  "terminal_status": "execution_failure_unclassified"
+}

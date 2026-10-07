@@ -214,7 +214,7 @@ def completed_count(tmp_path_factory):
 @pytest.mark.parametrize("mode", ["negative_factor", "missing_sample_factor", "unscaled_factors", "nonconverged",
                                   "gene_error", "top_error", "negative_se", "coefficient_string", "coefficient_bool",
                                   "missing_coefficient", "wrong_effect", "wrong_scale", "wrong_time", "unknown_gene_field",
-                                  "inconsistent_dispersion"])
+                                  "inconsistent_dispersion", "wrong_curve", "wrong_grid", "unsupported_method"])
 def test_invalid_accepted_result_fields_rejected(completed_count, tmp_path, mode):
     def modify(nodes, manifest, artifact):
         def change(result):
@@ -234,6 +234,9 @@ def test_invalid_accepted_result_fields_rejected(completed_count, tmp_path, mode
             elif mode == "wrong_time": g["time_end"] += 1
             elif mode == "unknown_gene_field": g["clinical_validated"] = True
             elif mode == "inconsistent_dispersion": a["dispersion_calibration"]["gene_estimates"]["g000"]["dispersion_alpha"] *= 2
+            elif mode == "wrong_curve": g["predicted_curve"][1] += 10
+            elif mode == "wrong_grid": g["time_grid"][1] += 0.1
+            elif mode == "unsupported_method": a["provenance"]["parameters"]["statistical_method_version"] = "unverified_method"
         artifact("numerical-result.json", change)
     manifest, root_hash = altered_history(completed_count, tmp_path / "altered", modify)
     result = verifier()(manifest, root_hash, completed_count[2])

@@ -38,6 +38,98 @@ def _state(path):
     return result
 
 
+def _wheel_resource_fixture(tmp_path):
+    from importlib.metadata import PackagePath
+    from types import SimpleNamespace
+    from scripts.build_source_resource import build_source_resource
+    project = tmp_path / "epoch"
+    (project / "scripts").mkdir(parents=True)
+    (project / "pyproject.toml").write_text("[project]\nname='devharness'\nversion='1'\n")
+    (project / "README.md").write_text("Frozen source epoch\n")
+    (project / "uv.lock").write_text("version = 1\n")
+    (project / "scripts/colab_run.py").write_text("print('epoch')\n")
+    generated = build_source_resource(project)
+    installed = tmp_path / "site-packages"
+    asset = installed / "devbench/analysis/assets/source-bundle.zip"
+    asset.parent.mkdir(parents=True)
+    asset.write_bytes(Path(generated["path"]).read_bytes())
+    code = installed / "scripts/colab_run.py"
+    code.parent.mkdir()
+    code.write_bytes((project / "scripts/colab_run.py").read_bytes())
+    record_asset = PackagePath("devbench/analysis/assets/source-bundle.zip")
+    record_asset.hash = SimpleNamespace(mode="sha256", value=base64.urlsafe_b64encode(hashlib.sha256(asset.read_bytes()).digest()).decode().rstrip("="))
+    record_asset.size = asset.stat().st_size
+    record_code = PackagePath("scripts/colab_run.py")
+    distribution = SimpleNamespace(files=[record_asset, record_code], locate_file=lambda member: installed / member)
+    return project, asset, code, distribution
+
+
+def test_wheel_resource_matches_frozen_source_and_excludes_itself(tmp_path):
+    from scripts.build_colab_notebook import _installed_source_bundle
+    project, asset, _, distribution = _wheel_resource_fixture(tmp_path)
+    actual = _installed_source_bundle(asset, distribution)
+    assert actual == build_source_bundle(project)
+    assert "devbench/analysis/assets/source-bundle.zip" not in actual["files"]
+
+
+@pytest.mark.parametrize("mutation", ["missing", "tampered", "code_changed", "missing_record", "missing_code"])
+def test_wheel_resource_rejects_missing_tampered_or_mixed_epoch(tmp_path, mutation):
+    from scripts.build_colab_notebook import _installed_source_bundle
+    project, asset, code, distribution = _wheel_resource_fixture(tmp_path)
+    if mutation == "missing":
+        asset.unlink()
+    elif mutation == "tampered":
+        asset.write_bytes(asset.read_bytes() + b"tampered")
+    elif mutation == "code_changed":
+        code.write_text("print('other epoch')\n")
+    elif mutation == "missing_record":
+        distribution.files = []
+    else:
+        code.unlink()
+    with pytest.raises((ValueError, OSError)):
+        _installed_source_bundle(asset, distribution)
+
+
+def test_default_installed_identity_uses_verified_resource_and_explicit_root_stays_explicit(tmp_path, monkeypatch):
+    from importlib import metadata, resources
+    from scripts import build_colab_notebook as builder
+    from devbench.analysis.workbench_proposals import _source_identity
+    project, asset, _, distribution = _wheel_resource_fixture(tmp_path)
+    monkeypatch.setattr(builder, "__file__", str(asset.parents[3] / "scripts/build_colab_notebook.py"))
+    monkeypatch.setattr(metadata, "distribution", lambda name: distribution)
+    monkeypatch.setattr(resources, "files", lambda name: asset.parent.parent)
+    expected = build_source_bundle(project)
+    assert builder.default_source_bundle() == expected
+    assert _source_identity() == expected["sha256"]
+    assert builder.default_source_bundle(project) == expected
+    with pytest.raises(ValueError, match="missing required"):
+        builder.default_source_bundle(tmp_path / "absent-checkout")
+
+
+def test_default_preparation_retains_verified_wheel_source_and_environment_lock(tmp_path, monkeypatch):
+    from importlib import metadata, resources
+    from scripts import build_colab_notebook as builder
+    from devbench.analysis import workbench, runtime
+    project, asset, _, distribution = _wheel_resource_fixture(tmp_path)
+    monkeypatch.setattr(builder, "__file__", str(asset.parents[3] / "scripts/build_colab_notebook.py"))
+    monkeypatch.setattr(metadata, "distribution", lambda name: distribution)
+    monkeypatch.setattr(resources, "files", lambda name: asset.parent.parent)
+    monkeypatch.setattr(workbench, "_validated_parameters", lambda parameters: parameters)
+    monkeypatch.setattr(workbench, "make_notebook", lambda path: path.write_text("{}"))
+    monkeypatch.setattr(runtime, "observe_runtime", lambda tier: {"runtime": {"packages": {}}})
+    monkeypatch.setattr(runtime, "verify_data_identity", lambda source, digest: {"data_sha256": digest})
+    source = tmp_path / "input.h5ad"
+    source.write_bytes(b"synthetic identity-only fixture; no scientific fit")
+    output = tmp_path / "prepared"
+    parameters = {"execution_tier": "cpu", "data_sha256": hashlib.sha256(source.read_bytes()).hexdigest()}
+    prepared = workbench.prepare_bundle(source, output, parameters)
+    assert prepared["source_sha256"] == build_source_bundle(project)["sha256"]
+    assert (output / "source.zip").read_bytes() == asset.read_bytes()
+    assert (output / "environment.lock").read_bytes() == (project / "uv.lock").read_bytes()
+    assert (output / "source/scripts/colab_run.py").read_bytes() == (project / "scripts/colab_run.py").read_bytes()
+    assert workbench.prepare_bundle(source, output, parameters) == prepared
+
+
 def test_existing_source_verification_is_read_only_and_accepts_exact_members(tmp_path):
     bundle, output = _fixture(tmp_path)
     before = _state(output)

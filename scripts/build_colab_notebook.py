@@ -26,11 +26,13 @@ def allowed_bundle_path(name):
               "attachments", "credentials", "secrets", "private", ".env"}
     if any(part in denied or PurePosixPath(part).stem in {"credentials", "secrets", "private"} for part in path.parts):
         return False
-    if name in {"pyproject.toml", "README.md", "LICENSE", "AGENTS.md", "devbench_engine/AGENTS.md",
+    if name in {"pyproject.toml", "uv.lock", "README.md", "LICENSE", "AGENTS.md", "devbench_engine/AGENTS.md",
                 "devbench/tasks/catalog.json", "benchmarks/reference_data/provenance.json",
                 "benchmarks/reference_data/README.md"}:
         return True
     if name in {"devharness_server/r/native_nb.R", "devharness_controlled/native-package-sources.lock.json"}:
+        return True
+    if name == "devbench/analysis/assets/workbench-ui.html":
         return True
     if path.parts[0] in {"devharness", "devharness_controlled", "devbench", "devharness_core", "devharness_server",
                          "devbench_engine", "benchmarks", "experiments"} and path.suffix == ".py":
@@ -56,7 +58,8 @@ def allowed_bundle_path(name):
                 "tests/test_code_action_audit.py", "tests/test_code_action_audit_limits.py", "tests/test_clinical_audit_regressions.py"}:
         return True
     if name in {"scripts/__init__.py", "scripts/colab_run.py", "scripts/build_colab_notebook.py", "scripts/build_controlled_notebook.py",
-                "scripts/run_live_benchmark.py", "scripts/make_leaderboard.py", "scripts/native_effect_coverage.py"}:
+                "scripts/run_live_benchmark.py", "scripts/make_leaderboard.py", "scripts/native_effect_coverage.py",
+                "scripts/build_source_resource.py"}:
         return True
     return (path.parts[:2] == ("benchmarks", "task_definitions") and path.suffix == ".json"
             and len(path.parts) in (3, 4))
@@ -65,7 +68,7 @@ def allowed_bundle_path(name):
 def build_source_bundle(project):
     """Read only allowlisted regular source files into a bounded reproducible ZIP."""
     root = Path(project).expanduser().resolve()
-    candidates = [root / name for name in ("pyproject.toml", "README.md", "LICENSE", "AGENTS.md")]
+    candidates = [root / name for name in ("pyproject.toml", "uv.lock", "README.md", "LICENSE", "AGENTS.md")]
     for package in ("devharness", "devharness_controlled", "devbench", "devharness_core", "devharness_server", "devbench_engine",
                     "benchmarks", "experiments", "scripts", "tests"):
         candidates.extend((root / package).rglob("*"))
@@ -100,6 +103,62 @@ def build_source_bundle(project):
     return {"base64": base64.b64encode(payload).decode("ascii"),
             "sha256": hashlib.sha256(payload).hexdigest(), "bytes": len(payload),
             "uncompressed_bytes": total, "files": [name for name, _ in selected]}
+
+
+def _installed_source_bundle(resource, distribution):
+    """Validate a wheel's reproduction source against its installed RECORD."""
+    import tempfile
+
+    resource = Path(resource).absolute()
+    files = {str(member): member for member in (distribution.files or ())}
+    asset_name = "devbench/analysis/assets/source-bundle.zip"
+    asset = files.get(asset_name)
+    if (asset is None or asset.hash is None or asset.hash.mode != "sha256"
+            or Path(distribution.locate_file(asset)).resolve() != resource.resolve()):
+        raise ValueError("Packaged source resource has no matching wheel RECORD identity")
+    try:
+        payload = _read_source_file(resource, 8_000_000)
+    except OSError as exc:
+        raise ValueError("Packaged source resource is missing or unreadable") from exc
+    encoded_hash = base64.urlsafe_b64encode(hashlib.sha256(payload).digest()).decode("ascii").rstrip("=")
+    if encoded_hash != asset.hash.value or asset.size != len(payload):
+        raise ValueError("Packaged source resource does not match wheel RECORD")
+    bundle = {"base64": base64.b64encode(payload).decode("ascii"),
+              "sha256": hashlib.sha256(payload).hexdigest(), "bytes": len(payload)}
+    with tempfile.TemporaryDirectory(prefix="devbench-source-check-") as temporary:
+        source = extract_source_bundle(bundle["base64"], Path(temporary) / "source", bundle["sha256"])
+        members = sorted(path for path in source.rglob("*") if path.is_file() and path.name != ".colab_bundle.sha256")
+        names = [path.relative_to(source).as_posix() for path in members]
+        if not {"pyproject.toml", "README.md", "uv.lock", "scripts/colab_run.py"}.issubset(names):
+            raise ValueError("Packaged source resource is missing required project files")
+        # Every installed Python member must be reproduced by this exact source epoch.
+        for name, member in files.items():
+            if name.endswith(".py") and allowed_bundle_path(name):
+                if name not in names:
+                    raise ValueError("Packaged source resource omits installed module: " + name)
+                expected = (source / name).read_bytes()
+                installed = _read_source_file(Path(distribution.locate_file(member)), 2_000_000)
+                if installed != expected:
+                    raise ValueError("Packaged source resource differs from installed module: " + name)
+        bundle.update(files=names, uncompressed_bytes=sum(path.stat().st_size for path in members))
+    return bundle
+
+
+def default_source_bundle(project=None):
+    """Use an explicit checkout, or the ordinary wheel's verified source asset."""
+    if project is not None:
+        return build_source_bundle(project)
+    root = Path(__file__).resolve().parents[1]
+    if all((root / name).is_file() for name in ("pyproject.toml", "README.md", "uv.lock")):
+        return build_source_bundle(root)
+    from importlib import metadata, resources
+    try:
+        distribution = metadata.distribution("devharness")
+        resource = resources.files("devbench.analysis").joinpath("assets/source-bundle.zip")
+        with resources.as_file(resource) as path:
+            return _installed_source_bundle(path, distribution)
+    except (metadata.PackageNotFoundError, FileNotFoundError) as exc:
+        raise ValueError("Packaged source resource is missing; rebuild the wheel from its frozen source epoch") from exc
 
 
 def _read_source_file(path, max_bytes):
