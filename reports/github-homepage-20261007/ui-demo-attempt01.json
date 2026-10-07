@@ -1,0 +1,55 @@
+{
+  "data": {
+    "cells": 80,
+    "genes": 60,
+    "groups": "Two planted marker blocks of 40 cells each; alternating synthetic capture labels",
+    "input_sha256": "6ca692ad5b2c414f787140fe37c105a8ff7dc69e0759b1cbeaaefca5fc157d04",
+    "measurement": "artificial integer counts",
+    "quality_concerns": "Tiny idealized fixture; doublet estimates may be unavailable; toy markers are not experimental identity validation",
+    "seed": 128,
+    "units": "Generated cells; no independent donor or animal claims"
+  },
+  "failure": {
+    "message": "ValueError: Requested matrix/layer is unavailable: layers/counts",
+    "type": "RemoteWorkerError"
+  },
+  "job_id": "f59fbd4c994a4914bcbe4df2e3cebe2f",
+  "method_scope": "Fixed existing backed scRNA workflow, no model calls, no scientific method recommendation",
+  "model_sessions_attempted": 0,
+  "objective": "Show the current reviewed local UI workflow and retain actual QC/embedding/report evidence",
+  "operator_correction": "Set counts_layer to null to match documented fixture storing counts in X; create new isolated attempt; preserve first proposal/input",
+  "operator_interventions": [],
+  "parameters": {
+    "correction": "none",
+    "mad_limit": null,
+    "markers": {
+      "B": [
+        "Ms4a1",
+        "Cd79a",
+        "Cd79b",
+        "Cd19"
+      ],
+      "T": [
+        "Cd3d",
+        "Cd3e",
+        "Trac",
+        "Il7r"
+      ]
+    },
+    "memory_mb": 1024,
+    "min_genes": 3,
+    "n_pcs": 8,
+    "n_top_genes": 30,
+    "seed": 128,
+    "stage_timeout_seconds": 90
+  },
+  "proposal_status": "operation_failed",
+  "publication_normalization": {
+    "host_paths": "Local checkout paths replaced with <repo-root> or <demo-root>; observations, numerical results and hashes unchanged",
+    "original_record_retention": "Excluded .runtime-publication-originals directory",
+    "original_record_sha256": "7ce7305704c37b9d52b90694031cb54d3fd5e0bb9e3d88f67faa5f213b3b5590"
+  },
+  "requirement_source": "User authorized demonstration experiments; exact fixture/profile are assistant-selected from documented tests",
+  "run_timeout_seconds": 180,
+  "scope": "Synthetic software demonstration; not biological validation or method comparison"
+}

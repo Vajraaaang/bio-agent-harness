@@ -1,0 +1,350 @@
+{
+  "archive_bytes": 10160705,
+  "archive_sha256": "5bb661d38fbde47d61856f06cc76b5e1ddeaa3fa68ae8dfab6cc7b7b9b369bce",
+  "artifacts": [
+    {
+      "bytes": 467,
+      "name": "citations.json"
+    },
+    {
+      "bytes": 80964,
+      "name": "figures/interactive-data.json"
+    },
+    {
+      "bytes": 4886441,
+      "name": "figures/interactive.html"
+    },
+    {
+      "bytes": 7276,
+      "name": "figures/manifest.json"
+    },
+    {
+      "bytes": 37323,
+      "name": "figures/qc-data.json"
+    },
+    {
+      "bytes": 34183,
+      "name": "figures/qc.png"
+    },
+    {
+      "bytes": 49561,
+      "name": "figures/uncorrected-data.json"
+    },
+    {
+      "bytes": 28950,
+      "name": "figures/uncorrected.png"
+    },
+    {
+      "bytes": 1521,
+      "name": "html-export.json"
+    },
+    {
+      "bytes": 11528,
+      "name": "measurements.json"
+    },
+    {
+      "bytes": 4992791,
+      "name": "notebook.html"
+    },
+    {
+      "bytes": 5136974,
+      "name": "notebook.ipynb"
+    },
+    {
+      "bytes": 1163,
+      "name": "parameters.json"
+    },
+    {
+      "bytes": 4782,
+      "name": "report.json"
+    },
+    {
+      "bytes": 2536,
+      "name": "reviewer-report.json"
+    },
+    {
+      "bytes": 3680,
+      "name": "summary.md"
+    }
+  ],
+  "data": {
+    "cells": 80,
+    "genes": 60,
+    "groups": "Two planted marker blocks of 40 cells each; alternating synthetic capture labels",
+    "input_sha256": "6ca692ad5b2c414f787140fe37c105a8ff7dc69e0759b1cbeaaefca5fc157d04",
+    "measurement": "artificial integer counts",
+    "quality_concerns": "Tiny idealized fixture; doublet estimates may be unavailable; toy markers are not experimental identity validation",
+    "seed": 128,
+    "units": "Generated cells; no independent donor or animal claims"
+  },
+  "deterministic_review": {
+    "HTML_export_review": {
+      "checks": {
+        "embedded_notebook_images_present": true,
+        "interactive_plot_data_matches": true,
+        "no_external_resource_dependencies": true
+      },
+      "external_resources": [],
+      "html_sha256": "02be2e6f6b938c2b56148eb1b5fc059dfd5bd83373ea6f9936f7d7d719a4eb93",
+      "notebook_sha256": "f111ed836d0479280e9f26b89939d89152b0d3b0a9bbd84129a81db051232273",
+      "passed": true,
+      "scope": "self_contained_resource_and_plot_data_verification_not_biological_validation"
+    },
+    "checks": {
+      "QC_selection_recomputed": true,
+      "all_cell_identities_preserved": true,
+      "checkpoint_artifacts_verified": true,
+      "concordance_metrics_recomputed": true,
+      "count_input_scope": true,
+      "figure_coordinates_and_categories_match_saved_tables": true,
+      "figure_labels_and_axis_semantics_match_tables": true,
+      "figure_population_IDs_match_QC": true,
+      "figure_scientific_bindings_match_receipts": true,
+      "figure_shared_category_colors_consistent": true,
+      "figures_regenerated_from_saved_tables": true,
+      "full_library_normalization_recomputed": true,
+      "full_transcriptome_QC_recomputed": true,
+      "interactive_plot_data_regenerated": true,
+      "mitochondrial_features_present": true,
+      "no_constant_embedding_accepted": true,
+      "notebook_executed_without_errors": true,
+      "registered_method_citations": true,
+      "selected_raw_counts_match_source": true,
+      "self_contained_HTML_export": true,
+      "source_sha256_recomputed": true,
+      "stored_QC_comparison_recomputed": true,
+      "stored_reference_excluded_from_fit_metadata": true,
+      "summary_contains_supported_claims_only": true,
+      "uncorrected_embedding_identities": true,
+      "uncorrected_finite_embedding": true
+    },
+    "errors": [],
+    "execution_tier": "local_supervised",
+    "format": "devbench.analysis.streaming-review/1",
+    "limits": [
+      "QC quantities and selected counts are recomputed from the full external input.",
+      "QC threshold policy, concordance metrics and renderer reuse producer functions.",
+      "Figure IDs, coordinates, categories and receipt bindings are also compared directly with saved tables.",
+      "Clustering stability, HVG population calibration and biological accuracy are not established.",
+      "A registered citation list is not a literature-wide citation-entailment audit.",
+      "No original CellTypist reproduction or clinical-validation claim is made."
+    ],
+    "passed": true,
+    "reviewer": "separate_deterministic_process_not_an_LLM_or_qualified_independent_reviewer"
+  },
+  "elapsed_seconds": 107.966,
+  "input_unchanged": true,
+  "job_id": "df325ebaaf41457cb0380ce58241dfc0",
+  "method_scope": "Fixed existing backed scRNA workflow, no model calls, no scientific method recommendation",
+  "model_sessions_attempted": 0,
+  "objective": "Show the current reviewed local UI workflow and retain actual QC/embedding/report evidence",
+  "operator_interventions": [
+    {
+      "decision": "approve",
+      "rationale": "Assistant-created offline software demonstration; confirms generated inputs/profile/scope; no independent scientific approval",
+      "review_status": "approved"
+    }
+  ],
+  "parameters": {
+    "correction": "none",
+    "counts_layer": null,
+    "mad_limit": null,
+    "markers": {
+      "B": [
+        "Ms4a1",
+        "Cd79a",
+        "Cd79b",
+        "Cd19"
+      ],
+      "T": [
+        "Cd3d",
+        "Cd3e",
+        "Trac",
+        "Il7r"
+      ]
+    },
+    "memory_mb": 1024,
+    "min_genes": 3,
+    "n_pcs": 8,
+    "n_top_genes": 30,
+    "seed": 128,
+    "stage_timeout_seconds": 90
+  },
+  "plot_inspection_scope": "Native QC and uncorrected embedding PNGs, saved coordinates/categories not modified",
+  "plots_visually_inspected": true,
+  "previous_attempts": [
+    "ui-demo-attempt01.json",
+    "ui-demo-attempt02.json"
+  ],
+  "proposal_status": "awaiting_operator_review",
+  "publication_normalization": {
+    "host_paths": "Local checkout paths replaced with <repo-root> or <demo-root>; observations, numerical results and hashes unchanged",
+    "original_record_retention": "Excluded .runtime-publication-originals directory",
+    "original_record_sha256": "603440700f01fd71a5cc7b63000299a653f9010c5b25b723f28bc9e7b628a650"
+  },
+  "report": {
+    "HVG_count": 30,
+    "QC_concordance": {
+      "cells": 80,
+      "fields": {
+        "log1p_total_counts": {
+          "in_recomputed": true,
+          "in_reference": false,
+          "status": "unavailable_column"
+        },
+        "n_genes_by_counts": {
+          "in_recomputed": true,
+          "in_reference": false,
+          "status": "unavailable_column"
+        },
+        "pct_counts_in_top_20_genes": {
+          "in_recomputed": true,
+          "in_reference": false,
+          "status": "unavailable_column"
+        },
+        "pct_counts_mt": {
+          "in_recomputed": true,
+          "in_reference": false,
+          "status": "unavailable_column"
+        },
+        "total_counts": {
+          "in_recomputed": true,
+          "in_reference": false,
+          "status": "unavailable_column"
+        }
+      },
+      "mismatches_are_findings_not_acceptance_failures": true,
+      "scope": "concordance_with_stored_QC_not_a_truth_test"
+    },
+    "annotation": {
+      "chunk_reports": [
+        "annotation_00000000/report.json"
+      ],
+      "method": "marker_panel",
+      "model_sha256": null,
+      "original_annotation_reproduced": false,
+      "scope": "independent_computational_predictions_not_experimental_accuracy",
+      "status": "completed",
+      "uncertain_cells": 0
+    },
+    "cells_input": 80,
+    "cells_retained": 80,
+    "classifier_reproduction_claimed": false,
+    "clinical_validation_claimed": false,
+    "conditions": {
+      "uncorrected": {
+        "annotation": {
+          "status": "completed",
+          "uncertain_cells": 0
+        },
+        "annotation_method": {
+          "chunk_reports": [
+            "annotation_00000000/report.json"
+          ],
+          "method": "marker_panel",
+          "model_sha256": null,
+          "original_annotation_reproduced": false,
+          "scope": "independent_computational_predictions_not_experimental_accuracy",
+          "status": "completed",
+          "uncertain_cells": 0
+        },
+        "batch_mixing": {
+          "ASW_details": {
+            "batch_ASW": null,
+            "batch_ASW_definition": "equal_type_mean_of_within_type_mean(1-abs(batch_silhouette))",
+            "batch_ASW_eligible_cells": 0,
+            "batch_ASW_range": [
+              0,
+              1
+            ],
+            "batch_silhouette": 0.0028556974836938553,
+            "cell_type_ASW": null,
+            "cell_type_ASW_definition": "mean_signed_silhouette_against_stored_celltype_predictions",
+            "cell_type_ASW_range": [
+              -1,
+              1
+            ],
+            "cells_evaluated": 80,
+            "constant_embedding": false,
+            "distance": "euclidean",
+            "eligible_reference_types": 0,
+            "higher_is_better_for_both": true,
+            "per_reference_type": [],
+            "reference_label_cells": 0,
+            "scope": "batch_mixing_and_preservation_of_external_prediction_structure_not_annotation_validation",
+            "subsampling": false,
+            "working_memory_MB": 64
+          },
+          "batch_ASW": null,
+          "batch_silhouette": 0.0028556974836938553,
+          "cell_type_ASW": null,
+          "neighbors": 15,
+          "normalized_batch_neighbor_entropy": 0.971633955371199,
+          "prior_celltype_silhouette": null,
+          "same_batch_neighbor_fraction": 0.5041666666666667,
+          "scope": "descriptive_batch_mixing_with_prior_prediction_structure_not_biological_truth"
+        },
+        "clustering": {
+          "ARI": null,
+          "NMI": null,
+          "status": "unavailable"
+        },
+        "clusters": 3,
+        "compared_cells": 80,
+        "reference_cells": 80,
+        "reference_status": "fixed_external_reference_with_unknown_annotation_provenance",
+        "retained_fraction": 1.0,
+        "scope": "concordance_with_prior_predictions_not_experimental_accuracy"
+      }
+    },
+    "doublets": {
+      "batches": [
+        {
+          "batch": "one",
+          "cells": 40,
+          "reason": "fewer_than_100_cells_for_configured_doublet_method",
+          "status": "unavailable"
+        },
+        {
+          "batch": "two",
+          "cells": 40,
+          "reason": "fewer_than_100_cells_for_configured_doublet_method",
+          "status": "unavailable"
+        }
+      ],
+      "filtering": "flag_only",
+      "method": "scanpy_scrublet_per_observed_batch",
+      "scope": "predictions_not_known_doublet_truth; batch_assumed_to_identify_library",
+      "status": "unavailable"
+    },
+    "execution_tier": "local_supervised",
+    "format": "devbench.scrna.report/1",
+    "input_info": {
+      "format": "anndata_H5AD"
+    },
+    "integration": {
+      "execution_status": "not_requested",
+      "observed_batches": 2,
+      "requested_method": "none",
+      "scope": "technical_batch_structure_not_independent_biological_units",
+      "status": "not_requested"
+    },
+    "integration_tradeoff": {},
+    "observed_batches": 2,
+    "reference_confidence_all_input": null,
+    "scope": "descriptive_concordance_with_external_predictions_not_accuracy"
+  },
+  "requirement_source": "User authorized demonstration experiments; exact fixture/profile are assistant-selected from documented tests",
+  "run_timeout_seconds": 180,
+  "scientific_review": "not_performed_by_this_service",
+  "scope": "Synthetic software demonstration; not biological validation or method comparison",
+  "terminal_status": "completed_review_passed",
+  "verification": {
+    "artifacts": 470,
+    "execution_tier": "local_supervised",
+    "root_sha256": "b8617c088add0cd5cd4b9a5b65dd8109a2e9152fe4a19a4e2bfcf9c9e6de16a2",
+    "scope": "artifact_integrity_not_numerical_reexecution_or_biological_validation",
+    "status": "completed_review_passed",
+    "verified": true
+  }
+}

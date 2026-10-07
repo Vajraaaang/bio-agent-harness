@@ -11,10 +11,26 @@
   "historical_publication_manifest": "See PUBLICATION_MANIFEST.json at base_commit for the 0.4.17 release archive identity.",
   "publication_changes_sha256": {
     ".gitignore": "5756867eaf7fe0b2c9bcc6370f103ff52d5a22906d87e99b06d83077df644ccf",
-    "integrations/codex/README.md": "67a24274f37db0d1b2be629146d3ffd5347e32c193d10a10c47e82d389f70dbb"
+    "README.md": "210d3e953b87f0ac478c2542f55c5cdff62ba5f85ee34d011b548086dbb8a9f8",
+    "RELEASE_READINESS.md": "4ac18e1304e3160d1811bde5a2941d6cd03046dc94eeea4ad2c544a814ab92f0",
+    "integrations/codex/README.md": "67a24274f37db0d1b2be629146d3ffd5347e32c193d10a10c47e82d389f70dbb",
+    "reports/github-homepage-20261007/.gitignore": "6b1958248eaba5f8b86d330f3a4cbc3831e730a07299c30741855b4f37f8e9fa",
+    "reports/github-homepage-20261007/README.md": "4d2eb2fabf768dd97d2cc834d9aecfac1ae4cd9b1bf5aa0c8a907c37bac8d210",
+    "reports/github-homepage-20261007/diagnostic-demo-evidence.json": "577a48e1bcf197da2d973bc2d3cb6910faf098406eb93a58d28c2ac3ca3e5dad",
+    "reports/github-homepage-20261007/images/qc.png": "148d857dca556ed32322c0bfe36e9213a8afe4d91d44f45cc121346cd0698017",
+    "reports/github-homepage-20261007/images/uncorrected.png": "70cb6eae6082055e49756fd8f6cf473fc2f23571fee8ac66c03cced9a0d80ba3",
+    "reports/github-homepage-20261007/images/workbench-overview.jpg": "af2b110222bd96994cfbbdc9fadc9443bbda2d7decc963188f8e66f309a31b8c",
+    "reports/github-homepage-20261007/images/workbench-plan.jpg": "944fb686c0fa04b8eef1759ad339c4812d0457bba6b42ae73db1df2ca4520818",
+    "reports/github-homepage-20261007/images/workbench-qc.jpg": "a3af8ccc5ccb825e2888e0f61f626896e91af08fc9a7dba77e0ea774a1ca9bd4",
+    "reports/github-homepage-20261007/images/workbench-results.jpg": "ed8dfb19b5bbbd1fb817f448b0ad104110affc162f78ed91dfdce42db00ace2b",
+    "reports/github-homepage-20261007/run_diagnostic_demo.py": "87272b4d62a9d248dff173e93233c0e8151acc2a247ec32cc62af0cfaedea1db",
+    "reports/github-homepage-20261007/run_ui_demo.py": "f54f1d6c9d817d4133afd610c65ed3d1c5442001def696145b96bfa6a1793626",
+    "reports/github-homepage-20261007/ui-demo-attempt01.json": "abe6926568a9ed8cf309a777ff1c1670a962150698ee199030dc39f159b46781",
+    "reports/github-homepage-20261007/ui-demo-attempt02.json": "048d062ff67349c4bd34def09639c6e986af21451c19b5eca89ece7c924fe783",
+    "reports/github-homepage-20261007/ui-demo-evidence.json": "159593a57cf95a9292339c66226ff14a21654b0a5aa74f42028c2d464c4f0288"
   },
   "schema_version": "devharness.publication-snapshot/2",
-  "scope": "Latest local research software source; draft review snapshot",
+  "scope": "Latest local research software source; development snapshot with repository homepage documentation",
   "snapshot_date": "2026-10-07",
   "source_members_sha256": {
     ".env.example": "660a290b130aaa667e51cb20b1f0a03b29b5f6a5cb40f0e64ccd1a602cf8df9d",
