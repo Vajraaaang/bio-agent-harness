@@ -2,17 +2,29 @@
 
 A local research workspace for transcriptomics: inspect data, compare scientific approaches, run bounded analyses, review results, and retain the evidence behind each decision. DevHarness supplies scientific tools and controlled execution; DevBench supplies workflow coordination and executable agent evaluations.
 
-**Current source: `0.5.0.dev0`, published October 7, 2026. Research software; clinical release remains held.** This development snapshot includes the scientific workspace, method contracts/planner, independent RNA investigation interfaces, discovery evaluation support, and local RNA tracing/export tooling. Publication does not establish scientific method superiority, hosted-service qualification, or clinical readiness. See [release readiness](RELEASE_READINESS.md) and the [requirements and evidence map](docs/requirements-verification.md).
+**Main-branch application source: `0.5.0.dev0`, published October 7, 2026. Research software; clinical release remains held.** This development snapshot includes the scientific workspace, method contracts/planner, independent RNA investigation interfaces, discovery evaluation support, and local RNA tracing/export tooling. Publication does not establish scientific method superiority, hosted-service qualification, or clinical readiness. See [release readiness](RELEASE_READINESS.md) and the [requirements and evidence map](docs/requirements-verification.md).
 
 [Workbench](#the-research-workbench) · [Scientific workflow](#the-five-step-scientific-workflow) · [Capabilities](#data-and-analysis-support) · [Architecture](#how-the-components-fit-together) · [Quick start](#run-locally) · [Agent evaluation](#agent-evaluation) · [Verification](#verification-and-known-limits) · [Documentation](#documentation-map)
 
 ## The research workbench
 
+### Latest development preview · 300,000 generated points
+
+The October 29 [workbench update in PR #2](https://github.com/Vajraaaang/bio-agent-harness/pull/2) adds a **Synthetic atlas** with 300,000 generated cell-like records across three batches. Both scatter panels render every selected point on Canvas without downsampling. Batch filtering, module signatures, library complexity, batch distributions, and composition share the same generated population.
+
+![Synthetic atlas with 300,000 generated points across three batches](reports/github-update-20261029/images/synthetic-atlas.png)
+
+The preview is available in the [development branch](https://github.com/Vajraaaang/bio-agent-harness/tree/vajraang/workbench-update-20261029); it has not been merged into the main-branch application. Its [atlas guide](https://github.com/Vajraaaang/bio-agent-harness/blob/vajraang/workbench-update-20261029/docs/synthetic-atlas.md) explains the controls and export. The records, group labels, and latent coordinates are generated from a fixed seed; they are not biological observations or a fitted UMAP. No live trial was run.
+
+The development snapshot passed 105 focused local checks and controlled synthetic continuous/count verification. Browser checks counted 600,000 actual point draws across the two scatter panels. These are software/presentation checks, not scientific or clinical validation. Hosted CI currently fails during test collection on local-only paths and a missing test dependency; [verification evidence and limits](https://github.com/Vajraaaang/bio-agent-harness/blob/vajraang/workbench-update-20261029/reports/github-update-20261029/README.md) remain available with the draft update.
+
+### Main-branch interface and historical evidence
+
 The browser interface brings inputs, analyses, runs, figures, scientific review, and exports into one local project. It uses the existing controllers and evidence stores rather than introducing a separate analysis engine.
 
-![Current local workbench overview using a small synthetic demonstration](reports/github-homepage-20261007/images/workbench-overview.jpg)
+![October 7 local workbench overview using a small synthetic demonstration](reports/github-homepage-20261007/images/workbench-overview.jpg)
 
-![Completed synthetic run in the current workbench results and figure view](reports/github-homepage-20261007/images/workbench-results.jpg)
+![October 7 synthetic run in the workbench results and figure view](reports/github-homepage-20261007/images/workbench-results.jpg)
 
 These are captures of the actual local application from the [October 7 demonstration](reports/github-homepage-20261007/README.md), using assistant-generated synthetic counts and an operator-recorded plan. They show the existing UI; no live model session or independent biological review was performed.
 

@@ -11,7 +11,7 @@
   "historical_publication_manifest": "See PUBLICATION_MANIFEST.json at base_commit for the 0.4.17 release archive identity.",
   "publication_changes_sha256": {
     ".gitignore": "5756867eaf7fe0b2c9bcc6370f103ff52d5a22906d87e99b06d83077df644ccf",
-    "README.md": "210d3e953b87f0ac478c2542f55c5cdff62ba5f85ee34d011b548086dbb8a9f8",
+    "README.md": "7a898f6c9215d9abeae0840df8c053373ca0d99345fb4db0d57eeec14e8fb2e3",
     "RELEASE_READINESS.md": "4ac18e1304e3160d1811bde5a2941d6cd03046dc94eeea4ad2c544a814ab92f0",
     "integrations/codex/README.md": "67a24274f37db0d1b2be629146d3ffd5347e32c193d10a10c47e82d389f70dbb",
     "reports/github-homepage-20261007/.gitignore": "6b1958248eaba5f8b86d330f3a4cbc3831e730a07299c30741855b4f37f8e9fa",
@@ -27,7 +27,8 @@
     "reports/github-homepage-20261007/run_ui_demo.py": "f54f1d6c9d817d4133afd610c65ed3d1c5442001def696145b96bfa6a1793626",
     "reports/github-homepage-20261007/ui-demo-attempt01.json": "abe6926568a9ed8cf309a777ff1c1670a962150698ee199030dc39f159b46781",
     "reports/github-homepage-20261007/ui-demo-attempt02.json": "048d062ff67349c4bd34def09639c6e986af21451c19b5eca89ece7c924fe783",
-    "reports/github-homepage-20261007/ui-demo-evidence.json": "159593a57cf95a9292339c66226ff14a21654b0a5aa74f42028c2d464c4f0288"
+    "reports/github-homepage-20261007/ui-demo-evidence.json": "159593a57cf95a9292339c66226ff14a21654b0a5aa74f42028c2d464c4f0288",
+    "reports/github-update-20261029/images/synthetic-atlas.png": "e612a3e074b2e60363478c3151769f65b16a8df50d851e182101d8809ae50de2"
   },
   "schema_version": "devharness.publication-snapshot/2",
   "scope": "Latest local research software source; development snapshot with repository homepage documentation",
@@ -846,5 +847,13 @@
       "source_preserved": true
     }
   },
-  "version": "0.5.0.dev0"
+  "version": "0.5.0.dev0",
+  "homepage_update": {
+    "date": "2026-10-29",
+    "scope": "Homepage-only atlas preview; main application source remains October 7 snapshot",
+    "preview_source_commit": "25af0988f478d10e26209c059ff91fe63d350a35",
+    "preview_pull_request": 2,
+    "full_source_update_status": "draft; CI collection failures",
+    "live_trial": "not_run"
+  }
 }
