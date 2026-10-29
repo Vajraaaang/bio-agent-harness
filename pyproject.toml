@@ -84,7 +84,7 @@ include = ["devharness*", "devbench*", "benchmarks*", "experiments*", "scripts*"
 [tool.setuptools.package-data]
 benchmarks = ["task_definitions/*.json", "task_definitions/expanded/*.json", "reference_data/*.json", "reference_data/*.md"]
 devbench_engine = ["AGENTS.md"]
-devbench = ["tasks/catalog.json", "study/public_sources.json", "study/biology_catalog.json", "analysis/assets/workbench-ui.html", "analysis/assets/workbench-theme.css", "analysis/assets/workbench-conversation.js", "analysis/assets/workbench-investigations.js", "analysis/assets/workbench-artifacts.js", "analysis/assets/workbench-projects.js", "analysis/assets/workbench-synthetic.js", "analysis/assets/workbench-synthetic.css", "analysis/assets/scientific-figure.js", "analysis/assets/source-bundle.zip", "analysis/assets/community-workflow/*"]
+devbench = ["tasks/catalog.json", "study/public_sources.json", "study/biology_catalog.json", "analysis/assets/workbench-ui.html", "analysis/assets/workbench-theme.css", "analysis/assets/workbench-conversation.js", "analysis/assets/workbench-investigations.js", "analysis/assets/workbench-artifacts.js", "analysis/assets/workbench-projects.js", "analysis/assets/workbench-synthetic.js", "analysis/assets/workbench-synthetic.css", "analysis/assets/workbench-demo.js", "analysis/assets/workbench-demo.css", "analysis/assets/scientific-figure.js", "analysis/assets/source-bundle.zip", "analysis/assets/community-workflow/*"]
 devharness_controlled = ["native-package-sources.lock.json"]
 devharness_server = ["r/*.R"]
 

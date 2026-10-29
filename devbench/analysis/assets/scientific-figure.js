@@ -1,7 +1,7 @@
 /* Trusted display of bounded saved observation geometry. No analysis execution. */
 (function (root) {
   'use strict';
-  const MAX_POINTS = 200000, MAX_PANEL_ROWS = 400000, PAGE_SIZE = 40;
+  const MAX_POINTS = 200000, MAX_SIMULATION_POINTS = 300000, MAX_PANEL_ROWS = 400000, PAGE_SIZE = 40;
   const COLOR = /^#[0-9a-f]{6}$/i;
   const fail = text => { throw new Error(text); };
   const text = value => typeof value === 'string' && value.length > 0 && value.length <= 2000;
@@ -34,16 +34,48 @@
   }
   function displayCategoryColors(saved){return Object.fromEntries(Object.keys(saved).map((key,index)=>[key,OKABE_ITO[index%OKABE_ITO.length]]));}
   function interpolateViewport(start,end,progress){const t=Math.max(0,Math.min(1,progress));if(t===1)return end.slice();const ease=1-(1-t)**3;return start.map((value,index)=>value+(end[index]-value)*ease);}
-  function prepare(record, payload) {
-    if (!record || record.format !== 'devbench.figure/1' || !['G02','G08'].includes(record.family)
-        || !payload || payload.format !== 'devbench.figure-data/1' || payload.payload_kind !== 'observation_points'
+  function simulationProvenance(value) {
+    const keys=['kind','seed','generator','live_trials','biological_observations'];
+    if (!value || keys.some(key=>!own(value,key))
+        || Object.keys(value).some(key=>!keys.includes(key)&&key!=='batch_sizes') || value.kind !== 'synthetic'
+        || value.generator !== 'workbench-simulation/1' || !Number.isSafeInteger(value.seed)
+        || value.seed < 0 || value.seed > 4294967295 || value.live_trials !== 0
+        || value.biological_observations !== 0) fail('Explicit generated-data provenance is required.');
+    if (own(value,'batch_sizes') && (!Array.isArray(value.batch_sizes) || value.batch_sizes.length!==3
+        || value.batch_sizes.some(size=>!Number.isSafeInteger(size)||size<=0)
+        || value.batch_sizes.reduce((sum,size)=>sum+size,0)>MAX_SIMULATION_POINTS)) {
+      fail('Generated batch sizes must describe three positive bounded populations.');
+    }
+    return value;
+  }
+  function prepare(record,payload) {
+    if ([record,payload].some(value=>value?.provenance?.generator==='workbench-simulation/1')) {
+      fail('Simulation data must use the explicitly generated presentation renderer.');
+    }
+    return preparePoints(record,payload,false);
+  }
+  function prepareSimulation(record,payload) {
+    const provenance=simulationProvenance(record?.provenance);
+    const payloadProvenance=simulationProvenance(payload?.provenance);
+    if (Object.keys(provenance).length!==Object.keys(payloadProvenance).length
+        || Object.keys(provenance).some(key=>JSON.stringify(provenance[key])!==JSON.stringify(payloadProvenance[key]))
+        || (provenance.batch_sizes && record.analysis_n>provenance.batch_sizes.reduce((sum,size)=>sum+size,0))
+        || ['analysis_binding','original_run_id','plot_data'].some(key=>own(record,key))
+        || !record.semantics?.representation_or_layer?.startsWith('generated:')) {
+      fail('Generated presentation data cannot claim a retained analysis or source binding.');
+    }
+    return preparePoints(record,payload,true);
+  }
+  function preparePoints(record, payload, simulation) {
+    if (!record || record.format !== (simulation?'devbench.simulated-figure/1':'devbench.figure/1') || !(simulation?['S01']:['G02','G08']).includes(record.family)
+        || !payload || payload.format !== (simulation?'devbench.simulated-figure-data/1':'devbench.figure-data/1') || payload.payload_kind !== 'observation_points'
         || JSON.stringify(payload.key_columns) !== '["observation_id"]' || record.semantics?.unit !== 'cell') {
       fail('Interactive view supports retained QC and UMAP observation figures only. Use the original image for this artifact.');
     }
-    if (!Array.isArray(payload.population_ids) || payload.population_ids.length > MAX_POINTS
+    if (!Array.isArray(payload.population_ids) || payload.population_ids.length > (simulation?MAX_SIMULATION_POINTS:MAX_POINTS)
         || !payload.population_ids.every(text) || new Set(payload.population_ids).size !== payload.population_ids.length
         || record.analysis_n !== payload.population_ids.length) fail('Figure population identities or counts are inconsistent.');
-    if (!Array.isArray(payload.panels) || payload.panels.length < 1 || payload.panels.length > 8) fail('Figure panels are unavailable.');
+    if (!Array.isArray(payload.panels) || payload.panels.length < 1 || payload.panels.length > (simulation?1:8)) fail('Figure panels are unavailable.');
     const population = new Set(payload.population_ids), panelIds = new Set(), renderedIds = new Set();
     let count = 0;
     const panels = payload.panels.map(panel => {
@@ -110,18 +142,30 @@
     const columns=['observation_id','x','y','color','status','exclusion_reason','metadata'];
     return columns.join(',')+'\r\n'+chosen.map(row=>columns.map(key=>csvCell(row[key])).join(',')).join('\r\n');
   }
-  function mount(container,options) {
+  function toSimulationCSV(rows,provenance) {
+    simulationProvenance(provenance);
+    const columns=['observation_id','x','y','color','status','exclusion_reason','metadata'];
+    const prefix=[provenance.kind,provenance.generator,provenance.seed].map(csvCell).join(',')+',';
+    const parameters=','+csvCell({batch_sizes:provenance.batch_sizes||null});
+    return 'data_origin,generator,seed,'+columns.join(',')+',generation_parameters\r\n'+rows.map(row=>prefix+columns.map(key=>csvCell(row[key])).join(',')+parameters).join('\r\n');
+  }
+  function mount(container,options) { return mountFigure(container,options,false); }
+  function mountSimulation(container,options) {
+    if(!options)fail('Simulation options are required.');
+    return mountFigure(container,{...options,onSelection:undefined,context:{kind:'synthetic',scope:'Generated presentation only; no retained analysis.'}},true);
+  }
+  function mountFigure(container,options,simulation) {
     if (!container || !options) fail('A figure container and retained artifact are required.');
     if(container.__scientificFigure)container.__scientificFigure.destroy();
-    const model=prepare(options.record,options.payload),doc=container.ownerDocument;
+    const model=(simulation?prepareSimulation:prepare)(options.record,options.payload),doc=container.ownerDocument;
     const toolbarHost=options.toolbarHost||null;
     if(toolbarHost&&(toolbarHost.ownerDocument!==doc||typeof toolbarHost.append!=='function'))fail('The figure toolbar must belong to the same application document.');
     const make=(tag,className,value)=>{const item=doc.createElement(tag);if(className)item.className=className;if(value!==undefined)item.textContent=value;return item;};
     const button=(label,action)=>{const item=make('button','secondary',label);item.type='button';item.addEventListener('click',action);return item;};
     const field=(label,control)=>{const box=make('label','sf-control');box.append(make('span','',label),control);return box;};
-    const section=make('section','scientific-figure');section.setAttribute('aria-label','Interactive retained scientific figure');
-    const heading=make('div','sf-heading'),title=make('h3','',model.record.family==='G02'?'Cell quality':'UMAP'),badge=make('span','tag','Display only');
-    const toolbar=make('div','sf-toolbar'),panelPicker=make('select');panelPicker.setAttribute('aria-label','Saved figure panel');
+    const section=make('section','scientific-figure');section.setAttribute('aria-label',simulation?'Interactive generated simulation figure':'Interactive retained scientific figure');
+    const heading=make('div','sf-heading'),title=make('h3','',simulation?model.panels[0].title:model.record.family==='G02'?'Cell quality':'UMAP'),badge=make('span','tag',simulation?'Synthetic simulation':'Display only');
+    const toolbar=make('div','sf-toolbar'),panelPicker=make('select');panelPicker.setAttribute('aria-label',simulation?'Generated figure panel':'Saved figure panel');
     model.panels.forEach((panel,index)=>{const item=make('option','',panel.color.label);item.value=String(index);panelPicker.append(item);});
     heading.append(title,panelPicker,badge,toolbar);
     const modePicker=make('select');modePicker.setAttribute('aria-label','Plot interaction');
@@ -142,41 +186,41 @@
     const modeButtons=[];
     function changeMode(mode){modePicker.value=mode;for(const item of modeButtons)item.setAttribute('aria-pressed',String(item.dataset.mode===mode));}
     for(const [label,action,mode]of [['Pan','pan','pan'],['Select','select','box'],['Lasso selection','lasso','lasso']]){const item=iconButton(label,action,()=>changeMode(mode));item.dataset.mode=mode;item.setAttribute('aria-pressed',String(mode==='pan'));modeButtons.push(item);toolbar.append(item);}
-    const plot=make('div','sf-plot'),canvas=make('canvas','sf-canvas');canvas.tabIndex=0;canvas.setAttribute('role','img');canvas.setAttribute('aria-label','Saved observation scatter plot. Use plus or minus to zoom, arrow keys to pan, or the observations table for keyboard selection.');
+    const plot=make('div','sf-plot'),canvas=make('canvas','sf-canvas');canvas.tabIndex=0;canvas.setAttribute('role','img');canvas.setAttribute('aria-label',(simulation?'Generated simulation scatter plot. ':'Saved observation scatter plot. ')+'Use plus or minus to zoom, arrow keys to pan, or the observations table for keyboard selection.');
     const hover=make('p','sf-hover','Hover to inspect a cell.'),counts=make('p','sf-counts sf-status');counts.setAttribute('role','status');counts.setAttribute('aria-live','polite');
     plot.append(canvas,hover);
     const controls=make('details','sf-settings'),summary=make('summary','','Display settings');controls.append(summary);
     const settingGrid=make('div','sf-setting-grid'),size=make('input'),opacity=make('input');
-    size.type='range';size.min='.5';size.max='6';size.step='.5';size.value='2';size.setAttribute('aria-label','Point radius');
-    opacity.type='range';opacity.min='.1';opacity.max='1';opacity.step='.05';opacity.value='.8';opacity.setAttribute('aria-label','Point opacity');
+    size.type='range';size.min='.5';size.max='6';size.step='.5';size.value=simulation?'.5':'2';size.setAttribute('aria-label','Point radius');
+    opacity.type='range';opacity.min='.1';opacity.max='1';opacity.step='.05';opacity.value=simulation?'.5':'.8';opacity.setAttribute('aria-label','Point opacity');
     settingGrid.append(field('Point radius',size),field('Opacity',opacity));controls.append(settingGrid);
-    const legend=make('div','sf-legend');legend.setAttribute('aria-label','Saved color categories');
+    const legend=make('div','sf-legend');legend.setAttribute('aria-label',simulation?'Generated color categories':'Saved color categories');
     const actions=make('div','sf-actions');
     const selectionText=make('p','sf-selection','No observations selected.'),ask=button('Ask about selection',()=>{
-      const ids=Array.from(selection);if(!ids.length)return;
+      const ids=Array.from(selection);if(simulation||!ids.length)return;
       if(typeof options.onSelection==='function')options.onSelection({figure_id:model.record.figure_id,observation_ids:ids,panel_id:panel().panel_id,context:options.context||{},display_only:true});
       selectionText.textContent=ids.length.toLocaleString()+' exact observation IDs sent to the question draft. Review before submitting.';
-    });ask.disabled=true;
+    });ask.disabled=true;if(simulation)ask.hidden=true;
     const clearSelection=button('Clear selection',()=>{selection.clear();updateSelection();render();});
     actions.append(ask,clearSelection);
     const exportActions=make('div','sf-exports'),exportLabel=make('span','','Export exploration:');
     if(!toolbarHost)exportActions.append(exportLabel);
     const hostedTools=toolbarHost?make('div','sf-integrated-tools'):null;
     if(hostedTools){const exportMenu=make('details','sf-export-menu'),exportSummary=make('summary','','Export');exportSummary.setAttribute('aria-label','Export figure');exportSummary.title='Export figure';exportMenu.append(exportSummary,exportActions);hostedTools.append(panelPicker,badge,toolbar,exportMenu);toolbarHost.append(hostedTools);}
-    const tableDetails=make('details','sf-table-details'),tableSummary=make('summary','','Observation table · exact saved identities');tableDetails.append(tableSummary);
+    const tableDetails=make('details','sf-table-details'),tableSummary=make('summary','',simulation?'Generated observation table':'Observation table · exact saved identities');tableDetails.append(tableSummary);
     const tableTools=make('div','sf-table-tools'),search=make('input');search.type='search';search.placeholder='Find observation ID';search.setAttribute('aria-label','Find observation ID');
     const selectedOnly=make('input');selectedOnly.type='checkbox';tableTools.append(search,field('Selected only',selectedOnly));
-    const table=make('table','sf-table'),thead=make('thead'),headerRow=make('tr');['Select','Observation','X','Y','Saved color','Status'].forEach(value=>headerRow.append(make('th','',value)));thead.append(headerRow);table.append(thead);
+    const table=make('table','sf-table'),thead=make('thead'),headerRow=make('tr');['Select','Observation','X','Y',simulation?'Generated color':'Saved color','Status'].forEach(value=>headerRow.append(make('th','',value)));thead.append(headerRow);table.append(thead);
     const tbody=make('tbody');table.append(tbody);const tableScroll=make('div','sf-table-scroll');tableScroll.append(table);
     const paging=make('div','sf-paging'),pageLabel=make('span');
     const previous=button('Previous',()=>{page--;renderTable();}),next=button('Next',()=>{page++;renderTable();});paging.append(previous,pageLabel,next);
     tableDetails.append(tableTools,tableScroll,paging);
     const evidence=make('details','sf-evidence');evidence.append(make('summary','','Method and provenance'));
     const evidenceGrid=make('dl','sf-kv-grid');
-    for(const [key,value]of [['Representation',model.record.semantics.representation_or_layer],['Analysis population',model.ids.length.toLocaleString()+' cells'],['Palette','Okabe–Ito display colors; saved category colors remain in retained data.'],['Source run',options.context?.job_id||model.record.original_run_id||'Recorded analysis'],['Plot data',model.record.plot_data?.path||'Saved geometry']])evidenceGrid.append(make('dt','',key),make('dd','',value));
-    evidence.append(evidenceGrid,make('p','muted','Display changes do not rerun the analysis.'));
+    for(const [key,value]of [['Representation',model.record.semantics.representation_or_layer],[simulation?'Generated population':'Analysis population',model.ids.length.toLocaleString()+' cells'],['Palette',simulation?'Okabe–Ito display colors; generator colors are preserved in the local payload.':'Okabe–Ito display colors; saved category colors remain in retained data.'],[simulation?'Generator':'Source run',simulation?model.record.provenance.generator:options.context?.job_id||model.record.original_run_id||'Recorded analysis'],['Plot data',simulation?'Browser-generated geometry · seed '+model.record.provenance.seed:model.record.plot_data?.path||'Saved geometry']])evidenceGrid.append(make('dt','',key),make('dd','',value));
+    evidence.append(evidenceGrid,make('p','muted',simulation?'Synthetic presentation data; no biological observations, live trial or scientific acceptance.':'Display changes do not rerun the analysis.'));
     for(const limitation of model.record.semantics.limitations||[])evidence.append(make('p','muted',limitation));
-    const binding=make('pre','',JSON.stringify({analysis_binding:model.record.analysis_binding||null,population_sha256:model.record.semantics.population_sha256||null,plot_data:model.record.plot_data||null,saved_category_colors:model.panels.map(panel=>panel.color.colors||null),context:options.context||{}},null,2));binding.hidden=true;
+    const binding=make('pre','',JSON.stringify(simulation?{provenance:model.record.provenance,context:options.context}:{analysis_binding:model.record.analysis_binding||null,population_sha256:model.record.semantics.population_sha256||null,plot_data:model.record.plot_data||null,saved_category_colors:model.panels.map(panel=>panel.color.colors||null),context:options.context||{}},null,2));binding.hidden=true;
     const evidenceActions=make('div','sf-evidence-actions'),showJSON=button('Show JSON',()=>{binding.hidden=!binding.hidden;showJSON.textContent=binding.hidden?'Show JSON':'Hide JSON';});
     evidenceActions.append(showJSON,button('Copy JSON',async()=>{try{await root.navigator.clipboard.writeText(binding.textContent);hover.textContent='Provenance JSON copied.';}catch(_){binding.hidden=false;showJSON.textContent='Hide JSON';hover.textContent='Select the provenance JSON to copy it.';}}));evidence.append(evidenceActions,binding);
     if(!toolbarHost)section.append(heading);
@@ -221,21 +265,21 @@
         const point={x,y,row},key=colorFor(row);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(point);screenPoints.push(point);
         const bin=Math.floor(x/24)+':'+Math.floor(y/24);if(!grid.has(bin))grid.set(bin,[]);grid.get(bin).push(point);}
       ctx.save();ctx.beginPath();ctx.rect(margins.left,margins.top,width-margins.left-margins.right,height-margins.top-margins.bottom);ctx.clip();ctx.globalAlpha=Number(opacity.value);
-      for(const [color,points] of groups){ctx.fillStyle=color;ctx.strokeStyle='#ffffff';ctx.lineWidth=1;ctx.beginPath();const radius=Number(size.value);for(const point of points){ctx.moveTo(point.x+radius,point.y);ctx.arc(point.x,point.y,radius,0,Math.PI*2);}ctx.fill();ctx.stroke();}
+      for(const [color,points] of groups){ctx.fillStyle=color;ctx.strokeStyle='#ffffff';ctx.lineWidth=1;ctx.beginPath();const radius=Number(size.value);for(const point of points){ctx.moveTo(point.x+radius,point.y);ctx.arc(point.x,point.y,radius,0,Math.PI*2);}ctx.fill();if(!simulation)ctx.stroke();}
       ctx.globalAlpha=1;ctx.strokeStyle=theme.ink;ctx.lineWidth=1.6;ctx.beginPath();for(const point of screenPoints)if(selection.has(point.row.observation_id)){ctx.moveTo(point.x+Number(size.value)+2,point.y);ctx.arc(point.x,point.y,Number(size.value)+2,0,Math.PI*2);}ctx.stroke();
       if(drag&&modePicker.value!=='pan'){ctx.strokeStyle=theme.ink;ctx.fillStyle=theme.line;ctx.globalAlpha=.3;ctx.beginPath();const points=modePicker.value==='box'?[[drag.start[0],drag.start[1]],[drag.last[0],drag.start[1]],drag.last,[drag.start[0],drag.last[1]]]:drag.points;points.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.fill();ctx.globalAlpha=1;ctx.setLineDash([4,3]);ctx.stroke();}
-      ctx.restore();lastRenderMs=performance.now()-started;
-      counts.replaceChildren();for(const value of [screenPoints.length.toLocaleString()+' in viewport',categoryVisible.toLocaleString()+' / '+panel().rendered.length.toLocaleString()+' visible',model.ids.length.toLocaleString()+' analysis cells','No sampling'])counts.append(make('span','sf-status-item',value));
+      ctx.restore();if(simulation){ctx.fillStyle=theme.muted;ctx.font=AXIS_FONT;ctx.textAlign='right';ctx.fillText('SIMULATED DATA · '+model.ids.length.toLocaleString()+' generated cells',width-margins.right,14);}lastRenderMs=performance.now()-started;
+      counts.replaceChildren();for(const value of [screenPoints.length.toLocaleString()+' in viewport',categoryVisible.toLocaleString()+' / '+panel().rendered.length.toLocaleString()+' visible',model.ids.length.toLocaleString()+(simulation?' generated cells':' analysis cells'),'No sampling'])counts.append(make('span','sf-status-item',value));
     }
     function render(){if(!frame&&!disposed)frame=root.requestAnimationFrame(draw);}
     function renderLegend(){legend.replaceChildren();const color=panel().color;
-      if(color.kind==='continuous'){const bar=make('div','sf-colorbar');bar.setAttribute('role','img');bar.setAttribute('aria-label','Sequential blue scale from '+format(color.scale.min)+' to '+format(color.scale.max));legend.append(make('p','',color.label+' · saved linear scale '+format(color.scale.min)+' to '+format(color.scale.max)),bar);return;}
+      if(color.kind==='continuous'){const bar=make('div','sf-colorbar');bar.setAttribute('role','img');bar.setAttribute('aria-label','Sequential blue scale from '+format(color.scale.min)+' to '+format(color.scale.max));legend.append(make('p','',color.label+(simulation?' · generated linear scale ':' · saved linear scale ')+format(color.scale.min)+' to '+format(color.scale.max)),bar);return;}
       legend.append(make('p','',color.label));
       for(const category of Object.keys(color.colors)){const row=make('div','sf-category'),check=make('input'),picker=make('input');check.type='checkbox';check.checked=visible.has(category);check.setAttribute('aria-label','Show '+category);picker.type='color';picker.value=colors[category];picker.setAttribute('aria-label','Display color for '+category);
         check.addEventListener('change',()=>{check.checked?visible.add(category):visible.delete(category);page=0;render();renderTable();updateSelection();});picker.addEventListener('input',()=>{colors[category]=picker.value;render();});row.append(check,make('span','',category),picker);legend.append(row);}
     }
     function updateSelection(){const displayed=Array.from(selection).filter(id=>{const row=panel().byId.get(id);return row&&row.status==='rendered'&&shown(row);}).length;
-      selectionText.textContent=selection.size?selection.size.toLocaleString()+' exact observation IDs selected · '+displayed.toLocaleString()+' visible in this panel. Selection is preserved across panels and category filters.':'No observations selected. Choose a box or lasso, or select rows in the table.';ask.disabled=!selection.size;clearSelection.disabled=!selection.size;renderTable();}
+      selectionText.textContent=selection.size?selection.size.toLocaleString()+' exact observation IDs selected · '+displayed.toLocaleString()+' visible in this panel. Selection is preserved across panels and category filters.':'No observations selected. Choose a box or lasso, or select rows in the table.';ask.disabled=simulation||!selection.size;clearSelection.disabled=!selection.size;renderTable();}
     function renderTable(){if(!tableDetails.open)return;const query=search.value.trim().toLocaleLowerCase();const rows=panel().rows.filter(row=>(row.status!=='rendered'||shown(row))&&(!selectedOnly.checked||selection.has(row.observation_id))&&(!query||row.observation_id.toLocaleLowerCase().includes(query)));
       const pages=Math.max(1,Math.ceil(rows.length/PAGE_SIZE));page=Math.max(0,Math.min(page,pages-1));tbody.replaceChildren();
       for(const row of rows.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE)){const tr=make('tr'),td=make('td'),check=make('input');check.type='checkbox';check.checked=selection.has(row.observation_id);check.disabled=row.status!=='rendered';check.setAttribute('aria-label','Select '+row.observation_id);check.addEventListener('change',()=>{check.checked?selection.add(row.observation_id):selection.delete(row.observation_id);updateSelection();render();});td.append(check);tr.append(td);
@@ -251,13 +295,19 @@
     }
     function zoom(factor,x=width/2,y=height/2,animate=false){const centerX=dataX(x),centerY=dataY(y),next=[centerX+(view[0]-centerX)*factor,centerX+(view[1]-centerX)*factor,centerY+(view[2]-centerY)*factor,centerY+(view[3]-centerY)*factor];
       if(next.every(finite)&&next[1]-next[0]>1e-12&&next[3]-next[2]>1e-12)moveViewport(next,animate);}
-    function reset(){size.value='2';opacity.value='.8';resetCategories();renderLegend();moveViewport(panel().bounds.slice(),true);renderTable();updateSelection();}
+    function reset(){size.value=simulation?'.5':'2';opacity.value=simulation?'.5':'.8';resetCategories();renderLegend();moveViewport(panel().bounds.slice(),true);renderTable();updateSelection();}
     toolbar.append(iconButton('Zoom in','zoom-in',()=>zoom(.8,width/2,height/2,true)),iconButton('Zoom out','zoom-out',()=>zoom(1.25,width/2,height/2,true)),iconButton('Reset view','reset',reset));
     const fullscreen=iconButton('Fullscreen','fullscreen',async()=>{try{if(doc.fullscreenElement===section)await doc.exitFullscreen();else await section.requestFullscreen();render();}catch(_){hover.textContent='Fullscreen is unavailable in this browser.';}});fullscreen.disabled=!section.requestFullscreen;toolbar.append(fullscreen);
-    function download(content,type,name){const blob=content instanceof Blob?content:new Blob([content],{type}),url=URL.createObjectURL(blob),anchor=make('a');anchor.href=url;anchor.download=model.record.figure_id+'-exploration.'+name;doc.body.append(anchor);anchor.click();anchor.remove();root.setTimeout(()=>URL.revokeObjectURL(url),1000);}
-    function configuration(){return {format:'devbench.figure-exploration/1',figure_id:model.record.figure_id,context:options.context||{},panel_id:panel().panel_id,viewport:view.slice(),visible_categories:panel().color.kind==='categorical'?Array.from(visible):null,category_colors:{...colors},palette:'Okabe-Ito display default; editable',saved_category_colors:{...(panel().color.colors||{})},axis_meanings:{x:panel().x_axis,y:panel().y_axis},point_radius:Number(size.value),point_stroke:'#ffffff',point_stroke_width:1,opacity:Number(opacity.value),observation_ids:Array.from(selection),scope:'Local display only; not a retained presentation revision or recomputation.'};}
+    function download(content,type,name){const blob=content instanceof Blob?content:new Blob([content],{type}),url=URL.createObjectURL(blob),anchor=make('a');anchor.href=url;anchor.download=model.record.figure_id+'-exploration.'+name;(simulation?section:doc.body).append(anchor);anchor.click();anchor.remove();root.setTimeout(()=>URL.revokeObjectURL(url),1000);}
+    function configuration(){return {format:simulation?'devbench.simulated-figure-exploration/1':'devbench.figure-exploration/1',...(simulation?{provenance:JSON.parse(JSON.stringify(model.record.provenance)),population_n:model.ids.length,generation_population_n:model.record.provenance.batch_sizes?.reduce((sum,size)=>sum+size,0)||model.ids.length,rendering:'Canvas raster embedded in SVG'}:{}),figure_id:model.record.figure_id,context:options.context||{},panel_id:panel().panel_id,viewport:view.slice(),visible_categories:panel().color.kind==='categorical'?Array.from(visible):null,category_colors:{...colors},palette:'Okabe-Ito display default; editable',saved_category_colors:{...(panel().color.colors||{})},axis_meanings:{x:panel().x_axis,y:panel().y_axis},point_radius:Number(size.value),point_stroke:simulation?'none':'#ffffff',point_stroke_width:simulation?0:1,opacity:Number(opacity.value),observation_ids:Array.from(selection),scope:simulation?'Synthetic generated data only; no retained analysis, trial or biological findings.':'Local display only; not a retained presentation revision or recomputation.'};}
     function exportLegend(){const color=panel().color;if(color.kind==='categorical')return Array.from(visible).map(category=>({label:category,color:colors[category]}));return Array.from({length:6},(_,i)=>{const value=color.scale.min+(color.scale.max-color.scale.min)*i/5;return {label:format(value),color:continuousColor(value)};});}
-    function svg(){const theme=palette(),entries=exportLegend(),legendHeight=Math.ceil(entries.length/2)*18+30,totalHeight=height+65+legendHeight;const parts=['<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="'+totalHeight+'" viewBox="0 0 '+width+' '+totalHeight+'"><rect width="100%" height="100%" fill="'+escapeXML(theme.paper)+'"/><g font-family="-apple-system, Inter, sans-serif" fill="'+escapeXML(theme.ink)+'"><text x="'+margins.left+'" y="22" font-size="14">'+escapeXML(panel().title)+'</text><text x="'+width/2+'" y="'+(height+8)+'" text-anchor="middle" font-size="11">'+escapeXML(panel().x_axis.label)+'</text><text transform="translate(18 '+height/2+') rotate(-90)" text-anchor="middle" font-size="11">'+escapeXML(panel().y_axis.label)+'</text>'];
+    function simulationSVG(){
+      const theme=palette(),entries=exportLegend(),totalHeight=height+75+Math.ceil(entries.length/2)*18;
+      const parts=['<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="'+totalHeight+'" viewBox="0 0 '+width+' '+totalHeight+'"><title>SIMULATED DATA — '+escapeXML(panel().title)+'</title><rect width="100%" height="100%" fill="'+escapeXML(theme.paper)+'"/><image width="'+width+'" height="'+height+'" href="'+canvas.toDataURL('image/png')+'"/><g font-family="sans-serif" fill="'+escapeXML(theme.ink)+'"><text x="72" y="'+(height+22)+'" font-size="11">SIMULATED DATA · '+screenPoints.length+' viewport points / '+model.ids.length+' generated cells · seed '+model.record.provenance.seed+'</text><text x="72" y="'+(height+42)+'" font-size="11">'+escapeXML(panel().color.label)+'</text>'];
+      entries.forEach((entry,index)=>{const x=72+(index%2)*(width-96)/2,y=height+62+Math.floor(index/2)*18;parts.push('<rect x="'+x+'" y="'+(y-9)+'" width="10" height="10" fill="'+escapeXML(entry.color)+'"/><text x="'+(x+16)+'" y="'+y+'" font-size="10">'+escapeXML(entry.label)+'</text>');});
+      parts.push('</g><metadata>'+escapeXML(JSON.stringify(configuration()))+'</metadata></svg>');return parts.join('');
+    }
+    function svg(){if(simulation)return simulationSVG();const theme=palette(),entries=exportLegend(),legendHeight=Math.ceil(entries.length/2)*18+30,totalHeight=height+65+legendHeight;const parts=['<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="'+totalHeight+'" viewBox="0 0 '+width+' '+totalHeight+'"><rect width="100%" height="100%" fill="'+escapeXML(theme.paper)+'"/><g font-family="-apple-system, Inter, sans-serif" fill="'+escapeXML(theme.ink)+'"><text x="'+margins.left+'" y="22" font-size="14">'+escapeXML(panel().title)+'</text><text x="'+width/2+'" y="'+(height+8)+'" text-anchor="middle" font-size="11">'+escapeXML(panel().x_axis.label)+'</text><text transform="translate(18 '+height/2+') rotate(-90)" text-anchor="middle" font-size="11">'+escapeXML(panel().y_axis.label)+'</text>'];
       const xTicks=niceTicks(view[0],view[1],5),yTicks=niceTicks(view[2],view[3],5);
       for(const value of xTicks){const x=screenX(value);parts.push('<path d="M'+x+' '+margins.top+'V'+(height-margins.bottom)+'" fill="none" stroke="'+escapeXML(theme.grid)+'" stroke-dasharray="3 4"/><text x="'+x+'" y="'+(height-margins.bottom+20)+'" text-anchor="middle" font-size="11">'+escapeXML(formatTick(value,xTicks.step))+'</text>');}
       for(const value of yTicks){const y=screenY(value);parts.push('<path d="M'+margins.left+' '+y+'H'+(width-margins.right)+'" fill="none" stroke="'+escapeXML(theme.grid)+'" stroke-dasharray="3 4"/><text x="'+(margins.left-8)+'" y="'+(y+3)+'" text-anchor="end" font-size="11">'+escapeXML(formatTick(value,yTicks.step))+'</text>');}
@@ -269,14 +319,14 @@
       draw();const entries=exportLegend(),image=doc.createElement('canvas'),legendHeight=Math.ceil(entries.length/2)*18+35;
       image.width=width*2;image.height=(height+100+legendHeight)*2;const ctx=image.getContext('2d'),theme=palette();
       ctx.scale(2,2);ctx.fillStyle=theme.paper;ctx.fillRect(0,0,width,image.height/2);ctx.drawImage(canvas,0,30,width,height);
-      ctx.fillStyle=theme.ink;ctx.font='13px sans-serif';ctx.fillText(panel().title,72,21);ctx.font='10px sans-serif';
-      ctx.fillText('Exploration view · '+screenPoints.length+' viewport points / '+model.ids.length+' analysis cells · no recomputation',72,height+58);
+      ctx.fillStyle=theme.ink;ctx.font='13px sans-serif';ctx.fillText((simulation?'SIMULATED DATA · ':'')+panel().title,72,21);ctx.font='10px sans-serif';
+      ctx.fillText(simulation?'SIMULATED DATA · '+screenPoints.length+' viewport points / '+model.ids.length+' generated cells · seed '+model.record.provenance.seed:'Exploration view · '+screenPoints.length+' viewport points / '+model.ids.length+' analysis cells · no recomputation',72,height+58);
       ctx.fillText(panel().color.label,72,height+78);
       entries.forEach((entry,index)=>{const x=72+(index%2)*(width-96)/2,y=height+94+Math.floor(index/2)*18;
         ctx.fillStyle=entry.color;ctx.fillRect(x,y-9,10,10);ctx.fillStyle=theme.ink;ctx.fillText(entry.label,x+16,y);});
       image.toBlob(blob=>{if(blob)download(blob,'image/png','png');});
     }
-    exportActions.append(button('SVG',()=>{draw();download(svg(),'image/svg+xml','svg');}),button('PNG · 2×',exportPNG),button('Saved table CSV',()=>download(toCSV(panel().rows),'text/csv;charset=utf-8','csv')),button('Selected IDs JSON',()=>download(JSON.stringify(configuration(),null,2),'application/json','json')));
+    exportActions.append(button('SVG',()=>{draw();download(svg(),'image/svg+xml','svg');}),button('PNG · 2×',exportPNG),button(simulation?'Generated table CSV':'Saved table CSV',()=>download(simulation?toSimulationCSV(panel().rows,model.record.provenance):toCSV(panel().rows),'text/csv;charset=utf-8','csv')),button('Selected IDs JSON',()=>download(JSON.stringify(configuration(),null,2),'application/json','json')));
     panelPicker.addEventListener('change',()=>{stopAnimation();panelIndex=Number(panelPicker.value);view=panel().bounds.slice();resetCategories();page=0;renderLegend();render();updateSelection();});
     for(const control of [size,opacity])control.addEventListener('input',render);
     search.addEventListener('input',()=>{page=0;renderTable();});selectedOnly.addEventListener('change',()=>{page=0;renderTable();});tableDetails.addEventListener('toggle',renderTable);
@@ -294,7 +344,7 @@
     const controller={destroy(){disposed=true;stopAnimation();observer?.disconnect();themeObserver?.disconnect();if(frame)root.cancelAnimationFrame(frame);if(hoverFrame)root.cancelAnimationFrame(hoverFrame);hostedTools?.remove();container.replaceChildren();delete container.__scientificFigure;},getSelection:()=>Array.from(selection),getConfiguration:configuration,getPerformance:()=>({last_render_ms:lastRenderMs,viewport_points:screenPoints.length,population_n:model.ids.length,display_sampling:false,device_pixel_ratio:root.devicePixelRatio||1,canvas_width:canvas.width,canvas_height:canvas.height}),exportSVG(){draw();return svg();},reset,redraw:render};
     container.__scientificFigure=controller;resetCategories();renderLegend();updateSelection();render();return controller;
   }
-  const api={mount,prepare,selectPolygon,toCSV,escapeXML,niceTicks,formatTick,displayCategoryColors,interpolateViewport,limits:{population:MAX_POINTS,panel_rows:MAX_PANEL_ROWS},version:'1.1.0'};
+  const api={mount,prepare,mountSimulation,prepareSimulation,toSimulationCSV,selectPolygon,toCSV,escapeXML,niceTicks,formatTick,displayCategoryColors,interpolateViewport,limits:{population:MAX_POINTS,panel_rows:MAX_PANEL_ROWS},version:'1.2.0'};
   root.ScientificFigure=api;
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

@@ -1,0 +1,86 @@
+{
+  "passed": true,
+  "actual_workbench_container": "#interactive-figure",
+  "actual_renderer": "ScientificFigure.mountSimulation",
+  "generated_cells": 287463,
+  "batch_sizes": [
+    94817,
+    101206,
+    91440
+  ],
+  "projects": [
+    {
+      "id": "airway",
+      "total": 287463,
+      "batches": [
+        94817,
+        101206,
+        91440
+      ],
+      "seed": 20261029
+    },
+    {
+      "id": "repair",
+      "total": 220676,
+      "batches": [
+        71283,
+        83519,
+        65874
+      ],
+      "seed": 104729
+    },
+    {
+      "id": "immune",
+      "total": 260665,
+      "batches": [
+        88342,
+        79615,
+        92708
+      ],
+      "seed": 130363
+    },
+    {
+      "id": "vascular",
+      "total": 180276,
+      "batches": [
+        56843,
+        64127,
+        59306
+      ],
+      "seed": 155921
+    },
+    {
+      "id": "stromal",
+      "total": 293508,
+      "batches": [
+        106318,
+        87429,
+        99761
+      ],
+      "seed": 196613
+    },
+    {
+      "id": "cycle",
+      "total": 145756,
+      "batches": [
+        43719,
+        52864,
+        49173
+      ],
+      "seed": 262147
+    }
+  ],
+  "viewport_points": 287463,
+  "filtered_points": 101206,
+  "point_draws": 287463,
+  "open_ms": 976,
+  "last_render_ms": 77,
+  "native_svg_and_png_downloads": true,
+  "original_state_restored": true,
+  "blocked_connected_race": true,
+  "blocked_token_and_prior_attempt": true,
+  "no_horizontal_overflow_390px": true,
+  "network_requests": 0,
+  "page_errors": [],
+  "scope": "Offline synthetic presentation; no live trial or scientific approval"
+}

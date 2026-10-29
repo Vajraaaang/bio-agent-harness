@@ -40,6 +40,8 @@ def allowed_bundle_path(name):
                 "devbench/analysis/assets/workbench-projects.js",
                 "devbench/analysis/assets/workbench-synthetic.js",
                 "devbench/analysis/assets/workbench-synthetic.css",
+                "devbench/analysis/assets/workbench-demo.js",
+                "devbench/analysis/assets/workbench-demo.css",
                 "devbench/analysis/assets/scientific-figure.js"}:
         return True
     if name in {

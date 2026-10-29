@@ -1,3 +1,13 @@
+# Current workbench simulation and plot gallery — October 29, 2026
+
+The current interface includes six explicitly synthetic projects with distinct seeds and unequal populations, five plot views, computed conversation summaries and native figure exports. The homepage now focuses on this interface and its code. The standalone atlas marketing block is removed.
+
+The final copied publication source passed 144 focused tests. Browser verification covered all six projects, exact generated counts, state isolation, actual SVG/PNG downloads and mobile layout. Eighteen native PNG plots were exported and visually inspected. Fresh controlled continuous/count synthetic checks completed with identical repeats, valid audits and configured R references; zero model calls occurred. These are software/presentation checks, not scientific or clinical qualification. Full-suite hosted CI is not confirmed green.
+
+The [current report](reports/workbench-integrated-simulation-20261029/README.md) retains validation scope and earlier failures, including the corrected native-download event-guard bug. The retained figure contract stays separate from generated simulation data. No live trial was performed.
+
+---
+
 # Research development snapshot — October 29, 2026
 
 This branch updates the local workbench application, core/server changes, public documentation, and associated test/script source. It includes project-scoped chats and source sets, the bounded local RNA analyst, workflow evaluation/replay, and a synthetic visual atlas. This is a source update with focused software verification, not a qualified release.

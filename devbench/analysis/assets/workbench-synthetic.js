@@ -6,14 +6,15 @@
   const batchColors = ['#71d9d1', '#b5a1fc', '#f6b77e'];
   const modules = ['Immune', 'Antigen', 'Myeloid', 'Matrix', 'Vascular', 'Cycle', 'Stress', 'Ribosome'];
   const seed = 20261029;
-  function generate(value) {
+  function generate(value, batchSizes=[100000,100000,100000]) {
+    if(!Array.isArray(batchSizes)||batchSizes.length!==3||batchSizes.some(n=>!Number.isSafeInteger(n)||n<1)||batchSizes.reduce((a,b)=>a+b,0)>300000)throw Error('Use three positive batch sizes totaling at most 300000 generated cells.');
     let state = value >>> 0;
     const random = () => { state = (Math.imul(1664525, state) + 1013904223) >>> 0; return (state + 1) / 4294967297; };
     const normal = () => Math.sqrt(-2 * Math.log(random())) * Math.cos(2 * Math.PI * random());
     const centers = [[-3.8,1.7],[-1.3,3.3],[2.6,2.2],[3.9,-1.9],[.3,-3],[-3.4,-2.5]];
     const cells = [];
     for (let batch = 0; batch < 3; batch++) {
-      for (let i = 0; i < 100000; i++) {
+      for (let i = 0; i < batchSizes[batch]; i++) {
         const mixture = [[.34,.54,.72,.84,.94,1],[.24,.43,.68,.83,.92,1],[.15,.42,.62,.74,.88,1]][batch];
         const pick=random(), group=mixture.findIndex(cutoff=>pick<cutoff);
         const a = normal(), b = normal(), center = centers[group];
@@ -26,9 +27,9 @@
           expression: modules.map((_,m) => Math.max(0, Math.min(5, (m === group ? 3.4 : .45) + (m > 5 ? .8 + batch * .2 : 0) + normal() * .55)))});
       }
     }
-    return {provenance: {kind:'synthetic', seed:value, live_trials:0, biological_observations:0,
+    return {provenance: {kind:'synthetic', seed:value, live_trials:0, biological_observations:0, batch_sizes:batchSizes.slice(),
       coordinate_method:'generated latent coordinates; not computed UMAP',
-      interpretation:'Illustrative cell-like groups and atlas batches · 100k each; no biological or clinical evidence.'}, cells};
+      interpretation:'Illustrative cell-like groups and three generated batches; no biological or clinical evidence.'}, cells};
   }
   const select = (cells, batch) => batch === 'all' ? cells.slice() : cells.filter(cell => cell.batch === Number(batch));
   function composition(cells) {
