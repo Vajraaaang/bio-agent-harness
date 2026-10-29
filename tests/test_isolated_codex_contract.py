@@ -6,8 +6,7 @@ import tomllib
 
 import pytest
 
-spec = importlib.util.spec_from_file_location('owned_contract', Path(
-    '/Users/vajraang/Documents/ChatGPT/bio-agent-harness/scripts/verify_isolated_codex_contract.py'))
+spec = importlib.util.spec_from_file_location('owned_contract', (Path(__file__).resolve().parents[1] / 'scripts/verify_isolated_codex_contract.py'))
 api = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api)
 

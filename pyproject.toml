@@ -42,7 +42,7 @@ workflow = [
   "langchain-core==1.6.6",
   "langgraph-checkpoint-sqlite==3.1.1",
 ]
-dev = ["pytest>=8,<10"]
+dev = ["pytest>=8,<10", "tinycss2>=1.4,<2"]
 reporting = ["matplotlib>=3.8,<4"]
 analysis = [
   "anndata>=0.12,<0.13",

@@ -8,34 +8,33 @@ A local research workspace for transcriptomics: inspect data, compare scientific
 
 ## The research workbench
 
+### Latest implementation · October 28 project and chat workspace
+
+The current application uses **Project → Data + Chats**. Each project owns its input files, chats, drafts, attachments, plans, runs and results. The compact conversation sits beside a scientific Workbench for figures, notebook code, evidence and display settings.
+
+![October 28 RNA Workbench with project navigation, compact analysis card and scientific figure canvas](reports/github-update-20261029/images/latest-workbench.png)
+
+This is the actual October 28 interface, captured with a clearly identified synthetic 80-cell/60-gene fixture. It shows the five-section **Analysis overview** card, retained history, dataset attachment, source-bound UMAP figure and unsent draft. The screenshot is retained UI evidence; it is not a new live trial. The current source retains this implementation and adds the synthetic atlas entry point described below. The [source comparison](reports/github-update-20261029/latest-workbench-source.json) confirms the current theme, conversation, projects, investigations, artifact and figure modules match that implementation; the HTML/server composition changes add only the atlas.
+
+- **Projects and data:** create and switch local projects with separate drafts and attachments; attach an ordered set of up to eight datasets to a chat.
+- **Chat and workflow:** Data, Question, Methods, Results and Conclusion share an expandable analysis card. Review and execution remain separate actions; missing scientific requirements remain visible.
+- **Workspace:** independently resize or collapse navigation, chat and Workbench panes; inspect figures, saved notebook code and exact evidence beside the conversation.
+- **History and recovery:** retain failed, interrupted and completed attempts with their source/chat attribution. Earlier source epochs remain available through read-only compatibility readers.
+- **Figures:** exact saved point identities support hover, box/lasso selection, source-bound follow-ups and export. Display revisions preserve scientific coordinates and provenance.
+
+![Latest RNA Workbench project with two synthetic datasets attached to one chat](reports/github-update-20261029/images/latest-multi-dataset.png)
+
+The second retained capture shows two generated datasets attached to one project chat. Multi-source planning binds every input; it does not establish compatibility, independent replication or a completed joint numerical analysis. See the [project and source-set contract](docs/workbench-redesign/projects-and-source-sets.md), [UI operating guide](docs/workbench-ui.md), and [current publication evidence](reports/github-update-20261029/README.md).
+
 ### Synthetic atlas · 300,000 generated points
 
-The **Synthetic atlas** button opens a browser-only visual explorer with 300,000 generated cell-like records across three technical batches. Both scatter panels draw every selected point on Canvas without downsampling. Batch filters and color controls connect the cell landscape, library complexity, module signatures, batch distributions, and composition panels.
+The **Synthetic atlas** button in this workbench opens a browser-only visual explorer with 300,000 generated cell-like records across three batches. Both scatter panels draw every selected point on Canvas without downsampling. Batch filters and color controls connect the cell landscape, library complexity, module signatures, batch distributions and composition panels.
 
 ![Synthetic atlas showing 300,000 generated points across three batches](reports/github-update-20261029/images/synthetic-atlas.png)
 
-The records, group labels, and latent coordinates are generated from a fixed seed. They are not observations from a biological study or a fitted UMAP. The atlas creates no analysis records or trial evidence. SVG exports retain the synthetic label and provenance and embed the Canvas raster. See the [atlas guide](docs/synthetic-atlas.md) and [publication verification](reports/github-update-20261029/README.md).
+The records, group labels and latent coordinates are generated from a fixed seed. They are not biological observations or a fitted UMAP. The atlas creates no analysis records or trial evidence. SVG exports retain the synthetic label and provenance and embed the Canvas raster. See the [atlas guide](docs/synthetic-atlas.md).
 
-### Application workflow and historical captures
-
-The browser interface brings inputs, analyses, runs, figures, scientific review, and exports into one local project. It uses the existing controllers and evidence stores rather than introducing a separate analysis engine.
-
-![Historical October 7 local workbench overview using a small synthetic demonstration](reports/github-homepage-20261007/images/workbench-overview.jpg)
-
-![Historical October 7 synthetic run in the workbench results and figure view](reports/github-homepage-20261007/images/workbench-results.jpg)
-
-These are captures of the actual local application from the [October 7 demonstration](reports/github-homepage-20261007/README.md), using assistant-generated synthetic counts and an operator-recorded plan. They show the October 7 UI, before the current project/chat redesign; no live model session or independent biological review was performed.
-
-- **Overview and navigation:** Inputs, Analyses & plans, Runs, Results, and Files & exports, with search and recorded activity.
-- **Scientific objects:** a Study groups exact DatasetVersion, AnalysisVersion, Run, and ResultVersion references. Changed data, scientific metadata, code, or parameters creates a new relevant version; an unchanged rerun retains the analysis version and creates a new Run.
-- **Planning:** formulate a question, retain declarations and unknowns, propose scientific candidates, resolve available implementations, and design comparable trials.
-- **Execution and review:** inspect the plan, grant a bounded run, inspect outputs and validation observations, then accept or reject an exact interpretation with a rationale. Successful execution does not automatically accept a result.
-- **Figures:** verified QC-scatter and UMAP artifacts expose their plotting data, population, parameters, source identities, and receipts. Presentation revisions change permitted display settings while preserving scientific data and meaning.
-- **Recovery:** exact references, revision checks, retained backups, idempotent requests, and explicit reconciliation preserve failed and interrupted attempts. Reloading the view restores navigation and drafts; it does not restore execution grants.
-
-The Analyst panel shows recorded operator/workflow events. Recorded fixture decisions remain visibly labeled; they are not presented as live model messages. The current workbench supports local project-scoped chats, drafts, attachments, and multi-dataset source sets; see the [project and source-set contract](docs/workbench-redesign/projects-and-source-sets.md). Remote/HPC execution and broader governance remain separately qualified work; the native route supports bounded backed H5AD execution.
-
-Read the [UI operating guide](docs/workbench-ui.md), [shared scientific workspace](docs/shared-scientific-workspace.md), and [research organization contract](docs/research-workspace-organization.md).
+The [October 7 homepage demonstration](reports/github-homepage-20261007/README.md) is retained as historical evidence for the older interface. It is not the current workbench design. Successful software execution and synthetic visualizations do not establish scientific method superiority, biological validity or clinical readiness.
 
 ## The five-step scientific workflow
 

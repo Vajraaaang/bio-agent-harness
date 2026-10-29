@@ -4,8 +4,7 @@ from pathlib import Path
 
 import pytest
 
-SPEC = importlib.util.spec_from_file_location('owned_protocol', Path(
-    '/Users/vajraang/Documents/ChatGPT/bio-agent-harness/scripts/verify_isolated_codex_protocol.py'))
+SPEC = importlib.util.spec_from_file_location('owned_protocol', (Path(__file__).resolve().parents[1] / 'scripts/verify_isolated_codex_protocol.py'))
 api = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(api)
 

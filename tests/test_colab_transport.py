@@ -11,7 +11,7 @@ import zipfile
 
 import pytest
 
-ROOT = Path('/Users/vajraang/Documents/ChatGPT/bio-agent-harness')
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load(name, path):

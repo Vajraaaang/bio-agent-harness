@@ -1,0 +1,88 @@
+{
+  "scope": "Current October 28 project/chat workbench plus later synthetic atlas and publication-only portability corrections.",
+  "focused_workbench_tests": {
+    "modules": [
+      "test_rna_input_sets.py",
+      "test_rna_scrna_input_contract.py",
+      "test_scientific_figure_redesign.py",
+      "test_workbench_chat_labels.py",
+      "test_workbench_chat_list_collapse.py",
+      "test_workbench_conversation_redesign.py",
+      "test_workbench_disclosure_bounds.py",
+      "test_workbench_dropdown_motion.py",
+      "test_workbench_inputs.py",
+      "test_workbench_investigation_asset.py",
+      "test_workbench_investigations.py",
+      "test_workbench_legacy_history_visibility.py",
+      "test_workbench_legacy_proxy.py",
+      "test_workbench_model_first_chat.py",
+      "test_workbench_multi_dataset_asset.py",
+      "test_workbench_navigation_visibility.py",
+      "test_workbench_organization_audit_asset.py",
+      "test_workbench_panel_collapse.py",
+      "test_workbench_panel_toggle_appearance.py",
+      "test_workbench_presentation_disclosure.py",
+      "test_workbench_project_bootstrap.py",
+      "test_workbench_project_details_copy.py",
+      "test_workbench_project_drafts.py",
+      "test_workbench_project_http.py",
+      "test_workbench_project_scope.py",
+      "test_workbench_project_structure.py",
+      "test_workbench_projects.py",
+      "test_workbench_projects_asset.py",
+      "test_workbench_redesign.py",
+      "test_workbench_rounded_chat.py",
+      "test_workbench_synthetic_gallery.py",
+      "test_workbench_ui.py",
+      "test_workbench_ui_agent_asset.py",
+      "test_workbench_ui_organization_asset.py",
+      "test_workbench_ui_packaging.py",
+      "test_workbench_ui_workspace_asset.py",
+      "test_workbench_visual_polish.py",
+      "test_workbench_workflow_accordion.py"
+    ],
+    "passed": 448,
+    "failed": 0,
+    "errors": 0,
+    "warnings": 1,
+    "seconds": 139.42,
+    "warning_scope": "Intentional duplicate observation identifiers in input-profile fixture."
+  },
+  "collection": {
+    "collected": 11344,
+    "errors": 0,
+    "optional_scvi_skip": 1,
+    "seconds": 20.94,
+    "scope": "Collection only, not 11344 successful test executions."
+  },
+  "css_tests": {
+    "passed": 2,
+    "seconds": 0.1
+  },
+  "lock_check": {
+    "passed": true,
+    "packages": 238,
+    "dependency_version_upgrades": 0
+  },
+  "controlled_synthetic": {
+    "synthetic_only": true,
+    "model_service_calls": 0,
+    "seconds": 32.40678929100022,
+    "cases": {
+      "continuous": {
+        "status": "analysis_complete_pending_review",
+        "audit_valid": true,
+        "repeat_equal": true,
+        "r_reference_status": "completed"
+      },
+      "counts": {
+        "status": "analysis_complete_pending_review",
+        "audit_valid": true,
+        "repeat_equal": true,
+        "r_reference_status": "completed"
+      }
+    }
+  },
+  "whole_repository_test_execution": "not_run",
+  "scientific_or_clinical_qualification": "not_established"
+}

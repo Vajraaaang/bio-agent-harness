@@ -3,8 +3,7 @@ import ast
 import importlib.util
 from pathlib import Path
 
-spec = importlib.util.spec_from_file_location('provider_trace', Path(
-    '/Users/vajraang/Documents/ChatGPT/bio-agent-harness/scripts/verify_isolated_codex_provider_trace.py'))
+spec = importlib.util.spec_from_file_location('provider_trace', (Path(__file__).resolve().parents[1] / 'scripts/verify_isolated_codex_provider_trace.py'))
 api = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api)
 
@@ -26,8 +25,7 @@ def test_projection_bounds_paths_and_handles_bad_urls():
 
 
 def test_trace_preserves_command_fixtures_execute_and_bounds():
-    old = ast.parse(Path(
-        '/Users/vajraang/Documents/ChatGPT/bio-agent-harness/scripts/verify_isolated_codex_provider.py').read_text())
+    old = ast.parse((Path(__file__).resolve().parents[1] / 'scripts/verify_isolated_codex_provider.py').read_text())
     new = ast.parse(Path(api.__file__).read_text())
     for name in ('command', 'execute', 'cleanup_process', 'fixture_events', 'forged_events', 'synthetic_auth_json'):
         old_node = next(node for node in old.body if isinstance(node, ast.FunctionDef) and node.name == name)

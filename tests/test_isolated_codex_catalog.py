@@ -5,14 +5,13 @@ from pathlib import Path
 
 import pytest
 
-spec = importlib.util.spec_from_file_location('catalog_contract', Path(
-    '/Users/vajraang/Documents/ChatGPT/bio-agent-harness/scripts/verify_isolated_codex_catalog.py'))
+spec = importlib.util.spec_from_file_location('catalog_contract', (Path(__file__).resolve().parents[1] / 'scripts/verify_isolated_codex_catalog.py'))
 api = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api)
 
 
 def test_catalog_semantics_are_exact_official_source():
-    reference = Path('/Users/vajraang/Documents/ChatGPT/bio-agent-harness/reports/rna-native-gate1/2026-10-21-v2/client/public-models-0.147.0.json')
+    reference = (Path(__file__).resolve().parents[1] / 'reports/rna-native-gate1/2026-10-21-v2/client/public-models-0.147.0.json')
     assert json.loads(api.CATALOG_JSON) == json.loads(reference.read_bytes())
     assert len(json.loads(api.CATALOG_JSON)['models']) == 8
     assert all(row['slug'] != 'gpt-6.1-sol' for row in json.loads(api.CATALOG_JSON)['models'])

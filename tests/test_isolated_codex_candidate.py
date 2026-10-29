@@ -9,7 +9,7 @@ import re
 
 import pytest
 
-ROOT = Path('/Users/vajraang/Documents/ChatGPT/bio-agent-harness')
+ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('candidate_contract',
     ROOT / 'scripts/verify_isolated_codex_candidate.py')
 api = importlib.util.module_from_spec(spec)

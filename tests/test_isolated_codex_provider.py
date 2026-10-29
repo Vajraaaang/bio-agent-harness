@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-spec = importlib.util.spec_from_file_location('provider_contract', Path(
-    '/Users/vajraang/Documents/ChatGPT/bio-agent-harness/scripts/verify_isolated_codex_provider.py'))
+spec = importlib.util.spec_from_file_location('provider_contract', (Path(__file__).resolve().parents[1] / 'scripts/verify_isolated_codex_provider.py'))
 api = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api)
 
@@ -75,5 +74,4 @@ def test_fixture_contract_preserves_live_gates_and_pinned_catalog():
     assert "'signedin_authentication_qualified': False" in source
     assert "'native_admission_qualified': False" in source
     assert "len(upgrades) == 2" in source
-    assert json.loads(api.CATALOG_JSON) == json.loads(Path(
-        '/Users/vajraang/Documents/ChatGPT/bio-agent-harness/reports/rna-native-gate1/2026-10-21-v2/client/public-models-0.147.0.json').read_text())
+    assert json.loads(api.CATALOG_JSON) == json.loads((Path(__file__).resolve().parents[1] / 'reports/rna-native-gate1/2026-10-21-v2/client/public-models-0.147.0.json').read_text())

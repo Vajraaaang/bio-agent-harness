@@ -1,0 +1,9 @@
+#!/bin/bash
+set -euo pipefail
+export JAVA_HOME=/opt/community/lib/jvm
+export PATH=/opt/community/bin:/usr/local/bin:/usr/bin:/bin
+export CAPSULE_CACHE_DIR=/opt/nextflow/capsule
+export NXF_PLUGINS_DIR=/opt/nextflow/plugins
+export NXF_OFFLINE=true
+export NXF_DISABLE_CHECK_LATEST=true
+exec /opt/nextflow/nextflow-25.10.4-dist "$@"

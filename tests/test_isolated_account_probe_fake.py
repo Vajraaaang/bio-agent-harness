@@ -3,7 +3,7 @@ import hashlib
 import importlib.util
 from pathlib import Path
 
-ROOT = Path('/Users/vajraang/Documents/ChatGPT/bio-agent-harness')
+ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('isolated_account_fake', ROOT / 'scripts/verify_isolated_account_probe_fake.py')
 api = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api)

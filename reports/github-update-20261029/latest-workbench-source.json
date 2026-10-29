@@ -1,0 +1,82 @@
+{
+  "scope": "Current published candidate identity compared with October 28 project/chat implementation; synthetic atlas wiring is a later addition.",
+  "files": [
+    {
+      "path": "devbench/analysis/assets/workbench-ui.html",
+      "current_sha256": "09b5fa5170b1fa530d0adde0737d01909ca82941a9526c70a7a15b6ae1e6a955",
+      "publication_matches_current": true,
+      "october28_sha256": "e02e4d9e5ae64b98cdebdce2c796623b1f2e0385926eadd9934f31f66f8b8a58",
+      "matches_october28": false
+    },
+    {
+      "path": "devbench/analysis/assets/workbench-theme.css",
+      "current_sha256": "799b791b0ce7f316775863a2f7df747abc214b8f3118b958ee45716049115a2c",
+      "publication_matches_current": true,
+      "october28_sha256": "799b791b0ce7f316775863a2f7df747abc214b8f3118b958ee45716049115a2c",
+      "matches_october28": true
+    },
+    {
+      "path": "devbench/analysis/assets/workbench-conversation.js",
+      "current_sha256": "1793e59ad9bb73b41fe906eadf06d86865d2add1ac9e6af95a86a717a9ee062d",
+      "publication_matches_current": true,
+      "october28_sha256": "1793e59ad9bb73b41fe906eadf06d86865d2add1ac9e6af95a86a717a9ee062d",
+      "matches_october28": true
+    },
+    {
+      "path": "devbench/analysis/assets/workbench-projects.js",
+      "current_sha256": "b006d2602b47b2f6a39600e3715415f6a5f3247fa43c792aaa5cd2db94f08304",
+      "publication_matches_current": true,
+      "october28_sha256": "b006d2602b47b2f6a39600e3715415f6a5f3247fa43c792aaa5cd2db94f08304",
+      "matches_october28": true
+    },
+    {
+      "path": "devbench/analysis/assets/workbench-investigations.js",
+      "current_sha256": "388182444da52e39e401e951febeecb7c1a6bca4fadc2da1a1539fc75d89ac6b",
+      "publication_matches_current": true,
+      "october28_sha256": "388182444da52e39e401e951febeecb7c1a6bca4fadc2da1a1539fc75d89ac6b",
+      "matches_october28": true
+    },
+    {
+      "path": "devbench/analysis/assets/workbench-artifacts.js",
+      "current_sha256": "c2510652085f5bcf002d2d033a92393903a0ff122c0e764f1c37be3fa70fe88c",
+      "publication_matches_current": true,
+      "october28_sha256": "c2510652085f5bcf002d2d033a92393903a0ff122c0e764f1c37be3fa70fe88c",
+      "matches_october28": true
+    },
+    {
+      "path": "devbench/analysis/assets/scientific-figure.js",
+      "current_sha256": "ceb1fd0b5ebebbb858d43d3031fd3f694ea8901016b82c21196f101184885d2c",
+      "publication_matches_current": true,
+      "october28_sha256": "ceb1fd0b5ebebbb858d43d3031fd3f694ea8901016b82c21196f101184885d2c",
+      "matches_october28": true
+    },
+    {
+      "path": "devbench/analysis/workbench_ui.py",
+      "current_sha256": "ca84ec01c5e9cc9b4f7b6f5ca6c0427dfb1867c4e8c6ae1e834b17e85429038f",
+      "publication_matches_current": true,
+      "october28_sha256": "3b22b3cdeda147e82a881041efc115ce45419787d01efaafa2f3c2bbc006cb24",
+      "matches_october28": false
+    },
+    {
+      "path": "devbench/analysis/workbench_projects.py",
+      "current_sha256": "72211d31f12b90e1fb3deeb7b9122b8dbb688b912ee16ad50d3268b3393a811e",
+      "publication_matches_current": true,
+      "october28_sha256": "72211d31f12b90e1fb3deeb7b9122b8dbb688b912ee16ad50d3268b3393a811e",
+      "matches_october28": true
+    },
+    {
+      "path": "devbench/analysis/workbench_inputs.py",
+      "current_sha256": "e4139501b09dbcb49dbcca33eadb49d5dfbbecb179d6a51320eaa2eaf8f86c55",
+      "publication_matches_current": true,
+      "october28_sha256": "e4139501b09dbcb49dbcca33eadb49d5dfbbecb179d6a51320eaa2eaf8f86c55",
+      "matches_october28": true
+    },
+    {
+      "path": "devbench/analysis/workbench_investigations.py",
+      "current_sha256": "d732a9e07a9341ad99f89f4a775d63cdd54bbc4abd80c0e5a9b92373b75cf8ad",
+      "publication_matches_current": true,
+      "october28_sha256": "d732a9e07a9341ad99f89f4a775d63cdd54bbc4abd80c0e5a9b92373b75cf8ad",
+      "matches_october28": true
+    }
+  ]
+}

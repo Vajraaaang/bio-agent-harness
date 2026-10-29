@@ -4,8 +4,7 @@ from pathlib import Path
 
 import pytest
 
-spec = importlib.util.spec_from_file_location('closed_home', Path(
-    '/Users/vajraang/Documents/ChatGPT/bio-agent-harness/scripts/verify_isolated_codex_closed_home.py'))
+spec = importlib.util.spec_from_file_location('closed_home', (Path(__file__).resolve().parents[1] / 'scripts/verify_isolated_codex_closed_home.py'))
 api = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api)
 

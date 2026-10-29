@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-ROOT = Path('/Users/vajraang/Documents/ChatGPT/bio-agent-harness')
+ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('account_plan_probe', ROOT / 'scripts/gate1_account_read_probe.py')
 api = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api)

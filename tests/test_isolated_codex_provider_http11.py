@@ -5,8 +5,7 @@ import importlib.util
 from io import BytesIO
 from pathlib import Path
 
-spec = importlib.util.spec_from_file_location('provider_http11', Path(
-    '/Users/vajraang/Documents/ChatGPT/bio-agent-harness/scripts/verify_isolated_codex_provider_http11.py'))
+spec = importlib.util.spec_from_file_location('provider_http11', (Path(__file__).resolve().parents[1] / 'scripts/verify_isolated_codex_provider_http11.py'))
 api = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api)
 
@@ -44,8 +43,7 @@ def test_actual_nested_handler_uses_validated_version():
 
 
 def test_http11_fix_preserves_trace_command_events_and_twenty_second_bound():
-    old = ast.parse(Path(
-        '/Users/vajraang/Documents/ChatGPT/bio-agent-harness/scripts/verify_isolated_codex_provider_trace.py').read_text())
+    old = ast.parse((Path(__file__).resolve().parents[1] / 'scripts/verify_isolated_codex_provider_trace.py').read_text())
     new = ast.parse(Path(api.__file__).read_text())
     for name in ('command', 'execute', 'cleanup_process', 'fixture_events', 'forged_events',
         'synthetic_auth_json', 'request_projection'):

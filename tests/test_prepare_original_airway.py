@@ -7,7 +7,7 @@ import tarfile
 import pytest
 
 
-SCRIPT = Path('/Users/vajraang/Documents/ChatGPT/bio-agent-harness/scripts/prepare_original_airway.py')
+SCRIPT = (Path(__file__).resolve().parents[1] / 'scripts/prepare_original_airway.py')
 spec = importlib.util.spec_from_file_location('prepare_original_airway', SCRIPT)
 subject = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(subject)
