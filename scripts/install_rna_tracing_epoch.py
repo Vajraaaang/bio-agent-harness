@@ -51,7 +51,7 @@ def main():
     if len(matches) != 1:
         raise ValueError('Exactly one project wheel required')
     wheel = matches[0]
-    command = ['/opt/homebrew/bin/uv', '--cache-dir', str(cache), 'pip', 'install',
+    command = ['/opt/homebrew/bin/uv', '--offline', '--cache-dir', str(cache), 'pip', 'install',
         '--python', str(runtime / 'bin/python'), '--no-deps', '--reinstall', str(wheel)]
     result = subprocess.run(command, capture_output=True, text=True)
     evidence['commands'].append({'argv': command, 'exit_code': result.returncode,

@@ -201,6 +201,21 @@ def test_wrong_packet_cannot_reuse_a_review(workspace):
             packet_root=second["root_hash"], allow_evidence_read=True)
 
 
+def test_trial_and_comparison_report_subjects_require_the_exact_retained_kind(tmp_path):
+    from tests.test_rna_publication_report import api as report_api, evidence, subject
+    module = report_api()
+    value = subject(tmp_path); value["kind"] = "trial"
+    report = module.build_assessment_report(value, evidence(tmp_path), workspace=tmp_path)
+    sealed = module.render_assessment_report(report, tmp_path / "report", allow_evidence_read=True, workspace=tmp_path)
+    prepare = api()[0]
+    receipt = prepare(tmp_path / "trial-packet", subject_kind="trial", subject_path=sealed["manifest_path"],
+        expected_root=sealed["root_hash"], research=research(), allow_evidence_read=True)
+    assert api()[2](receipt["manifest_path"], receipt["root_hash"], allow_evidence_read=True)["valid"]
+    with pytest.raises(ValueError, match="kind"):
+        prepare(tmp_path / "wrong-kind", subject_kind="comparison", subject_path=sealed["manifest_path"],
+            expected_root=sealed["root_hash"], research=research(), allow_evidence_read=True)
+
+
 def test_captured_subject_bytes_must_match_verified_hashes(workspace, monkeypatch):
     from devbench.analysis import scientific_review as module
     path = workspace / "record.json"; path.write_text('{"valid":true}')

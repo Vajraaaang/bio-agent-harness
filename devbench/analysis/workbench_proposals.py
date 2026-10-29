@@ -46,7 +46,7 @@ def _configuration(question, parameters, declarations, timeout):
         raise ValueError("Reviewed workbench deadline must be positive and no more than 3600 seconds")
     eligible = (declarations["assay"] == "scrna" and declarations["measurement"] == "umi_counts"
                 and declarations["capture_units_confirmed"]
-                and declarations["capture_unit_key"] == parameters["batch_key"])
+                and declarations["capture_unit_key"] == parameters.get("capture_key", parameters["batch_key"]))
     return {"question": question, "parameters": parameters, "declarations": declarations,
             "run_timeout_seconds": timeout}, eligible
 

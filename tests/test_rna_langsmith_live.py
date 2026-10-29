@@ -66,6 +66,77 @@ def test_session_is_closed_expiring_and_no_clinical_scope(tmp_path):
             validate_live_session({**value, key: bad})
 
 
+def historical_readback_fixture(tmp_path):
+    from copy import deepcopy
+    from tests.test_rna_hosted_workflow_contract import make_readback_scope
+    scope = make_readback_scope(tmp_path, count=9)
+    with open(scope["history"]["operations"]["path"], encoding="utf-8") as stream:
+        operations = [json.loads(line) for line in stream]
+    starts = {item["payload"]["id"]: deepcopy(item["payload"]) for item in operations if item["operation"]["operation"] == "start"}
+    latest = {item["payload"]["id"]: deepcopy(item) for item in operations}
+    return scope, operations, starts, latest
+
+
+def test_historical_context_structural_validation_preserves_expiry_flags_and_live_rejection(tmp_path):
+    from copy import deepcopy
+    from devbench.study import rna_langsmith_live as live
+    validate = getattr(live, "validate_historical_context_session", None)
+    assert callable(validate), "Pure historical /5 structural validation is absent"
+    scope, operations, _, _ = historical_readback_fixture(tmp_path)
+    original = deepcopy(scope["session"])
+    assert validate(original) == original == scope["session"]
+    assert validate({**original, "authorize_upload": False})["authorize_upload"] is False
+    with pytest.raises(ValueError, match="expired"):
+        live.validate_live_session(original)
+    with pytest.raises(PermissionError):
+        live.validate_live_session({**original, "authorize_upload": False})
+    bindings = getattr(live, "validate_historical_context_run_bindings", None)
+    assert callable(bindings), "Pure historical context operation validation is absent"
+    for item in operations:
+        assert bindings(item["payload"], item["operation"], original) == item["payload"]
+    assert original == scope["session"]
+
+
+@pytest.mark.parametrize("mutation", ["version", "extra", "expiry", "upload_type", "topology", "events", "dispatch", "scope", "span_limit"])
+def test_historical_context_validation_rejects_malformed_archive_without_current_authority(tmp_path, mutation):
+    from copy import deepcopy
+    from devbench.study import rna_langsmith_live as live
+    validate = getattr(live, "validate_historical_context_session", None)
+    assert callable(validate), "Pure historical /5 structural validation is absent"
+    scope, _, _, _ = historical_readback_fixture(tmp_path)
+    candidate = deepcopy(scope["session"])
+    if mutation == "version": candidate["format"] = "devbench.rna-live-trace-session/3"
+    elif mutation == "extra": candidate["raw_prompt"] = "PRIVATE_HISTORICAL_CANARY"
+    elif mutation == "expiry": candidate["expires_at"] = "unknown"
+    elif mutation == "upload_type": candidate["authorize_upload"] = 1
+    elif mutation == "topology": candidate["span_topology"][1]["parent_span_id"] = None
+    elif mutation == "events": candidate["context_profile"]["source_event_count"] += 1
+    elif mutation == "dispatch": candidate["context_profile"]["dispatch_event_count"] = 0
+    elif mutation == "scope": candidate["data_scope"] = "clinical"
+    else: candidate["max_spans"] = 17
+    with pytest.raises(ValueError) as caught: validate(candidate)
+    assert "PRIVATE_HISTORICAL_CANARY" not in str(caught.value)
+
+
+@pytest.mark.parametrize("mutation", ["payload", "proof", "policy", "source", "revision", "identity", "terminal"])
+def test_historical_context_operation_validator_keeps_exact_original_payload_proof_and_profile(tmp_path, mutation):
+    from copy import deepcopy
+    from devbench.study import rna_langsmith_live as live
+    validate = getattr(live, "validate_historical_context_run_bindings", None)
+    assert callable(validate), "Pure historical context operation validation is absent"
+    scope, operations, _, _ = historical_readback_fixture(tmp_path)
+    item = deepcopy(operations[-1])
+    if mutation == "payload": item["payload"]["inputs"] = {"raw": "PRIVATE_HISTORICAL_CANARY"}
+    elif mutation == "proof": item["payload"]["extra"]["metadata"]["remote_proof"]["operation_id"] = str(uuid4())
+    elif mutation == "policy": item["operation"]["redaction_policy_digest"] = "0" * 64
+    elif mutation == "source": item["payload"]["extra"]["metadata"]["source_digest"] = "0" * 64
+    elif mutation == "revision": item["operation"]["revision"] = True
+    elif mutation == "identity": item["operation"]["span_id"] = str(uuid4())
+    else: item["payload"]["extra"]["metadata"]["source_status"] = "completed"
+    with pytest.raises(ValueError) as caught: validate(item["payload"], item["operation"], scope["session"])
+    assert "PRIVATE_HISTORICAL_CANARY" not in str(caught.value)
+
+
 def test_separate_exporter_process_observed(tmp_path):
     box, manifest, root, receipt, sanitize = live_fixture(tmp_path)
     manifest_path = tmp_path / "session.json"

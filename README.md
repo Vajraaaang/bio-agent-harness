@@ -2,19 +2,29 @@
 
 A local research workspace for transcriptomics: inspect data, compare scientific approaches, run bounded analyses, review results, and retain the evidence behind each decision. DevHarness supplies scientific tools and controlled execution; DevBench supplies workflow coordination and executable agent evaluations.
 
-**Current source: `0.5.0.dev0`, published October 7, 2026. Research software; clinical release remains held.** This development snapshot includes the scientific workspace, method contracts/planner, independent RNA investigation interfaces, discovery evaluation support, and local RNA tracing/export tooling. Publication does not establish scientific method superiority, hosted-service qualification, or clinical readiness. See [release readiness](RELEASE_READINESS.md) and the [requirements and evidence map](docs/requirements-verification.md).
+**Current source: `0.5.0.dev0`, October 29, 2026 development snapshot. Research software; clinical release remains held.** This update includes project-scoped workbench chats and inputs, multi-dataset source sets, local RNA analyst controls, workflow evaluation and replay, and a clearly labeled synthetic visual atlas. No live trial was run for this update. Publication does not establish scientific method superiority, hosted-service qualification, or clinical readiness. See [release readiness](RELEASE_READINESS.md) and the [requirements and evidence map](docs/requirements-verification.md).
 
 [Workbench](#the-research-workbench) · [Scientific workflow](#the-five-step-scientific-workflow) · [Capabilities](#data-and-analysis-support) · [Architecture](#how-the-components-fit-together) · [Quick start](#run-locally) · [Agent evaluation](#agent-evaluation) · [Verification](#verification-and-known-limits) · [Documentation](#documentation-map)
 
 ## The research workbench
 
+### Synthetic atlas · 300,000 generated points
+
+The **Synthetic atlas** button opens a browser-only visual explorer with 300,000 generated cell-like records across three technical batches. Both scatter panels draw every selected point on Canvas without downsampling. Batch filters and color controls connect the cell landscape, library complexity, module signatures, batch distributions, and composition panels.
+
+![Synthetic atlas showing 300,000 generated points across three batches](reports/github-update-20261029/images/synthetic-atlas.png)
+
+The records, group labels, and latent coordinates are generated from a fixed seed. They are not observations from a biological study or a fitted UMAP. The atlas creates no analysis records or trial evidence. SVG exports retain the synthetic label and provenance and embed the Canvas raster. See the [atlas guide](docs/synthetic-atlas.md) and [publication verification](reports/github-update-20261029/README.md).
+
+### Application workflow and historical captures
+
 The browser interface brings inputs, analyses, runs, figures, scientific review, and exports into one local project. It uses the existing controllers and evidence stores rather than introducing a separate analysis engine.
 
-![Current local workbench overview using a small synthetic demonstration](reports/github-homepage-20261007/images/workbench-overview.jpg)
+![Historical October 7 local workbench overview using a small synthetic demonstration](reports/github-homepage-20261007/images/workbench-overview.jpg)
 
-![Completed synthetic run in the current workbench results and figure view](reports/github-homepage-20261007/images/workbench-results.jpg)
+![Historical October 7 synthetic run in the workbench results and figure view](reports/github-homepage-20261007/images/workbench-results.jpg)
 
-These are captures of the actual local application from the [October 7 demonstration](reports/github-homepage-20261007/README.md), using assistant-generated synthetic counts and an operator-recorded plan. They show the existing UI; no live model session or independent biological review was performed.
+These are captures of the actual local application from the [October 7 demonstration](reports/github-homepage-20261007/README.md), using assistant-generated synthetic counts and an operator-recorded plan. They show the October 7 UI, before the current project/chat redesign; no live model session or independent biological review was performed.
 
 - **Overview and navigation:** Inputs, Analyses & plans, Runs, Results, and Files & exports, with search and recorded activity.
 - **Scientific objects:** a Study groups exact DatasetVersion, AnalysisVersion, Run, and ResultVersion references. Changed data, scientific metadata, code, or parameters creates a new relevant version; an unchanged rerun retains the analysis version and creates a new Run.
@@ -23,7 +33,7 @@ These are captures of the actual local application from the [October 7 demonstra
 - **Figures:** verified QC-scatter and UMAP artifacts expose their plotting data, population, parameters, source identities, and receipts. Presentation revisions change permitted display settings while preserving scientific data and meaning.
 - **Recovery:** exact references, revision checks, retained backups, idempotent requests, and explicit reconciliation preserve failed and interrupted attempts. Reloading the view restores navigation and drafts; it does not restore execution grants.
 
-The Analyst panel shows recorded operator/workflow events. Recorded fixture decisions remain visibly labeled; they are not presented as live model messages. Current scope is **one local project**. Remote/HPC execution, broader large/chunked method-artifact support, multi-project administration, durable conversations, and broader governance remain later work for the shared scientific layer; the separate native route supports bounded backed H5AD execution.
+The Analyst panel shows recorded operator/workflow events. Recorded fixture decisions remain visibly labeled; they are not presented as live model messages. The current workbench supports local project-scoped chats, drafts, attachments, and multi-dataset source sets; see the [project and source-set contract](docs/workbench-redesign/projects-and-source-sets.md). Remote/HPC execution and broader governance remain separately qualified work; the native route supports bounded backed H5AD execution.
 
 Read the [UI operating guide](docs/workbench-ui.md), [shared scientific workspace](docs/shared-scientific-workspace.md), and [research organization contract](docs/research-workspace-organization.md).
 
@@ -227,7 +237,7 @@ Unresolved scientific findings include native count-interval undercoverage and u
 
 No clinical assay validity, GxP/21 CFR Part 11 compliance, authenticated operator approval, or patient-use readiness is claimed. Clinical release requires qualified independent validation, authenticated approval/signature, and operational controls. No private clinical inputs are authorized for external model services.
 
-### Fresh homepage demonstration — October 7, 2026
+### Historical homepage demonstration — October 7, 2026
 
 The [demonstration report](reports/github-homepage-20261007/README.md) describes the generated fixture and exact assistant-selected settings, and retains compact execution evidence, failure/correction history, browser captures, and diagnostic results. Ephemeral input matrices, service state, and tokens are excluded from publication.
 

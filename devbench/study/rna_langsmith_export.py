@@ -21,13 +21,21 @@ def _project(value):
     return value
 
 
-def validate_rna_run(run, scope, *, live_operation=None):
+def validate_rna_run(run, scope, *, live_operation=None, session_format=None):
     """Validate a single run; its caller separately proves retained parent binding."""
+    if session_format in {"devbench.rna-live-trace-session/4", "devbench.rna-live-trace-session/5"}:
+        from .rna_langsmith_live import _validate_context_wire_run
+        if scope != "synthetic":
+            raise ValueError("Synthetic context observations required")
+        return _validate_context_wire_run(run, live_operation, generation=session_format == "devbench.rna-live-trace-session/5")
     from devbench.analysis.rna_trace_projection import validate_projected_span
     if scope not in {"synthetic", "public_processed"} or live_operation not in {None, "start", "finish", "annotation"}:
         raise ValueError("Unsupported RNA run scope or operation")
     if not isinstance(run, dict):
         raise ValueError("Invalid RNA run")
+    if session_format not in {None, "devbench.rna-live-trace-session/1", "devbench.rna-live-trace-session/2",
+                              "devbench.rna-live-trace-session/3"}:
+        raise ValueError("Unsupported RNA live session format")
     projected = {key: value for key, value in run.items()
                  if key not in {"session_name", "session_id", "tags", "start_time", "end_time"}}
     extra = projected.get("extra")
@@ -35,11 +43,40 @@ def validate_rna_run(run, scope, *, live_operation=None):
         raise ValueError("Invalid RNA metadata")
     metadata = dict(extra["metadata"])
     proof = metadata.pop("remote_proof", None)
+    if session_format == "devbench.rna-live-trace-session/3":
+        from .rna_langsmith_live import workflow_error_code
+        if live_operation not in {"start", "finish"}:
+            raise ValueError("Workflow errors require an explicit lifecycle operation")
+        expected_error = workflow_error_code(metadata.get("source_status")) if live_operation == "finish" else None
+        if (expected_error is None and "error" in run
+                or expected_error is not None and run.get("error") != expected_error):
+            raise ValueError("Exact retained workflow error code required")
+        projected.pop("error", None)
+    if "dotted_order" in run:
+        from .rna_langsmith_live import _root_dotted_order
+        if session_format == "devbench.rna-live-trace-session/3":
+            from .rna_langsmith_live import _validate_workflow_dotted_order
+            if "session_id" not in run or proof is None:
+                raise ValueError("Bound workflow identity and proof required")
+            _validate_workflow_dotted_order(run)
+        elif ("session_id" not in run or proof is None or run.get("id") != run.get("trace_id")
+                  or run.get("parent_run_id") is not None
+                  or run["dotted_order"] != _root_dotted_order(run.get("start_time"), run.get("id"))):
+            raise ValueError("Exact hosted root dotted order required")
+        # Only the deterministic provider root identity may leave the local
+        # privacy projection; arbitrary provider strings remain rejected.
+        projected.pop("dotted_order")
     if "session_id" in run or proof is not None:
         if live_operation is None:
             raise ValueError("Versioned remote proof requires bound live operation")
         from .rna_langsmith_verify import validate_remote_proof
         validate_remote_proof(run)
+        # The hosted root omits the optional null field on the provider wire.
+        # Normalize only this declared root for local privacy validation; the
+        # reviewed JSON bytes and any nonnull child parent remain unchanged.
+        if ("session_id" in run and proof is not None and "parent_run_id" not in projected
+                and run.get("id") == run.get("trace_id")):
+            projected["parent_run_id"] = None
     timing = metadata.pop("transport_timing_basis", None)
     if live_operation is None and timing != "fixed_display_anchor_only":
         raise ValueError("RNA transport timing must be explicitly labeled as display only")
@@ -66,7 +103,7 @@ def validate_rna_run(run, scope, *, live_operation=None):
     return run
 
 
-def validate_rna_payload(payload, max_spans=2000, *, live_operation=None):
+def validate_rna_payload(payload, max_spans=2000, *, live_operation=None, session_format=None):
     """Validate every server-visible field again before delivery."""
     if type(max_spans) is not int or not 1 <= max_spans <= 2000:
         raise ValueError("Invalid RNA span budget")
@@ -84,7 +121,8 @@ def validate_rna_payload(payload, max_spans=2000, *, live_operation=None):
     traces = set()
     roots = 0
     for run in runs:
-        validate_rna_run(run, payload["data_scope"], live_operation=live_operation)
+        validate_rna_run(run, payload["data_scope"], live_operation=live_operation,
+                         **({"session_format": session_format} if session_format is not None else {}))
         projects.add(_project(run.get("session_name")))
         traces.add(run["trace_id"])
         identity = str(UUID(run["id"]))
@@ -180,6 +218,12 @@ def deliver_rna_outbox(*, outbox_path, expected_sha256, allow_upload=False,
     endpoint = status["endpoint"]
     if endpoint not in ENDPOINTS:
         raise ValueError("Unsupported HTTPS LangSmith endpoint")
+    with outbox._db() as db:
+        binding = db.execute('SELECT manifest FROM live_session').fetchone()
+    if binding is not None:
+        import json
+        if json.loads(binding[0]).get('format') in {'devbench.rna-live-trace-session/3', 'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'}:
+            raise PermissionError('Live workflow delivery requires its original exporter child')
     key = os.environ.get("LANGSMITH_API_KEY")
     if not key:
         raise RuntimeError("LANGSMITH_API_KEY is required for separately authorized delivery")

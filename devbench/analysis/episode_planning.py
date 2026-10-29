@@ -10,6 +10,7 @@ import time
 
 from .checkpoints import atomic_json, digest
 from .episode_agent import AgentLimits, InvalidSelection, selector_configuration
+from .model_authority import read_model_authority, reservation_binding
 from .episode_proposals import _absolute, _input_identity, prepare_proposal, require_disjoint_output
 from .episodes import EpisodeLimits, _json_copy, _public_only, _sources, _support, normalize_episode_configuration
 
@@ -41,11 +42,13 @@ def proposal_schema(context):
         "required": ["kind", field], "properties": {"kind": {"const": kind},
         field: {"type": "string", "minLength": 1, "maxLength": 4000}}}
         for kind, field in (("request_information", "message"), ("refuse", "reason"))]
+    requested = context.get("declarations", {}).get("requested_condition_contrast")
     if workflows and len(levels) >= 2:
         variants.append({"type": "object", "additionalProperties": False,
             "required": ["kind", "workflow", "reference_condition", "comparison_condition", "rationale"],
             "properties": {"kind": {"const": "propose"}, "workflow": {"enum": workflows},
-                "reference_condition": {"enum": levels}, "comparison_condition": {"enum": levels},
+                "reference_condition": {"enum": [requested["denominator"]] if requested else levels},
+                "comparison_condition": {"enum": [requested["numerator"]] if requested else levels},
                 "rationale": {"type": "string", "minLength": 1, "maxLength": 4000}}})
     return {"type": "object", "oneOf": variants}
 
@@ -113,8 +116,12 @@ def _dataset(question, dataset, limits, fixed_options, tier):
     task.update(measurement=projected["measurement"], unit_hierarchy=projected["unit_hierarchy"],
                 population_unit_label=projected["unit_hierarchy"]["population_unit_label"],
                 context=projected["analysis_context"])
-    task.setdefault("analysis_columns", {"condition": "condition", "time": "numeric_time", "dose": None,
-        "covariate": None, "population_unit": task["population_unit_label"], "batches": []})
+    if "analysis_columns" not in task:
+        task["analysis_columns"] = {"condition": "condition", "time": None, "dose": None,
+            "covariate": None, "population_unit": task["population_unit_label"], "batches": [],
+            **projected.get("analysis_columns", {})}
+    else:
+        task["analysis_columns"].update(projected.get("analysis_columns", {}))
     kind = values.get("input_kind", "normalized_expression" if task["measurement"] == "continuous" else "count_matrix")
     # Pure validation only: actual feature identities are read by the bounded
     # worker and retained before any proposal is compiled or sent for review.
@@ -186,7 +193,50 @@ def _design_summary(data, condition, batch_columns, audit):
             "provenance": "metadata_labels_not_independently_verified_capture_history"}}
 
 
-def _inspect_worker(task, paths, assay):
+def _bulk_design_audit(data, task, fixed_options):
+    """Reuse the executable bulk design controls, without fitting expression."""
+    from devbench.study.biology_tools_bulk import (
+        _check_replication, _design, _independent_view, _mode_columns,
+        _public_settings, _require_design)
+
+    record = {"status": "blocked", "blockers": [], "design": None, "biological_units": None,
+        "scope": "necessary_bulk_mean_design_checks_not_scientific_validation",
+        "cohort_policy": "complete_supplied_two_condition_cohort_no_implicit_subsetting",
+        "contrast_direction": "supplied_declaration_or_unselected_audit_basis_not_a_user_requirement"}
+    roles = task["analysis_columns"]
+    settings = dict(fixed_options.get("mean_condition_analysis", {}))
+    settings.setdefault("condition_col", roles["condition"])
+    settings.setdefault("batch_cols", roles.get("batches", []))
+    if "blocking" in roles:
+        settings.setdefault("block_cols", roles["blocking"])
+    try:
+        requested = data.context.get("requested_condition_contrast")
+        if requested is not None and (not isinstance(requested, dict)
+                or not {"denominator", "numerator"} <= requested.keys()
+                or any(not isinstance(requested[key], str) or not requested[key].strip()
+                       for key in ("denominator", "numerator"))):
+            raise ValueError("explicit_condition_contrast_incomplete")
+        # Retain the public diagnostic code for an absent declared confounder.
+        if any(column not in data.metadata for column in roles["batches"]):
+            raise ValueError("missing_declared_batch_column")
+        settings = _public_settings(data, settings)
+        columns = _mode_columns(data, "condition", settings)
+        for column in columns:
+            if (data.metadata[column].isna() | data.metadata[column].astype(str).str.strip().eq("")).any():
+                raise ValueError("missing_declared_design_values:" + column)
+        view, units = _independent_view(data, columns, settings=settings)
+        record["biological_units"] = units
+        design, details = _design(view, "condition", settings)
+        record["design"] = details
+        _require_design(design, details)
+        _check_replication(view, details, settings)
+        record["status"] = "passed"
+    except ValueError as error:
+        record["blockers"] = [str(error)]
+    return record
+
+
+def _inspect_worker(task, paths, assay, fixed_options=None):
     """Bounded input inspection only, with no expression model or annotation fit."""
     from .resources import configure_threads
     configure_threads()
@@ -209,7 +259,7 @@ def _inspect_worker(task, paths, assay):
     unit = data.unit_hierarchy["population_unit_label"]
     counts = {level: int(data.metadata.loc[data.metadata[condition].astype(str) == level, unit].nunique())
               for level in levels} if present and audit["identity_and_nesting_valid"] else None
-    return {"gene_ids": list(data.gene_ids), "observed": {
+    observed = {
         "gene_count": len(data.gene_ids), "observation_count": len(data.sample_ids),
         "matrix_bytes": int(data.expression.nbytes), "measurement": data.measurement,
         "condition_column_present": present, "condition_levels": levels,
@@ -217,7 +267,10 @@ def _inspect_worker(task, paths, assay):
         "design_summary": _design_summary(data, condition, task["analysis_columns"]["batches"], audit),
         "feature_alignment_checked": True,
         "cell_annotation_reference_available": bool(data.annotations.get("cell_annotation_reference")),
-        "scope": "input_consistency_not_independent_experimental_provenance_or_model_fit"}}
+        "scope": "input_consistency_not_independent_experimental_provenance_or_model_fit"}
+    if assay == "bulk":
+        observed["design_audit"] = _bulk_design_audit(data, task, fixed_options or {})
+    return {"gene_ids": list(data.gene_ids), "observed": observed}
 
 
 def _context(question, assay, kind, task, inspection, fixed_options):
@@ -228,17 +281,25 @@ def _context(question, assay, kind, task, inspection, fixed_options):
     floor = max(3, fixed_options.get(method, {}).get("minimum_units", 3))
     unit_counts = observed.get("declared_units_per_condition") or {}
     supported = _support(assay, kind, candidate)
+    requested = task["context"].get("requested_condition_contrast")
+    requested_valid = requested is None or (isinstance(requested, dict)
+        and requested.get("denominator") in observed.get("condition_levels", [])
+        and requested.get("numerator") in observed.get("condition_levels", [])
+        and requested.get("denominator") != requested.get("numerator"))
     usable = (supported
+              and requested_valid
               and observed.get("biological_units", {}).get("identity_and_nesting_valid") is True
               and len(unit_counts) >= 2 and all(count >= floor for count in unit_counts.values())
               and (assay != "bulk" or len(unit_counts) == 2)
+              and (assay != "bulk" or observed.get("design_audit", {}).get("status") == "passed")
               and (assay != "scrna" or observed.get("cell_annotation_reference_available")))
-    return {"decision_kind": "analysis_proposal", "question": question,
+    context = {"decision_kind": "analysis_proposal", "question": question,
         "declarations": {"assay": assay, "input_kind": kind, "measurement": task["measurement"],
             "biological_unit_hierarchy": {key: task["unit_hierarchy"][key] for key in (
                 "population_unit", "population_unit_label", "specimen_label", "library_label", "identity_status")
                 if key in task["unit_hierarchy"]},
             "column_roles": {key: task["analysis_columns"][key] for key in ("condition", "population_unit", "batches")},
+            "requested_condition_contrast": task["context"].get("requested_condition_contrast"),
             "evidence_scope": "supplied_declarations_not_independently_authenticated"},
         "observed": observed, "allowed_workflows": [route] if usable else [],
         "admission": _admission_summary(usable,
@@ -253,9 +314,16 @@ def _context(question, assay, kind, task, inspection, fixed_options):
             "Bulk mean contrast and donor-aware within-type mean contrast are the current episode routes.",
             "No causal, absolute-abundance, trajectory, pathway or general distributional conclusion follows from these routes.",
             "The complete declared feature family remains fixed; no data-dependent filtering is proposed here.",
-            "Design identifiability, repeated-donor layouts, per-type support and model diagnostics remain to be checked.",
+            "Bulk necessary design checks precede proposal selection; fitted-model diagnostics and scientific adequacy remain unestablished.",
+            "Single-cell repeated-donor layouts and per-type support require the existing registered audits.",
             "A proposal is unreviewed. Operator review and separate execution permission remain required.",
             "Refusal correctness and scientific appropriateness have not been independently evaluated."]}
+    if assay == "bulk":
+        design_audit = observed.get("design_audit", {})
+        context["admission"]["software_support"]["design_compatibility"] = (
+            "necessary_checks_passed" if design_audit.get("status") == "passed" else "blocked_or_unknown")
+        context["admission"]["design_blockers"] = design_audit.get("blockers", ["design_not_audited"])
+    return context
 
 
 def _compile(question, assay, kind, task, paths, decision, limits, options, tier):
@@ -264,6 +332,10 @@ def _compile(question, assay, kind, task, paths, decision, limits, options, tier
         raise ValueError("A condition cannot be compared with itself")
     if _WORKFLOWS[decision["workflow"]][0] != assay:
         raise ValueError("Proposed workflow changes the declared assay")
+    requested = task["context"].get("requested_condition_contrast")
+    if requested is not None and (not isinstance(requested, dict)
+            or requested.get("denominator") != reference or requested.get("numerator") != comparison):
+        raise ValueError("proposal_changes_declared_condition_contrast")
     task = _json_copy(task)
     task["questions"] = [_target(assay, task["measurement"], reference, comparison)]
     task["context"]["condition_labels"] = [reference, comparison]
@@ -338,7 +410,8 @@ def propose_analysis(output, *, question, dataset, selector, episode_limits=None
     result = {"format": "devbench.analysis-proposal-run/1", "status": "infrastructure_failure",
         "proposal_receipt": None, "decision": None, "analysis_executed": False,
         "scientific_appropriateness": "not_established", "refusal_correctness": None,
-        "model_sessions_attempted": 0, "tokens": None, "cost_usd": None, "actual_model": None}
+        "model_sessions_attempted": 0, "tokens": None, "cost_usd": None, "actual_model": None,
+        "selector_entered": False}
     spec = None
 
     def remaining():
@@ -384,7 +457,7 @@ def propose_analysis(output, *, question, dataset, selector, episode_limits=None
                         from .workbench_proposals import _inspection_worker
                         worker, arguments = _inspection_worker, (source, config["parameters"], model)
                     else:
-                        worker, arguments = _inspect_worker, (task, paths, assay)
+                        worker, arguments = _inspect_worker, (task, paths, assay, options)
                     inspection = run_sandboxed(worker, arguments, max_mem_mb=inspection_memory, timeout_sec=timeout,
                                                diagnostics=supervision, growth_window_seconds=growth_window)
             finally:
@@ -406,11 +479,17 @@ def propose_analysis(output, *, question, dataset, selector, episode_limits=None
         atomic_json(root / "answer_schema.json", schema)
         selected = root / "selector"
         selected.mkdir(mode=0o700)
+        attempt = {"request_sha256": digest(request), "sequence": 1, "context": context, "attempt_path": str(root)}
         atomic_json(root / "selection-reservation.json", {"sequence": 1,
-            "remaining_seconds": remaining(), "model_execution_authorized": allow_model_execution is True})
+            "remaining_seconds": remaining(), "model_execution_authorized": allow_model_execution is True,
+            **reservation_binding(selector_config, attempt)})
+        model_authority = read_model_authority(root / "selection-reservation.json",
+            configuration=selector_config, attempt=attempt, maximum_authority=allow_model_execution)
+        selection_timeout = min(remaining(), policy.session_timeout_seconds)
+        result.update(selector_entered=True, model_sessions_attempted=None)
         selection = selector.select(_json_copy(context), selected,
-            timeout_seconds=min(remaining(), policy.session_timeout_seconds), memory_mb=min(inspection_memory, policy.memory_mb),
-            allow_model_execution=allow_model_execution)
+            timeout_seconds=selection_timeout, memory_mb=min(inspection_memory, policy.memory_mb),
+            allow_model_execution=model_authority)
         evidence, decision = _json_copy(selection.evidence), _json_copy(selection.action)
         atomic_json(root / "selection.json", {"decision": decision, "evidence": evidence})
         for field in ("model_sessions_attempted", "tokens", "cost_usd", "actual_model"):

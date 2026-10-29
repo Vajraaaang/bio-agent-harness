@@ -78,8 +78,11 @@ class LocalTraceObserver:
         self.sidecar_dir.mkdir(mode=0o700)
 
     @classmethod
-    def open_existing(cls, path):
+    def open_existing(cls, path, *, db_timeout=5):
+        if type(db_timeout) is not int or db_timeout not in (0, 5):
+            raise ValueError('Observer database timeout must be zero or five seconds')
         obj = cls.__new__(cls)
+        obj.db_timeout = db_timeout
         obj.path = _path(path)
         if not obj.path.is_file():
             raise ValueError('Observer store missing')
@@ -104,7 +107,7 @@ class LocalTraceObserver:
     def _db(self, readonly=False):
         _path(self.path)
         return sqlite3.connect(self.path.as_uri() + '?mode=ro' if readonly else self.path,
-                               uri=readonly, timeout=5)
+                               uri=readonly, timeout=getattr(self, 'db_timeout', 5))
 
     def _storage_size(self):
         paths = [self.path, self.path.with_name(self.path.name+'-journal'),
@@ -141,7 +144,7 @@ class LocalTraceObserver:
         return context
 
     def _emit(self, context, workflow_digest, kind, status, *, phase=None,
-              dispatch='unknown', capture='unavailable', reason='none'):
+              dispatch='unknown', capture='unavailable', reason='none', metrics=None):
         import time
         parent = context['parent_span_id']
         if parent is not None:
@@ -175,7 +178,8 @@ class LocalTraceObserver:
                     monotonic_ns=time.monotonic_ns(),process_alias=self.process_alias,timing_basis='observed'),
                 bindings=dict(workflow=workflow_digest,invocation=context['invocation_binding_digest'],
                     source=context['source_digest'],runtime=context['runtime_digest'],policy=context['policy_digest']),
-                metrics=_empty_metrics(),reason_code=reason,origin='optional_observer_receipt'))
+                metrics=_empty_metrics() if metrics is None else metrics,
+                reason_code=reason,origin='optional_observer_receipt'))
             db.execute('INSERT INTO events VALUES (?,?,?,?)',(context['span_id'],sequence,workflow_digest,canonical_bytes(event).decode()))
 
     def _gap(self, workflow_id):
@@ -192,7 +196,7 @@ class LocalTraceObserver:
         """Coordinator ledger transition; contains no request/result bytes."""
         try:
             phase = node if node in PHASES else 'invocation'
-            role = 'numerical' if node in {'run','execute','run_full'} else 'review' if node in {'verify','review'} else 'coordinator'
+            role = 'numerical' if node in {'run','execute','run_full'} else 'review' if node in {'verify','candidate_review','design_review','conclusion_review'} else 'coordinator'
             with self._db() as db:
                 db.execute('BEGIN IMMEDIATE')
                 context = self._context(db, workflow_id,role,phase,attempt+1,request_digest)
@@ -208,7 +212,8 @@ class LocalTraceObserver:
             if any(binding.get(name) != self.identities[name] for name in ('source_digest','runtime_digest')) or reservation.policy_digest != self.identities['policy_digest']:
                 raise ValueError('Observer invocation identity mismatch')
             digest = reservation.request_digest
-            if trace_digest(reservation.request) != digest:
+            from .workflow_operations import _digest, _json
+            if _digest(_json(reservation.request)) != digest or binding != reservation.request:
                 raise ValueError('Observer reservation binding mismatch')
             with self._db() as db:
                 db.execute('BEGIN IMMEDIATE')
@@ -240,17 +245,20 @@ class LocalTraceObserver:
             self._gap(workflow_id)
             return None
 
-    def complete_invocation(self, reference, *, reservation, status, capture_verified=False):
+    def complete_invocation(self, reference, *, reservation, status, capture_verified=False, db_timeout=5,
+                            dispatch_status=None):
         if reference is None:
             return
         try:
             receipt = InvocationTraceReceipt(reference,binding_digest=reservation.request_digest,
                 policy_digest=reservation.policy_digest, source_digest=self.identities['source_digest'],
-                runtime_digest=self.identities['runtime_digest'],private_root=self.path.parent)
+                runtime_digest=self.identities['runtime_digest'],private_root=self.path.parent,db_timeout=db_timeout)
             if capture_verified:
-                receipt.emit('capture',status,capture='verified',dispatch='attempted')
+                receipt.emit('capture',status,capture='verified',
+                             dispatch='attempted' if dispatch_status is None else dispatch_status)
             receipt.emit('completion' if status=='completed' else 'failure',status,
-                         capture='verified' if capture_verified else 'unavailable')
+                         capture='verified' if capture_verified else 'unavailable',
+                         dispatch='unknown' if dispatch_status is None else dispatch_status)
         except Exception:
             self.failure_count += 1
 
@@ -301,7 +309,8 @@ class LocalTraceObserver:
 
 class InvocationTraceReceipt:
     """Validated explicit per-worker context. No inherited SDK state is read."""
-    def __init__(self, reference, *, binding_digest, policy_digest, source_digest, runtime_digest, private_root):
+    def __init__(self, reference, *, binding_digest, policy_digest, source_digest, runtime_digest, private_root,
+                 db_timeout=5):
         if type(reference) is not dict or set(reference)!={'path','sha256','binding_digest','policy_digest','source_digest','runtime_digest'}:
             raise ValueError('Invalid observer sidecar reference')
         path=_path(reference['path'])
@@ -322,7 +331,7 @@ class InvocationTraceReceipt:
         observer_path=_path(value['observer_path'])
         if not observer_path.is_relative_to(root) or path.parent != observer_path.with_name(observer_path.name+'.sidecars'):
             raise ValueError('Observer sidecar topology storage mismatch')
-        self.observer=LocalTraceObserver.open_existing(observer_path)
+        self.observer=LocalTraceObserver.open_existing(observer_path, db_timeout=db_timeout)
         self.workflow_digest=value['workflow_digest']
         # Existence and exact content of parent/context checked at every emit.
         with self.observer._db(readonly=True) as db:
@@ -331,7 +340,7 @@ class InvocationTraceReceipt:
         if self.context not in rows or not any(row['span_id']==parent and row['trace_id']==self.context['trace_id'] and row['workflow_alias']==self.context['workflow_alias'] for row in rows):
             raise ValueError('Observer topology parent absent')
 
-    def emit(self,kind,status,*,phase=None,dispatch='unknown',capture='unavailable',reason='none'):
+    def emit(self,kind,status,*,phase=None,dispatch='unknown',capture='unavailable',reason='none',metrics=None):
         try:
             context=self.context
             if phase is not None and phase != context['phase']:
@@ -347,9 +356,85 @@ class InvocationTraceReceipt:
                             'parent_span_id':context['span_id'],'phase':phase})
                         db.execute('INSERT INTO contexts VALUES (?,?)',(key,canonical_bytes(context).decode()))
             self.observer._emit(context,self.workflow_digest,kind,status,phase=None,
-                                dispatch=dispatch,capture=capture,reason=reason)
+                                dispatch=dispatch,capture=capture,reason=reason,metrics=metrics)
         except Exception:
             self.observer.failure_count += 1
+
+
+def observe_boundary(observer, workflow_id, phase, operation, *, binding_digest,
+                     role='coordinator', admission=False, finalize_root=False):
+    """Observe one real API call without changing its return or exception.
+
+    This is an optional lifecycle observation, never proof of tool dispatch.
+    Only a separately wrapped admission check can attest ``not_dispatched``.
+    Actual worker captures and governed run receipts remain authoritative.
+    Callback inputs, outputs and exception text are never retained here.
+    """
+    if observer is None:
+        return operation()
+    if not isinstance(observer, LocalTraceObserver):
+        raise TypeError('Use the trusted local observer for optional boundaries')
+
+    def unavailable():
+        observer.failure_count += 1
+        observer._gap(workflow_id)
+
+    context = root = None
+    try:
+        if (type(workflow_id) is not str or not 1 <= len(workflow_id) <= 200
+                or phase not in PHASES - {'workflow'}
+                or type(admission) is not bool or type(finalize_root) is not bool
+                or admission and (phase != 'permission_preflight' or role != 'coordinator')):
+            raise ValueError('Invalid bounded observation metadata')
+        with observer._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            root = observer._context(db, workflow_id, 'coordinator', 'workflow', 1,
+                                     trace_digest(workflow_id))
+            attempt = db.execute(
+                "SELECT coalesce(max(json_extract(context,'$.attempt')),0)+1 FROM contexts "
+                "WHERE json_extract(context,'$.trace_id')=? "
+                "AND json_extract(context,'$.phase')=? AND json_extract(context,'$.role')=?",
+                (root['trace_id'], phase, role)).fetchone()[0]
+            context = observer._context(db, workflow_id, role, phase, attempt, binding_digest)
+        observer._emit(context, trace_digest(workflow_id), 'reservation', 'active', dispatch='prepared')
+    except Exception:
+        context = root = None
+        unavailable()
+
+    def finish(status, reason='none'):
+        if context is None:
+            return
+        try:
+            failed = status in {'blocked', 'failed', 'uncertain'}
+            kind = 'failure' if failed else 'completion'
+            dispatch = 'not_dispatched' if admission else 'unknown'
+            observer._emit(context, trace_digest(workflow_id), kind, status,
+                           dispatch=dispatch, reason=reason)
+            if finalize_root:
+                # A partial denial may follow earlier real work. Never infer
+                # whole-workflow no-dispatch from a later admission failure.
+                observer._emit(root, trace_digest(workflow_id), kind, status,
+                               dispatch='unknown', reason=reason)
+        except Exception:
+            unavailable()
+
+    try:
+        result = operation()
+    except BaseException as error:
+        if isinstance(error, PermissionError):
+            finish('blocked', 'admission_blocked' if admission else 'failed')
+        elif isinstance(error, Exception):
+            finish('failed', 'failed')
+        else:
+            finish('uncertain', 'uncertain')
+        raise
+    if type(result) is dict and result.get('status') == 'admission_denied':
+        finish('blocked', 'admission_blocked')
+    elif type(result) is dict and result.get('status') in ('completed_with_failures', 'failed'):
+        finish('failed', 'failed')
+    else:
+        finish('completed')
+    return result
 
 
 class ObservedWorkflow:

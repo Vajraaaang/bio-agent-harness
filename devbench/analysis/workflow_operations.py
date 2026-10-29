@@ -23,6 +23,10 @@ from typing import Any, Callable
 
 from devbench.analysis.method_executor import _path
 from devbench.study.model_telemetry import normalize_usage
+from devbench.analysis.codex_job_policy import (
+    JOB_POLICY_FORMAT, validate_job_policy,
+    validate_job_limits, validate_job_capture,
+)
 
 
 class OperationBlocked(RuntimeError):
@@ -146,6 +150,8 @@ def _hash(value):
 
 def _policy(value):
     _json(value)
+    if type(value) is dict and value.get("format") == JOB_POLICY_FORMAT:
+        return validate_job_policy(value)
     fields = {"format", "kind", "max_total_tokens", "soft_token_target", "max_calls",
               "max_total_seconds", "max_context_bytes", "memory_mb", "max_children", "reconciliation"}
     if type(value) is not dict or set(value) != fields or value["format"] != "devbench.model-budget-policy/1":
@@ -177,6 +183,8 @@ def _policy(value):
 
 
 def _limits(value):
+    if type(value) is dict and "jobs" in value:
+        return validate_job_limits(value)
     if type(value) is not dict or set(value) != {"tokens", "calls", "seconds", "context_bytes", "memory_mb"}:
         raise ValueError("Invalid model call limits schema")
     for key in ("tokens", "calls", "context_bytes", "memory_mb"):
@@ -193,9 +201,15 @@ def _protected_allocations(policy, identity):
     for stage, allocation in allocations.items():
         _identity("parent-stage", stage, 0)
         _limits(allocation)
+        if policy["kind"] == "generation_jobs":
+            validate_job_limits(allocation)
+            if (allocation["context_bytes"] > policy["max_context_bytes"]
+                    or allocation["output_bytes"] > policy["max_output_bytes"]):
+                raise ValueError("Protected parent stage exceeds generation job policy")
+            continue
         if allocation["context_bytes"] > policy["max_context_bytes"] or allocation["memory_mb"] > policy["memory_mb"]:
             raise ValueError("Protected parent stage exceeds operational policy")
-    for key in ("tokens", "calls", "seconds"):
+    for key in (("jobs", "seconds") if policy["kind"] == "generation_jobs" else ("tokens", "calls", "seconds")):
         if sum(value[key] for value in allocations.values()) > policy["reconciliation"][key]:
             raise ValueError("Protected parent stages exceed the retained parent reserve")
     if max((value["context_bytes"] for value in allocations.values()), default=0) > policy["reconciliation"]["context_bytes"]:
@@ -238,6 +252,8 @@ class WorkflowOperationLedger:
     def __init__(self, path: str | Path, *, readonly: bool = False):
         self.path = _path(path)
         self.readonly = readonly
+        self._mediated_backends = {}
+        self._job_backends = {}
         self.trace_observer = None
         self._transaction_lock = RLock()
         self._observer_scope_lock = RLock()
@@ -555,7 +571,17 @@ class WorkflowOperationLedger:
     def _model_rows(self, connection, campaign_id):
         records = [self._model_record(row) for row in connection.execute(
             "SELECT * FROM model_reservations WHERE campaign_id=? ORDER BY attempt,node", (campaign_id,))]
+        campaign = self._campaign(connection, campaign_id) if records else None
         for record in records:
+            job_policy = campaign["policy"]["kind"] == "generation_jobs"
+            if job_policy != ("jobs" in record["limits"]):
+                raise OperationConflict("Retained allocation has the wrong accounting unit")
+            if job_policy and record["capture"] is not None:
+                try:
+                    validate_job_capture(record["capture"], record["capture"]["capture_ref"],
+                                         self._reservation(record, campaign))
+                except (ValueError, TypeError, KeyError) as exc:
+                    raise OperationConflict("Invalid retained generation job capture") from exc
             operation = self._record(connection.execute(
                 "SELECT * FROM operations WHERE workflow_id=? AND node=? AND attempt=?",
                 (campaign_id, record["node"], record["attempt"])).fetchone())
@@ -568,8 +594,9 @@ class WorkflowOperationLedger:
                 raise OperationConflict("Retained model capture and operation disagree")
         return records
 
-    @staticmethod
-    def _totals(campaign, records):
+    def _totals(self, campaign, records):
+        if campaign["policy"]["kind"] == "generation_jobs":
+            return self._job_totals(campaign, records)
         totals = {"verified_spent_tokens": 0, "outstanding_reserved_tokens": 0,
                   "verified_calls": 0, "outstanding_reserved_calls": 0,
                   "verified_seconds": 0, "outstanding_reserved_seconds": 0, "unresolved_count": 0,
@@ -595,7 +622,7 @@ class WorkflowOperationLedger:
         held = WorkflowOperationLedger._parent_hold(campaign, records)
         totals["reconciliation_held"] = dict(held)
         totals["hard_token_guarantee"] = (campaign["policy"]["kind"] == "hard_total_tokens"
-            and WorkflowOperationLedger._capability_available(campaign["capability"], campaign["policy"])
+            and self._accepted_capability(campaign["capability"], campaign["policy"])
             and campaign["reason"] != "backend_limit_violation")
         if campaign["reason"] in ("backend_limit_violation", "soft_token_target_exceeded"):
             totals["qualification"] = "violated"
@@ -608,15 +635,48 @@ class WorkflowOperationLedger:
         return totals
 
     @staticmethod
+    def _job_totals(campaign, records):
+        totals = {"accounting_kind": "generation_jobs", "verified_jobs": 0,
+                  "outstanding_reserved_jobs": 0, "verified_seconds": 0,
+                  "outstanding_reserved_seconds": 0, "unresolved_count": 0}
+        for record in records:
+            capture = record["capture"]
+            unresolved = record["status"] in ("reserved", "active", "uncertain")
+            # Cancellation before activation creates no launch intent. Every
+            # retained capture, including not_started, permanently debits a job.
+            if capture:
+                totals["verified_jobs"] += capture["job_count"]
+            elif unresolved:
+                totals["outstanding_reserved_jobs"] += record["limits"]["jobs"]
+            seconds = capture["elapsed_seconds"] if capture else 0
+            totals["verified_seconds"] += seconds
+            if unresolved:
+                totals["outstanding_reserved_seconds"] += max(0, record["limits"]["seconds"] - seconds)
+            totals["unresolved_count"] += record["status"] == "uncertain"
+        totals["reconciliation_held"] = WorkflowOperationLedger._parent_hold(campaign, records)
+        if campaign["reason"] == "backend_limit_violation":
+            totals["qualification"] = "violated"
+        elif totals["unresolved_count"]:
+            totals["qualification"] = "incomplete"
+        elif not records or any(row["status"] in ("reserved", "active") for row in records):
+            totals["qualification"] = "pending"
+        else:
+            totals["qualification"] = "complete"
+        return totals
+
+    @staticmethod
     def _parent_hold(campaign, records):
         reserve = campaign["policy"]["reconciliation"]
+        job_policy = campaign["policy"]["kind"] == "generation_jobs"
+        count_key = "jobs" if job_policy else "calls"
+        additive = ("jobs", "seconds") if job_policy else ("tokens", "calls", "seconds")
         if campaign["status"] != "open":
             return {key: 0 for key in reserve}
         allocations = _protected_allocations(campaign["policy"], campaign["identity"])
         if not allocations:
             consumed = [row for row in records if row["child_id"] is None and row["purpose"] == "parent_reconciliation"]
             held = {key: max(0, reserve[key] - sum(row["limits"][key] for row in consumed)) for key in reserve}
-            if (consumed and sum(row["limits"]["calls"] for row in consumed) >= reserve["calls"]
+            if (consumed and sum(row["limits"][count_key] for row in consumed) >= reserve[count_key]
                     and all(row["status"] in ("completed", "failed", "cancelled") for row in consumed)):
                 return {key: 0 for key in reserve}
             return held
@@ -624,16 +684,16 @@ class WorkflowOperationLedger:
         finished = []
         for stage, allocation in allocations.items():
             consumed = [row for row in records if row["child_id"] is None and row["request"].get("purpose") == stage]
-            complete = (bool(consumed) and sum(row["limits"]["calls"] for row in consumed) >= allocation["calls"]
+            complete = (bool(consumed) and sum(row["limits"][count_key] for row in consumed) >= allocation[count_key]
                         and all(row["status"] in ("completed", "failed", "cancelled") for row in consumed))
             finished.append(complete)
             if complete:
                 continue
-            for key in ("tokens", "calls", "seconds"):
+            for key in additive:
                 held[key] += max(0, allocation[key] - sum(row["limits"][key] for row in consumed))
             held["context_bytes"] = max(held["context_bytes"], allocation["context_bytes"])
         if not all(finished):
-            for key in ("tokens", "calls", "seconds"):
+            for key in additive:
                 held[key] += max(0, reserve[key] - sum(allocation[key] for allocation in allocations.values()))
         return held
 
@@ -641,6 +701,7 @@ class WorkflowOperationLedger:
     def _future_parent_seconds(campaign, records, *, record=None, request=None, limits=None,
                                purpose=None, child_id=None):
         held = WorkflowOperationLedger._parent_hold(campaign, records)
+        count_key = "jobs" if campaign["policy"]["kind"] == "generation_jobs" else "calls"
         if record is not None:
             request, limits, purpose, child_id = (record["request"], record["limits"],
                                                 record["purpose"], record["child_id"])
@@ -650,10 +711,10 @@ class WorkflowOperationLedger:
         if child_id is None and type(stage) is str and stage in allocations:
             allocation = allocations[stage]
             consumed = [row for row in records if row["child_id"] is None and row["request"].get("purpose") == stage]
-            remaining_calls = max(0, allocation["calls"] - sum(row["limits"]["calls"] for row in consumed))
+            remaining_calls = max(0, allocation[count_key] - sum(row["limits"][count_key] for row in consumed))
             own_unused_seconds = max(0, allocation["seconds"] - sum(row["limits"]["seconds"] for row in consumed))
             if record is None:
-                own_share = own_unused_seconds if limits["calls"] >= remaining_calls else min(limits["seconds"], own_unused_seconds)
+                own_share = own_unused_seconds if limits[count_key] >= remaining_calls else min(limits["seconds"], own_unused_seconds)
                 future = max(0, future - own_share)
             elif remaining_calls == 0:
                 # Until completion, this call still owns its unused allocation;
@@ -661,8 +722,8 @@ class WorkflowOperationLedger:
                 future = max(0, future - own_unused_seconds)
         elif child_id is None and not allocations and purpose == "parent_reconciliation":
             if record is None:
-                future = max(0, future - limits["seconds"]) if held["calls"] > limits["calls"] else 0
-            elif held["calls"] == 0:
+                future = max(0, future - limits["seconds"]) if held[count_key] > limits[count_key] else 0
+            elif held[count_key] == 0:
                 future = 0
         current_ref = record["ref"] if record is not None else None
         pending = [row for row in records if row["child_id"] is None and row["ref"] != current_ref
@@ -724,6 +785,13 @@ class WorkflowOperationLedger:
                     or (cancellation and cancellation[0])
                     or self._totals(campaign, self._model_rows(connection, campaign["campaign_id"]))["unresolved_count"]):
                 return 0
+            if campaign["policy"]["kind"] == "generation_jobs":
+                if not self._accepted_capability(campaign["capability"], campaign["policy"]):
+                    return 0
+                try:
+                    self._job_concurrency(connection, exclude_ref=record["ref"])
+                except OperationBlocked:
+                    return 0
             deadline = campaign["created_at"] + campaign["policy"]["max_total_seconds"]
             future = self._future_parent_seconds(campaign,
                 self._model_rows(connection, campaign["campaign_id"]), record=record)
@@ -755,6 +823,14 @@ class WorkflowOperationLedger:
 
     @staticmethod
     def _capability_available(capability, policy):
+        if policy["kind"] == "generation_jobs":
+            return (capability.get("backend") == "enforced-offline-job-fixture"
+                    and capability.get("capability_status") == "offline_qualified"
+                    and all(capability.get(key) is True for key in (
+                        "generation_job_accounting", "context_bytes_enforced", "output_bytes_enforced",
+                        "outer_timeout_enforced", "process_reaping_enforced"))
+                    and capability.get("max_concurrent_jobs") == 1
+                    and capability.get("child_command_or_numerical_tools_allowed") is False)
         keys = ("context_bytes_enforced", "outer_timeout_enforced", "memory_enforced",
                 "request_count_enforced", "all_attributable_requests_accounted")
         return (capability.get("capability_status") in ("offline_qualified", "native_qualified")
@@ -764,7 +840,30 @@ class WorkflowOperationLedger:
                 and (not policy["max_children"] or capability.get("parallel_boundary_qualified") is True)
                 and (policy["kind"] != "hard_total_tokens" or capability.get("enforced_total_token_cap") is True))
 
-    def open_campaign(self, campaign_id: str, *, session_id: str, policy: dict, capability: dict, identity: dict):
+    def _accepted_capability(self, capability, policy):
+        if policy["kind"] == "generation_jobs":
+            if capability.get("backend") != "codex-chatgpt-cli":
+                return self._capability_available(capability, policy)
+            backend = self._job_backends.get(capability.get("backend_digest"))
+            if backend is None:
+                return False
+            from .codex_signedin import SignedInCodexInvestigationBackend
+            try:
+                return (type(backend) is SignedInCodexInvestigationBackend
+                    and policy == backend.policy and backend.require_admission("generation_jobs") == capability)
+            except PermissionError:
+                return False
+        if capability.get("backend") != "openai-responses-mediated":
+            return self._capability_available(capability, policy)
+        backend = self._mediated_backends.get(capability.get("backend_digest"))
+        if backend is None:
+            return False  # Stored capability JSON never reconstructs live authority.
+        from .rna_mediated_backend import MediatedInvestigationBackend
+        return (type(backend) is MediatedInvestigationBackend and policy == backend.policy
+            and policy["kind"] == "hard_total_tokens" and policy["max_children"] == 0
+            and backend.require_admission(policy["kind"]) == capability)
+
+    def open_campaign(self, campaign_id: str, *, session_id: str, policy: dict, capability: dict, identity: dict, backend=None):
         """Bind one admitted campaign before any parent or child model request."""
         self._writable()
         _identity(campaign_id, session_id, 0)
@@ -776,7 +875,18 @@ class WorkflowOperationLedger:
             _hash(capability.get(key))
         encoded = [_json(value) for value in (policy, capability, identity)]
         digests = [_digest(value) for value in encoded]
-        blocked = not self._capability_available(capability, policy)
+        if backend is not None:
+            if policy["kind"] == "generation_jobs":
+                from .codex_signedin import SignedInCodexInvestigationBackend
+                if type(backend) is not SignedInCodexInvestigationBackend or backend.require_admission("generation_jobs") != capability:
+                    raise PermissionError("An exact current accepted generation job backend is required")
+                self._job_backends[capability["backend_digest"]] = backend
+            else:
+                from .rna_mediated_backend import MediatedInvestigationBackend
+                if type(backend) is not MediatedInvestigationBackend or backend.require_admission(policy["kind"]) != capability:
+                    raise PermissionError("An exact current accepted mediated backend is required")
+                self._mediated_backends[capability["backend_digest"]] = backend
+        blocked = not self._accepted_capability(capability, policy)
         blocking_reason = "blocked_backend_capability" if blocked else None
         with self._database() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -846,10 +956,31 @@ class WorkflowOperationLedger:
             raise OperationBlocked("cancelled")
         if campaign["status"] != "open":
             raise OperationBlocked(campaign["reason"] or "campaign_blocked")
+        if (campaign["capability"].get("backend") == "openai-responses-mediated"
+                and not self._accepted_capability(campaign["capability"], campaign["policy"])):
+            raise OperationBlocked("current_mediated_authority_unavailable")
+        if campaign["policy"]["kind"] == "generation_jobs":
+            if not self._accepted_capability(campaign["capability"], campaign["policy"]):
+                raise OperationBlocked("current_job_authority_unavailable")
+            self._job_concurrency(connection, uncertain_only=True)
         if time.time() - campaign["created_at"] >= campaign["policy"]["max_total_seconds"]:
             raise OperationBlocked("campaign_deadline_exhausted")
         if self._totals(campaign, self._model_rows(connection, campaign["campaign_id"]))["unresolved_count"]:
             raise OperationBlocked("unresolved_usage")
+
+    def _job_concurrency(self, connection, *, exclude_ref=None, uncertain_only=False):
+        """One coordinator slot across all job campaigns in this ledger."""
+        for row in connection.execute("SELECT * FROM model_campaigns"):
+            campaign = self._campaign_row(row)
+            if campaign["policy"]["kind"] != "generation_jobs":
+                continue
+            for record in self._model_rows(connection, campaign["campaign_id"]):
+                if record["ref"] == exclude_ref:
+                    continue
+                if record["status"] == "uncertain":
+                    raise OperationBlocked("unresolved_job_lifecycle")
+                if not uncertain_only and record["status"] == "active":
+                    raise OperationBlocked("job_concurrency_exhausted")
 
     @contextmanager
     def publication_guard(self, campaign_id: str):
@@ -865,7 +996,7 @@ class WorkflowOperationLedger:
             connection.execute("BEGIN IMMEDIATE")
             campaign = self._campaign(connection, campaign_id)
             self._dispatchable(connection, campaign)
-            if not self._capability_available(campaign["capability"], campaign["policy"]):
+            if not self._accepted_capability(campaign["capability"], campaign["policy"]):
                 raise OperationBlocked("blocked_backend_capability")
             yield
 
@@ -898,6 +1029,10 @@ class WorkflowOperationLedger:
             connection.execute("BEGIN IMMEDIATE")
             campaign = self._campaign(connection, campaign_id)
             self._check_request(request, campaign)
+            if campaign["policy"]["kind"] == "generation_jobs":
+                validate_job_limits(limits)
+            elif "jobs" in limits:
+                raise ValueError("Token policies cannot consume generation job limits")
             existing = self._model_record(connection.execute(
                 "SELECT * FROM model_reservations WHERE campaign_id=? AND node=? AND attempt=?", key).fetchone())
             if existing:
@@ -908,6 +1043,9 @@ class WorkflowOperationLedger:
                 return self._reservation(existing, campaign)
             self._dispatchable(connection, campaign)
             records = self._model_rows(connection, campaign_id)
+            if campaign["policy"]["kind"] == "generation_jobs":
+                return self._reserve_job_call(connection, campaign, key, request, limits,
+                    purpose, child_id, request_json, digest, limits_json, limits_digest, records)
             protected = _protected_allocations(campaign["policy"], campaign["identity"])
             stage = request.get("purpose")
             protected_call = stage in protected if type(stage) is str else False
@@ -962,6 +1100,57 @@ class WorkflowOperationLedger:
             record = self._model_record(connection.execute("SELECT * FROM model_reservations WHERE campaign_id=? AND node=? AND attempt=?", key).fetchone())
             return self._reservation(record, campaign)
 
+    def _reserve_job_call(self, connection, campaign, key, request, limits, purpose, child_id,
+                          request_json, digest, limits_json, limits_digest, records):
+        if child_id is not None:
+            raise OperationBlocked("child_budget_exhausted")
+        policy = campaign["policy"]
+        protected = _protected_allocations(policy, campaign["identity"])
+        stage = request.get("purpose")
+        protected_call = type(stage) is str and stage in protected
+        if protected_call:
+            allocated = protected[stage]
+            consumed = [row for row in records if row["child_id"] is None and row["request"].get("purpose") == stage]
+            if (any(sum(row["limits"][dimension] for row in consumed) + limits[dimension] > allocated[dimension]
+                    for dimension in ("jobs", "seconds"))
+                    or any(limits[dimension] > allocated[dimension] for dimension in ("context_bytes", "output_bytes"))):
+                raise OperationBlocked("protected_parent_allocation_exceeded")
+        elif protected and purpose == "parent_reconciliation":
+            raise OperationBlocked("protected_parent_stage_not_allocated")
+        if (limits["context_bytes"] > policy["max_context_bytes"]
+                or limits["output_bytes"] > policy["max_output_bytes"]):
+            raise OperationBlocked("operational_limit_exceeded")
+        remaining = campaign["created_at"] + policy["max_total_seconds"] - time.time()
+        if limits["seconds"] > remaining:
+            raise OperationBlocked("call_exceeds_campaign_deadline")
+        future = self._future_parent_seconds(campaign, records, request=request, limits=limits,
+                                             purpose=purpose, child_id=child_id)
+        if limits["seconds"] > remaining - future:
+            raise OperationBlocked("call_exceeds_parent_headroom")
+        totals = self._totals(campaign, records)
+        held = dict(totals["reconciliation_held"])
+        if protected_call or (not protected and purpose == "parent_reconciliation"):
+            for dimension in ("jobs", "seconds"):
+                held[dimension] = max(0, held[dimension] - limits[dimension])
+        if (totals["verified_jobs"] + totals["outstanding_reserved_jobs"] + held["jobs"] + 1 > policy["max_jobs"]
+                or totals["verified_seconds"] + totals["outstanding_reserved_seconds"] + held["seconds"]
+                    + limits["seconds"] > policy["max_total_seconds"]):
+            raise OperationBlocked("budget_exhausted")
+        collision = connection.execute("""SELECT ref FROM model_reservations
+            WHERE json_extract(request_json,'$.session_id')=?
+               OR json_extract(request_json,'$.invocation_id')=? LIMIT 1""",
+            (request["session_id"], request["invocation_id"])).fetchone()
+        if collision:
+            raise OperationConflict("Model session/invocation identity already belongs to another reservation")
+        if connection.execute("SELECT 1 FROM operations WHERE workflow_id=? AND node=? AND attempt=?", key).fetchone():
+            raise OperationConflict("Existing v1 operation cannot be treated as a new model grant")
+        connection.execute("INSERT INTO operations VALUES (?,?,?,'active',?,?,NULL,NULL,NULL)", (*key, request_json, digest))
+        connection.execute("INSERT INTO model_reservations VALUES (?,?,?,1,?,'reserved',?,?,?,?,?,?,NULL,NULL,NULL,'reserved_bound')",
+            (*key, model_reservation_ref(*key), purpose, child_id, request_json, digest, limits_json, limits_digest))
+        record = self._model_record(connection.execute(
+            "SELECT * FROM model_reservations WHERE campaign_id=? AND node=? AND attempt=?", key).fetchone())
+        return self._reservation(record, campaign)
+
     @staticmethod
     def _model_state(connection, record, state, *, capture=None, error_type=None, charge_basis=None):
         key = (record["campaign_id"], record["node"], record["attempt"])
@@ -991,6 +1180,8 @@ class WorkflowOperationLedger:
                 blocked = record["status"]
             else:
                 self._dispatchable(connection, campaign)
+                if campaign["policy"]["kind"] == "generation_jobs":
+                    self._job_concurrency(connection, exclude_ref=record["ref"])
                 future = self._future_parent_seconds(campaign,
                     self._model_rows(connection, campaign["campaign_id"]), record=record)
                 if time.time() + future >= campaign["created_at"] + campaign["policy"]["max_total_seconds"]:
@@ -1030,6 +1221,12 @@ class WorkflowOperationLedger:
 
     @staticmethod
     def _verified_capture(value, capture, reservation):
+        if "jobs" in reservation.limits:
+            try:
+                _json(value)
+                return validate_job_capture(value, capture, reservation)
+            except (ValueError, TypeError, KeyError, OverflowError) as exc:
+                raise OperationConflict("Invalid verified generation job capture") from exc
         fields = {"format", "reservation_ref", "request_digest", "session_id", "invocation_id",
                   "backend_digest", "runtime_digest", "prompt_digest", "schema_digest", "context_digest",
                   "status", "capture_ref", "usage", "actual_calls", "elapsed_seconds", "launch_confirmed"}
@@ -1115,6 +1312,8 @@ class WorkflowOperationLedger:
         with self._database() as connection:
             connection.execute("BEGIN IMMEDIATE")
             retained, campaign = self._checked_reservation(connection, reservation)
+            if campaign["policy"]["kind"] == "generation_jobs":
+                return self._commit_job_capture(connection, reservation, retained, campaign, verified)
             if retained["status"] in ("completed", "failed", "cancelled"):
                 if retained["capture_digest"] != _digest(encoded):
                     raise OperationConflict("Conflicting verified model settlement")
@@ -1148,6 +1347,64 @@ class WorkflowOperationLedger:
             result = self._model_record(connection.execute(
                 "SELECT * FROM model_reservations WHERE campaign_id=? AND node=? AND attempt=?", key).fetchone())
         return result
+
+    def _commit_job_capture(self, connection, reservation, retained, campaign, verified):
+        encoded = _json(verified)
+        if retained["status"] in ("completed", "failed", "cancelled"):
+            if retained["capture_digest"] != _digest(encoded):
+                raise OperationConflict("Conflicting verified generation job settlement")
+            return retained
+        if retained["status"] == "reserved":
+            raise OperationConflict("Generation job capture precedes durable launch intent")
+        previous = retained["capture"]
+        if previous is not None:
+            if (previous["launch_confirmed"] and not verified["launch_confirmed"]
+                    or previous["process_reaped"] and not verified["process_reaped"]
+                    or not set(previous["native_session_ids"]).issubset(verified["native_session_ids"])
+                    or verified["elapsed_seconds"] < previous["elapsed_seconds"]
+                    or ("response_sha256" in previous and verified.get("response_sha256") != previous["response_sha256"])
+                    or ("usage" in previous and not self._job_usage_progress(previous["usage"], verified.get("usage")))):
+                raise OperationConflict("Reconciliation cannot erase observed generation job work")
+        sessions = set(verified["native_session_ids"])
+        for row in connection.execute("""SELECT capture_json,capture_digest FROM model_reservations
+                WHERE ref<>? AND capture_json IS NOT NULL""", (reservation.ref,)):
+            other = _retained_json(row["capture_json"], row["capture_digest"])
+            if sessions.intersection(other["native_session_ids"]):
+                raise OperationConflict("Captured native session is reused across model invocations")
+        # Token availability has no bearing on the observed local lifecycle.
+        known_terminal = verified["status"] in ("completed", "failed", "not_started") and verified["process_reaped"]
+        state = ("failed" if verified["status"] == "not_started" else verified["status"]) if known_terminal else "uncertain"
+        self._model_state(connection, retained, state, capture=verified,
+            charge_basis="verified_launch_intent" if known_terminal else "unresolved_job_lifecycle")
+        limits = retained["limits"]
+        provenance = verified["provenance"]
+        violation = (verified["elapsed_seconds"] > limits["seconds"]
+            or provenance.get("context_bytes", 0) > limits["context_bytes"]
+            or provenance.get("output_bytes", 0) > limits["output_bytes"])
+        if violation:
+            connection.execute("""UPDATE model_campaigns SET status=CASE WHEN status='cancelled' THEN status ELSE 'blocked' END,
+                reason='backend_limit_violation' WHERE campaign_id=?""", (campaign["campaign_id"],))
+        return self._model_record(connection.execute(
+            "SELECT * FROM model_reservations WHERE campaign_id=? AND node=? AND attempt=?",
+            (reservation.campaign_id, reservation.node, reservation.attempt)).fetchone())
+
+    @staticmethod
+    def _job_usage_progress(previous, current):
+        if type(current) is not dict:
+            return False
+        for key, value in previous.items():
+            later = current.get(key)
+            if value is None:
+                continue  # An unavailable optional measurement may become known.
+            if type(value) is dict:
+                if not WorkflowOperationLedger._job_usage_progress(value, later):
+                    return False
+            elif type(value) in (int, float):
+                if type(later) not in (int, float) or later < value:
+                    return False
+            elif later != value:
+                return False
+        return True
 
     def reconcile_model_call(self, reservation, *, capture, verify_capture: Callable):
         """Explicit exact-capture reconciliation; performs no model dispatch."""

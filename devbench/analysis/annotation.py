@@ -13,11 +13,27 @@ from .singlecell import detect_doublets, marker_annotation, annotate_celltypist,
 from .streaming import read_table
 
 
-def run_doublets(source_path, store, *, layer, batch_key, seed, max_batch_bytes=1024**3):
+def run_doublets(source_path, store, *, layer, batch_key, seed, capture_key=None, max_batch_bytes=1024**3):
     metrics = read_table(store.path("qc")/"metrics.csv")
-    groups = metrics[batch_key].astype(str)
+    if capture_key is None:
+        def unavailable(folder):
+            pd.DataFrame({"doublet_score": np.nan, "predicted_doublet": pd.NA},
+                         index=metrics.index[metrics["qc_pass"].to_numpy(dtype=bool)]).to_csv(folder/"predictions.csv")
+            report = {"method": "scanpy_scrublet_per_declared_capture", "status": "unavailable",
+                "reason": "capture_library_role_not_declared", "capture_key": None, "batches": [],
+                "integration_batch_key": batch_key,
+                "scope": "predictions_not_known_doublet_truth; capture_identity_required"}
+            atomic_json(folder/"report.json", report)
+            return report
+        return store.run("doublets", unavailable, dependencies=("qc",))
     stages = []
     with open_expression(Path(source_path), layer=layer, batch_key=batch_key) as source:
+        if not source.obs.index.equals(metrics.index):
+            raise ValueError("doublet_capture_row_identity_mismatch")
+        if capture_key not in source.obs or source.obs[capture_key].isna().any() or any(
+                not str(value).strip() for value in source.obs[capture_key]):
+            raise ValueError("declared_capture_library_identities_unavailable")
+        groups = source.obs[capture_key].astype(str)
         for index, group in enumerate(sorted(groups.unique())):
             rows = np.flatnonzero((groups == group).to_numpy() & metrics["qc_pass"].to_numpy(dtype=bool))
             if not len(rows):
@@ -27,10 +43,10 @@ def run_doublets(source_path, store, *, layer, batch_key, seed, max_batch_bytes=
                 # One biological library at a time; a large library is refused
                 # by the allocation guard, never silently sampled or pooled.
                 data = source.subset(rows, max_bytes=max_batch_bytes)
-                data.obs = metrics.iloc[rows][[batch_key]].copy()
+                data.obs = source.obs.iloc[rows][[capture_key]].copy()
                 # This detached, per-library read is owned by this stage. Only
                 # predicted metadata is needed; another expression copy is not.
-                result, report = detect_doublets(data, batch_key=batch_key, seed=seed, copy=False)
+                result, report = detect_doublets(data, batch_key=capture_key, seed=seed, copy=False)
                 result.obs[["doublet_score", "predicted_doublet"]].to_csv(folder/"predictions.csv")
                 atomic_json(folder/"report.json", report)
                 return report
@@ -42,10 +58,11 @@ def run_doublets(source_path, store, *, layer, batch_key, seed, max_batch_bytes=
         frame.to_csv(folder/"predictions.csv")
         reports = [json.loads((store.path(name)/"report.json").read_text()) for name in stages]
         available = frame["doublet_score"].notna()
-        report = {"method": "scanpy_scrublet_per_observed_batch", "filtering": "flag_only",
+        report = {"method": "scanpy_scrublet_per_declared_capture", "filtering": "flag_only",
             "status": "completed" if available.all() else "partial" if available.any() else "unavailable",
             "batches": [batch for report in reports for batch in report["batches"]],
-            "scope": "predictions_not_known_doublet_truth; batch_assumed_to_identify_library"}
+            "capture_key": capture_key, "integration_batch_key": batch_key,
+            "scope": "predictions_not_known_doublet_truth; caller_declared_capture_library"}
         atomic_json(folder/"report.json", report)
         return report
     return store.run("doublets", finish, dependencies=stages)

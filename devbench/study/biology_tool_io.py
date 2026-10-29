@@ -18,7 +18,7 @@ from typing import Any
 
 from .biology_input_limits import (
     PUBLIC_DENIED_KEYS, PUBLIC_MAX_AGGREGATE_BYTES, PUBLIC_MAX_ANNOTATION_BYTES, PUBLIC_MAX_CHUNK_BYTES,
-    PUBLIC_MAX_FEATURES, PUBLIC_MAX_LABEL_CHARS, PUBLIC_MAX_MATRIX_BYTES,
+    PUBLIC_MAX_BULK_FEATURES, PUBLIC_MAX_FEATURES, PUBLIC_MAX_LABEL_CHARS, PUBLIC_MAX_MATRIX_BYTES,
     PUBLIC_MAX_METADATA_BYTES, PUBLIC_MAX_METADATA_COLUMNS, PUBLIC_MAX_METADATA_FIELD_CHARS,
     PUBLIC_MAX_METADATA_HEADER_CHARS, PUBLIC_MAX_METADATA_ROWS, PUBLIC_MAX_TASK_BYTES,
     PUBLIC_MAX_ZARR_FILES, PUBLIC_MAX_ZARR_HEADER_BYTES,
@@ -31,6 +31,7 @@ MAX_METADATA_BYTES = PUBLIC_MAX_METADATA_BYTES
 MAX_ANNOTATION_BYTES = PUBLIC_MAX_ANNOTATION_BYTES
 MAX_CHUNK_BYTES = PUBLIC_MAX_CHUNK_BYTES
 MAX_FEATURES = PUBLIC_MAX_FEATURES
+MAX_BULK_FEATURES = PUBLIC_MAX_BULK_FEATURES
 DESIGN_CONDITION_NUMBER_LIMIT = 1000.0
 MEASUREMENTS = PUBLIC_MEASUREMENTS
 _PRIVATE_KEYS = PUBLIC_DENIED_KEYS
@@ -146,6 +147,30 @@ def validate_public_task(public_task: dict[str, Any]) -> dict[str, Any]:
     context = public_task.get("context", public_task.get("analysis_context", {}))
     if not isinstance(context, dict):
         raise ValueError("Public context must be an object")
+    context = dict(context)
+    role_names = {"condition", "time", "dose", "covariate", "population_unit", "batches", "blocking"}
+    role_declarations = [context.get("analysis_columns"), public_task.get("analysis_columns")]
+    roles = None
+    for declaration_roles in role_declarations:
+        if declaration_roles is None:
+            continue
+        if not isinstance(declaration_roles, dict):
+            raise ValueError("Invalid declared analysis_columns")
+        declared = {key: value for key, value in declaration_roles.items() if key in role_names}
+        if roles is not None and any(roles[key] != declared[key] for key in roles.keys() & declared.keys()):
+            raise ValueError("Contradictory declared analysis_columns roles")
+        roles = {**(roles or {}), **declared}
+    if roles is not None:
+        if "condition" in roles and roles["condition"] is None:
+            raise ValueError("A declared condition role requires an explicit column identifier")
+        for role, column in roles.items():
+            columns = column if role in {"batches", "blocking"} else ([] if column is None else [column])
+            if role == "blocking" and (not isinstance(columns, list) or len(columns) > 1):
+                raise ValueError("A fixed block requires zero or one declared biological-unit column")
+            if (not isinstance(columns, list) or len(columns) > 8
+                    or any(not isinstance(name, str) or not _IDENTIFIER.fullmatch(name) for name in columns)
+                    or len(set(columns)) != len(columns)):
+                raise ValueError("Analysis column roles require bounded identifiers")
     layer = public_task.get("measurement_layer", public_task.get("measurement", public_task.get("measurement_type")))
     declaration = dict(layer) if isinstance(layer, dict) else (
         dict(context["measurement"]) if isinstance(context.get("measurement"), dict) else {"measurement": layer})
@@ -157,6 +182,28 @@ def validate_public_task(public_task: dict[str, Any]) -> dict[str, Any]:
     route = "continuous_likelihood" if measurement == "continuous" else "count_likelihood"
     if declaration.get("analysis_route", route) != route:
         raise ValueError("Measurement provenance and analysis route disagree")
+    history = public_task.get("transformation_history", context.get("transformation_history", []))
+    if not isinstance(history, list) or any(not isinstance(item, (dict, str)) for item in history):
+        raise ValueError("Transformation history must be a list of declarations")
+    if measurement != "continuous":
+        count_semantics = {"raw_counts", "direct_counts", "umi_counts", "non_umi_counts"}
+        if declaration.get("assay_semantics", "raw_counts") not in count_semantics:
+            raise ValueError("Count assay provenance requires an original supported count assay")
+        selected = declaration.get("layer", declaration.get("matrix_source", declaration.get("assay")))
+        def layer_name(value):
+            return value.removeprefix("layers/") if isinstance(value, str) else value
+        for entry in history:
+            item = entry if isinstance(entry, dict) else {"operation": entry}
+            target = item.get("output_layer", item.get("target_layer", item.get("layer")))
+            # Only an explicitly distinct output can exempt a transformation.
+            # An unspecified target cannot establish that selected counts survived.
+            if target is not None and selected is not None and layer_name(target) != layer_name(selected):
+                continue
+            operation = str(item.get("operation", "")).lower()
+            semantics = item.get("output_semantics")
+            if (semantics is not None and semantics not in count_semantics) or any(
+                    token in operation for token in ("normaliz", "correct", "scal", "imput")) or operation.startswith("log"):
+                raise ValueError("Transformation history contradicts selected count assay provenance")
     hierarchy = public_task.get("unit_hierarchy", public_task.get("biological_unit_hierarchy",
                                context.get("biological_units")))
     if not isinstance(hierarchy, dict) and public_task.get("population_unit_label"):
@@ -167,7 +214,7 @@ def validate_public_task(public_task: dict[str, Any]) -> dict[str, Any]:
         hierarchy.setdefault("population_unit_label", public_task.get("population_unit_label"))
         hierarchy.setdefault("population_unit", context.get("biological_unit", "donor"))
     if not isinstance(hierarchy, dict) or hierarchy.get("population_unit") not in {
-            "donor", "organism", "experimental_culture"}:
+            "donor", "organism", "experimental_culture", "donor_derived_cell_line"}:
         raise ValueError("Public task requires its biological unit hierarchy")
     hierarchy = dict(hierarchy)
     hierarchy.setdefault("specimen_label", "specimen_id")
@@ -177,6 +224,10 @@ def validate_public_task(public_task: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Biological unit labels must be explicit bounded identifiers")
     if len(set(labels)) != len(labels):
         raise ValueError("Biological unit hierarchy labels must be distinct")
+    if roles is not None and roles.get("population_unit", labels[0]) != labels[0]:
+        raise ValueError("Analysis population-unit role contradicts the declared hierarchy")
+    if roles is not None and roles.get("blocking", []) not in ([], [labels[0]]):
+        raise ValueError("The fixed block must be the declared biological-unit column")
     targets = public_task.get("questions", public_task.get("targets"))
     if not isinstance(targets, (list, tuple)) or not 1 <= len(targets) <= 50:
         raise ValueError("Public task requires 1..50 target definitions")
@@ -206,7 +257,9 @@ def validate_public_task(public_task: dict[str, Any]) -> dict[str, Any]:
     result = {"measurement": measurement, "measurement_layer": declaration,
               "unit_hierarchy": hierarchy, "targets": projected, "analysis_context": context,
               "observation_id_label": public_task.get("observation_id_label", "sample_id")}
-    for name in ("gene_ids", "gene_universe", "analysis_context", "transformation_history"):
+    if roles is not None:
+        result["analysis_columns"] = roles
+    for name in ("gene_ids", "gene_universe", "transformation_history"):
         if name in public_task:
             result[name] = public_task[name]
     result.setdefault("transformation_history", context.get("transformation_history", []))
@@ -283,6 +336,7 @@ def _read_csv_expression(path: Path, measurement: str):
     if not path.is_file() or path.stat().st_size > MAX_MATRIX_BYTES:
         raise ValueError("Expression CSV exceeds its 100 MB read bound")
     values, genes = array("d"), []
+    maximum_features = MAX_BULK_FEATURES if measurement in {"raw_counts", "continuous"} else MAX_FEATURES
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.reader(handle, strict=True)
         header = next(reader, None)
@@ -292,7 +346,7 @@ def _read_csv_expression(path: Path, measurement: str):
         if len(samples) * 8 > MAX_CHUNK_BYTES:
             raise ValueError("Expression row exceeds the bounded decoded chunk size")
         for row in reader:
-            if len(row) != len(header) or len(genes) >= MAX_FEATURES:
+            if len(row) != len(header) or len(genes) >= maximum_features:
                 raise ValueError("Expression CSV has inconsistent dimensions or too many genes")
             if (len(genes) + 1) * len(samples) * 8 > MAX_MATRIX_BYTES:
                 raise ValueError("Decoded expression exceeds the 100 MB matrix bound")
@@ -329,14 +383,17 @@ def _read_zarr_expression(path: Path, measurement: str, *, max_storage_bytes=PUB
     from .zarr_bounds import validate_prepared_zarr
 
     encoded_bytes = _zarr_encoded_size(path, max_storage_bytes)
+    maximum_features = MAX_BULK_FEATURES if measurement in {"raw_counts", "continuous"} else MAX_FEATURES
     provenance = validate_prepared_zarr(path,
         measurement_type="continuous" if measurement == "continuous" else "raw_counts",
         max_chunk_bytes=MAX_CHUNK_BYTES, max_metadata_bytes=PUBLIC_MAX_ZARR_METADATA_BYTES,
-        max_matrix_bytes=MAX_MATRIX_BYTES)
+        max_matrix_bytes=MAX_MATRIX_BYTES, max_genes=maximum_features)
     expression_header = json.loads(bounded_bytes(path / "expression" / ".zarray", PUBLIC_MAX_ZARR_HEADER_BYTES),
                                    parse_constant=_reject_nonfinite_json, object_pairs_hook=_unique_json_object)
     source_kind = validate_expression_source_dtype(expression_header.get("dtype"), measurement)
     shape = provenance["shape"]
+    if shape[0] > maximum_features:
+        raise ValueError("Expression Zarr exceeds the complete feature-family transport bound")
     if math.prod(shape) * 8 > MAX_MATRIX_BYTES:
         raise ValueError("Float64 expression view exceeds the 100 MB matrix bound")
     import numpy as np
@@ -428,5 +485,8 @@ conversion occurs here. CSV and complete fixed-array Zarr v2 are supported.
         matrix_bytes=int(expression.nbytes), exact_gene_alignment=True, exact_sample_alignment=True,
         transformation_history=config.get("transformation_history", []),
         measurement_declaration=config["measurement_layer"])
+    context = dict(config["analysis_context"])
+    if "analysis_columns" in config:
+        context["analysis_columns"] = config["analysis_columns"]
     return ObservedData(expression, genes, samples, metadata, raw_annotations, measurement,
-                        config["unit_hierarchy"], tuple(config["targets"]), provenance, config["analysis_context"])
+                        config["unit_hierarchy"], tuple(config["targets"]), provenance, context)

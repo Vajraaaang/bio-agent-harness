@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
@@ -224,6 +225,10 @@ def marker_annotation(data, panels, *, symbol_column=None, minimum_coverage=0.5,
         scores.append(np.asarray(normalized[:, columns].mean(axis=1)).ravel())
     labels = pd.Series("uncertain", index=data.obs_names, name="marker_cell_type")
     evidence = {"method": "mean_log1p_positive_marker_expression/1", "coverage": coverage,
+                "reference_identity": "sha256:" + hashlib.sha256(json.dumps(panels, sort_keys=True,
+                    separators=(",", ":")).encode()).hexdigest(),
+                "reference_version": "content_addressed_marker_panel/1",
+                "scores_are_calibrated_probabilities": False,
                 "symbol_source": source, "minimum_margin": minimum_margin,
                 "scope": "candidate_label_not_experimental_identity", "status": "insufficient_marker_coverage"}
     if not names:
@@ -232,10 +237,24 @@ def marker_annotation(data, panels, *, symbol_column=None, minimum_coverage=0.5,
     order = np.argsort(matrix, axis=1)
     best = matrix[np.arange(len(labels)), order[:, -1]]
     second = matrix[np.arange(len(labels)), order[:, -2]] if len(names)>1 else np.zeros(len(labels))
-    supported = (best >= 1.0) & (best-second >= minimum_margin)
+    supported = (best >= 1.0) & (best > second) & (best-second >= minimum_margin)
     labels.loc[supported] = np.asarray(names)[order[supported, -1]]
-    evidence.update(status="completed", uncertain_cells=int((~supported).sum()))
+    evidence.update(status="completed", uncertain_cells=int((~supported).sum()),
+                    cell_score_preview=_score_preview(data.obs_names, names, matrix, labels), preview_limit=50)
     return labels, evidence
+
+
+def _score_preview(cell_ids, names, values, labels):
+    """At most fifty observations and two competing scores per observation."""
+    result = []
+    for index, cell in enumerate(cell_ids[:50]):
+        order = np.argsort(-values[index], kind="stable")[:2]
+        best = float(values[index, order[0]])
+        second = float(values[index, order[1]]) if len(order) > 1 else 0.0
+        result.append({"cell_id": str(cell), "label": str(labels.iloc[index]),
+            "competing_scores": {str(names[number]): float(values[index, number]) for number in order},
+            "top_score": best, "runner_up_score": second, "margin": best-second})
+    return result
 
 
 def symbol_count_view(data, symbol_column=None):
@@ -302,10 +321,13 @@ def annotate_celltypist(data, model_path, *, expected_sha256, minimum_score=0.5,
     if np.any(values[np.arange(data.n_obs), classes.get_indexer(labels)] != best):
         raise ValueError("invalid_celltypist_labels: label does not match a maximum score")
     # CellTypist uses per-class sigmoid scores, not a row-normalized distribution.
-    uncertain = (best < minimum_score) | (best-second < minimum_margin)
+    uncertain = (best < minimum_score) | (best <= second) | (best-second < minimum_margin)
     labels.iloc[np.flatnonzero(uncertain)] = "uncertain"
     return labels, pd.Series(best, index=data.obs_names, name="cell_type_score"), {
         "method": "celltypist", "status": "completed", "model_sha256": digest,
+        "reference_identity": "sha256:" + digest, "reference_version": "content_addressed_celltypist_model/1",
+        "scores_are_calibrated_probabilities": False,
+        "cell_score_preview": _score_preview(data.obs_names, classes, values, labels), "preview_limit": 50,
         "uncertain_cells": int(uncertain.sum()),
         "minimum_score": minimum_score, "minimum_margin": minimum_margin,
         "scope": "classifier_scores_not_calibrated_probabilities_or_experimental_identity"}

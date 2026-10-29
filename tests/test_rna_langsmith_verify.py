@@ -1,6 +1,6 @@
 """Independent bounded read and exact-operation reconciliation controls."""
 from copy import deepcopy
-from datetime import datetime,timezone
+from datetime import datetime,timedelta,timezone
 import json
 import time
 from uuid import uuid4
@@ -11,6 +11,141 @@ from devbench.study.contracts import canonical_json_bytes
 from devbench.study.langsmith_outbox import digest,ExportOutbox
 from tests.test_rna_hosted_trace_contract import manifest,criteria
 from tests.test_rna_langsmith_live import live_fixture
+
+
+def historical_decoder_scope(tmp_path):
+    from tests.test_rna_langsmith_live import historical_readback_fixture
+    from tests.test_rna_hosted_workflow_contract import _readback_api
+    from devbench.study.rna_langsmith_binding import ProjectAttestationAuthority
+    scope, operations, starts, latest = historical_readback_fixture(tmp_path)
+    contract = _readback_api()
+    packet = contract.prepare_context_readback_packet(**scope)
+    reader = dict(format="devbench.rna-project-binding-context/2", packet_digest=contract.packet_digest(packet),
+        session_digest=contract.packet_digest(packet), action_digest=contract.packet_digest(packet["readback"]),
+        source_digest=scope["installed_identity"]["source_digest"], runtime_digest=scope["installed_identity"]["runtime_digest"],
+        endpoint=scope["target"]["endpoint"], region="us", workspace_id=scope["target"]["workspace_id"],
+        project_id=scope["target"]["project_id"], project_name=scope["target"]["project_name"],
+        expires_at=scope["expires_at"], max_age_seconds=30)
+    producer = {**reader, "packet_digest": scope["producer_binding"]["packet_digest"],
+        "session_digest": scope["producer_binding"]["session_digest"], "action_digest": "a" * 64,
+        "source_digest": scope["session"]["source_digest"], "runtime_digest": scope["session"]["runtime_digest"],
+        "expires_at": scope["session"]["expires_at"]}
+    authority = ProjectAttestationAuthority(expected_context=reader)
+    receipt = authority.issue_from_response(response=dict(status_code=200, body=dict(id=reader["project_id"],
+        tenant_id=reader["workspace_id"], name=reader["project_name"])), request_nonce=str(uuid4()),
+        observed_at=scope["now"].isoformat())
+    return scope, operations, starts, latest, reader, producer, receipt
+
+
+def historical_decode(decoder, body, item, scope, starts, reader, producer, receipt, **changes):
+    arguments = dict(schema_format="devbench.rna-joined-context-run-response/5", method="GET",
+        expected_payload=item["payload"], project_receipt=receipt, reader_context=reader,
+        producer_context=producer, expected_topology=starts, expected_session=scope["session"], now=scope["now"])
+    arguments.update(changes)
+    return decoder(body, **arguments)
+
+
+def historical_remote(item):
+    payload = deepcopy(item["payload"])
+    error = payload.get("error")
+    payload.update(status="error" if error is not None else "success" if "end_time" in payload else "pending",
+        app_path="/synthetic-readback")
+    return payload
+
+
+def test_historical_joined_context_decoder_uses_fresh_reader_and_original_expired_producer(tmp_path):
+    decoder = getattr(verify, "decode_historical_joined_context_run_response", None)
+    assert callable(decoder), "Historical comparison with separate reader/producer bindings is absent"
+    scope, _, starts, latest, reader, producer, receipt = historical_decoder_scope(tmp_path)
+    snapshots = deepcopy((scope["session"], starts, latest, reader, producer))
+    assert len(starts) == 9
+    assert producer["source_digest"] != reader["source_digest"]
+    assert producer["expires_at"] < reader["expires_at"]
+    assert any(item["operation"]["revision"] == 0 for item in latest.values())
+    for item in latest.values():
+        result, vector = historical_decode(decoder, canonical_json_bytes(historical_remote(item)), item,
+            scope, starts, reader, producer, receipt)
+        assert result == "exact_revision_match"
+        assert vector["extra"]["metadata"]["source_digest"] == producer["source_digest"]
+    assert snapshots == (scope["session"], starts, latest, reader, producer)
+
+
+@pytest.mark.parametrize("substitution", ["serialized_receipt", "reader_source", "reader_runtime", "reader_action",
+    "producer_source", "producer_runtime", "producer_session", "producer_project", "project_join", "stale_receipt", "POST"])
+def test_historical_decoder_requires_independent_fresh_project_receipt_and_exact_two_bindings(tmp_path, substitution):
+    decoder = getattr(verify, "decode_historical_joined_context_run_response", None)
+    assert callable(decoder), "Historical comparison with separate reader/producer bindings is absent"
+    scope, _, starts, latest, reader, producer, receipt = historical_decoder_scope(tmp_path)
+    item = next(iter(latest.values())); remote = historical_remote(item); changes = {}
+    if substitution == "serialized_receipt": receipt = receipt.to_record()
+    elif substitution.startswith("reader_"):
+        field = {"reader_source": "source_digest", "reader_runtime": "runtime_digest", "reader_action": "action_digest"}[substitution]
+        reader = {**reader, field: "0" * 64}
+    elif substitution.startswith("producer_"):
+        field = {"producer_source": "source_digest", "producer_runtime": "runtime_digest",
+            "producer_session": "session_digest", "producer_project": "project_id"}[substitution]
+        producer = {**producer, field: str(uuid4()) if field == "project_id" else "0" * 64}
+    elif substitution == "project_join": remote["session_id"] = str(uuid4())
+    elif substitution == "stale_receipt": changes["now"] = scope["now"] + timedelta(seconds=31)
+    else: changes["method"] = "POST"
+    with pytest.raises(ValueError):
+        historical_decode(decoder, canonical_json_bytes(remote), item, scope, starts, reader, producer, receipt, **changes)
+
+
+@pytest.mark.parametrize("mutation", ["identity", "parent", "proof", "proof_bool", "payload", "ancestry", "old_revision", "status", "error"])
+def test_historical_decoder_preserves_identity_topology_terminal_payload_and_latest_proof(tmp_path, mutation):
+    decoder = getattr(verify, "decode_historical_joined_context_run_response", None)
+    assert callable(decoder), "Historical comparison with separate reader/producer bindings is absent"
+    scope, operations, starts, latest, reader, producer, receipt = historical_decoder_scope(tmp_path)
+    item = next(item for item in latest.values() if item["operation"]["operation"] == "finish")
+    remote = historical_remote(item)
+    if mutation == "identity": remote["id"] = str(uuid4())
+    elif mutation == "parent": remote["parent_run_id"] = str(uuid4())
+    elif mutation == "proof": remote["extra"]["metadata"]["remote_proof"]["operation_id"] = str(uuid4())
+    elif mutation == "proof_bool": remote["extra"]["metadata"]["remote_proof"]["revision"] = True
+    elif mutation == "payload": remote["inputs"] = {"prompt": "PRIVATE_READBACK_CANARY"}
+    elif mutation == "ancestry": starts[item["payload"]["id"]]["dotted_order"] = starts[next(iter(starts))]["dotted_order"]
+    elif mutation == "old_revision": remote = historical_remote(next(old for old in operations if old["payload"]["id"] == item["payload"]["id"] and old["operation"]["revision"] == 0))
+    elif mutation == "status": remote["status"] = "success"
+    else: remote["error"] = "PRIVATE_READBACK_CANARY"
+    try:
+        result, vector = historical_decode(decoder, canonical_json_bytes(remote), item, scope, starts, reader, producer, receipt)
+        assert result != "exact_revision_match" and vector is None
+    except ValueError as caught:
+        assert "PRIVATE_READBACK_CANARY" not in str(caught)
+
+
+@pytest.mark.parametrize("status,normalized", [("pending", "pending"), ("success", "success"), ("error", "error"),
+    (None, "missing"), ("__absent__", "missing"), ("PRIVATE_PROVIDER_STATUS_CANARY", "unrecognized"), (False, "unrecognized")])
+def test_context_readback_diagnostic_retains_only_closed_actual_provider_status(tmp_path, status, normalized):
+    diagnostic = getattr(verify, "context_readback_response_diagnostic", None)
+    assert callable(diagnostic), "Closed actual-status readback diagnostics are absent"
+    _, _, _, latest, _, _, _ = historical_decoder_scope(tmp_path)
+    item = next(iter(latest.values())); remote = historical_remote(item)
+    remote["status"] = status
+    if status == "__absent__": remote.pop("status")
+    body = canonical_json_bytes(remote)
+    row = diagnostic(body, item["payload"], decoder_result="invalid_response")
+    assert row["actual_provider_status"] == normalized
+    assert row["body_length"] == len(body) and row["body_sha256"] == digest(body)
+    assert set(row) == {"span_id", "body_length", "body_sha256", "mismatch_category", "actual_provider_status"}
+    assert "PRIVATE_PROVIDER_STATUS_CANARY" not in json.dumps(row)
+
+
+def test_historical_decoder_checks_identity_even_when_diagnostic_prioritizes_status(tmp_path):
+    decoder = getattr(verify, "decode_historical_joined_context_run_response", None)
+    diagnostic = getattr(verify, "context_readback_response_diagnostic", None)
+    assert callable(decoder) and callable(diagnostic), "Separate strict comparison and status diagnostic are absent"
+    scope, _, starts, latest, reader, producer, receipt = historical_decoder_scope(tmp_path)
+    item = next(iter(latest.values())); remote = historical_remote(item)
+    remote.update(id=str(uuid4()), status="PRIVATE_PROVIDER_STATUS_CANARY")
+    body = canonical_json_bytes(remote)
+    with pytest.raises(ValueError) as caught:
+        historical_decode(decoder, body, item, scope, starts, reader, producer, receipt)
+    assert "PRIVATE_PROVIDER_STATUS_CANARY" not in str(caught.value)
+    row = diagnostic(body, item["payload"], decoder_result="invalid_response")
+    assert row["mismatch_category"] == "provider_status_mismatch"
+    assert row["actual_provider_status"] == "unrecognized"
 
 
 def prepared(tmp_path):
@@ -69,6 +204,20 @@ def test_missing_or_later_revision_proof_cannot_acknowledge(tmp_path):
     assert result['verification_result']=='state_match_only'
     remote['extra']['metadata']['remote_proof']={**item['payload']['extra']['metadata']['remote_proof'],'revision':42}
     assert verifier.observe(operation=item['operation'],expected_payload=item['payload'],persisted_monotonic_ns=time.monotonic_ns())['verification_result']=='mismatch'
+
+
+@pytest.mark.parametrize('revision,boolean', [(0,False),(1,True)])
+def test_boolean_remote_revision_cannot_acknowledge_integer_operation(tmp_path,revision,boolean):
+    _,_,item,value=prepared(tmp_path)
+    item['operation']['revision']=revision
+    item['payload']=verify.bind_remote_proof(item['payload'],item['operation'])
+    item['operation']['payload_sha256']=digest(canonical_json_bytes(item['payload']))
+    remote={**deepcopy(item['payload']),'tenant_id':value['workspace_id']}
+    remote['extra']['metadata']['remote_proof']['revision']=boolean
+    verifier=verify.RemoteRunVerifier(manifest=value,criteria=criteria(),api_key=None,read_transport=lambda **kw:{'status_code':200,'body':remote})
+    result=verifier.observe(operation=item['operation'],expected_payload=item['payload'],persisted_monotonic_ns=time.monotonic_ns())
+    assert result['verification_result']=='mismatch'
+    assert result['response_class']=='mismatch'
 
 
 @pytest.mark.parametrize('code,expected',[(401,'auth_denied'),(403,'auth_denied'),(409,'conflict'),(429,'rate_limited'),(500,'server_error'),(302,'redirect')])

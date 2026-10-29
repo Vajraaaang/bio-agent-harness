@@ -35,7 +35,9 @@ def test_stdio_declares_strict_inputs_and_structured_outputs(tmp_path):
     async def check(session):
         actual = {tool.name: tool for tool in (await session.list_tools()).tools}
         expected = {tool["name"]: tool for tool in ToolDispatcher().get_schemas()}
-        assert set(actual) == set(expected) and len(actual) == 10
+        assert set(actual) == set(expected) and len(actual) == 11
+        assert set(actual["bulk_condition_contrast"].inputSchema["required"]) == {
+            "counts_path", "metadata_path", "public_task", "options"}
         for name, tool in actual.items():
             assert tool.inputSchema.get("additionalProperties") is False, name
             assert tool.inputSchema["required"] == expected[name]["inputSchema"]["required"]

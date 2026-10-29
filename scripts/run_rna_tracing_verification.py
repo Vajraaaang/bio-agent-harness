@@ -12,13 +12,16 @@ import io
 import hashlib
 import importlib.metadata
 import importlib.util
+import ipaddress
 import json
 import os
 from pathlib import Path
+import socket
 import sys
 import time
 import traceback
 import zipfile
+import xml.etree.ElementTree as ET
 
 WORKSPACE = Path('/Users/vajraang/Documents/ChatGPT/bio-agent-harness')
 PACKAGE_ROOTS = ('devbench', 'devbench_engine', 'devharness', 'devharness_controlled',
@@ -32,6 +35,74 @@ FOCUSED_BASE = frozenset('tests/' + name + '.py' for name in (
     'test_analysis_bundle', 'test_source_bundle_verification', 'test_langsmith_export', 'test_rna_investigation_backend',
     'test_rna_investigation_budget', 'test_rna_investigation_replay',
     'test_langgraph_investigations'))
+PUBLICATION_SCOPE_VERSION = 'rna-publication/1'
+LIVE_ROUTE_SCOPE_VERSION = 'rna-live-route/1'
+MEDIATED_ROUTE_SCOPE_VERSION = 'rna-live-route/2'
+MEDIATED_OBSERVABILITY_SCOPE_VERSION = 'rna-live-route/3'
+CONTEXT_OBSERVATION_SCOPE_VERSION = 'rna-live-route/4'
+SIGNEDIN_ROUTE_SCOPE_VERSION = 'rna-signedin-route/1'
+CONTEXT_READBACK_SCOPE_VERSION = 'rna-context-readback/1'
+APPROVAL_SETUP_SCOPE_VERSION = 'rna-signedin-approval-setup/1'
+LIVE_ROUTE_SOURCES = frozenset({
+    'devbench/study/rna_hosted_workflow_contract.py',
+    'devbench/study/rna_hosted_workflow.py', 'devbench/study/rna_hosted_tls.py',
+    'devbench/study/rna_hosted_connection_contract.py',
+    'devbench/study/rna_connection_prepare.py',
+    'devbench/study/langsmith_outbox.py', 'devbench/study/rna_langsmith_export.py',
+    'devbench/study/rna_langsmith_live.py', 'devbench/study/rna_langsmith_verify.py',
+    'devbench/study/rna_hosted_exporter.py'})
+PUBLICATION_BASE_TESTS = frozenset('tests/' + name + '.py' for name in (
+    'test_rna_publication_evidence', 'test_rna_publication_comparison',
+    'test_rna_scientific_trial', 'test_rna_scientific_trial_contract',
+    'test_execution_contract_repair', 'test_figure_artifacts',
+    'test_scientific_review', 'test_scientific_review_agent', 'test_completed_scientific_review'))
+PUBLICATION_NEW_TESTS = frozenset('tests/' + name + '.py' for name in (
+    'test_rna_publication_profiles', 'test_rna_publication_sources', 'test_rna_reference_extraction',
+    'test_rna_execution_inputs', 'test_rna_comparison_outputs', 'test_rna_publication_metrics',
+    'test_rna_publication_report', 'test_rna_publication_figures', 'test_rna_publication_verification',
+    'test_rna_scientific_trial_v2', 'test_rna_trial_authority', 'test_rna_trial_dispatch_guard',
+    'test_rna_publication_authority', 'test_rna_publication_comparison_v2',
+    'test_rna_assessment_workflow_binding', 'test_rna_execution_route_qualification',
+    'test_rna_execution_route_observability', 'test_rna_hosted_qualification',
+    'test_rna_hosted_trace_invariance', 'test_rna_langsmith_verify'))
+LIVE_ROUTE_TESTS = frozenset('tests/' + name + '.py' for name in (
+    'test_rna_hosted_tls', 'test_rna_hosted_workflow_contract',
+    'test_rna_hosted_workflow_projection', 'test_rna_hosted_workflow',
+    'test_rna_hosted_workflow_outbox',
+    'test_rna_hosted_workflow_errors',
+    'test_langsmith_connection_prepare',
+    'test_rna_live_route_verification',
+    'test_rna_hosted_connection', 'test_rna_readback_compatibility',
+    'test_rna_langsmith_binding', 'test_rna_langsmith_schema',
+    'test_rna_hosted_qualification', 'test_rna_hosted_trace_invariance',
+    'test_rna_langsmith_verify', 'test_rna_hosted_exporter_isolation',
+    'test_rna_hosted_trace_contract'))
+MEDIATED_ROUTE_SOURCES = frozenset('devbench/analysis/' + name + '.py' for name in (
+    'rna_mediated_backend', 'rna_route_qualification', 'method_planner',
+    'workflow_operations', 'rna_trial_authority', 'rna_scientific_trial'))
+MEDIATED_ROUTE_TESTS = frozenset({'tests/test_rna_mediated_backend.py', 'tests/test_rna_route_qualification.py'})
+MEDIATED_OBSERVABILITY_SOURCES = frozenset('devbench/analysis/' + name + '.py' for name in (
+    'rna_mediated_observability', 'rna_trace_receipts', 'rna_trace_projection',
+    'rna_trace_contract', 'methods'))
+MEDIATED_OBSERVABILITY_TESTS = frozenset({
+    'tests/test_rna_mediated_observability.py', 'tests/test_rna_mediated_capture_registration.py'})
+CONTEXT_OBSERVATION_SOURCES = frozenset({'devbench/study/rna_hosted_context_contract.py'})
+
+SIGNEDIN_ROUTE_SOURCES = frozenset({
+    "devbench/analysis/codex_signedin.py", "devbench/analysis/codex_job_policy.py",
+    "devbench/analysis/codex_job_trace.py", "scripts/prepare_codex_signedin_probe.py"})
+SIGNEDIN_ROUTE_TESTS = frozenset("tests/" + name + ".py" for name in (
+    "test_codex_signedin", "test_codex_job_budget", "test_rna_signedin_trial",
+    "test_codex_job_trace", "test_codex_signedin_probe", "test_codex_signedin_hosted_profile"))
+
+CONTEXT_READBACK_SOURCES = frozenset({
+    "devbench/study/rna_hosted_context_readback_contract.py",
+    "devbench/study/rna_hosted_context_readback.py"})
+
+APPROVAL_SETUP_SOURCES = frozenset({
+    "devbench/analysis/rna_approval_setup.py", "scripts/rna_approval_setup.py",
+    "docs/rna-research-approval-setup.md"})
+
 # Frozen historical selection names are inserted below; no retained test code is imported.
 HISTORICAL_TESTS = frozenset(('tests/test_analysis_bundle.py', 'tests/test_analysis_checkpoints.py', 'tests/test_analysis_episodes.py', 'tests/test_analysis_notebooks.py', 'tests/test_analysis_scorecard.py', 'tests/test_annotation_judgment_policy.py', 'tests/test_benchmarks.py', 'tests/test_biology_broker_contracts.py', 'tests/test_biology_bulk_contracts.py', 'tests/test_biology_bulk_tools.py', 'tests/test_biology_dataset_contracts.py', 'tests/test_biology_metrics_contracts.py', 'tests/test_biology_pipeline.py', 'tests/test_biology_scoring_contracts.py', 'tests/test_biology_singlecell_contracts.py', 'tests/test_biology_singlecell_tools.py', 'tests/test_cli_app_layout.py', 'tests/test_cli_capture_contracts.py', 'tests/test_cli_identity.py', 'tests/test_discovery_baselines.py', 'tests/test_discovery_claims.py', 'tests/test_discovery_review.py', 'tests/test_discovery_scoring.py', 'tests/test_episode_agent.py', 'tests/test_episode_cli.py', 'tests/test_episode_codex.py', 'tests/test_episode_planning.py', 'tests/test_episode_proposals.py', 'tests/test_episode_synthesis.py', 'tests/test_exec_preflight.py', 'tests/test_execution_contract_repair.py', 'tests/test_extensible_method_bounds.py', 'tests/test_extensible_methods.py', 'tests/test_figure_artifacts.py', 'tests/test_figure_catalog.py', 'tests/test_figure_reporting.py', 'tests/test_figure_revisions.py', 'tests/test_langchain_tools.py', 'tests/test_langgraph_example.py', 'tests/test_langgraph_investigations.py', 'tests/test_langgraph_workflow.py', 'tests/test_method_action_scope.py', 'tests/test_method_authoring.py', 'tests/test_method_authoring_contract.py', 'tests/test_method_comparison_provenance.py', 'tests/test_method_contracts.py', 'tests/test_method_diagnostic_outputs.py', 'tests/test_method_diagnostic_profiles.py', 'tests/test_method_observation_selection.py', 'tests/test_method_planner.py', 'tests/test_method_planner_cli.py', 'tests/test_method_planner_codex.py', 'tests/test_method_planner_contract.py', 'tests/test_method_planner_guards.py', 'tests/test_method_planner_recovery.py', 'tests/test_method_planner_scientific_links.py', 'tests/test_method_planner_scientific_safeguards.py', 'tests/test_method_profile_admission.py', 'tests/test_method_selection_evaluation.py', 'tests/test_method_selection_pilot_runner.py', 'tests/test_method_sources.py', 'tests/test_method_store_access.py', 'tests/test_method_verification_scope.py', 'tests/test_model_telemetry.py', 'tests/test_planted_discovery.py', 'tests/test_reasoning_review.py', 'tests/test_rna_independent_postfit_workflow.py', 'tests/test_rna_investigation_backend.py', 'tests/test_rna_investigation_budget.py', 'tests/test_rna_investigation_contract.py', 'tests/test_rna_investigation_evaluation.py', 'tests/test_rna_investigation_evaluation_isolation.py', 'tests/test_rna_investigation_parent_integration.py', 'tests/test_rna_investigation_policy.py', 'tests/test_rna_investigation_projection.py', 'tests/test_rna_investigation_reconciliation.py', 'tests/test_rna_investigation_recovery.py', 'tests/test_rna_investigation_replay.py', 'tests/test_rna_investigation_science.py', 'tests/test_runtime_identity.py', 'tests/test_scientific_integrity_regressions.py', 'tests/test_scientific_judgment_contract.py', 'tests/test_scientific_objects.py', 'tests/test_scientific_plan_context.py', 'tests/test_scientific_review_agent.py', 'tests/test_scientific_workspace.py', 'tests/test_scientific_workspace_asset.py', 'tests/test_scientific_workspace_http.py', 'tests/test_source_bundle_verification.py', 'tests/test_sqlite_schema_guards.py', 'tests/test_study_adapter.py', 'tests/test_study_permissions.py', 'tests/test_study_supervision.py', 'tests/test_tools.py', 'tests/test_watchdog.py', 'tests/test_watchdog_growth_window.py', 'tests/test_watchdog_observations.py', 'tests/test_workbench_organization_audit_asset.py', 'tests/test_workbench_planning.py', 'tests/test_workbench_proposals.py', 'tests/test_workbench_ui.py', 'tests/test_workbench_ui_agent_asset.py', 'tests/test_workbench_ui_figures.py', 'tests/test_workbench_ui_organization.py', 'tests/test_workbench_ui_organization_asset.py', 'tests/test_workbench_ui_planning.py', 'tests/test_workbench_ui_recovery.py', 'tests/test_workbench_ui_workspace_asset.py', 'tests/test_workbench_view_state_recovery.py', 'tests/test_worker_cancellation.py', 'tests/test_worker_limit_context.py', 'tests/test_workflow_operations.py'))
 
@@ -65,6 +136,105 @@ def absolute(value: str) -> Path:
     if not path.is_absolute() or path != path.resolve() or not path.is_relative_to(WORKSPACE):
         raise ValueError('Absolute nonsymlink assigned-workspace path required')
     return path
+
+
+def source_scope(manifest: dict) -> str:
+    if manifest.get('format') == 'devbench.rna-tracing-source/1':
+        closed(manifest, {'format', 'files'}, 'source manifest')
+        return 'software'
+    closed(manifest, {'format', 'scope', 'scope_version', 'files'}, 'publication source manifest')
+    if manifest['format'] != 'devbench.rna-tracing-source/2' or manifest['scope'] != 'publication-software':
+        raise ValueError('Unknown source format or scope')
+    if manifest['scope_version'] not in (PUBLICATION_SCOPE_VERSION, LIVE_ROUTE_SCOPE_VERSION, MEDIATED_ROUTE_SCOPE_VERSION, MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+        raise ValueError('Unsupported publication scope version')
+    if manifest['scope_version'] in (LIVE_ROUTE_SCOPE_VERSION, MEDIATED_ROUTE_SCOPE_VERSION, MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+        required_sources = LIVE_ROUTE_SOURCES
+        if manifest['scope_version'] in (MEDIATED_ROUTE_SCOPE_VERSION, MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+            required_sources |= MEDIATED_ROUTE_SOURCES
+        if manifest['scope_version'] in (MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+            required_sources |= MEDIATED_OBSERVABILITY_SOURCES
+        if manifest['scope_version'] in (CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+            required_sources |= CONTEXT_OBSERVATION_SOURCES
+        if manifest['scope_version'] in (SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+            required_sources |= SIGNEDIN_ROUTE_SOURCES
+        if manifest['scope_version'] in (CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+            required_sources |= CONTEXT_READBACK_SOURCES
+        if manifest['scope_version'] == APPROVAL_SETUP_SCOPE_VERSION:
+            required_sources |= APPROVAL_SETUP_SOURCES
+        if not isinstance(manifest['files'], dict) or not required_sources.issubset(manifest['files']):
+            raise ValueError('Live source manifest omits required product source closure')
+    return manifest['scope']
+
+
+def junit_counts(path: Path) -> dict:
+    if not path.is_file() or path.is_symlink() or path.stat().st_size > 32 * 1024 * 1024:
+        raise ValueError('Missing or unbounded JUnit outcome evidence')
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError as error:
+        raise ValueError('Malformed JUnit outcome evidence') from error
+    counts = {'tests': 0, 'passed': 0, 'failed': 0, 'errors': 0, 'skipped': 0}
+    for case in root.findall('.//testcase'):
+        counts['tests'] += 1
+        kind = ('failed' if case.find('failure') is not None else 'errors' if case.find('error') is not None
+                else 'skipped' if case.find('skipped') is not None else 'passed')
+        counts[kind] += 1
+    if not counts['tests']:
+        raise ValueError('JUnit contains no executed or collection-error cases')
+    return counts
+
+
+def publication_pytest_outcome(exit_code: int, observed_counts: dict) -> dict:
+    # Interrupted JUnit can contain a testcase for an unfinished call. Preserve
+    # those XML observations without promoting them to completed gate counts.
+    if exit_code not in (0, 1):
+        return {'status': 'interrupted_incomplete' if exit_code == 2 else 'unknown_incomplete',
+                'counts': None, 'observed_junit_counts': observed_counts, 'complete_gate': False}
+    return {'status': 'passed' if exit_code == 0 else 'nonpasses_retained',
+            'counts': observed_counts, 'complete_gate': True}
+
+
+class PublicationSoftwareGuard:
+    """Deny external services/native providers; retain local synthetic fixtures."""
+    def __init__(self):
+        self.events = []
+        self.collected_tests = []
+
+    def audit(self, event, values):
+        denied = None
+        if event == 'socket.connect' and getattr(values[0], 'family', None) in (socket.AF_INET, socket.AF_INET6):
+            host = values[1][0] if isinstance(values[1], tuple) else ''
+            try:
+                local = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                local = host == 'localhost'
+            if not local:
+                denied = 'Network/model service access prohibited for publication software fixtures'
+        elif event == 'socket.getaddrinfo' and values[0] is not None:
+            try:
+                local = ipaddress.ip_address(values[0]).is_loopback
+            except ValueError:
+                local = values[0] == 'localhost'
+            if not local:
+                denied = 'Network name resolution prohibited for publication software fixtures'
+        elif event in ('subprocess.Popen', 'os.exec'):
+            if Path(os.fsdecode(values[0])).name in ('codex', 'claude', 'ssh', 'curl', 'wget'):
+                denied = 'Native provider execution prohibited for publication software fixtures'
+        if denied:
+            self.events.append({'event': event, 'status': 'denied', 'reason': denied})
+            raise PermissionError(denied)
+
+    def pytest_collection_finish(self, session):
+        self.collected_tests = [item.nodeid for item in session.items]
+
+
+def publication_fixture_plugin(helper, epoch: Path, output: Path, fixture_root: Path, actor_root: Path):
+    plugin = helper.FixturePaths(epoch, output, fixture_root, actor_root)
+    # This existing newly selected fixture declares its tempfile parent. Extend
+    # storage relocation only; the source integrity gate and scientific code
+    # remain the same as the historical helper's contract.
+    plugin.storage_parents |= frozenset({epoch / 'reports/completed-scientific-review/2026-09-22/workspaces'})
+    return plugin
 
 
 def source_state(epoch: Path, manifest: dict) -> dict:
@@ -166,17 +336,27 @@ def validate_runtime(epoch: Path, manifest: dict, binding: dict) -> dict:
 
 
 def validate_selection(epoch: Path, manifest: dict, selection: dict) -> list[Path]:
-    closed(selection, {'format', 'scope', 'kind', 'source_manifest_sha256',
-                       'prior_selection_sha256', 'allowed_fixture_classes', 'tests'}, 'selection')
-    if selection['format'] != 'devbench.rna-tracing-selection/1' or selection['scope'] != 'software':
+    keys = {'format', 'scope', 'kind', 'source_manifest_sha256',
+            'prior_selection_sha256', 'allowed_fixture_classes', 'tests'}
+    publication = selection.get('format') == 'devbench.rna-tracing-selection/2'
+    closed(selection, keys | ({'scope_version'} if publication else set()), 'selection')
+    if publication:
+        if selection['scope'] != 'publication-software' or selection['scope_version'] not in (PUBLICATION_SCOPE_VERSION, LIVE_ROUTE_SCOPE_VERSION, MEDIATED_ROUTE_SCOPE_VERSION, MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+            raise ValueError('Unsupported publication scope version or scope')
+    elif selection['format'] != 'devbench.rna-tracing-selection/1' or selection['scope'] != 'software':
         raise ValueError('Only software selection supported')
+    if source_scope(manifest) != selection['scope']:
+        raise ValueError('Selection scope does not match source epoch')
+    if publication and manifest['scope_version'] != selection['scope_version']:
+        raise ValueError('Selection scope version does not match source epoch')
     if selection['source_manifest_sha256'] != sha(epoch / 'source-manifest.json'):
         raise ValueError('Selection source mismatch')
     if selection['prior_selection_sha256'] != PRIOR_SELECTION_SHA256:
         raise ValueError('Prior selection provenance mismatch')
     if selection['allowed_fixture_classes'] != ['synthetic', 'local']:
         raise ValueError('Unapproved fixture classes')
-    if selection['kind'] not in ('focused', 'broad'):
+    kinds = ('focused', 'broad', 'hosted') if publication and selection['scope_version'] in (LIVE_ROUTE_SCOPE_VERSION, MEDIATED_ROUTE_SCOPE_VERSION, MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION) else ('focused', 'broad')
+    if selection['kind'] not in kinds:
         raise ValueError('Unknown selection kind')
     rows = selection['tests']
     if not isinstance(rows, list) or not rows:
@@ -185,7 +365,18 @@ def validate_selection(epoch: Path, manifest: dict, selection: dict) -> list[Pat
     for row in rows:
         closed(row, {'path', 'sha256'}, 'selected test')
         name = row['path']
-        if name not in HISTORICAL_TESTS | NEW_TESTS | FOCUSED_BASE:
+        allowed = HISTORICAL_TESTS | NEW_TESTS | FOCUSED_BASE
+        if publication:
+            allowed |= PUBLICATION_BASE_TESTS | PUBLICATION_NEW_TESTS
+            if selection['scope_version'] in (LIVE_ROUTE_SCOPE_VERSION, MEDIATED_ROUTE_SCOPE_VERSION, MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+                allowed |= LIVE_ROUTE_TESTS
+                if selection['scope_version'] in (MEDIATED_ROUTE_SCOPE_VERSION, MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+                    allowed |= MEDIATED_ROUTE_TESTS
+                if selection['scope_version'] in (MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+                    allowed |= MEDIATED_OBSERVABILITY_TESTS
+        if publication and selection['scope_version'] in (SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+            allowed |= SIGNEDIN_ROUTE_TESTS
+        if name not in allowed:
             raise ValueError('Unauthorized test/campaign selection')
         if manifest['files'].get(name) != row['sha256'] or sha(epoch / name) != row['sha256']:
             raise ValueError('Selected test hash mismatch')
@@ -193,7 +384,24 @@ def validate_selection(epoch: Path, manifest: dict, selection: dict) -> list[Pat
     if len(set(names)) != len(names):
         raise ValueError('Duplicate test selection')
     implemented = {name for name in NEW_TESTS if name in manifest['files']}
-    required = (HISTORICAL_TESTS if selection['kind'] == 'broad' else FOCUSED_BASE) | implemented
+    if selection['kind'] == 'hosted':
+        required = LIVE_ROUTE_TESTS | implemented
+        if selection['scope_version'] in (MEDIATED_ROUTE_SCOPE_VERSION, MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+            required |= MEDIATED_ROUTE_TESTS
+        if selection['scope_version'] in (MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+            required |= MEDIATED_OBSERVABILITY_TESTS
+    else:
+        required = (HISTORICAL_TESTS if selection['kind'] == 'broad' else FOCUSED_BASE) | implemented
+    if publication and selection['kind'] != 'hosted':
+        required |= PUBLICATION_BASE_TESTS | {name for name in PUBLICATION_NEW_TESTS if name in manifest['files']}
+        if selection['scope_version'] in (LIVE_ROUTE_SCOPE_VERSION, MEDIATED_ROUTE_SCOPE_VERSION, MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+            required |= LIVE_ROUTE_TESTS
+            if selection['scope_version'] in (MEDIATED_ROUTE_SCOPE_VERSION, MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+                required |= MEDIATED_ROUTE_TESTS
+            if selection['scope_version'] in (MEDIATED_OBSERVABILITY_SCOPE_VERSION, CONTEXT_OBSERVATION_SCOPE_VERSION, SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+                required |= MEDIATED_OBSERVABILITY_TESTS
+    if publication and selection['scope_version'] in (SIGNEDIN_ROUTE_SCOPE_VERSION, CONTEXT_READBACK_SCOPE_VERSION, APPROVAL_SETUP_SCOPE_VERSION):
+        required |= SIGNEDIN_ROUTE_TESTS
     # Phase 0..3 focused gate may omit explicitly later-stage receipt/live modules.
     if set(names) != required:
         raise ValueError('Selection must contain exact qualified names plus implemented tracing modules')
@@ -227,9 +435,7 @@ def bind_frozen_tests(epoch: Path) -> None:
     ordinary installed imports and sys.path is never modified.
     """
     manifest = read_json(epoch / 'source-manifest.json')
-    closed(manifest, {'format', 'files'}, 'spawn source manifest')
-    if manifest['format'] != 'devbench.rna-tracing-source/1':
-        raise ValueError('Unknown frozen test manifest format')
+    scope = source_scope(manifest)
     binding = read_json(epoch / 'runtime-binding.json')
     if binding['source_manifest_sha256'] != sha(epoch / 'source-manifest.json'):
         raise ValueError('Spawn source binding mismatch')
@@ -252,6 +458,8 @@ def bind_frozen_tests(epoch: Path) -> None:
     package = importlib.util.module_from_spec(spec)
     sys.modules['tests'] = package
     spec.loader.exec_module(package)
+    if scope == 'publication-software' and __name__ == '__mp_main__':
+        sys.addaudithook(PublicationSoftwareGuard().audit)
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -264,7 +472,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('epoch-root', 'selection', 'output', 'short-fixture-root', 'short-workspace-root'):
         parser.add_argument('--' + name, required=True)
-    parser.add_argument('--scope', required=True, choices=['software'])
+    parser.add_argument('--scope', required=True, choices=['software', 'publication-software'])
     parser.add_argument('--allow-bounded-local-fixtures', action='store_true')
     args = parser.parse_args(argv)
     epoch, selection_path, output, fixture_root, actor_root = map(absolute, (
@@ -279,17 +487,19 @@ def main(argv=None) -> int:
     write_json(output / 'start.json', {'started_utc_epoch': started, 'argv': sys.argv,
         'scope': args.scope, 'python': sys.executable, 'epoch_root': str(epoch)})
     code = 2
-    result = {'status': 'blocked', 'scope': 'software'}
+    result = {'status': 'blocked', 'scope': args.scope, 'counts': None, 'junit_status': 'absent'}
+    if args.scope == 'publication-software':
+        result['complete_gate'] = False
     before = None
     source_before = None
     origin_map = None
+    guard = None
     try:
         if not args.allow_bounded_local_fixtures:
             raise PermissionError('Required bounded software fixtures were not authorized')
         manifest = read_json(epoch / 'source-manifest.json')
-        closed(manifest, {'format', 'files'}, 'source manifest')
-        if manifest['format'] != 'devbench.rna-tracing-source/1':
-            raise ValueError('Unknown source format')
+        if source_scope(manifest) != args.scope:
+            raise ValueError('Requested scope does not match source epoch')
         source_before = source_state(epoch, manifest)
         if source_before.get('scripts/run_rna_tracing_verification.py') != sha(Path(__file__).resolve()):
             raise ValueError('Runner is not bound to frozen epoch')
@@ -314,12 +524,16 @@ def main(argv=None) -> int:
         helper = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = helper
         spec.loader.exec_module(helper)
-        plugin = helper.FixturePaths(epoch, output, fixture_root, actor_root)
+        plugin = (publication_fixture_plugin(helper, epoch, output, fixture_root, actor_root)
+                  if args.scope == 'publication-software' else helper.FixturePaths(epoch, output, fixture_root, actor_root))
         # Pytest owns test/helper imports; product imports remain installed wheel imports.
         os.environ['PYTEST_DISABLE_PLUGIN_AUTOLOAD'] = '1'
         os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
         os.environ['DEVBENCH_RUN_LOCAL_FIXTURES'] = '1'
         bind_frozen_tests(epoch)
+        if args.scope == 'publication-software':
+            guard = PublicationSoftwareGuard()
+            sys.addaudithook(guard.audit)
         # Stabilize the real installed bundle hash alias before tests temporarily
         # mock checkpoint.sha256 during metadata-only planning. This prevents
         # lazy module import from retaining a test mock across later fixtures.
@@ -327,14 +541,25 @@ def main(argv=None) -> int:
         module_origins(origin_map, epoch)
         import pytest
         code = int(pytest.main(['--import-mode=importlib', '--continue-on-collection-errors', '-p', 'no:cacheprovider', '--basetemp=' + str(output / 'tmp'),
-            '--junitxml=' + str(output / 'junit.xml'), *map(str, selected)], plugins=[plugin]))
+            '--junitxml=' + str(output / 'junit.xml'), *map(str, selected)], plugins=[plugin] + ([guard] if guard else [])))
+        counts = junit_counts(output / 'junit.xml')
+        if code == 0 and (counts['failed'] or counts['errors']):
+            raise ValueError('Pytest success disagrees with retained JUnit nonpasses')
         result = {'status': 'passed' if code == 0 else 'nonpasses_retained', 'pytest_exit_code': code,
-                  'scope': 'software', 'selected_tests': [str(p) for p in selected]}
+                  'scope': args.scope, 'selected_tests': [str(p) for p in selected],
+                  'counts': counts, 'junit_status': 'retained'}
+        if args.scope == 'publication-software':
+            result.update(publication_pytest_outcome(code, counts))
     except Exception as error:
+        code = 2
         result['error_type'] = type(error).__name__
         result['error'] = str(error)
         (output / 'runner-error.txt').write_text(traceback.format_exc())
     finally:
+        if guard is not None:
+            result['denied_events'] = guard.events
+            result['collected_cases'] = len(guard.collected_tests)
+            result['scope_version'] = manifest['scope_version']
         try:
             if origin_map is not None:
                 write_json(output / 'module-origins.json', {'origins': module_origins(origin_map, epoch)})
@@ -354,6 +579,8 @@ def main(argv=None) -> int:
             code = 2
         if code == 2 and ('verification_error' in result or result.get('runtime_unchanged') is False):
             result['status'] = 'blocked_identity_verification'
+        if args.scope == 'publication-software' and code == 2:
+            result['complete_gate'] = False
         result['runner_exit_code'] = code
         write_json(output / 'result.json', result)
     return code

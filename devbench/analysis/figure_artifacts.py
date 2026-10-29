@@ -1,7 +1,8 @@
-"""Bounded, typed figure evidence and rendering of frozen scatter payloads.
+"""Bounded, typed figure evidence and rendering of frozen numeric payloads.
 
 This module reads saved tables, never an expression matrix or a model. Other
-payload kinds are validation contracts only; they do not enable new workflows.
+Version 1 preserves the observation renderer; version 2 adds saved numerical
+projections. Neither path chooses or executes an analysis workflow.
 """
 from __future__ import annotations
 
@@ -91,8 +92,10 @@ def _identity(row, keys):
     return values[0] if len(values) == 1 else values
 
 
-def validate_figure_artifact(record, payload):
+def validate_figure_artifact(record, payload, *, artifact_service=None):
     """Validate identities and scientific/display semantics without rendering."""
+    if isinstance(record, dict) and record.get("format") == "devbench.figure/2":
+        return _validate_publication_figure(record, payload, artifact_service=artifact_service)
     try:
         json.dumps((record, payload), allow_nan=False)
     except (TypeError, ValueError) as error:
@@ -299,8 +302,10 @@ def renderer_identity():
     return {"source_sha256": sha256(Path(__file__).resolve()), "environment_sha256": digest(environment)}
 
 
-def render_figure_artifact(record, payload, output, display_options=None):
-    """Render only frozen G02/G08 data; return the normalized display options."""
+def render_figure_artifact(record, payload, output, display_options=None, *, artifact_service=None):
+    """Render frozen observation data or explicit bounded /2 projections."""
+    if isinstance(record, dict) and record.get("format") == "devbench.figure/2":
+        return _render_publication_figure(record, payload, output, display_options, artifact_service=artifact_service)
     validate_figure_artifact(record, payload)
     if payload["payload_kind"] != "observation_points" or record["family"] not in {"G02", "G08"}:
         raise ValueError("figure_renderer_unavailable_for_payload_kind")
@@ -527,3 +532,486 @@ def export_figures(store, conditions, output, *, batch_key):
     manifest = {"format": "devbench.figures/1", "figures": records}
     atomic_json(output / "manifest.json", manifest)
     return manifest
+
+
+# The /2 path consumes bounded saved numeric projections. It neither loads an
+# expression matrix nor chooses an analysis/profile or a scientific threshold.
+_BULK_KINDS = {"sample_scatter": "sample", "gene_scatter": "gene",
+               "effect_scatter": "gene", "measured_curve": "gene_time"}
+_TRANSFORMS = {"identity", "natural_log1p", "negative_log10"}
+_PLOT_SCOPE = "saved_numeric_geometry_not_pixel_truth_or_scientific_qualification"
+_PLOT_ALIASES = {"temporal_curve": "measured_curve"}
+
+
+def resolve_publication_plot_kind(requested_kind):
+    """Resolve registered presentation aliases; do not advertise an input adapter."""
+    if type(requested_kind) is not str:
+        raise ValueError("unsupported_publication_plot_kind")
+    kind = _PLOT_ALIASES.get(requested_kind, requested_kind)
+    if kind not in _BULK_KINDS:
+        raise ValueError("unsupported_publication_plot_kind")
+    return kind
+
+
+def _closed(value, fields):
+    if type(value) is not dict or set(value) != set(fields):
+        raise ValueError("figure_requires_closed_declared_fields")
+
+
+def _source_ref(value):
+    import hashlib
+    _closed(value, {"path", "sha256", "size_bytes"})
+    if not _hash(value["sha256"]) or type(value["size_bytes"]) is not int or not 0 <= value["size_bytes"] <= MAX_PAYLOAD_BYTES:
+        raise ValueError("figure_invalid_source_reference")
+    body = _read(value["path"], MAX_PAYLOAD_BYTES)
+    if len(body) != value["size_bytes"] or hashlib.sha256(body).hexdigest() != value["sha256"]:
+        raise ValueError("figure_numeric_source_hash_or_size_mismatch")
+    return body
+
+
+def _manifest_ref(value):
+    from .episode_proposals import _bind_manifest_snapshot
+    from devharness_core.provenance import verify_execution
+    _closed(value, {"manifest_path", "root_hash"} | ({"record_ref"} if "record_ref" in value else set()))
+    if not _hash(value["root_hash"]):
+        raise ValueError("figure_invalid_linked_receipt_root")
+    path = _path(value["manifest_path"])
+    manifest = _json(path)
+    _bind_manifest_snapshot(manifest, value["root_hash"])
+    if not verify_execution(path, value["root_hash"])["valid"]:
+        raise ValueError("figure_linked_receipt_failed_verification")
+    if "record_ref" in value:
+        _source_ref(value["record_ref"])
+        if not any(item.get("sha256") == value["record_ref"]["sha256"] for item in manifest["artifacts"]):
+            raise ValueError("figure_linked_record_absent_from_receipt")
+    return path, manifest
+
+
+def _plot_value(value):
+    _closed(value, {"status", "value", "censoring"})
+    if value["status"] == "exact":
+        if not _finite(value["value"]) or value["censoring"] is not None:
+            raise ValueError("figure_exact_value_requires_finite_uncensored_number")
+    elif value["status"] == "censored":
+        _closed(value["censoring"], {"relation", "bound"})
+        if (value["value"] is not None or value["censoring"]["relation"] not in {"lt", "le", "gt", "ge"}
+                or not _finite(value["censoring"]["bound"])):
+            raise ValueError("figure_censored_value_cannot_be_replaced_by_zero")
+    elif value["status"] != "missing" or value["value"] is not None or value["censoring"] is not None:
+        raise ValueError("figure_missing_value_cannot_carry_estimate")
+
+
+def _transformed(value, transform):
+    if transform == "identity":
+        return value
+    if transform == "natural_log1p" and value > -1:
+        return math.log1p(value)
+    if transform == "negative_log10" and value > 0:
+        return -math.log10(value)
+    raise ValueError("figure_transform_domain_invalid")
+
+
+def validate_publication_plot_payload(payload):
+    """Validate exact retained numeric membership, scales and uncertainty."""
+    try:
+        encoded = json.dumps(payload, allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError) as error:
+        raise ValueError("figure_nonfinite_or_non_JSON_value") from error
+    if len(encoded) > MAX_PAYLOAD_BYTES:
+        raise ValueError("figure_payload_exceeds_render_budget")
+    _closed(payload, {"format", "source_ref", "data"} | ({"projection_ref"} if "projection_ref" in payload else set()))
+    if payload["format"] != "devbench.figure-data/2":
+        raise ValueError("unknown_publication_figure_payload_format")
+    body = _source_ref(payload["source_ref"])
+    from devbench.study.evidence import decode_json
+    source = decode_json(body)
+    data = payload["data"]
+    if data != source:
+        raise ValueError("figure_numeric_projection_differs_from_retained_source")
+    _closed(data, {"format", "plot_kind", "entity_kind", "axes", "membership", "rows",
+                   "uncertainty_policy", "limitations"})
+    if (data["format"] != "devbench.numeric-plot-source/2" or data["plot_kind"] not in _BULK_KINDS
+            or data["entity_kind"] != _BULK_KINDS[data["plot_kind"]]):
+        raise ValueError("unsupported_publication_figure_kind_or_entity")
+    _closed(data["axes"], {"x", "y"})
+    for axis in data["axes"].values():
+        _closed(axis, {"field", "label", "unit", "transform", "direction", "range_policy"})
+        if (not all(_text(axis[key]) for key in ("field", "label", "unit"))
+                or axis["transform"] not in _TRANSFORMS or axis["direction"] != "increasing"
+                or axis["range_policy"] != "saved_full_range_no_clipping"):
+            raise ValueError("figure_axis_transform_direction_or_clipping_invalid")
+    if data["uncertainty_policy"] not in {"report_absence", "require_interval"}:
+        raise ValueError("figure_uncertainty_policy_required")
+    if (type(data["limitations"]) is not list or len(data["limitations"]) > 64
+            or not all(_text(item) for item in data["limitations"])):
+        raise ValueError("figure_bounded_limitations_required")
+    rows, membership = data["rows"], data["membership"]
+    if type(rows) is not list or not 1 <= len(rows) <= 5000 or type(membership) is not list:
+        raise ValueError("figure_bounded_rows_and_membership_required")
+    observed, chronological = [], {}
+    for row in rows:
+        _closed(row, {"entity_id", "coordinate_id", "group_id", "x", "y", "interval"})
+        if not _text(row["entity_id"]) or not _text(row["group_id"]):
+            raise ValueError("figure_entity_and_group_identity_required")
+        curve = data["entity_kind"] == "gene_time"
+        if (curve and not _text(row["coordinate_id"])) or (not curve and row["coordinate_id"] is not None):
+            raise ValueError("figure_coordinate_identity_mismatch")
+        observed.append([row["entity_id"], row["coordinate_id"], row["group_id"]] if curve else row["entity_id"])
+        for coordinate in ("x", "y"):
+            _plot_value(row[coordinate])
+            if row[coordinate]["status"] == "exact":
+                _transformed(row[coordinate]["value"], data["axes"][coordinate]["transform"])
+        interval = row["interval"]
+        if interval is not None:
+            _closed(interval, {"lower", "upper", "level", "kind"})
+            if (not all(_finite(interval[key]) for key in ("lower", "upper", "level"))
+                    or not interval["lower"] <= interval["upper"] or not 0 < interval["level"] < 1
+                    or interval["kind"] not in {"confidence", "credible", "range"}
+                    or row["y"]["status"] != "exact"
+                    or not interval["lower"] <= row["y"]["value"] <= interval["upper"]):
+                raise ValueError("figure_invalid_uncertainty_interval")
+            for key in ("lower", "upper"):
+                _transformed(interval[key], data["axes"]["y"]["transform"])
+        elif data["uncertainty_policy"] == "require_interval" and row["y"]["status"] == "exact":
+            raise ValueError("figure_required_uncertainty_absent")
+        if curve and row["x"]["status"] == "exact":
+            key = (row["entity_id"], row["group_id"])
+            if key in chronological and row["x"]["value"] <= chronological[key]:
+                raise ValueError("figure_curve_coordinates_not_chronological")
+            chronological[key] = row["x"]["value"]
+    if observed != membership or len({json.dumps(item) for item in observed}) != len(observed):
+        raise ValueError("figure_numeric_membership_or_join_mismatch")
+    if "projection_ref" in payload:
+        from .episode_proposals import _load
+        _manifest_ref(payload["projection_ref"])
+        _, projection, _ = _load(payload["projection_ref"]["manifest_path"], payload["projection_ref"]["root_hash"], "figure-projection.json")
+        _closed(projection, {"format", "reference_table_ref", "actual_table_ref", "numeric_source_ref", "uncertainty_policy", "limitations"})
+        if (projection["format"] != "devbench.gene-effect-plot-projection/2"
+                or projection["numeric_source_ref"] != payload["source_ref"]
+                or _gene_effect_plot_data(projection["reference_table_ref"], projection["actual_table_ref"],
+                    projection["uncertainty_policy"], projection["limitations"]) != data):
+            raise ValueError("figure_gene_table_projection_or_join_changed")
+    return deepcopy(payload)
+
+
+def _gene_effect_plot_data(reference_ref, actual_ref, uncertainty_policy, limitations):
+    from .rna_publication_metrics import validate_gene_table, validate_gene_comparability
+    from devbench.study.evidence import decode_json
+    reference = validate_gene_table(decode_json(_source_ref(reference_ref)))
+    actual = validate_gene_table(decode_json(_source_ref(actual_ref)))
+    if validate_gene_comparability(reference, actual, comparison_kind="effects")["status"] != "comparable":
+        raise ValueError("figure_gene_tables_incomparable_alignment_mapping_or_family")
+    left, right = ({row["feature_id"]: row for row in table["rows"]} for table in (reference, actual))
+    membership = [row["feature_id"] for row in reference["rows"]]
+    membership.extend(row["feature_id"] for row in actual["rows"] if row["feature_id"] not in left)
+    rows = []
+    for gene in membership:
+        values = []
+        for table in (left, right):
+            row = table.get(gene)
+            number = row["effect"] if row is not None and row["status"] == "ok" else None
+            values.append({"status": "missing" if number is None else "exact", "value": number, "censoring": None})
+        rows.append({"entity_id": gene, "coordinate_id": None, "group_id": "matched_effects",
+            "x": values[0], "y": values[1], "interval": right.get(gene, {}).get("uncertainty") if values[1]["status"] == "exact" else None})
+    return {"format": "devbench.numeric-plot-source/2", "plot_kind": "effect_scatter", "entity_kind": "gene",
+        "axes": {axis: {"field": field, "label": label, "unit": actual["alignment"]["effect_scale"],
+            "transform": "identity", "direction": "increasing", "range_policy": "saved_full_range_no_clipping"}
+            for axis, field, label in (("x", "reference_effect", "Reference effect"), ("y", "actual_effect", "Actual effect"))},
+        "membership": membership, "rows": rows, "uncertainty_policy": uncertainty_policy, "limitations": list(limitations)}
+
+
+def prepare_gene_effect_plot_payload(output, *, reference_table_ref, actual_table_ref, uncertainty_policy, limitations):
+    """Project reviewed gene tables with explicit identity joins and no filtering."""
+    from .episode_proposals import _seal, require_disjoint_output
+    from devbench.study.permissions import require_protected_storage
+    data = _gene_effect_plot_data(reference_table_ref, actual_table_ref, uncertainty_policy, limitations)
+    output = require_disjoint_output(_path(output), [_path(reference_table_ref["path"]), _path(actual_table_ref["path"])])
+    require_protected_storage(output)
+    output.mkdir(parents=True, exist_ok=False)
+    atomic_json(output / "numeric-source.json", data)
+    source = {"path": str(output / "numeric-source.json"), "sha256": sha256(output / "numeric-source.json"),
+              "size_bytes": (output / "numeric-source.json").stat().st_size}
+    receipt = _seal(output / "projection", "figure-projection.json", {"format": "devbench.gene-effect-plot-projection/2",
+        "reference_table_ref": deepcopy(reference_table_ref), "actual_table_ref": deepcopy(actual_table_ref),
+        "numeric_source_ref": source, "uncertainty_policy": uncertainty_policy, "limitations": list(limitations)},
+        "analysis.gene_effect_plot_projection", scope=_PLOT_SCOPE)
+    payload = {"format": "devbench.figure-data/2", "source_ref": source, "data": data,
+        "projection_ref": {"manifest_path": receipt["manifest_path"], "root_hash": receipt["root_hash"]}}
+    return validate_publication_plot_payload(payload)
+
+
+def _validate_publication_binding(binding):
+    _closed(binding, {"input_sha256", "parameters_sha256", "analysis_source_sha256",
+                      "runtime_sha256", "output_bundle_ref"})
+    if (not all(_hash(binding[key]) for key in set(binding) - {"output_bundle_ref", "runtime_sha256"})
+            or (binding["runtime_sha256"] is not None and not _hash(binding["runtime_sha256"]))):
+        raise ValueError("figure_analysis_source_runtime_parameters_binding_required")
+    if "manifest_path" in binding["output_bundle_ref"]:
+        return _manifest_ref(binding["output_bundle_ref"])[1]
+    _source_ref(binding["output_bundle_ref"])
+    return {"artifacts": []}
+
+
+def derive_publication_figure_binding(payload, *, output_bundle_ref, artifact_service):
+    """Bind actual inputs/parameters/source; an unknown runtime stays null."""
+    from .rna_comparison_outputs import load_comparison_outputs
+    from .episode_proposals import _load
+    validate_publication_plot_payload(payload)
+    if "projection_ref" not in payload:
+        raise ValueError("figure_governed_gene_table_projection_required")
+    bundle = load_comparison_outputs(output_bundle_ref, artifact_service=artifact_service)
+    _, projection, _ = _load(payload["projection_ref"]["manifest_path"], payload["projection_ref"]["root_hash"], "figure-projection.json")
+    matches = [table for table in bundle["gene_tables"] if table["table_ref"] == projection["actual_table_ref"]]
+    if len(matches) != 1:
+        raise ValueError("figure_actual_table_not_bound_to_governed_outputs")
+    retained = next(run for run in bundle["runs"] if run["run_id"] == matches[0]["run_id"])
+    run = artifact_service.get("run", retained["run_id"])
+    method = artifact_service.method(retained["method_version_id"])
+    source = artifact_service.get("artifact", method["source_artifact"])
+    artifact_service.artifact_path(source["artifact_id"])
+    execution = run.get("execution", {})
+    environment = method["contract"]["environment"]
+    runtime = (environment["identity_sha256"] if environment.get("runtime") == "trusted_dispatcher"
+        and execution.get("runtime") == "trusted_dispatcher" else None)
+    return {"input_sha256": digest(retained["input_refs"]), "parameters_sha256": digest(run["parameters"]),
+        "analysis_source_sha256": source["sha256"], "runtime_sha256": runtime,
+        "output_bundle_ref": deepcopy(output_bundle_ref)}
+
+
+def _governed_plot_binding(payload, binding, artifact_service):
+    expected = derive_publication_figure_binding(payload, output_bundle_ref=binding["output_bundle_ref"], artifact_service=artifact_service)
+    if binding != expected:
+        raise ValueError("figure_provenance_binding_differs_from_actual_retained_run")
+    return expected["runtime_sha256"] is not None
+
+
+def _validate_publication_figure(record, payload, *, artifact_service=None):
+    _closed(record, {"format", "figure_id", "plot_kind", "analysis_binding", "renderer_identity",
+        "render_parameters_sha256", "artifacts", "pixels_status", "numeric_source_status", "output_binding_status", "governed_output_status", "provenance_status",
+        "comparison_binding_status", "scope", "scientific_validity_established"})
+    validate_publication_plot_payload(payload)
+    if (record["format"] != "devbench.figure/2" or not isinstance(record["figure_id"], str)
+            or not _ID.fullmatch(record["figure_id"]) or record["plot_kind"] != payload["data"]["plot_kind"]
+            or record["pixels_status"] != "not_assessed" or record["numeric_source_status"] != "retained_verified"
+            or record["comparison_binding_status"] != "not_comparison_bound"
+            or record["scope"] != _PLOT_SCOPE or record["scientific_validity_established"] is not False):
+        raise ValueError("figure_invalid_publication_record_or_authority")
+    linked = _validate_publication_binding(record["analysis_binding"])
+    bound = any(item.get("kind") == "file" and item.get("sha256") == payload["source_ref"]["sha256"]
+                and item.get("size_bytes") == payload["source_ref"]["size_bytes"] for item in linked["artifacts"])
+    if record["output_binding_status"] != ("linked_saved_numeric_source" if bound else "render_only_unbound"):
+        raise ValueError("figure_output_numeric_source_binding_mismatch")
+    if record["governed_output_status"] not in {"revalidated", "custody_verified_runtime_unknown", "not_reverified"}:
+        raise ValueError("figure_invalid_governed_output_verification_status")
+    if record["provenance_status"] not in {"retained_run_bindings_verified", "retained_run_bindings_runtime_unknown", "unverified_declarations"}:
+        raise ValueError("figure_invalid_provenance_assurance")
+    if artifact_service is not None:
+        runtime_known = _governed_plot_binding(payload, record["analysis_binding"], artifact_service)
+        if (record["governed_output_status"] != ("revalidated" if runtime_known else "custody_verified_runtime_unknown")
+                or record["provenance_status"] != ("retained_run_bindings_verified" if runtime_known else "retained_run_bindings_runtime_unknown")):
+            raise ValueError("figure_record_does_not_claim_the_verified_governed_binding")
+    _closed(record["renderer_identity"], {"source_sha256", "environment_sha256"})
+    if not all(_hash(value) for value in record["renderer_identity"].values()) or not _hash(record["render_parameters_sha256"]):
+        raise ValueError("figure_invalid_renderer_or_parameter_identity")
+    _closed(record["artifacts"], {"png", "pdf", "plot_data"})
+    for key, name in (("png", "figure.png"), ("pdf", "figure.pdf"), ("plot_data", "plot-data.json")):
+        item = record["artifacts"][key]
+        _closed(item, {"path", "sha256", "size_bytes"})
+        if item["path"] != name or not _hash(item["sha256"]) or type(item["size_bytes"]) is not int or item["size_bytes"] < 0:
+            raise ValueError("figure_invalid_retained_artifact_reference")
+    return record
+
+
+def _render_publication_figure(record, payload, output, options=None, *, artifact_service=None):
+    _validate_publication_figure(record, payload, artifact_service=artifact_service)
+    if options not in (None, {}):
+        raise ValueError("publication_display_options_not_implemented")
+    output = _path(output)
+    if output.suffix not in {".png", ".pdf"} or not output.parent.is_dir():
+        raise ValueError("figure_output_requires_PNG_or_PDF_in_existing_directory")
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib import pyplot as plt
+    data = payload["data"]
+    with plt.rc_context({"font.family": "DejaVu Sans", "font.size": 10, "text.usetex": False,
+                         "text.parse_math": False, "figure.dpi": 110, "savefig.dpi": 110}):
+        fig, ax = plt.subplots(figsize=(7, 5), constrained_layout=True)
+        try:
+            groups = sorted({(row["group_id"], row["entity_id"] if data["plot_kind"] == "measured_curve" else "")
+                             for row in data["rows"]})
+            for group, entity in groups:
+                rows = [row for row in data["rows"] if row["group_id"] == group
+                        and (not entity or row["entity_id"] == entity)
+                        and all(row[key]["status"] == "exact" for key in ("x", "y"))]
+                x = [_transformed(row["x"]["value"], data["axes"]["x"]["transform"]) for row in rows]
+                y = [_transformed(row["y"]["value"], data["axes"]["y"]["transform"]) for row in rows]
+                label = group + (": " + entity if entity else "")
+                if data["plot_kind"] == "measured_curve":
+                    ax.plot(x, y, marker="o", label=label)
+                else:
+                    ax.scatter(x, y, s=24, label=label)
+                for xx, yy, row in zip(x, y, rows):
+                    if row["interval"] is not None:
+                        bounds = [_transformed(row["interval"][key], data["axes"]["y"]["transform"])
+                                  for key in ("lower", "upper")]
+                        low, high = sorted(bounds)
+                        ax.errorbar(xx, yy, yerr=[[yy-low], [high-yy]], fmt="none", capsize=3, color="0.4")
+            labels = {}
+            for name, axis in data["axes"].items():
+                unit_present = re.search(r"(?<!\w)" + re.escape(axis["unit"]) + r"(?!\w)", axis["label"], flags=re.IGNORECASE) is not None
+                labels[name] = axis["label"] if unit_present else axis["label"] + " (" + axis["unit"] + ")"
+                annotation = {"natural_log1p": "[ln(1+x)]", "negative_log10": "[-log10(x)]"}.get(axis["transform"])
+                if annotation:
+                    labels[name] += " " + annotation
+            ax.set(xlabel=labels["x"], ylabel=labels["y"],
+                   title=record["figure_id"])
+            ax.margins(.08)
+            if ax.has_data(): ax.legend(loc="best", frameon=False)
+            metadata = ({"Software": "DevBench frozen numeric figure renderer"} if output.suffix == ".png"
+                        else {"Creator": "DevBench frozen numeric figure renderer", "CreationDate": None, "ModDate": None})
+            fig.savefig(output, metadata=metadata)
+        finally:
+            plt.close(fig)
+    return {}
+
+
+def export_publication_figure(output, payload, *, figure_id, analysis_binding, artifact_service=None):
+    """Retain PNG, PDF and source-bound plot data under the existing DAG."""
+    from .episode_proposals import require_disjoint_output
+    from devbench.study.permissions import require_protected_storage
+    from devharness_core.provenance import ExecutionDAG
+    payload = validate_publication_plot_payload(payload)
+    linked = _validate_publication_binding(analysis_binding)
+    if not isinstance(figure_id, str) or not _ID.fullmatch(figure_id):
+        raise ValueError("invalid_figure_id")
+    original = analysis_binding["output_bundle_ref"]
+    proof_path = _path(original["manifest_path"] if "manifest_path" in original else original["path"])
+    proof_location = proof_path.parent.parent if "manifest_path" in original else proof_path
+    output = require_disjoint_output(_path(output), [_path(payload["source_ref"]["path"]), proof_location])
+    runtime_known = _governed_plot_binding(payload, analysis_binding, artifact_service) if artifact_service is not None else False
+    identity = renderer_identity()  # Missing optional renderer fails before writing.
+    require_protected_storage(output)
+    record = {"format": "devbench.figure/2", "figure_id": figure_id, "plot_kind": payload["data"]["plot_kind"],
+        "analysis_binding": deepcopy(analysis_binding), "renderer_identity": identity,
+        "render_parameters_sha256": digest({"dpi": 110, "font": "DejaVu Sans", "width": 770, "height": 550}),
+        "artifacts": {key: {"path": name, "sha256": "0" * 64, "size_bytes": 0}
+            for key, name in (("png", "figure.png"), ("pdf", "figure.pdf"), ("plot_data", "plot-data.json"))},
+        "pixels_status": "not_assessed", "numeric_source_status": "retained_verified",
+        "comparison_binding_status": "not_comparison_bound",
+        "output_binding_status": "linked_saved_numeric_source" if any(
+            item.get("kind") == "file" and item.get("sha256") == payload["source_ref"]["sha256"]
+            and item.get("size_bytes") == payload["source_ref"]["size_bytes"] for item in linked["artifacts"])
+            else "render_only_unbound", "governed_output_status": "revalidated" if runtime_known else "custody_verified_runtime_unknown" if artifact_service is not None else "not_reverified",
+        "provenance_status": "retained_run_bindings_verified" if runtime_known else "retained_run_bindings_runtime_unknown" if artifact_service is not None else "unverified_declarations", "scope": _PLOT_SCOPE,
+        "scientific_validity_established": False}
+    _validate_publication_figure(record, payload, artifact_service=artifact_service)
+    output.mkdir(parents=True, exist_ok=False)
+    atomic_json(output / "plot-data.json", payload)
+    for suffix in ("png", "pdf"):
+        render_figure_artifact(record, payload, output / ("figure." + suffix), artifact_service=artifact_service)
+    for artifact in record["artifacts"].values():
+        path = output / artifact["path"]
+        artifact.update(sha256=sha256(path), size_bytes=path.stat().st_size)
+    atomic_json(output / "figure.json", record)
+    audit = ExecutionDAG(output / "audit", actor_id="numeric-figure-coordinator")
+    for name in ("figure.json", "plot-data.json", "figure.png", "figure.pdf"):
+        audit.add_artifact(output / name, max_bytes=MAX_PAYLOAD_BYTES)
+    audit.append("analysis.numeric_figure", {"figure_id": figure_id, "pixels_status": "not_assessed", "scope": _PLOT_SCOPE})
+    receipt = audit.finalize(analysis_fingerprint=digest(record))
+    atomic_json(output / "root-receipt.json", receipt)
+    return {"manifest_path": receipt["manifest_path"], "root_hash": receipt["root_hash"]}
+
+
+def load_publication_figure(manifest, expected_root, *, expected_renderer_identity=None, artifact_service=None):
+    path, declared = _manifest_ref({"manifest_path": str(manifest), "root_hash": expected_root})
+    root = path.parent.parent
+    refs = {item["name"]: item for item in declared["artifacts"]}
+    if set(refs) != {"figure.json", "plot-data.json", "figure.png", "figure.pdf"}:
+        raise ValueError("figure_unexpected_retained_artifacts")
+    for name, item in refs.items():
+        data = _read(root / name, MAX_PAYLOAD_BYTES)
+        import hashlib
+        if hashlib.sha256(data).hexdigest() != item["sha256"]:
+            raise ValueError("figure_retained_artifact_hash_mismatch")
+    record, payload = _json(root / "figure.json"), _json(root / "plot-data.json", MAX_PAYLOAD_BYTES)
+    _validate_publication_figure(record, payload, artifact_service=artifact_service)
+    if digest(record) != declared["analysis_fingerprint"]:
+        raise ValueError("figure_fingerprint_mismatch")
+    expected_renderer_identity = expected_renderer_identity or renderer_identity()
+    if record["renderer_identity"] != expected_renderer_identity:
+        raise ValueError("figure_renderer_identity_mismatch")
+    for item in record["artifacts"].values():
+        if (sha256(root / item["path"]) != item["sha256"]
+                or (root / item["path"]).stat().st_size != item["size_bytes"]):
+            raise ValueError("figure_recorded_artifact_hash_or_size_mismatch")
+    for key, signature in (("png", b"\x89PNG\r\n\x1a\n"), ("pdf", b"%PDF-")):
+        ref = record["artifacts"][key]
+        data = _read(root / ref["path"], MAX_PAYLOAD_BYTES)
+        if not data.startswith(signature) or len(data) != ref["size_bytes"] or sha256(root / ref["path"]) != ref["sha256"]:
+            raise ValueError("figure_image_signature_size_or_hash_mismatch")
+    return record, payload
+
+
+def compare_publication_figure_data(actual, reference, *, absolute_tolerance, relative_tolerance):
+    """Compare saved numeric coordinates; never assign a pixel truth score."""
+    if not all(_finite(value) and value >= 0 for value in (absolute_tolerance, relative_tolerance)):
+        raise ValueError("figure_explicit_finite_tolerances_required")
+    a = validate_publication_plot_payload(actual)["data"]
+    result = {"status": "not_assessed", "reason_codes": [], "matched_n": 0, "assessed_n": 0,
+              "max_absolute_difference": None, "pixel_truth_score": None, "scope": _PLOT_SCOPE}
+    if reference is None:
+        result["reason_codes"] = ["reference_numeric_source_absent"]
+        return result
+    b = validate_publication_plot_payload(reference)["data"]
+    mismatches = [key for key in ("plot_kind", "entity_kind", "membership") if a[key] != b[key]]
+    for axis in ("x", "y"):
+        if any(a["axes"][axis][key] != b["axes"][axis][key]
+               for key in ("field", "unit", "transform", "direction", "range_policy")):
+            mismatches.append(axis + "_axis_semantics")
+    if [row["group_id"] for row in a["rows"]] != [row["group_id"] for row in b["rows"]]:
+        mismatches.append("group_membership")
+    if mismatches:
+        result.update(status="incomparable", reason_codes=["incompatible:" + key for key in mismatches])
+        return result
+    result["matched_n"] = len(a["rows"])
+    if any(row[key]["status"] != "exact" for data in (a, b) for row in data["rows"] for key in ("x", "y")):
+        result["reason_codes"] = ["censored_or_missing_coordinates"]
+        return result
+    if any(row["interval"] is None for data in (a, b) for row in data["rows"]):
+        result["reason_codes"] = ["uncertainty_absent"]
+        return result
+    if any(any(left["interval"][key] != right["interval"][key] for key in ("kind", "level"))
+           for left, right in zip(a["rows"], b["rows"])):
+        result.update(status="incomparable", reason_codes=["incompatible:uncertainty_semantics"])
+        return result
+    differences, agreement = [], True
+    for left, right in zip(a["rows"], b["rows"]):
+        values = [(left[key]["value"], right[key]["value"]) for key in ("x", "y")]
+        values.extend((left["interval"][key], right["interval"][key]) for key in ("lower", "upper"))
+        for observed, expected in values:
+            delta = abs(observed-expected)
+            bound = absolute_tolerance + relative_tolerance*abs(expected)
+            if not _finite(delta) or not _finite(bound):
+                result.update(status="not_assessed", reason_codes=["nonfinite_geometry_discrepancy_or_bound"])
+                return result
+            differences.append(delta)
+            agreement &= delta <= bound
+    result.update(status="agreement" if agreement else "disagreement", assessed_n=len(a["rows"]),
+                  max_absolute_difference=max(differences, default=None))
+    return result
+
+
+def record_publication_figure_review(output, manifest, expected_root, *, reviewer_label, observations, allow_review=False):
+    """Record a pixel inspection declaration separately from rendered evidence."""
+    if allow_review is not True:
+        raise PermissionError("Pixel inspection recording requires review authorization")
+    from .episode_proposals import _seal, require_disjoint_output
+    record, _ = load_publication_figure(manifest, expected_root)
+    if not _text(reviewer_label) or type(observations) is not list or not observations or len(observations) > 64 or not all(_text(item) for item in observations):
+        raise ValueError("figure_bounded_pixel_observations_required")
+    output = require_disjoint_output(_path(output), [_path(manifest).parent.parent])
+    return _seal(output, "pixel-review.json", {"format": "devbench.figure-pixel-review/2",
+        "figure_ref": {"manifest_path": str(manifest), "root_hash": expected_root}, "figure_id": record["figure_id"],
+        "image_sha256": record["artifacts"]["png"]["sha256"], "pixels_status": "inspected",
+        "reviewer_label": reviewer_label, "observations": list(observations), "qualified_review": "not_established",
+        "scientific_validity_established": False}, "analysis.figure_pixels_inspected", scope=_PLOT_SCOPE)

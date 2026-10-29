@@ -169,9 +169,13 @@ _SCHEMA = _object({
     "outputs": {"type": "object", "minProperties": 1, "maxProperties": 16,
                 "propertyNames": _NAME, "additionalProperties": _OUTPUT},
     "implementation": {"oneOf": [
+        _object({"kind": {"const": "colab"}, "source_sha256": _HASH,
+                 "entrypoint": {"type": "array", "minItems": 1, "maxItems": 64, "items": _TEXT}}),
         _object({"kind": {"const": "oci"}, "source_sha256": _HASH,
                  "entrypoint": {"type": "array", "minItems": 1, "maxItems": 64, "items": _TEXT}}),
         _object({"kind": {"const": "dispatcher"}, "source_sha256": _HASH, "tool_name": _NAME}),
+        _object({"kind": {"const": "trusted_fastq"}, "source_sha256": _HASH,
+                 "execution_binding": {"type": "object"}}),
     ]},
     "environment": {"type": "object"},
     "execution": _object({
@@ -180,7 +184,7 @@ _SCHEMA = _object({
         "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 3600},
         "pids": {"type": "integer", "minimum": 1, "maximum": 1024},
         "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 100_000_000},
-        "network": {"const": "deny"},
+        "network": {"enum": ["deny", "allow"]},
     }),
     "validation": _object({
         "comparator": {"enum": ["single_cell_qc", "observation_selection", "observation_diagnostic", "json", "file"]},
@@ -203,12 +207,14 @@ _SCHEMA = _object({
 _SCHEMA["properties"]["scientific"] = _SCIENTIFIC_SCHEMA
 _SCHEMA["properties"]["action_scope"] = _ACTION_SCOPE
 _ENVIRONMENTS = {
+    "colab": _object({"runtime": {"const": "google_colab"}, "lock_sha256": _HASH}),
     "oci": _object({
         "image": {"type": "string", "maxLength": 512,
                   "pattern": r"^[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}$"},
         "lock_sha256": _HASH,
     }),
     "dispatcher": _object({"runtime": {"const": "trusted_dispatcher"}, "identity_sha256": _HASH}),
+    "trusted_fastq": _object({"runtime": {"const": "trusted_fastq"}, "identity_sha256": _HASH}),
 }
 
 
@@ -289,6 +295,8 @@ def _validate_contract(value):
     if "scientific" in value:
         validate_scientific_metadata(value["scientific"])
     kind = value["implementation"]["kind"]
+    if kind not in {"colab", "trusted_fastq"} and value["execution"]["network"] != "deny":
+        raise ValueError("Only explicit Colab qualification can declare unproven network confinement")
     _validate(_ENVIRONMENTS[kind], value["environment"], "method environment")
     for key in ("memory_mb", "pids", "max_output_bytes"):
         if type(value["execution"][key]) is not int:
@@ -297,6 +305,11 @@ def _validate_contract(value):
         raise ValueError("Custom methods must remain unreviewed")
     if kind == "dispatcher" and (value["lifecycle"] != "registered" or value["implementation_trust"] != "reviewed"):
         raise ValueError("Dispatcher contracts are reserved for registered methods")
+    if kind == "trusted_fastq":
+        if (value["lifecycle"] != "registered" or value["implementation_trust"] != "reviewed"
+                or value["execution"]["network"] != "allow"
+                or value["inputs"] != {"manifest": {"artifact_type": "json", "required": True}}):
+            raise ValueError("Trusted FASTQ requires a registered exact manifest and explicit network allowance")
     paths = []
     for output in value["outputs"].values():
         path = PurePosixPath(output["path"])
@@ -312,7 +325,7 @@ def _validate_contract(value):
         raise ValueError("Input parameter bindings must be distinct")
     if set(bound) & set(value["parameters"].get("properties", {})):
         raise ValueError("Bound input paths may not also be method parameters")
-    if kind == "oci" and bound:
+    if kind in {"oci", "colab"} and bound:
         raise ValueError("Only dispatcher inputs declare parameter bindings")
     if kind == "dispatcher" and len(bound) != len(value["inputs"]):
         raise ValueError("Every dispatcher input requires a parameter binding")

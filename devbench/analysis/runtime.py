@@ -64,3 +64,39 @@ def verify_data_identity(path, expected_sha256):
     return {"data_sha256": observed, "expected_local_sha256": expected_sha256,
             "matched": True, "bytes": path.stat().st_size,
             "scope": "computed_on_the_executing_runtime_from_the_original_data_path"}
+
+
+def verify_runtime_compatibility(identity, observed, *, recorded_runtime=None):
+    """Reject changed numerical environments before executing or reusing state.
+
+    Python patch versions may differ; major/minor and the recorded package map
+    must agree. Full distribution inventories also agree when one was retained.
+    This is a compatibility check, not platform or execution attestation.
+    """
+    if not isinstance(identity, dict) or not isinstance(observed, dict):
+        raise ValueError("runtime_identity_missing")
+    runtime = observed.get("runtime")
+    if not isinstance(runtime, dict):
+        raise ValueError("runtime_observation_missing")
+    version = runtime.get("python")
+    match = re.match(r"^(\d+)\.(\d+)(?:\.|\s|$)", version) if isinstance(version, str) else None
+    expected_python = identity.get("python_minor")
+    if (not match or not isinstance(expected_python, list) or len(expected_python) != 2
+            or any(type(value) is not int or value < 0 for value in expected_python)
+            or [int(value) for value in match.groups()] != expected_python):
+        raise ValueError("runtime_python_changed_since_checkpoint_creation")
+    packages = runtime.get("packages")
+    if not isinstance(packages, dict) or packages != identity.get("packages"):
+        raise ValueError("runtime_packages_changed_since_checkpoint_creation")
+    if recorded_runtime is not None:
+        recorded = recorded_runtime.get("runtime") if isinstance(recorded_runtime, dict) else None
+        if not isinstance(recorded, dict):
+            raise ValueError("runtime_record_missing")
+        # A legacy identity without a full inventory retains its original
+        # package contract. Do not invent new identity fields or old digests.
+        inventory = recorded.get("all_package_versions")
+        if inventory is not None and (not isinstance(inventory, dict)
+                or inventory != runtime.get("all_package_versions")):
+            raise ValueError("runtime_distribution_inventory_changed")
+    return {"compatible": True, "python_minor": expected_python,
+            "scope": "recorded_python_and_package_versions_not_platform_attestation"}

@@ -70,6 +70,8 @@ def _frozen_configuration(root):
     if retained.exists() and decode_json(_read(retained, 1_000_000)) != {
             "identity_sha256": digest(identity), "identity": identity}:
         raise ValueError("checkpoint_identity_mismatch: use a new bundle")
+    from .numerical_equivalence import verify_preparation_contract
+    verify_preparation_contract(root, parameters, identity)
     if parameters.get("review_binding_sha256") is not None:
         from .workbench_proposals import verify_workbench_review
         verify_workbench_review(root, parameters)
@@ -87,7 +89,7 @@ def _stage_worker(root_string, stage):
     from .resources import configure_threads
     configure_threads()
     from .checkpoints import atomic_json, sha256
-    from .runtime import observe_runtime
+    from .runtime import observe_runtime, verify_runtime_compatibility
 
     root = _root(root_string)
     parameters, identity = _frozen_configuration(root)
@@ -95,10 +97,11 @@ def _stage_worker(root_string, stage):
         from .workbench_proposals import require_reviewed_session
         require_reviewed_session(root, parameters)
     source = _source_binding(root)
-    store = _store(root, parameters)
     observed = observe_runtime(parameters["execution_tier"])
-    if observed["runtime"]["packages"] != identity["packages"]:
-        raise ValueError("runtime_packages_changed_since_checkpoint_creation")
+    from devbench.study.evidence import _read, decode_json
+    verify_runtime_compatibility(identity, observed,
+        recorded_runtime=decode_json(_read(root / "runtime.json", 2_000_000)))
+    store = _store(root, parameters)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     (root/"runtime").mkdir(exist_ok=True)
     atomic_json(root/"runtime"/(stamp+"-"+stage+".json"), observed)
@@ -118,6 +121,7 @@ def _stage_worker(root_string, stage):
     elif stage == "doublets":
         from .annotation import run_doublets
         run_doublets(source, store, layer=parameters["counts_layer"], batch_key=parameters["batch_key"],
+                     capture_key=parameters.get("capture_key"),
                      seed=parameters["seed"], max_batch_bytes=parameters["max_batch_bytes"])
     elif stage == "embeddings":
         from .embedding import run_embedding_stages
@@ -211,12 +215,27 @@ for figure in sorted((bundle_root / 'figures').glob('*.png')):
     write_notebook(path, cells)
 
 
-def prepare_bundle(source, output, parameters, *, project=None, model_path=None):
+def prepare_bundle(source, output, parameters, *, project=None, model_path=None, equivalence_contract=None):
     from .checkpoints import atomic_json, sha256
     from .runtime import observe_runtime, verify_data_identity
     from scripts.build_colab_notebook import default_source_bundle, extract_source_bundle
 
     parameters = _validated_parameters(parameters)
+    from .numerical_equivalence import (
+        CONTRACT_KEY, CONTRACT_PATH, validate_numerical_equivalence_contract,
+        verify_preparation_contract,
+    )
+    from .checkpoints import digest
+    if equivalence_contract is not None:
+        equivalence_contract = validate_numerical_equivalence_contract(equivalence_contract)
+        if equivalence_contract["declaration"]["timing"] != "recorded_preparation_binding":
+            raise ValueError("Preparation requires a recorded numerical equivalence contract")
+        contract_digest = digest(equivalence_contract)
+        if parameters.get(CONTRACT_KEY) not in (None, contract_digest):
+            raise ValueError("numerical equivalence contract differs from prepared parameters")
+        parameters = {**parameters, CONTRACT_KEY: contract_digest}
+    elif parameters.get(CONTRACT_KEY) is not None:
+        raise ValueError("The preparation-bound numerical equivalence contract is required")
     source, output = _root(source), _root(output)
     if project is not None:
         project = _root(project)
@@ -229,6 +248,8 @@ def prepare_bundle(source, output, parameters, *, project=None, model_path=None)
     checkpoint_identity = {"parameters": parameters, "data_sha256": identity["data_sha256"],
         "source_sha256": bundle["sha256"], "packages": runtime["runtime"]["packages"],
         "python_minor": list(sys.version_info[:2])}
+    if equivalence_contract is not None:
+        checkpoint_identity[CONTRACT_KEY] = parameters[CONTRACT_KEY]
     if output.exists():
         if (output/"receipts.json").exists():
             raise ValueError("sealed_bundle_requires_new_replay_directory")
@@ -236,6 +257,7 @@ def prepare_bundle(source, output, parameters, *, project=None, model_path=None)
                 or json.loads((output/"parameters.json").read_text()) != parameters
                 or json.loads((output/"checkpoint-identity.json").read_text()) != checkpoint_identity):
             raise ValueError("resume_parameters_source_or_environment_mismatch")
+        verify_preparation_contract(output, parameters, checkpoint_identity)
         extract_source_bundle(bundle["base64"], output/"source", bundle["sha256"], verify_only=True)
     else:
         output.mkdir(parents=True)
@@ -244,6 +266,8 @@ def prepare_bundle(source, output, parameters, *, project=None, model_path=None)
         shutil.copyfile(output/"source"/"uv.lock", output/"environment.lock")
         atomic_json(output/"parameters.json", parameters)
         atomic_json(output/"checkpoint-identity.json", checkpoint_identity)
+        if equivalence_contract is not None:
+            atomic_json(output/CONTRACT_PATH, equivalence_contract)
         atomic_json(output/"runtime.json", runtime)
         atomic_json(output/"data-identity.json", {**identity, "execution_tier": parameters["execution_tier"],
                                                 "measurement":identity_measurement.result})
@@ -315,6 +339,8 @@ def resource_plan(source, parameters):
         "expected_data_sha256": parameters["data_sha256"], "data_sha256_verified_during_plan": False,
         "cells": shape[0], "genes": shape[1],
         "workflow": parameters["workflow"], "correction": parameters["correction"],
+        "integration_decision": parameters.get("integration_decision"),
+        "capture_key": parameters.get("capture_key"),
         "input_info": input_info, "observed_batches": int(batches) if batches is not None else None,
         "integration_applicability": ("not_requested" if parameters["correction"] == "none" else
             "unavailable_batch_identities" if batches is None else
@@ -336,7 +362,8 @@ def _parameter_defaults(prompt=PROMPT, data_sha256=None, tier="local_supervised"
         "data_sha256": data_sha256, "counts_layer": "counts", "batch_key": "batch", "symbol_column": None,
         "min_genes": 200, "mad_limit": 5.0, "max_mito_percent": None,
         "n_top_genes": 2000, "n_pcs": 30, "seed": 20260915, "resolution": 1.0,
-        "correction": "harmony", "scvi_epochs": 100, "block_rows": 128,
+        "correction": "none", "scvi_epochs": 100, "block_rows": 128,
+        "capture_key": None, "integration_rationale": None, "integration_decision": None,
         "max_block_bytes": 64*1024**2, "max_batch_bytes": 1024**3, "max_selected_bytes": 2*1024**3,
         "stage_timeout_seconds": 600, "scvi_timeout_seconds": 3600, "memory_mb": 8192,
         "growth_window_seconds": 0,
@@ -348,17 +375,42 @@ def default_parameters(*, prompt=PROMPT, data_sha256, tier="local_supervised", a
     if set(overrides) - (set(values) - {"workflow", "prompt", "execution_tier", "data_sha256"}):
         raise ValueError("Unknown or reserved workbench parameter override")
     values.update(overrides)
+    if "integration_decision" in overrides:
+        raise ValueError("Integration decision provenance is generated by the coordinator")
+    supplied = "correction" in overrides
+    values["integration_decision"] = {"method": values["correction"],
+        "origin": "caller_supplied" if supplied else "software_default",
+        "rationale": values["integration_rationale"] or (
+            "Caller requested this method; dataset-specific scientific rationale was not supplied" if supplied else
+            "Retain the unintegrated baseline until an explicit dataset-specific integration choice"),
+        "scientific_suitability_established": False}
     return _validated_parameters(values, allow_unverified_identity=allow_unverified_identity)
 
 
 def _validated_parameters(values, *, allow_unverified_identity=False):
     """Validate supplied settings without inspecting data or choosing thresholds."""
     expected = set(_parameter_defaults())
-    generated = {"source_sha256", "reference_manifest_sha256", "review_binding_sha256"}
+    generated = {"source_sha256", "reference_manifest_sha256", "review_binding_sha256",
+                 "numerical_equivalence_contract_sha256"}
     if (not isinstance(values, dict) or set(values) - expected - generated
-            or expected - {"growth_window_seconds"} - set(values)):
+            or expected - {"growth_window_seconds", "capture_key", "integration_decision", "integration_rationale"} - set(values)):
         raise ValueError("Unknown or missing workbench parameters")
     values = dict(values)
+    rationale = values.get("integration_rationale")
+    if rationale is not None and (not isinstance(rationale, str) or not rationale.strip() or len(rationale) > 3000):
+        raise ValueError("Supply a bounded integration rationale")
+    decision = values.get("integration_decision")
+    if decision is not None and (not isinstance(decision, dict) or set(decision) != {
+            "method", "origin", "rationale", "scientific_suitability_established"}
+            or decision["method"] != values["correction"]
+            or decision["origin"] not in {"caller_supplied", "software_default"}
+            or (decision["origin"] == "software_default" and values["correction"] != "none")
+            or not isinstance(decision["rationale"], str) or not decision["rationale"].strip()
+            or len(decision["rationale"]) > 3000 or decision["scientific_suitability_established"] is not False):
+        raise ValueError("Invalid integration decision provenance")
+    capture = values.get("capture_key")
+    if capture is not None and (not isinstance(capture, str) or not capture.strip() or len(capture) > 200):
+        raise ValueError("Invalid capture_key parameter")
     prompt = values["prompt"]
     if (not isinstance(prompt, str) or " ".join(prompt.casefold().replace(",", " ").split())
             != " ".join(PROMPT.casefold().replace(",", " ").split())):
@@ -425,6 +477,11 @@ def main(argv=None):
     if argv and argv[0] == "methods":
         from .method_cli import main as methods_main
         return methods_main(argv[1:])
+    if argv and argv[0] == "fastq":
+        # One explicit procedure entrypoint; this grants no model authority or
+        # scientific-method selection and uses the same FASTQ execution service.
+        from .fastq_cli import main as fastq_main
+        return fastq_main(argv[1:])
     from .resources import configure_threads
     configure_threads()
     parser = argparse.ArgumentParser(description=__doc__)
@@ -435,7 +492,9 @@ def main(argv=None):
     parser.add_argument("--execution-tier", choices=("colab", "local_supervised"), default="local_supervised")
     parser.add_argument("--layer", default="counts", help="Use X for counts stored in X")
     parser.add_argument("--batch-key", default="batch")
-    parser.add_argument("--correction", choices=("harmony", "scvi", "none"), default="harmony")
+    parser.add_argument("--correction", choices=("harmony", "scvi", "none"), default=None)
+    parser.add_argument("--integration-rationale")
+    parser.add_argument("--capture-key", help="Declared capture/library identity for doublet prediction")
     parser.add_argument("--min-genes", type=int, default=200)
     parser.add_argument("--n-top-genes", type=int, default=2000)
     parser.add_argument("--scvi-epochs", type=int, default=100)
@@ -514,12 +573,37 @@ def main(argv=None):
         project = None
         if args.replay_bundle:
             original = _root(args.replay_bundle)
+            if output == original or original in output.parents:
+                raise ValueError("Replay output must be outside the retained reference bundle")
             if not args.expected_root:
                 parser.error("--expected-root is required for replay")
             verify_bundle(original, args.expected_root)
             if json.loads((original/"receipts.json").read_text()).get("artifact_kind") == "presentation":
                 raise ValueError("Use figure_revisions replay for a presentation bundle")
             parameters = json.loads((original/"parameters.json").read_text())
+            # Validate the retained environment before handing off to a saved
+            # coordinator. A fresh preparation must not erase runtime drift.
+            from .runtime import observe_runtime, verify_runtime_compatibility
+            from devbench.study.evidence import _read, decode_json
+            retained_identity = decode_json(_read(original / "checkpoint-identity.json", 1_000_000))
+            observed_runtime = observe_runtime(args.execution_tier)
+            try:
+                verify_runtime_compatibility(retained_identity, observed_runtime,
+                    recorded_runtime=decode_json(_read(original / "runtime.json", 2_000_000)))
+            except ValueError as error:
+                # Preserve rejection evidence in the new replay workspace. The
+                # verified reference and any sealed destination remain untouched.
+                if not (output / "receipts.json").exists():
+                    from .checkpoints import atomic_json
+                    failures = output / "failures"
+                    failures.mkdir(parents=True, exist_ok=True)
+                    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+                    failure = {"status": "rejected_before_execution", "type": type(error).__name__,
+                        "reason": str(error)[:400], "reference_root_sha256": args.expected_root,
+                        "runtime": observed_runtime, "recorded_at_utc": stamp}
+                    atomic_json(failures / (stamp + "-replay-preflight.json"), failure)
+                    atomic_json(output / "replay-preflight-failure.json", failure)
+                raise
             parameters.pop("source_sha256")
             parameters.update(execution_tier=args.execution_tier, parent_root=args.expected_root)
             project = original/"source"
@@ -542,7 +626,9 @@ def main(argv=None):
             parameters = default_parameters(prompt=args.prompt, data_sha256=expected, tier=args.execution_tier,
                 allow_unverified_identity=args.plan_only,
                 counts_layer=None if args.layer == "X" else args.layer, batch_key=args.batch_key,
-                correction=args.correction, min_genes=args.min_genes, n_top_genes=args.n_top_genes,
+                **({"correction": args.correction} if args.correction is not None else {}),
+                integration_rationale=args.integration_rationale, capture_key=args.capture_key,
+                min_genes=args.min_genes, n_top_genes=args.n_top_genes,
                 growth_window_seconds=args.growth_window_seconds,
                 scvi_epochs=args.scvi_epochs, markers=json.loads(_root(args.markers).read_text()) if args.markers else {},
                 model_path="models/model.pkl" if args.model else None, model_sha256=args.model_sha256)
@@ -555,7 +641,13 @@ def main(argv=None):
             reference_digest = sha256(_root(args.reference_manifest)) if args.reference_manifest else None
             if reference_digest is not None:
                 parameters["reference_manifest_sha256"] = reference_digest
-            prepare_bundle(source, output, parameters, project=project, model_path=model_path)
+            equivalence_contract = None
+            if args.replay_bundle and parameters.get("numerical_equivalence_contract_sha256") is not None:
+                from .numerical_equivalence import verify_preparation_contract
+                equivalence_contract = verify_preparation_contract(original,
+                    decode_json(_read(original / "parameters.json", 1_000_000)), retained_identity)
+            prepare_bundle(source, output, parameters, project=project, model_path=model_path,
+                           equivalence_contract=equivalence_contract)
             if args.replay_bundle and parameters.get("review_binding_sha256") is not None:
                 from .workbench_proposals import copy_workbench_review
                 copy_workbench_review(original, output, parameters["review_binding_sha256"])
@@ -569,6 +661,11 @@ def main(argv=None):
                 result = {**reviewed_run["native_result"], "reviewed_execution_receipt": reviewed_run["receipt"]}
             else:
                 result = execute_bundle(output)
+            if equivalence_contract is not None:
+                from .numerical_equivalence import compare_bundle_results
+                result["numerical_equivalence"] = compare_bundle_results(original, output,
+                    expected_reference_root=args.expected_root,
+                    expected_replay_root=result["manifest_sha256"], contract=equivalence_contract)
             if args.reference_manifest:
                 from .scorecard import scoring_worker
                 from devharness_core.watchdog import run_sandboxed

@@ -166,6 +166,7 @@ class AuditedInvestigationBackend:
             "devbench.analysis.workflow_actions", "devbench.analysis.workflow_state",
             "devbench.analysis.langgraph_workflow", "devbench.analysis.method_planner",
             "devbench.analysis.method_planner_contract", "devbench.analysis.method_authoring_contract",
+            "devbench.analysis.codex_signedin", "devbench.analysis.codex_job_policy", "devbench.analysis.codex_job_trace",
             "devbench.analysis.rna_investigation_projection", "devbench.analysis.rna_input_contract",
             "devbench.analysis.method_validation", "devbench.analysis.scientific_judgment",
             "devbench.analysis.scientific_objects", "devbench_engine.adapters",

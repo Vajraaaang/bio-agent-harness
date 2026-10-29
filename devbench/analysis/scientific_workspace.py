@@ -7,6 +7,7 @@ or permission to repeat work after restart.
 from copy import deepcopy
 from pathlib import Path
 import mimetypes
+import re
 import sqlite3
 import uuid
 
@@ -15,10 +16,12 @@ from .method_planner import ScientificMethodPlanner
 from .methods import MethodService, _digest, _label, _reason, _now
 from .scientific_objects import ScientificObjectService
 from .workbench_ui import _canonical, _copy
+from .workflow_entrypoints import (workflow_action, refresh_workspace_context, is_rna_plan,
+    require_completed_parent, governed_followup, advance_workflow_to_gate)
 
 
 class ScientificWorkspace:
-    def __init__(self, app, workspace, *, selector=None, executor=None, restore_backup=None):
+    def __init__(self, app, workspace, *, selector=None, executor=None, restore_backup=None, scientific_workflow=None):
         self.app = app
         self.root = _canonical(workspace)
         if self.root == app.workspace or any(self.root.is_relative_to(root) or root.is_relative_to(self.root)
@@ -26,6 +29,7 @@ class ScientificWorkspace:
             raise ValueError("Scientific storage must be separate from input roots and the service root")
         self.project_id = app.workspace_state()["project"]["id"]
         self.selector, self.executor, self.futures = selector, executor, {}
+        self.scientific_workflow = scientific_workflow
         self.recovery_notice = None
         if restore_backup is not None:
             self.recovery_notice = ScientificObjectService.restore_backup(self.root, _canonical(restore_backup),
@@ -69,13 +73,14 @@ class ScientificWorkspace:
         return {"enabled": True, "initialized": self.initialized(), "planning_mode": mode,
                 "model_execution_allowed": self.app.allow_model_execution,
                 "data_execution_allowed": self.app.allow_data_execution,
+                "scientific_workflow_configured": self.scientific_workflow is not None,
                 "actor_identity": "caller-asserted within the authenticated local session", "recovery_notice": self.recovery_notice}
 
     def catalog(self):
         if not self.initialized():
             return {"project_id": self.project_id, "revision": 0, "initialized": False, "recovery_notice": self.recovery_notice,
                     **{key: [] for key in ("studies", "datasets", "analyses", "runs", "attempts", "results",
-                                           "selections", "plans", "methods", "operations", "imports", "legacy_method_runs")}}
+                                           "selections", "plans", "methods", "operations", "workflow_steps", "imports", "legacy_method_runs")}}
         store, methods = self.store(), self.methods()
         value = store.snapshot()
         value["initialized"] = True
@@ -97,6 +102,7 @@ class ScientificWorkspace:
         value["reviews"] = store.list("review")
         value["plans"] = [state for state in methods.list_records("method_plan")
                           if state.get("scientific_anchors", {}).get("project_id") == self.project_id]
+        value["workflow_steps"] = self._workflow_activity(value["plans"])
         value["operations"] = []
         for operation in methods.list_records("workspace_operation"):
             if operation["project_id"] != self.project_id:
@@ -116,6 +122,33 @@ class ScientificWorkspace:
                     attempt["controller_status"] = "unavailable"
                 attempt["worker_liveness"] = "unknown"
         return value
+
+    def _workflow_activity(self, plans):
+        """Read current per-node receipts without initializing or resuming work."""
+        from .workflow_entrypoints import LEDGER_NAME
+        from .workflow_operations import WorkflowOperationLedger
+        from .workflow_state import SERIAL_ROUTE
+        path = self.root / LEDGER_NAME
+        if path.is_symlink():
+            raise ValueError("Scientific workflow ledger cannot be a symlink")
+        if not path.exists():
+            return []
+        ledger = WorkflowOperationLedger(path, readonly=True)
+        rows = []
+        for plan in plans:
+            if not is_rna_plan(plan):
+                continue
+            for record in ledger.replay(plan["session_id"]):
+                if record["node"] not in SERIAL_ROUTE:
+                    continue
+                update = (record.get("result") or {}).get("update", {})
+                rows.append({"session_id": plan["session_id"], "node": record["node"],
+                    "attempt": record["attempt"], "status": record["status"],
+                    "controller_status": update.get("status"), "error_type": record["error_type"],
+                    "request_sha256": record["request_digest"], "result_sha256": record["result_digest"],
+                    "evidence": deepcopy((record.get("result") or {}).get("evidence"))})
+        order = {node: index for index, node in enumerate(SERIAL_ROUTE)}
+        return sorted(rows, key=lambda row: (row["session_id"], order[row["node"]], row["attempt"]))
 
     def resolve(self, reference):
         try:
@@ -176,7 +209,9 @@ class ScientificWorkspace:
     def _save_plan_context(self, state, **fields):
         updated = deepcopy(state)
         updated.update(fields)
-        return self.planner()._save(state, updated, actor="workspace-controller", action="scientific_context_linked")
+        saved = self.planner()._save(state, updated, actor="workspace-controller", action="scientific_context_linked")
+        refresh_workspace_context(self.planner(), state, saved, scientific_workflow=self.scientific_workflow)
+        return saved
 
     def _operation(self, operation, *, new=False):
         methods, store = self.methods(write=True), self.store(write=True)
@@ -185,9 +220,11 @@ class ScientificWorkspace:
             store.touch(actor=operation["actor"], action="workspace_operation", payload={
                 "operation_id": operation["operation_id"], "status": operation["status"], "action": operation["action"]}, db=db)
 
-    def _queue(self, name, actor, function, *, run_id=None):
+    def _queue(self, name, actor, function, *, run_id=None, request=None):
         operation = {"operation_id": uuid.uuid4().hex, "project_id": self.project_id, "action": name,
                      "actor": actor, "status": "queued", "created_at": _now(), "run_id": run_id}
+        if request is not None:
+            operation["request"] = deepcopy(request)
         self._operation(operation, new=True)
 
         def perform():
@@ -207,9 +244,53 @@ class ScientificWorkspace:
         self.futures[operation["operation_id"]] = self.app._executor.submit(perform)
         return {"operation_id": operation["operation_id"], "run_id": run_id, "status": "queued"}
 
+    def _advance_descriptor(self, body, actor):
+        self._fields(body, ("session_id", "idempotency_key"),
+            ("allow_model_execution", "method_version_ids", "phase"))
+        if type(body.get("allow_model_execution", False)) is not bool:
+            raise ValueError("Use an explicit boolean model-execution permission")
+        phase = body.get("phase", "planning")
+        if type(phase) is not str or phase not in {"planning", "synthesis"}:
+            raise ValueError("Use planning or synthesis advancement")
+        versions = body.get("method_version_ids")
+        if versions is not None and (type(versions) is not list or len(versions) > 64
+                or any(type(value) is not str or re.fullmatch(r"[0-9a-f]{64}", value) is None for value in versions)
+                or len(set(versions)) != len(versions)):
+            raise ValueError("Use at most 64 distinct exact method-version identities")
+        return {"session_id": body["session_id"], "idempotency_key": _label(body["idempotency_key"]),
+            "actor": actor, "phase": phase, "method_version_ids": deepcopy(versions),
+            "allow_model_execution": body.get("allow_model_execution", False)}
+
+    def _advance_to_gate(self, body, actor):
+        request = self._advance_descriptor(body, actor)
+        state = self._plan(request["session_id"])
+        if not is_rna_plan(state):
+            raise ValueError("Automatic graph advancement requires an RNA scientific plan")
+        versions = request["method_version_ids"]
+        if versions is None:
+            versions = [row["version_id"] for row in self.methods().list_records("method")]
+        planner = self.planner()
+        return self._queue("advance_to_gate", actor, lambda: advance_workflow_to_gate(
+            planner, state["session_id"], actor=actor, selector=self.selector, version_ids=versions,
+            scientific_workflow=self.scientific_workflow, phase=request["phase"],
+            allow_model_execution=self.app.allow_model_execution and request["allow_model_execution"],
+            before_advance=self.app._require_current_runtime), request=request)
+
+    def _scientific_stage(self, action, body, actor):
+        self._fields(body, ("session_id",), ("allow_model_execution",))
+        state = self._plan(body["session_id"])
+        if self.scientific_workflow is None:
+            raise PermissionError("RNA actions require a trusted scientific workflow runtime for discovery, implementation and independent reviews")
+        planner = self.planner()
+        return self._queue(action, actor, lambda: workflow_action(planner, state["session_id"], action,
+            actor=actor, selector=self.selector, scientific_workflow=self.scientific_workflow,
+            allow_model_execution=self.app.allow_model_execution and body.get("allow_model_execution") is True))
+
     def _model_action(self, action, body, actor):
         self._fields(body, ("session_id",), ("allow_model_execution", "method_version_ids", "candidate", "method_version_id", "justification"))
         state = self._plan(body["session_id"])
+        if action == "draft_method" and is_rna_plan(state):
+            raise ValueError("RNA implementation must use the explicit implementation graph stage and its frozen trusted requests")
         if self.selector is None:
             raise PermissionError("No scientific planning selector is configured")
         authorized = self.app.allow_model_execution and body.get("allow_model_execution") is True
@@ -219,16 +300,16 @@ class ScientificWorkspace:
         options = {"actor": actor, "allow_model_execution": authorized}
         def select():
             if action == "science":
-                return planner.generate_candidates(state["session_id"], self.selector, **options)
+                return workflow_action(planner, state["session_id"], "generate", selector=self.selector, scientific_workflow=self.scientific_workflow, **options)
             if action == "resolve":
                 versions = body.get("method_version_ids")
                 if versions is None:
                     versions = [row["version_id"] for row in self.methods().list_records("method")]
-                return planner.resolve_capabilities(state["session_id"], self.selector, versions, **options)
+                return workflow_action(planner, state["session_id"], "resolve", selector=self.selector, version_ids=versions, scientific_workflow=self.scientific_workflow, **options)
             if action == "design_trials":
-                return planner.design_trials(state["session_id"], self.selector, **options)
+                return workflow_action(planner, state["session_id"], "design", selector=self.selector, scientific_workflow=self.scientific_workflow, **options)
             if action == "recommend":
-                return planner.recommend(state["session_id"], self.selector, **options)
+                return workflow_action(planner, state["session_id"], "recommend", selector=self.selector, scientific_workflow=self.scientific_workflow, **options)
             if not {"candidate", "method_version_id", "justification"} <= set(body):
                 raise ValueError("Source drafting requires a candidate, exact interface method and justification")
             methods = self.methods()
@@ -247,6 +328,15 @@ class ScientificWorkspace:
         with self.app._lock:
             self.app._require_current_runtime()
             catalog = self.catalog()
+            if name == "advance_to_gate":
+                requested = self._advance_descriptor(body, actor)
+                for previous in catalog["operations"]:
+                    if (previous["action"] == name and previous.get("request", {}).get("idempotency_key")
+                            == requested["idempotency_key"]):
+                        if previous["request"] != requested:
+                            raise ValueError("Conflicting idempotency key payload")
+                        return {"operation_id": previous["operation_id"], "run_id": previous.get("run_id"),
+                            "status": previous["status"]}
             # A replay of the same execution request returns its retained intent;
             # it never renews a permission or dispatches an abandoned attempt.
             if name in {"run_trial", "rerun"} and body.get("idempotency_key"):
@@ -321,6 +411,10 @@ class ScientificWorkspace:
                     expected_revision=study["revision"], legacy_analysis_id=legacy["analysis_id"])
             if name == "create_plan":
                 return self._create_plan(body, actor)
+            if name == "advance_to_gate":
+                return self._advance_to_gate(body, actor)
+            if name in {"discovery", "candidate_review", "implementation", "design_review", "conclusion_review"}:
+                return self._scientific_stage(name, body, actor)
             if name in {"science", "resolve", "design_trials", "draft_method", "recommend"}:
                 return self._model_action(name, body, actor)
             if name == "declare_trial":
@@ -369,7 +463,8 @@ class ScientificWorkspace:
                                     expected_revision=study["revision"], locations=locations)
 
     def _create_plan(self, body, actor):
-        self._fields(body, ("analysis_ref", "dataset_ref"), ("evaluation_purpose", "user_parameter_requirements"))
+        self._fields(body, ("analysis_ref", "dataset_ref"), ("evaluation_purpose", "user_parameter_requirements",
+            "rna_input_contract", "rna_execution_inputs_ref", "rna_execution_workspace", "scientific_contract"))
         store = self.store(write=True)
         analysis_version, dataset_version = store.resolve(body["analysis_ref"]), store.resolve(body["dataset_ref"])
         analysis = store.get("analysis", analysis_version["analysis_id"])
@@ -387,7 +482,11 @@ class ScientificWorkspace:
         planner = self.planner()
         plan = planner.create(task, summary, actor=actor, data_classification=metadata.get("data_classification", "unclassified"),
             anchors=anchors, evaluation_purpose=body.get("evaluation_purpose", "method_selection"),
-            user_parameter_requirements=body.get("user_parameter_requirements"))
+            user_parameter_requirements=body.get("user_parameter_requirements"),
+            rna_input_contract=body.get("rna_input_contract"),
+            rna_execution_inputs_ref=body.get("rna_execution_inputs_ref"),
+            rna_execution_workspace=body.get("rna_execution_workspace"),
+            scientific_contract=body.get("scientific_contract"))
         base = self.methods().analysis(analysis["legacy_analysis_id"])
         plan = self._save_plan_context(plan, scientific_base_revision=base["revision_id"])
         store.touch(actor=actor, action="plan_anchored", payload={"session_id": plan["session_id"], "anchors": anchors})
@@ -410,7 +509,7 @@ class ScientificWorkspace:
             if spec.get("inputs", {}).get(name) != bindings:
                 raise ValueError("Trial input bindings must match the selected immutable dataset manifest")
         branch = methods.create_branch(analysis["legacy_analysis_id"], base["revision_id"], actor=actor)
-        experiment = planner.declare_trial(plan["session_id"], branch["branch_id"], spec, actor=actor)
+        experiment = workflow_action(planner, plan["session_id"], "declare", branch_id=branch["branch_id"], spec=spec, actor=actor, scientific_workflow=self.scientific_workflow)
         steps = []
         contracts = {}
         for name in experiment["candidates"]:
@@ -457,6 +556,22 @@ class ScientificWorkspace:
         for ref in dataset_refs:
             store.resolve(ref)
         definition = version["definition"]
+        rna_session = None
+        if name == "rerun":
+            matches = []
+            for candidate in methods.list_records("method_plan"):
+                anchors = candidate.get("scientific_anchors", {})
+                references = [anchors.get("analysis_version"), *candidate.get("scientific_trial_definitions", {}).values()]
+                if (is_rna_plan(candidate) and reference in references
+                        and dataset_refs == anchors.get("dataset_versions")):
+                    matches.append(candidate["session_id"])
+            known_rna = any("bulk_rna_input" in store.resolve(ref)["manifest"].get("metadata", {}).get("observed", {})
+                            for ref in dataset_refs)
+            if len(matches) > 1 or known_rna and not matches:
+                raise ValueError("RNA rerun requires an exact completed parent graph for these analysis and dataset versions")
+            if matches:
+                rna_session = matches[0]
+                require_completed_parent(self.planner(), rna_session, scientific_workflow=self.scientific_workflow)
         request = self._request_descriptor(name, body, actor)
         run = store.request_run(analysis["analysis_id"], version["version_id"], [ref["version_id"] for ref in dataset_refs],
             environment=definition.get("environment") or {identity: methods.method(identity)["contract"]["environment"] for identity in definition["method_version_ids"]},
@@ -478,15 +593,31 @@ class ScientificWorkspace:
             if branch is not None:
                 created = methods.add_step(branch["branch_id"], step["method_version_id"], step.get("inputs", run["inputs"]), step["parameters"], actor=actor)
                 executions[step["step_key"]]["step_id"] = created["step_id"]
-        def execute():
+        def execute_existing():
             if name == "run_trial":
-                self.planner().run_trial(plan["session_id"], experiment["id"], actor=actor,
-                    allow_data_execution=True, executor=self.executor, execution_bindings=executions)
+                workflow_action(self.planner(), plan["session_id"], "run", experiment_id=experiment["id"], actor=actor,
+                    allow_data_execution=True, executor=self.executor, execution_bindings=executions,
+                    scientific_workflow=self.scientific_workflow)
             else:
                 for binding in executions.values():
                     methods.run_step(binding["step_id"], actor=actor, executor=self.executor,
                         run_id=binding["controller_id"], correlation=binding["correlation"])
             return self._publish(run["run_id"], actor)
+        def verify_followup(value):
+            if value["run_id"] != run["run_id"]:
+                raise ValueError("RNA rerun output belongs to another scientific invocation")
+            for binding in executions.values():
+                native = methods.get("run", binding["controller_id"])
+                if native["step_id"] != binding["step_id"] or not methods.provenance(native["run_id"])["valid"]:
+                    raise ValueError("RNA rerun differs from its retained exact method execution evidence")
+            for published in value["results"]:
+                if store.resolve(published["ref"])["run_id"] != run["run_id"]:
+                    raise ValueError("RNA rerun published result differs from its exact scientific invocation")
+        def execute():
+            if rna_session is not None:
+                return governed_followup(self.planner(), rna_session, kind="rerun", request_id=run["run_id"],
+                    actor=actor, operation=execute_existing, verify=verify_followup, scientific_workflow=self.scientific_workflow)
+            return execute_existing()
         return self._queue(name, actor, execute, run_id=run["run_id"])
 
     def _publish(self, run_id, actor):

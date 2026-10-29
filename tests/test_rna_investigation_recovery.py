@@ -2,6 +2,7 @@
 
 These controls simulate process boundaries; they execute no provider or RNA fit.
 """
+from tests.support.workflow_science_fixtures import RecordingScientificRuntime
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 import json
@@ -71,7 +72,7 @@ def fresh_recovery_objects(planner, ledger, actions):
     backend = RecoveryFixtureBackend(fresh_planner.methods, selector)
     fresh_actions = WorkflowActions(fresh_planner, fresh_ledger, actor="fresh-offline-recovery",
         selector=selector, investigation_policy=actions.investigation_policy,
-        investigation_evidence=actions.investigation_evidence)
+        investigation_evidence=actions.investigation_evidence, scientific_workflow=RecordingScientificRuntime())
     return fresh_planner, fresh_ledger, selector, backend, fresh_actions
 
 

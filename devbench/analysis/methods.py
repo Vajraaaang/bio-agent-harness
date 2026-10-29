@@ -6,7 +6,7 @@ to detect a workspace owner replacing an entire history.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 import fcntl
 import hashlib
@@ -30,6 +30,7 @@ _INVESTIGATION_ARTIFACT_LIMITS = {
     "rna_investigation_capture": 64_000,
     "rna_investigation_usage": 24_000,
     "rna_investigation_reconciliation": 48_000,
+    "rna_mediated_capture": 1_000_000,
 }
 
 
@@ -64,6 +65,7 @@ class MethodService:
         if type(initialize) is not bool or type(reconcile) is not bool or (readonly and (initialize or reconcile)):
             raise ValueError("Read-only access cannot initialize or reconcile workers")
         self.readonly = readonly
+        self._remote_authorities = {}  # Trusted live objects are never reconstructed from JSON.
         self.root = _path(workspace)
         self.database = _path(self.root / "methods.sqlite3")
         exists = self.database.is_file()
@@ -156,7 +158,7 @@ class MethodService:
     def import_artifact(self, source, *, artifact_type, actor):
         return self._import_artifact(source, artifact_type=artifact_type, actor=actor)
 
-    def _import_artifact(self, source, *, artifact_type, actor, generated_by=None):
+    def _import_artifact(self, source, *, artifact_type, actor, generated_by=None, _connection=None):
         self._require_writable()
         source = _path(source)
         if not source.is_file() or artifact_type not in {"file", "json", "table", "anndata", *_INVESTIGATION_ARTIFACT_LIMITS}:
@@ -171,7 +173,12 @@ class MethodService:
                 from .method_planner_contract import _copy_json
                 from .method_validation import finite_json
                 try:
-                    document = _copy_json(finite_json(temporary))
+                    document = finite_json(temporary)
+                    # Wire captures contain independently bounded request and
+                    # base64 response strings, larger than planner prose limits.
+                    # The single-file byte cap above still applies to all bytes.
+                    if artifact_type != "rna_mediated_capture":
+                        document = _copy_json(document)
                 except (TypeError, ValueError, UnicodeError, RecursionError) as error:
                     raise ValueError("Investigation artifacts require finite bounded JSON") from error
                 if not isinstance(document, dict):
@@ -190,7 +197,7 @@ class MethodService:
             value = {"sha256": snapshot["sha256"], "size_bytes": snapshot["size_bytes"],
                      "artifact_type": artifact_type, "suffix": suffix, "generated_by": generated_by}
             value["artifact_id"] = _digest(value)
-            with self._db() as db:
+            with (self._db() if _connection is None else nullcontext(_connection)) as db:
                 if db.execute("SELECT 1 FROM records WHERE kind='artifact' AND id=?", (value["artifact_id"],)).fetchone() is None:
                     self._put(db, "artifact", value["artifact_id"], value)
                     self._audit(db, actor, "artifact_imported", value)
@@ -216,17 +223,23 @@ class MethodService:
             from devharness_server.method_adapter import dispatcher_contract
             if dispatcher_contract(value["implementation"]["tool_name"]).version_id != contract.version_id:
                 raise ValueError("Registered method does not match the live trusted adapter")
+        elif value["implementation"]["kind"] == "trusted_fastq":
+            from .fastq_method_adapter import fastq_execution_contract
+            if environment_lock is not None:
+                raise ValueError("Trusted FASTQ runtime cannot accept a caller-supplied environment")
+            if fastq_execution_contract(value["implementation"]["execution_binding"]).version_id != contract.version_id:
+                raise ValueError("Registered FASTQ method does not match its exact live trusted adapter")
         elif value["lifecycle"] != "custom" or value["implementation_trust"] != "unreviewed":
             raise ValueError("Custom methods cannot grant themselves registered implementation trust")
         if hash_artifact(_path(source), max_bytes=1_000_000)["sha256"] != value["implementation"]["source_sha256"]:
             raise ValueError("Method source digest mismatch")
-        if value["implementation"]["kind"] == "oci":
+        if value["implementation"]["kind"] in {"oci", "colab"}:
             if environment_lock is None or hash_artifact(_path(environment_lock), max_bytes=1_000_000)["sha256"] != value["environment"]["lock_sha256"]:
                 raise ValueError("Environment lock digest mismatch")
         source_ref = self.import_artifact(source, artifact_type="file", actor=actor)
         lock_ref = self.import_artifact(environment_lock, artifact_type="file", actor=actor) if environment_lock else None
         if source_ref["sha256"] != value["implementation"]["source_sha256"] or (
-                lock_ref and value["implementation"]["kind"] == "oci" and lock_ref["sha256"] != value["environment"]["lock_sha256"]):
+                lock_ref and value["implementation"]["kind"] in {"oci", "colab"} and lock_ref["sha256"] != value["environment"]["lock_sha256"]):
             raise ValueError("Method source or environment changed during import")
         record = {"version_id": contract.version_id, "contract": value, "source_artifact": source_ref["artifact_id"],
                   "environment_artifact": lock_ref["artifact_id"] if lock_ref else None}
@@ -243,6 +256,10 @@ class MethodService:
     def register_dispatcher(self, tool_name, *, actor):
         from devharness_server.method_adapter import dispatcher_contract, dispatcher_source
         return self.register_method(dispatcher_contract(tool_name).to_dict(), source=dispatcher_source(tool_name), actor=actor)
+
+    def register_fastq(self, manifest, *, actor):
+        from .fastq_method_adapter import fastq_contract, fastq_source
+        return self.register_method(fastq_contract(manifest).to_dict(), source=fastq_source(), actor=actor)
 
     def method(self, version_id):
         record = self.get("method", version_id)
@@ -305,7 +322,8 @@ class MethodService:
             self._audit(db, actor, "step_created", step)
         return step
 
-    def run_step(self, step_id, *, actor, executor=None, reproduces=None, run_id=None, correlation=None):
+    def run_step(self, step_id, *, actor, executor=None, reproduces=None, run_id=None, correlation=None,
+                 data_execution_authorized=False, cancellation_event=None):
         self._require_writable()
         if run_id is not None and (not isinstance(run_id, str) or re.fullmatch(r"[0-9a-f]{32}", run_id) is None):
             raise ValueError("Use a preallocated controller run identity")
@@ -328,6 +346,18 @@ class MethodService:
         step = self.get("step", step_id)
         method = self.method(step["method_version_id"])
         contract = MethodContract.from_dict(method["contract"])
+        if method["contract"]["implementation"]["kind"] == "trusted_fastq":
+            import threading
+            if data_execution_authorized is not True:
+                raise PermissionError("Trusted FASTQ requires fresh explicit data execution authority")
+            if executor is not None:
+                raise ValueError("Trusted FASTQ cannot accept an injected executor")
+            if cancellation_event is not None and not isinstance(cancellation_event, threading.Event):
+                raise TypeError("Trusted FASTQ cancellation requires a coordinator threading.Event")
+            if cancellation_event is not None and cancellation_event.is_set():
+                raise PermissionError("Cancelled FASTQ execution cannot dispatch")
+        if method["contract"]["implementation"]["kind"] == "colab":
+            raise PermissionError("Colab methods require the approved remote job interface; local execution is forbidden")
         parameters = contract.validate_parameters(step["parameters"])
         inputs = {name: self.artifact_path(identity) for name, identity in step["inputs"].items()}
         source = self.artifact_path(method["source_artifact"])
@@ -343,15 +373,25 @@ class MethodService:
                   "started_at": _now(), "actor": _label(actor),
                   "coordinator_sha256": _digest({name: hash_artifact(Path(__file__).resolve().parent / name)["sha256"]
                       for name in ("methods.py", "method_executor.py", "method_validation.py")}),
-                  "backend": "local_docker" if executor is None and method["contract"]["implementation"]["kind"] == "oci" else "trusted_coordinator"}
+                  "backend": ("trusted_fastq" if method["contract"]["implementation"]["kind"] == "trusted_fastq" else
+                              "local_docker" if executor is None and method["contract"]["implementation"]["kind"] == "oci" else "trusted_coordinator")}
         if correlation is not None:
             record["correlation"] = correlation
         with (directory / "lease").open("xb") as lease:
             fcntl.flock(lease, fcntl.LOCK_EX)
             with self._db() as db:
+                if method["contract"]["implementation"]["kind"] == "trusted_fastq":
+                    # The write transaction linearizes competing dispatches.
+                    for row in db.execute("SELECT id FROM records WHERE kind='run'").fetchall():
+                        previous = self._get(db, "run", row[0])
+                        if previous["step_id"] == step_id and (previous["status"] in {"running", "interrupted"}
+                                                               or previous.get("cleanup_required") is True):
+                            raise PermissionError("An active or uncertain FASTQ attempt requires reconciliation; no redispatch")
                 self._put(db, "run", run_id, record)
                 self._audit(db, actor, "run_started", record)
             dag = ExecutionDAG(directory / "evidence", actor_id=actor)
+            finalized=False
+            backend=None
             try:
                 retained_inputs = {name: dag.add_artifact(path, max_bytes=MAX_DATASET_BYTES, max_entries=1)
                                    for name, path in inputs.items()}
@@ -374,6 +414,25 @@ class MethodService:
                         raise ValueError("Registered methods must use their trusted dispatcher adapter")
                     from devharness_server.method_adapter import execute_dispatcher
                     result = execute_dispatcher(contract, snapshots, parameters, output_dir)
+                elif method["contract"]["implementation"]["kind"] == "trusted_fastq":
+                    from .fastq_method_adapter import execute_fastq
+                    def observe_fastq(event):
+                        # These are facts from the closed backend, not caller code
+                        # or a second controller. The existing run lease is held.
+                        encoded = canonical_json(event)
+                        if len(encoded) > 32_000:
+                            raise ValueError("FASTQ runtime event exceeds its receipt bound")
+                        observed = json.loads(encoded)
+                        record.setdefault("runtime_events", []).append(observed)
+                        if len(record["runtime_events"]) > 64:
+                            raise ValueError("FASTQ runtime emitted too many lifecycle events")
+                        with self._db() as db:
+                            self._put(db, "run", run_id, record, update=True)
+                            self._audit(db, actor, "fastq_runtime_observed", {"run_id": run_id, "event": observed})
+                        return cancellation_event is None or not cancellation_event.is_set()
+                    result = execute_fastq(contract, snapshots, parameters, output_dir,
+                                           execution_authorized=data_execution_authorized,
+                                           cancellation_event=cancellation_event, execution_observer=observe_fastq)
                 else:
                     backend = executor or LocalDockerExecutor()
                     result = backend.execute(method["contract"], snapshots, parameters,
@@ -381,6 +440,9 @@ class MethodService:
                         dag.root_dir / "objects" / method["contract"]["environment"]["lock_sha256"], output_dir)
                 canonical_json(result)
                 record["execution"] = result
+                if method["contract"]["implementation"]["kind"] == "trusted_fastq":
+                    record["cleanup_required"] = result.get("cleanup_required") is True
+                    record["runtime_uncertain"] = result.get("runtime_uncertain") is True
                 if result.get("exit_code") != 0:
                     raise ValueError("Method execution failed: " + str(result.get("error", result.get("stderr", "nonzero exit")))[:2000])
                 outputs, total = {}, 0
@@ -416,30 +478,337 @@ class MethodService:
                 for name, path in snapshots.items():
                     if hash_artifact(path, max_bytes=MAX_DATASET_BYTES)["sha256"] != retained_inputs[name]["sha256"]:
                         raise ValueError("Method mutated an input artifact")
-                published = {}
-                for name, path in outputs.items():
-                    dag.add_artifact(path, max_bytes=MAX_DATASET_BYTES, max_entries=1)
-                    published[name] = self._import_artifact(path,
-                        artifact_type=method["contract"]["outputs"][name]["artifact_type"],
-                        actor=actor, generated_by=run_id)["artifact_id"]
-                record.update(status="succeeded", outputs=published)
-                if reproduces is not None:
-                    actual_hashes = {name: self.get("artifact", identity)["sha256"] for name, identity in published.items()}
-                    expected_hashes = {name: self.get("artifact", identity)["sha256"] for name, identity in original["outputs"].items()}
-                    record["reproduction"] = {"outputs_identical": actual_hashes == expected_hashes,
-                                               "output_sha256": actual_hashes, "original_output_sha256": expected_hashes}
+                guard=getattr(backend, "publication_context", None)
+                with (guard(record) if callable(guard) else nullcontext(None)) as publication_db:
+                    if (method["contract"]["implementation"]["kind"] == "trusted_fastq"
+                            and cancellation_event is not None and cancellation_event.is_set()):
+                        raise ValueError("Cancelled FASTQ execution cannot publish outputs")
+                    published = {}
+                    for name, path in outputs.items():
+                        dag.add_artifact(path, max_bytes=MAX_DATASET_BYTES, max_entries=1)
+                        published[name] = self._import_artifact(path,
+                            artifact_type=method["contract"]["outputs"][name]["artifact_type"],
+                            actor=actor, generated_by=run_id, **({"_connection":publication_db} if publication_db is not None else {}))["artifact_id"]
+                    record.update(status="succeeded", outputs=published)
+                    if reproduces is not None:
+                        actual_hashes = {name: (self._get(publication_db,"artifact",identity) if publication_db is not None else self.get("artifact",identity))["sha256"] for name, identity in published.items()}
+                        expected_hashes = {name: self.get("artifact", identity)["sha256"] for name, identity in original["outputs"].items()}
+                        record["reproduction"] = {"outputs_identical": actual_hashes == expected_hashes,
+                                                   "output_sha256": actual_hashes, "original_output_sha256": expected_hashes}
+                    if publication_db is not None:
+                        record["finished_at"] = _now()
+                        dag.append("method_finished", record)
+                        record["evidence"] = dag.finalize(analysis_fingerprint=_digest({"method": method, "inputs": step["inputs"],
+                                                                                     "parameters": parameters}))
+                        self._put(publication_db, "run", run_id, record, update=True)
+                        self._audit(publication_db, actor, "run_finished", record)
+                        finalized=True
             except Exception as error:
                 if hasattr(error, "execution"):
                     record["execution"] = error.execution
                 record.update(status="failed", outputs={}, error=f"{type(error).__name__}: {error}"[:3000])
-            record["finished_at"] = _now()
-            dag.append("method_finished", record)
-            record["evidence"] = dag.finalize(analysis_fingerprint=_digest({"method": method, "inputs": step["inputs"],
-                                                                            "parameters": parameters}))
-            with self._db() as db:
-                self._put(db, "run", run_id, record, update=True)
-                self._audit(db, actor, "run_finished", record)
+                if (method["contract"]["implementation"]["kind"] == "trusted_fastq"
+                        and "execution" not in record and any(event.get("event") in {"before_engine_start", "engine_started"}
+                            for event in record.get("runtime_events", []))):
+                    record.update(cleanup_required=True, runtime_uncertain=True)
+            if not finalized:
+                record["finished_at"] = _now()
+                dag.append("method_finished", record)
+                record["evidence"] = dag.finalize(analysis_fingerprint=_digest({"method": method, "inputs": step["inputs"],
+                                                                                "parameters": parameters}))
+                with self._db() as db:
+                    self._put(db, "run", run_id, record, update=True)
+                    self._audit(db, actor, "run_finished", record)
         return record
+
+    def prepare_remote_step(self, step_id, *, run_id, job_id, source_bundle_sha256,
+                            validator_sha256, scope, limits, actor, correlation=None):
+        """Freeze metadata only; no execution, grant consumption, or numerical read."""
+        from .colab_execution_contract import JOB_FORMAT, POLICY, validate_job
+        self._require_writable()
+        step = self.get('step', step_id)
+        method = self.method(step['method_version_id'])
+        contract = MethodContract.from_dict(method['contract'])
+        def ref(artifact_id, *, input_ref=False):
+            self.artifact_path(artifact_id)
+            artifact = self.get('artifact', artifact_id)
+            return {key: artifact[key] for key in (('sha256','size_bytes','artifact_type') if input_ref else ('sha256','size_bytes'))}
+        return validate_job({'format': JOB_FORMAT, 'job_id': job_id, 'run_id': run_id,
+            'step_id': step_id, 'method_version_id': method['version_id'],
+            'method_contract': contract.to_dict(), 'source': ref(method['source_artifact']),
+            'environment_lock': ref(method['environment_artifact']),
+            'inputs': {name: ref(identity, input_ref=True) for name, identity in step['inputs'].items()},
+            'parameters': contract.validate_parameters(step['parameters']),
+            'source_bundle_sha256': source_bundle_sha256, 'validator_sha256': validator_sha256,
+            'scope': scope, 'limits': limits, 'actor': _label(actor), 'correlation': correlation,
+            'policy': dict(POLICY)})
+
+    def reserve_remote_step(self, job, *, request, grant, authority, actor):
+        """Consume the one-job approval before creating any transport capability.
+
+        A failure after the external authority commits stays charged. There is no
+        refund, automatic dispatch, fallback or replay operation here.
+        """
+        from .colab_execution_contract import validate_job, job_sha256
+        from .rna_trial_authority import AuthenticatedTrialAuthority
+        self._require_writable()
+        job = validate_job(job)
+        if type(authority) is not AuthenticatedTrialAuthority:
+            raise PermissionError('Remote reservation requires the exact execution grant authority')
+        fresh = self.prepare_remote_step(job['step_id'], run_id=job['run_id'], job_id=job['job_id'],
+            source_bundle_sha256=job['source_bundle_sha256'], validator_sha256=job['validator_sha256'],
+            scope=job['scope'], limits=job['limits'], actor=job['actor'], correlation=job['correlation'])
+        if fresh != job:
+            raise ValueError('Remote step changed before reservation')
+        step = self.get('step', job['step_id'])
+        method = self.method(step['method_version_id'])
+        directory = self.root / 'runs' / job['run_id']
+        # The database transaction serializes duplicate job/run identities. The
+        # authority separately guarantees single-use grant reservation.
+        with (self.root / 'remote-reserve-lease').open('ab') as lease:
+            fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self._db() as db:
+                if db.execute("SELECT 1 FROM records WHERE (kind='remote_job' AND id=?) OR (kind='run' AND id=?)",
+                              (job['job_id'], job['run_id'])).fetchone():
+                    raise PermissionError('Remote job or run identity already reserved')
+            approval = authority.export_colab_public_approval(request, grant, job=job)
+            reservation = authority.consume_and_reserve_colab_qualification(request, grant,
+                dispatch_id=job['job_id'], allocation=job['limits'], job=job)
+            canonical_json(reservation)
+            directory.mkdir(mode=0o700)
+            (directory / 'outputs').mkdir(mode=0o700)
+            (directory / 'job.json').write_bytes(canonical_json(job))
+            (directory / 'job.json').chmod(0o444)
+            record = {'run_id': job['run_id'], 'step_id': job['step_id'], 'branch_id': step['branch_id'],
+                'method_version_id': job['method_version_id'], 'inputs': step['inputs'],
+                'parameters': job['parameters'], 'status': 'remote_pending', 'backend': 'google_colab',
+                'outputs': {}, 'validation': None, 'reproduces': None, 'started_at': _now(),
+                'actor': _label(actor), 'job_id': job['job_id'], 'job_sha256': job_sha256(job),
+                'reservation': reservation, 'remote_approval': approval}
+            if job['correlation'] is not None:
+                record['correlation'] = job['correlation']
+            dag = ExecutionDAG(directory / 'reservation-evidence', actor_id=actor)
+            inputs = {name: dag.add_artifact(self.artifact_path(identity), max_bytes=MAX_DATASET_BYTES, max_entries=1)
+                      for name, identity in step['inputs'].items()}
+            dag.append('remote_method_reserved', {'run': record, 'job': job, 'method': method,
+                'source': dag.add_artifact(self.artifact_path(method['source_artifact']), max_bytes=1_000_000),
+                'environment_lock': dag.add_artifact(self.artifact_path(method['environment_artifact']), max_bytes=1_000_000),
+                'inputs': inputs})
+            record['reservation_evidence'] = dag.finalize(analysis_fingerprint=record['job_sha256'])
+            with self._db() as db:
+                self._put(db, 'remote_job', job['job_id'], job)
+                self._put(db, 'run', job['run_id'], record)
+                self._audit(db, actor, 'remote_method_reserved', record)
+        self._remote_authorities[job['job_id']] = authority
+        return record
+
+    def _remote_job(self, job_id):
+        from .colab_execution_contract import validate_job, job_sha256
+        job = validate_job(self.get('remote_job', job_id))
+        record = self.get('run', job['run_id'])
+        if record.get('job_id') != job_id or record.get('job_sha256') != job_sha256(job) or record.get('backend') != 'google_colab':
+            raise ValueError('Remote run binding changed')
+        path = self.root / 'runs' / job['run_id'] / 'job.json'
+        if hash_artifact(_path(path), max_bytes=1_000_000)['sha256'] != job_sha256(job):
+            raise ValueError('Retained remote job changed')
+        return job, record
+
+    def export_remote_job(self, job_id, destination, *, actor):
+        self._require_writable()
+        job, _ = self._remote_job(job_id)
+        with (self.root / 'runs' / job['run_id'] / 'remote-operation-lease').open('ab') as lease:
+            try:
+                fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise PermissionError('Another remote operation owns this run') from error
+            return self._export_remote_job_once(job_id, destination, actor=actor)
+
+    def _export_remote_job_once(self, job_id, destination, *, actor):
+        """Package immutable artifacts using the shared notebook/bundle builder."""
+        from .colab_job import export_method_job
+        self._require_writable()
+        job, record = self._remote_job(job_id)
+        if record['status'] != 'remote_pending' or record.get('export') is not None:
+            raise PermissionError('A reserved remote job can be exported once only')
+        step = self.get('step', job['step_id'])
+        method = self.method(job['method_version_id'])
+        receipt = export_method_job(job, destination=_path(destination),
+            source=self.artifact_path(method['source_artifact']),
+            environment_lock=self.artifact_path(method['environment_artifact']),
+            inputs={name: self.artifact_path(identity) for name, identity in step['inputs'].items()},
+            request=record['remote_approval']['request'], grant=record['remote_approval']['grant'],
+            issuer=record['remote_approval']['issuer'])
+        canonical_json(receipt)
+        with self._db() as db:
+            current = self._get(db, 'run', job['run_id'])
+            if current['status'] != 'remote_pending' or current.get('export') is not None:
+                raise PermissionError('Remote export state changed')
+            current['export'] = receipt
+            self._put(db, 'run', job['run_id'], current, update=True)
+            self._audit(db, actor, 'remote_job_exported', current)
+        return receipt
+
+    @staticmethod
+    def _remote_transport_projection(observation, job, stage):
+        from .colab_transport import ColabTransportObservation
+        if type(observation) is not ColabTransportObservation:
+            raise PermissionError('An authenticated Colab transport observation is required')
+        projection = observation.verify(job=job, stage=stage)
+        canonical_json(projection)
+        return projection
+
+    def revalidate_remote_dispatch(self, job_id):
+        """Recheck exact approval and current custody immediately before remote exec."""
+        from .rna_trial_authority import AuthenticatedTrialAuthority
+        job, record = self._remote_job(job_id)
+        authority = self._remote_authorities.get(job_id)
+        if type(authority) is not AuthenticatedTrialAuthority:
+            raise PermissionError('The live trusted reservation authority is unavailable; no resume or replay')
+        if record['status'] not in {'remote_pending', 'remote_dispatched'} or record.get('transport_claim') is None:
+            raise PermissionError('Remote transport has no outstanding one-use claim')
+        approval = record['remote_approval']
+        actual = authority.export_colab_public_approval(approval['request'], approval['grant'], job=job)
+        if canonical_json(actual) != canonical_json(approval):
+            raise PermissionError('Remote approval changed before dispatch')
+        fresh = self.prepare_remote_step(job['step_id'], run_id=job['run_id'], job_id=job['job_id'],
+            source_bundle_sha256=job['source_bundle_sha256'], validator_sha256=job['validator_sha256'],
+            scope=job['scope'], limits=job['limits'], actor=job['actor'], correlation=job['correlation'])
+        if canonical_json(fresh) != canonical_json(job):
+            raise PermissionError('Remote job custody changed before dispatch')
+        return record['transport_claim']
+
+    def claim_remote_transport(self, job_id, dispatch_id, remote_session_id):
+        """Durably spend the sole transport claim before any remote provisioning."""
+        from .colab_execution_contract import identity
+        self._require_writable()
+        identity(dispatch_id, 32); identity(remote_session_id)
+        job, record = self._remote_job(job_id)
+        claim = {'format':'devbench.colab-transport-claim/1', 'job_id':job_id,
+            'job_sha256':record['job_sha256'], 'dispatch_id':dispatch_id,
+            'remote_session_id':remote_session_id}
+        with self._db() as db:
+            current = self._get(db, 'run', job['run_id'])
+            if current['status'] != 'remote_pending' or current.get('export') is None or current.get('transport_claim') is not None:
+                raise PermissionError('The remote transport claim is unavailable or already spent')
+            current['transport_claim'] = claim
+            self._put(db, 'run', job['run_id'], current, update=True)
+            self._audit(db, job['actor'], 'remote_transport_claimed', claim)
+        return claim
+
+    def record_remote_dispatch(self, job_id, transport_receipt, *, actor):
+        self._require_writable()
+        job, record = self._remote_job(job_id)
+        projection = self._remote_transport_projection(transport_receipt, job, 'dispatched')
+        with self._db() as db:
+            current = self._get(db, 'run', job['run_id'])
+            if current['status'] != 'remote_pending' or current.get('export') is None:
+                raise PermissionError('Remote job is not ready for a single dispatch')
+            claim = current.get('transport_claim')
+            if claim is None or any(projection[key] != claim[key] for key in ('job_id','job_sha256','dispatch_id','remote_session_id')):
+                raise PermissionError('Remote dispatch does not match the spent transport claim')
+            current.update(status='remote_dispatched', transport=projection)
+            self._put(db, 'run', job['run_id'], current, update=True)
+            self._audit(db, actor, 'remote_job_dispatched', current)
+        return current
+
+    def import_remote_result(self, job_id, archive, expected_root, *, transport_receipt, actor):
+        """Serialize one import; retain any rejected return as a charged failure."""
+        self._require_writable()
+        job, record = self._remote_job(job_id)
+        if record['status'] != 'remote_dispatched':
+            raise PermissionError('Only an outstanding remote dispatch can return')
+        directory = self.root / 'runs' / job['run_id']
+        with (directory / 'remote-operation-lease').open('ab') as lease:
+            try:
+                fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise PermissionError('Another remote import owns this run') from error
+            try:
+                return self._import_remote_result_once(job_id, archive, expected_root,
+                    transport_receipt=transport_receipt, actor=actor)
+            except Exception:
+                # Rejected remote bytes must not trigger another computation or
+                # refund. A failed seal remains visibly unresolved for operators.
+                current = self.get('run', job['run_id'])
+                if current['status'] == 'remote_dispatched':
+                    self._finalize_remote_failure_once(job_id, category='result_rejected', uncertain=True, actor=actor)
+                raise
+
+    def _import_remote_result_once(self, job_id, archive, expected_root, *, transport_receipt, actor):
+        """Import bytes and structural evidence only; scientific validation is remote."""
+        from .colab_result_import import verify_result_archive
+        self._require_writable()
+        job, record = self._remote_job(job_id)
+        if record['status'] != 'remote_dispatched':
+            raise PermissionError('Only an outstanding single remote dispatch can return')
+        projection = self._remote_transport_projection(transport_receipt, job, 'returned')
+        directory = self.root / 'runs' / job['run_id']
+        # The importer uses a fresh directory and rejects duplicate imports. Any
+        # invalid archive remains an explicit charged failure, never re-executed.
+        imported = verify_result_archive(job, _path(archive), expected_root,
+            destination=directory / 'remote-return', transport_projection=projection,
+            dispatch_projection=record['transport'])
+        receipt = record['reservation_evidence']
+        if not verify_execution(_path(receipt['manifest_path']), receipt['root_hash'])['valid']:
+            raise ValueError('Remote reservation evidence changed')
+        dag = ExecutionDAG(directory / 'evidence', actor_id=actor)
+        dag.append('remote_reservation_verified', {'receipt': receipt, 'job_sha256': record['job_sha256']})
+        dag.add_artifact(directory / 'reservation-evidence', max_bytes=200_000_000, max_entries=256)
+        published = {}
+        for name, path in imported['outputs'].items():
+            dag.add_artifact(path, max_bytes=job['limits']['max_output_bytes'], max_entries=1)
+            published[name] = self._import_artifact(path,
+                artifact_type=job['method_contract']['outputs'][name]['artifact_type'], actor=actor,
+                generated_by=job['run_id'])['artifact_id']
+        validation = {'passed': imported['validation']['passed'], 'remote': imported['validation'],
+            'warnings': ['Synthetic Colab qualification only; network confinement is not proven; no airway admission'],
+            'parameters': job['parameters'], 'numerical_execution_tier': 'colab'}
+        record.update(status='succeeded', outputs=published, validation=validation,
+            execution=imported['execution'], remote_transport_return=projection, finished_at=_now())
+        for path in imported['evidence_paths']:
+            dag.add_artifact(path, max_bytes=job['limits']['max_output_bytes'], max_entries=1)
+        dag.append('method_finished', record)
+        record['evidence'] = dag.finalize(analysis_fingerprint=record['job_sha256'])
+        with self._db() as db:
+            current = self._get(db, 'run', job['run_id'])
+            if current['status'] != 'remote_dispatched':
+                raise PermissionError('Remote import state changed')
+            self._put(db, 'run', job['run_id'], record, update=True)
+            self._audit(db, actor, 'remote_result_imported', record)
+        return record
+
+    def finalize_remote_failure(self, job_id, *, category, uncertain, actor):
+        self._require_writable()
+        job, _ = self._remote_job(job_id)
+        with (self.root / 'runs' / job['run_id'] / 'remote-operation-lease').open('ab') as lease:
+            try:
+                fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise PermissionError('Another remote operation owns this run') from error
+            return self._finalize_remote_failure_once(job_id, category=category, uncertain=uncertain, actor=actor)
+
+    def _finalize_remote_failure_once(self, job_id, *, category, uncertain, actor):
+        self._require_writable()
+        if category not in {'remote_error','transport_error','result_rejected','timeout','operator_stop'} or type(uncertain) is not bool:
+            raise ValueError('Invalid remote failure projection')
+        job, record = self._remote_job(job_id)
+        with self._db() as db:
+            current = self._get(db, 'run', job['run_id'])
+            if current['status'] not in {'remote_pending','remote_dispatched'}:
+                raise PermissionError('Remote job is already terminal')
+            current.update(status='remote_uncertain' if uncertain else 'failed', outputs={},
+                error=category, finished_at=_now(), approval_charge_retained=True,
+                automatic_replay=False, local_fallback=False)
+            dag = ExecutionDAG(self.root / 'runs' / job['run_id'] / 'failure-evidence', actor_id=actor)
+            receipt = current['reservation_evidence']
+            if not verify_execution(_path(receipt['manifest_path']), receipt['root_hash'])['valid']:
+                raise ValueError('Remote reservation evidence changed')
+            dag.append('remote_reservation_verified', {'receipt': receipt, 'job_sha256': current['job_sha256']})
+            dag.append('method_finished', current)
+            current['evidence'] = dag.finalize(analysis_fingerprint=current['job_sha256'])
+            self._put(db, 'run', job['run_id'], current, update=True)
+            self._audit(db, actor, 'remote_job_failed', current)
+        return current
 
     def provenance(self, run_id):
         run = self.get("run", run_id)
@@ -585,8 +954,11 @@ class MethodService:
         recovered = []
         with self._db() as db:
             running = [self._get(db, "run", row[0]) for row in db.execute("SELECT id FROM records WHERE kind='run'")]
+        def needs_reconciliation(value):
+            return (value["status"] == "running" or value.get("backend") == "trusted_fastq"
+                    and value["status"] in {"failed", "interrupted"} and value.get("cleanup_required") is True)
         for record in running:
-            if record["status"] != "running":
+            if not needs_reconciliation(record):
                 continue
             path = _path(self.root / "runs" / record["run_id"] / "lease")
             with path.open("ab") as lease:
@@ -594,12 +966,45 @@ class MethodService:
                     fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     continue
+                fastq_recovery = None
+                if record.get("backend") == "trusted_fastq":
+                    with self._db() as db:
+                        current = self._get(db, "run", record["run_id"])
+                    if not needs_reconciliation(current):
+                        continue
+                    try:
+                        from .fastq_execution import reconcile_fastq_runtime
+                        fastq_recovery = reconcile_fastq_runtime(current.get("runtime_events", []),
+                            self.root / "runs" / record["run_id"] / "fastq-workflow")
+                    except Exception as error:
+                        fastq_recovery = {"status": "uncertain", "execution_restarted": False,
+                                          "reason": f"{type(error).__name__}: {error}"[:2000]}
                 with self._db() as db:
                     current = self._get(db, "run", record["run_id"])
-                    if current["status"] != "running":
+                    if not needs_reconciliation(current):
                         continue
-                    current.update(status="interrupted", outputs={}, finished_at=_now(),
-                                   error="Coordinator exited before a sealed run result was published")
+                    prior = json.loads(canonical_json(current))
+                    if current["status"] == "running":
+                        current.update(status="interrupted", outputs={}, finished_at=_now(),
+                                       error="Coordinator exited before a sealed run result was published")
+                    if fastq_recovery is not None:
+                        current["runtime_reconciliation"] = fastq_recovery
+                        current["runtime_reconciled_at"] = _now()
+                        current["cleanup_required"] = fastq_recovery["status"] != "reconciled"
+                        current["runtime_uncertain"] = current["cleanup_required"]
+                        # Preserve sealed failure evidence while sealing each later
+                        # cleanup update. This is the same run and abandoned lease,
+                        # not a new execution/controller or rewritten old receipt.
+                        previous_evidence = current.pop("evidence", None)
+                        if previous_evidence is not None:
+                            current["previous_execution_evidence"] = previous_evidence
+                        evidence_dir = self.root / "runs" / record["run_id"] / ("reconciliation-evidence-" + uuid.uuid4().hex)
+                        evidence = ExecutionDAG(evidence_dir, actor_id="restart-reconciliation")
+                        evidence.append("previous_run_record", prior)
+                        evidence.append("runtime_reconciled", current)
+                        current["evidence"] = evidence.finalize(analysis_fingerprint=_digest({
+                            "run_id": record["run_id"], "previous_evidence": previous_evidence,
+                            "runtime_reconciliation": fastq_recovery}))
                     if record.get("backend") == "local_docker":
                         try:
                             from devharness_controlled.native_runtime import LocalDocker
@@ -607,6 +1012,7 @@ class MethodService:
                         except Exception:
                             current["cleanup_required"] = True
                     self._put(db, "run", record["run_id"], current, update=True)
-                    self._audit(db, "restart-reconciliation", "run_interrupted", current)
+                    self._audit(db, "restart-reconciliation",
+                                "run_interrupted" if prior["status"] == "running" else "runtime_reconciled", current)
                     recovered.append(record["run_id"])
         return recovered

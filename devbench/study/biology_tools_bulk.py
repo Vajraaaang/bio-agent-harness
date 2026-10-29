@@ -52,7 +52,7 @@ _ESTIMATION_LIMITS = {
 }
 _TEXT_OPTIONS = {"time_col", "condition_col", "dose_col", "covariate_col", "reference_condition",
                  "comparison_condition", "network_condition", "selection_criterion"}
-_KNOWN_OPTIONS = _TEXT_OPTIONS | {"batch_cols", "spline_df", "spline_candidates", "reference_time",
+_KNOWN_OPTIONS = _TEXT_OPTIONS | {"batch_cols", "block_cols", "spline_df", "spline_candidates", "reference_time",
     "frequency_domain", "frequency_count", "damping_grid", "correlation_threshold", "minimum_units",
     "timeout_sec", "max_mem_mb", "covariate_levels", "condition_number_limit"}
 
@@ -85,12 +85,19 @@ def validate_bulk_options(options: dict[str, Any] | None = None) -> dict[str, An
     for name, lo, hi in (("spline_df", 3, 8), ("frequency_count", 3, 40), ("minimum_units", MINIMUM_BIOLOGICAL_UNITS, 100)):
         if name in result and (type(result[name]) is not int or not lo <= result[name] <= hi):
             raise ValueError(name + " is outside its bounded integer range")
-    for name in ("spline_candidates", "batch_cols", "damping_grid", "covariate_levels", "frequency_domain"):
+    for name in ("spline_candidates", "damping_grid", "covariate_levels", "frequency_domain"):
         if name in result and (not isinstance(result[name], (list, tuple)) or not 1 <= len(result[name]) <= 20):
             raise ValueError(name + " must be a bounded array")
-    if "batch_cols" in result and any(not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,160}", value)
-                                      for value in result["batch_cols"]):
-        raise ValueError("batch_cols must contain identifiers, not formula grammar")
+    for name, maximum in (("batch_cols", 20), ("block_cols", 1)):
+        if name not in result:
+            continue
+        if (not isinstance(result[name], (list, tuple)) or len(result[name]) > maximum
+                or any(not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,160}", value)
+                       for value in result[name]) or len(set(result[name])) != len(result[name])):
+            raise ValueError(name + " must contain bounded distinct column identifiers, not formula grammar")
+        result[name] = list(result[name])
+    if set(result.get("batch_cols", [])) & set(result.get("block_cols", [])):
+        raise ValueError("fixed_block_cannot_also_be_declared_as_batch")
     if "spline_candidates" in result and any(type(value) is not int or not 3 <= value <= 8
                                               for value in result["spline_candidates"]):
         raise ValueError("spline_candidates must contain fixed integer df values from 3 to 8")
@@ -165,7 +172,9 @@ def _column(metadata, settings, option, candidates, required=True):
     return None
 
 
-def _unit_audit(data: ObservedData) -> dict[str, Any]:
+def _unit_audit(data: ObservedData, *, design_columns=()) -> dict[str, Any]:
+    from devharness_core.units import biological_identity_audit
+
     metadata, hierarchy = data.metadata, data.unit_hierarchy
     unit, specimen, library = (hierarchy[key] for key in ("population_unit_label", "specimen_label", "library_label"))
     problems = []
@@ -182,21 +191,28 @@ def _unit_audit(data: ObservedData) -> dict[str, Any]:
             problems.append("specimen_crosses_biological_units")
         if (metadata.groupby(library)[specimen].nunique() > 1).any():
             problems.append("library_crosses_specimens")
+    identities = biological_identity_audit(metadata.to_dict("records"), unit,
+        population_unit=hierarchy["population_unit"], library_label=library, design_columns=design_columns)
+    problems.extend(identities["problems"])
     return {"population_unit": hierarchy["population_unit"], "population_unit_label": unit,
             "biological_unit_count": int(metadata[unit].nunique()) if unit in metadata and not problems else None,
             "specimen_count": int(metadata[specimen].nunique()) if specimen in metadata else None,
             "library_count": int(metadata[library].nunique()) if library in metadata else None,
             "observation_count": len(metadata), "identity_and_nesting_valid": not problems,
             "problems": list(dict.fromkeys(problems)),
+            "identity_findings": identities["identity_findings"],
+            "repeated_identity_columns": identities["repeated_identity_columns"],
+            "library_coordinate_findings": identities["library_coordinate_findings"],
             "independence_basis": "public_unit_declaration_and_observed_nesting_not_unique_sample_labels"}
 
 
-def _independent_view(data: ObservedData, columns: list[str], *, descriptive=False):
-    """Aggregate nested observations only if every modeled covariate is constant per unit."""
+def _independent_view(data: ObservedData, columns: list[str], *, descriptive=False, settings=None):
+    """Aggregate memberships per unit, or per explicitly paired unit/condition."""
     import numpy as np
     import pandas as pd
 
-    audit = _unit_audit(data)
+    settings = _public_settings(data, settings or {})
+    audit = _unit_audit(data, design_columns=columns)
     metadata = data.metadata
     unit = data.unit_hierarchy["population_unit_label"]
     if not audit["identity_and_nesting_valid"]:
@@ -204,18 +220,38 @@ def _independent_view(data: ObservedData, columns: list[str], *, descriptive=Fal
             return data, dict(audit, inferential_support=False, aggregation="none")
         raise ValueError(audit["problems"][0])
     columns = list(dict.fromkeys(column for column in columns if column in metadata))
-    varying = [column for column in columns if (metadata.groupby(unit)[column].nunique(dropna=False) > 1).any()]
+    block = settings.get("block_cols", [])
+    if block:
+        if data.measurement != "raw_counts":
+            raise ValueError("paired_fixed_block_requires_raw_counts")
+        if block != [unit]:
+            raise ValueError("paired_fixed_block_must_be_declared_biological_unit")
+        condition = _column(metadata, settings, "condition_col", ("condition",))
+        if condition not in columns:
+            raise ValueError("paired_fixed_block_requires_condition_analysis")
+        levels = {settings.get("reference_condition"), settings.get("comparison_condition")}
+        if None in levels or len(levels) != 2 or set(metadata[condition]) != levels:
+            raise ValueError("paired_fixed_block_requires_explicit_two_condition_contrast")
+        if any(set(group[condition]) != levels for _, group in metadata.groupby(unit, sort=False)):
+            raise ValueError("paired_fixed_block_requires_complete_pairs")
+        grouping = [unit, condition]
+    else:
+        grouping = [unit]
+    varying = [column for column in columns if (metadata.groupby(grouping)[column].nunique(dropna=False) > 1).any()]
     if varying:
         if descriptive:
             return data, dict(audit, inferential_support=False, aggregation="none",
                               repeated_unit_covariates=varying)
         raise ValueError("repeated_units_across_design_coordinates_require_cluster_model")
-    group_ids = list(dict.fromkeys(metadata[unit].tolist()))
+    group_values = list(dict.fromkeys(tuple(row) for row in metadata[grouping].itertuples(index=False, name=None)))
+    group_ids = []
     matrices, records = [], []
     specimen = data.unit_hierarchy["specimen_label"]
-    for group in group_ids:
-        positions = np.flatnonzero((metadata[unit] == group).to_numpy())
+    for group in group_values:
+        positions = np.flatnonzero(np.logical_and.reduce([
+            (metadata[column] == value).to_numpy() for column, value in zip(grouping, group)]))
         frame = metadata.iloc[positions]
+        group_ids.append(str(frame.index[0]) if block else group[0])
         if data.measurement == "continuous":
             # Equal specimen weights prevent an extra technical library weighting a donor twice.
             specimens = []
@@ -231,12 +267,18 @@ def _independent_view(data: ObservedData, columns: list[str], *, descriptive=Fal
         raise ValueError("aggregated_expression_exceeds_exact_finite_range")
     frame = pd.DataFrame(records, index=group_ids)
     view = replace(data, expression=values, metadata=frame, sample_ids=tuple(group_ids))
-    return view, dict(audit, inferential_support=True, analysis_unit_count=len(frame),
-                     aggregation="sum_counts_or_equal_specimen_mean_per_declared_biological_unit")
+    return view, dict(audit, inferential_support=True,
+                     analysis_unit_count=int(frame[unit].nunique()), analysis_observation_count=len(frame),
+                     paired_block_column=unit if block else None,
+                     aggregation=("sum_technical_counts_per_declared_biological_unit_condition" if block else
+                         "sum_counts_or_equal_specimen_mean_per_declared_biological_unit"))
 
 
 def _batch_columns(metadata, settings):
-    return [column for column in settings.get("batch_cols", ["batch"]) if column in metadata]
+    columns = settings.get("batch_cols", ["batch"] if "batch" in metadata else [])
+    if any(column not in metadata for column in columns):
+        raise ValueError("missing_declared_batch_column")
+    return list(columns)
 
 
 def _basis(values, df, specification=None):
@@ -264,6 +306,7 @@ def _design(data, mode, settings, df=None):
     import numpy as np
     import pandas as pd
 
+    settings = _public_settings(data, settings)
     metadata = data.metadata
     n = len(metadata)
     columns, names = [np.ones(n)], ["intercept"]
@@ -353,6 +396,21 @@ def _design(data, mode, settings, df=None):
         columns.append(condition * values)
         names.append("condition_covariate_slope")
         details.update(coordinate_column=coordinate, covariate_type="categorical" if categorical else "numeric")
+    block_columns = settings.get("block_cols", [])
+    if block_columns:
+        if mode != "condition" or data.measurement != "raw_counts":
+            raise ValueError("paired_fixed_block_requires_raw_counts_condition_analysis")
+        if block_columns != [data.unit_hierarchy["population_unit_label"]]:
+            raise ValueError("paired_fixed_block_must_be_declared_biological_unit")
+        for column in block_columns:
+            if column not in metadata:
+                raise ValueError("missing_declared_block_column")
+            levels = sorted(set(metadata[column].astype(str)))
+            for level in levels[1:]:
+                blocks.setdefault("fixed_block", []).append(len(columns))
+                columns.append((metadata[column].astype(str) == level).to_numpy(dtype=float))
+                names.append("fixed_block_" + column + "_" + level)
+        details.update(block_columns=list(block_columns), block_coding="treatment_indicators_first_sorted_level_reference")
     for column in _batch_columns(metadata, settings):
         levels = sorted(set(metadata[column].astype(str)))
         for level in levels[1:]:
@@ -405,7 +463,8 @@ def _fit_family(data, design, diagnostics):
     diagnostics["design_condition"] = require_design_condition(design,
         condition_number_limit=design.attrs.get("condition_number_limit", DESIGN_CONDITION_NUMBER_LIMIT))
     diagnostics["model_family_attempted"] = "negative_binomial" if counts else "gaussian"
-    if len(data.gene_ids) > 5000:
+    from .biology_input_limits import PUBLIC_MAX_BULK_FEATURES
+    if len(data.gene_ids) > PUBLIC_MAX_BULK_FEATURES:
         raise ValueError("complete_gene_family_exceeds_bounded_model_budget")
     factors, dispersions = np.ones(len(data.metadata)), {}
     if counts:
@@ -476,6 +535,9 @@ _REFUSAL_CRITERIA = {
     "missing_unit_identity": ("biological_identity_recorded", "unknown", "metadata"),
     "specimen_crosses_biological_units": ("biological_identity_recorded", "violated", "metadata"),
     "library_crosses_specimens": ("biological_identity_recorded", "violated", "metadata"),
+    "library_crosses_design_coordinates": ("biological_identity_recorded", "violated", "metadata"),
+    "library_identity_unknown": ("biological_identity_recorded", "unknown", "metadata"),
+    "library_identity_column_missing": ("biological_identity_recorded", "unknown", "metadata"),
     "insufficient_independent_units_in_observed_design_strata": ("independent_biological_units", "violated", "metadata"),
     "insufficient_independent_residual_degrees_of_freedom": ("independent_biological_units", "violated", "metadata"),
     "rank_deficient_design": ("design_rank_identifiable", "violated", "metadata"),
@@ -521,6 +583,10 @@ reason string can masquerade as a successful scientific diagnosis.
         for reason in fragment["limitation_codes"]:
             record = _REFUSAL_CRITERIA.get(reason)
             if reason.startswith("missing_") and reason.removeprefix("missing_") in hierarchy_labels:
+                record = ("biological_identity_recorded", "unknown", "metadata")
+            if reason.startswith("repeated_biological_unit_") or reason == "biological_unit_is_membership":
+                record = ("independent_biological_units", "violated", "metadata")
+            if reason.startswith("biological_unit_identity_unknown_"):
                 record = ("biological_identity_recorded", "unknown", "metadata")
             if record is None:
                 continue
@@ -653,7 +719,8 @@ def _mode_columns(data, mode, settings):
 def _check_replication(data, details, settings):
     columns = [details[key] for key in ("condition_column", "coordinate_column") if key in details]
     if columns:
-        sizes = data.metadata.groupby(columns, dropna=False).size()
+        unit = data.unit_hierarchy["population_unit_label"]
+        sizes = data.metadata.groupby(columns, dropna=False)[unit].nunique()
         if int(sizes.min()) < settings.get("minimum_units", 3):
             raise ValueError("insufficient_independent_units_in_observed_design_strata")
 
@@ -734,7 +801,8 @@ def _curve_row(gene, fitted, details, discrete, *, mean_scale=False):
 
 
 def _fit_effect_targets(data, targets, mode, settings, diagnostics):
-    view, units = _independent_view(data, _mode_columns(data, mode, settings))
+    settings = _public_settings(data, settings)
+    view, units = _independent_view(data, _mode_columns(data, mode, settings), settings=settings)
     diagnostics["biological_units"] = units
     _multiplicity_provenance(view, diagnostics)
     candidates = settings.get("spline_candidates", [settings.get("spline_df", 3)]) if mode in {"temporal", "condition_time"} else [None]
@@ -1273,6 +1341,19 @@ def _deconvolve(data, targets, settings, diagnostics):
 
 def _public_settings(data, settings):
     settings = dict(settings)
+    roles = data.context.get("analysis_columns")
+    if roles is not None:
+        for option, role in (("condition_col", "condition"), ("batch_cols", "batches"), ("block_cols", "blocking")):
+            if role == "condition" and roles.get(role) is None:
+                continue
+            value = roles.get(role, [])
+            if option in settings and settings[option] != value:
+                raise ValueError("tool_" + option + "_conflicts_with_declared_analysis_columns")
+            settings[option] = value
+        if hasattr(data, "metadata") and not roles.get("batches", []) and "batch" in data.metadata:
+            raise ValueError("metadata_batch_column_must_be_explicitly_declared")
+        if settings.get("block_cols") and settings["block_cols"] != [data.unit_hierarchy["population_unit_label"]]:
+            raise ValueError("paired_fixed_block_must_be_declared_biological_unit")
     requested = dict(data.context.get("requested_condition_contrast", {}))
     declared_levels = data.context.get("design", {}).get("condition_levels", data.context.get("condition_labels", []))
     if declared_levels:
@@ -1434,7 +1515,7 @@ def _analyze_bulk_worker(tool_name, public_task, counts_path, metadata_path, ann
             mode = ("covariate" if question_ids & {"covariate_effect", "covariate_interaction"}
                     else "condition_time" if question_ids & {"condition_main", "time_interaction"}
                     else "temporal" if "sampled_mean" in question_ids else "condition")
-            view, units = _independent_view(data, _mode_columns(data, mode, settings))
+            view, units = _independent_view(data, _mode_columns(data, mode, settings), settings=settings)
             _, details = _design(view, mode, settings)
             diagnostics.update(design=details, biological_units=units)
             fragments = []

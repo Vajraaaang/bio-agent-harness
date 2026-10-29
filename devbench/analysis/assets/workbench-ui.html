@@ -1,56 +1,125 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RNA Workbench · local research</title><style nonce="__NONCE__">
-:root{color-scheme:light;--paper:#f7f7f5;--surface:#fff;--ink:#252723;--body:#353833;--muted:#676d63;--line:#e3e5df;--accent:#b15b3b;--accent-hover:#a95134;--soft:#f0f1ed;--warning:#8a641e;--bad:#aa3f35}
-*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--body);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,textarea,select{font:inherit}button,input,textarea,select,summary,a{outline-offset:3px}button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent)}button{border:1px solid var(--accent);border-radius:7px;padding:9px 13px;background:var(--accent);color:#fff;cursor:pointer;font-weight:550}button:hover:not(:disabled){background:var(--accent-hover)}button.secondary{background:#fff;color:var(--body);border-color:var(--line)}button.secondary:hover:not(:disabled){background:var(--soft)}button:disabled{opacity:.45;cursor:not-allowed}input,textarea,select{width:100%;border:1px solid #d5d8d0;background:#fff;padding:9px 10px;border-radius:6px;color:var(--ink)}textarea{min-height:86px;resize:vertical}input[type=checkbox]{width:auto;flex:none;margin-top:4px}h1,h2,h3,p{margin:0}h1,h2,h3{color:var(--ink)}h2{font-size:20px;line-height:1.3;font-weight:550}h3{font-size:14px;line-height:1.4;font-weight:600;margin:16px 0 8px}p{margin-bottom:12px}a{color:var(--accent)}.shell{padding:8px;min-height:100vh}.layout{display:grid;grid-template-columns:218px minmax(420px,1fr) minmax(350px,32vw);gap:12px;align-items:start;height:calc(100vh - 16px)}.rail,.inspector{height:calc(100vh - 16px);background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 4px #23271d03}.rail{display:flex;flex-direction:column;overflow:hidden;padding:19px 12px 12px}.brand{padding:0 5px 23px}.brand h1,.login-brand{font:29px/1.12 Georgia,serif;letter-spacing:-1.15px;color:#20231f}.brand .muted{font-size:11px;margin-top:4px}.project-name{padding:10px 12px 15px;font-weight:600;display:flex;justify-content:space-between;align-items:center}.local-label{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:400}.workflow-nav{display:grid;gap:3px;margin:0 0 21px}.nav-button{background:transparent;color:var(--ink);border-color:transparent;font-weight:450;text-align:left;padding:9px 12px;border-radius:6px}.nav-button:hover:not(:disabled){background:var(--soft)}.nav-button[aria-current=page]{background:var(--soft);font-weight:600}.rail-jobs{border-top:1px solid var(--line);padding:15px 3px 10px;flex:1;min-height:80px;overflow:auto}.eyebrow{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}.rail-jobs>.eyebrow{padding:0 8px 7px}.jobs{display:grid;gap:4px}.job{font-size:12px;line-height:1.45;text-align:left;background:transparent;color:var(--body);border-color:transparent;padding:9px;width:100%;overflow-wrap:anywhere;font-weight:400}.job:hover:not(:disabled){background:var(--soft)}.job[aria-current=true]{background:var(--soft);border-color:var(--line)}.rail-note{font-size:11px;padding:0 8px;margin:12px 0 0;color:var(--muted)}.rail-footer{padding:12px 6px 0;border-top:1px solid var(--line)}.rail-footer .tag{font-size:10px;padding:3px 7px}.rail-footer .muted{font-size:10px;line-height:1.5;margin:8px 0 0}.workspace{min-width:0;max-height:calc(100vh - 16px);overflow:auto;padding:0 2px 18px}.workspace-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 10px 19px;min-height:76px}.workspace-header h2{font-size:15px;font-weight:500;margin-top:5px;max-width:100%;overflow-wrap:anywhere}.workspace-header .eyebrow{font-size:10px}.workspace-header>div{min-width:0}.inspector-toggle{display:none}.panel{padding:22px;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;scroll-margin-top:16px}.panel-head{display:flex;align-items:start;justify-content:space-between;gap:20px;margin-bottom:12px}.step{font-size:10px;letter-spacing:.6px;white-space:nowrap;color:var(--muted);padding-top:6px}.muted{color:var(--muted);font-size:12px}.tag,.status{display:inline-block;border:1px solid var(--line);background:var(--soft);padding:4px 8px;border-radius:5px;font-size:11px;color:var(--body);overflow-wrap:anywhere}.note{background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:10px 12px;font-size:12px;margin:12px 0}.fields{display:grid;grid-template-columns:1fr 1fr;gap:15px}.fields .wide{grid-column:1/-1}label{display:block;font-size:12px;font-weight:550;margin:0 0 6px}.check{display:flex;align-items:start;gap:8px;font-weight:400}.check span{flex:1}.field-note{font-size:11px;color:var(--muted);margin:5px 0 0}.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:15px}.error{color:var(--bad);white-space:pre-wrap}.message{min-height:18px;margin:9px 0 0;font-size:12px;overflow-wrap:anywhere}pre{margin:10px 0 0;padding:13px;background:#f6f6f3;border:1px solid var(--line);border-radius:6px;font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto}details{margin:13px 0}summary{cursor:pointer;font-size:12px;font-weight:550;color:var(--ink)}.empty{color:var(--muted);font-size:12px;padding:12px 0}.metrics{display:flex;gap:15px;flex-wrap:wrap;margin:0;padding:12px 16px;border-bottom:1px solid var(--line)}.metric{font-size:11px;display:flex;gap:5px;align-items:baseline}.metric b{color:var(--ink);font-size:13px;font-weight:600}.metric span{color:var(--muted)}#results{padding:0;border:0;background:transparent}.results-card{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}.figure-toolbar{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:9px;align-items:center}.figure-toolbar label{margin:0;color:var(--muted);font-size:10px}.figure-picker{flex:1;min-width:155px}.figure-picker select{font-size:12px;padding:6px 8px;margin-top:3px}.version-picker{display:flex;gap:5px;align-items:end}.version-picker select{font-size:11px;max-width:170px;padding:6px 5px}.version-picker button{padding:6px 9px;font-size:11px}.figure-heading{padding:14px 16px 9px;display:flex;gap:14px;align-items:start;justify-content:space-between}.figure-heading h3{font-size:13px;font-weight:550;margin:0;overflow-wrap:anywhere}.figure-heading .muted{font:10px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;margin:5px 0 0;overflow-wrap:anywhere}.figure-heading .actions{margin:0;flex-wrap:nowrap}.figure-heading button{font-size:11px;padding:6px 9px;white-space:nowrap}.figure-stage{min-height:365px;padding:10px 12px 4px}.figures{display:grid;gap:14px}.figures figure{margin:0;min-width:0}.figures img{display:block;width:100%;height:auto;max-height:calc(100vh - 330px);min-height:200px;object-fit:contain}.figures figcaption{font-size:10px;color:var(--muted);text-align:center;padding:8px 0 3px;overflow-wrap:anywhere}#presentation-preview{grid-template-columns:repeat(2,minmax(0,1fr))}.figure-foot{padding:10px 16px 14px;border-top:1px solid var(--line);margin-top:8px}.figure-foot .note{padding:0;border:0;background:transparent;margin:0;font-size:11px;color:var(--muted)}.figure-foot .check{font-size:11px;margin:9px 0 0}.result-summary{padding:12px 5px 0}.result-summary>.note{font-size:11px;line-height:1.6;background:transparent;border:0;padding:0 9px;margin:0}.result-summary>.actions{padding:0 8px}.downloads{display:flex;flex-wrap:wrap;gap:6px}.downloads button{font-size:10px;padding:6px 8px;overflow-wrap:anywhere}.report-artifacts{padding:0 8px}.inspector{min-width:0;display:flex;flex-direction:column;overflow:hidden}.inspector-head{display:flex;gap:9px;justify-content:space-between;align-items:center;min-height:57px;padding:14px 15px;border-bottom:1px solid var(--line)}.inspector-head>div{min-width:0}.inspector-head h2{font-size:13px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.inspector-head .muted{margin:3px 0 0;font-size:10px}.inspector-tabs{display:flex;gap:1px;padding:0 8px;border-bottom:1px solid var(--line);overflow-x:auto;flex-shrink:0;min-height:43px}.inspector-tabs button{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;color:var(--muted);padding:11px 7px 9px;font-size:11px;white-space:nowrap;font-weight:450}.inspector-tabs button:hover:not(:disabled){background:var(--soft)}.inspector-tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}.inspector-body{flex:1;overflow:auto;min-height:0}.inspector-panel{padding:16px 14px}.inspector-panel>h3:first-child{margin-top:0}.inspector-panel pre{max-height:none;margin-top:10px}.inspector-panel .fields{gap:11px}.inspector-panel label{font-size:11px}.inspector-panel input,.inspector-panel select{font-size:12px;padding:7px 8px}.inspector-panel .actions button{width:100%;font-size:12px}.inspector-panel .note{font-size:11px;line-height:1.6}.inspector-panel .muted{font-size:11px}.inspector-panel #presentation-versions{display:grid}.inspector-panel #presentation-versions button{text-align:left}.code-heading{display:flex;justify-content:space-between;gap:12px;align-items:center}.code-heading h3{margin:0}.code-heading button{font-size:10px;padding:6px 8px}.code-content{background:#f6f6f4!important;font-size:11px!important;line-height:1.8!important;white-space:pre!important;overflow-x:auto!important;overflow-wrap:normal!important;min-height:300px;border-radius:0!important;border-left:0!important;border-right:0!important;margin-left:-14px!important;margin-right:-14px!important;padding:15px!important}.inspector-close{display:none;padding:5px 9px!important;font-size:11px}.inspector-footer{padding:10px 14px;border-top:1px solid var(--line);color:var(--muted);font-size:10px}.login-heading{max-width:680px;margin:60px auto 22px}.login-heading p{margin-top:10px}.login-heading[hidden]{display:none}#login{max-width:680px;margin:0 auto}#login .actions input{flex:1;min-width:200px}.footer{font-size:10px;color:var(--muted);padding:14px 10px 0;line-height:1.6}.advanced-display{padding-top:3px}.advanced-display .fields{margin-top:13px}#app[hidden],[hidden]{display:none!important}
+:root{color-scheme:light;--paper:#f7f7f7;--surface:#ffffff;--ink:#262626;--body:#373737;--muted:#6b6b6b;--line:#e4e4e4;--accent:#6b6b6b;--accent-hover:#626262;--soft:#f0f0f0;--warning:#676767;--bad:#555555}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--body);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,textarea,select{font:inherit}button,input,textarea,select,summary,a{outline-offset:3px}button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent)}button{border:1px solid var(--accent);border-radius:7px;padding:9px 13px;background:var(--accent);color:#ffffff;cursor:pointer;font-weight:550}button:hover:not(:disabled){background:var(--accent-hover)}button.secondary{background:#ffffff;color:var(--body);border-color:var(--line)}button.secondary:hover:not(:disabled){background:var(--soft)}button:disabled{opacity:.45;cursor:not-allowed}input,textarea,select{width:100%;border:1px solid #d7d7d7;background:#ffffff;padding:9px 10px;border-radius:6px;color:var(--ink)}textarea{min-height:86px;resize:vertical}input[type=checkbox]{width:auto;flex:none;margin-top:4px}h1,h2,h3,p{margin:0}h1,h2,h3{color:var(--ink)}h2{font-size:20px;line-height:1.3;font-weight:550}h3{font-size:14px;line-height:1.4;font-weight:600;margin:16px 0 8px}p{margin-bottom:12px}a{color:var(--accent)}.shell{padding:8px;min-height:100vh}.layout{display:grid;grid-template-columns:218px minmax(420px,1fr) minmax(350px,32vw);gap:12px;align-items:start;height:calc(100vh - 16px)}.rail,.inspector{height:calc(100vh - 16px);background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 4px #25252503}.rail{display:flex;flex-direction:column;overflow:hidden;padding:19px 12px 12px}.brand{padding:0 5px 23px}.brand h1,.login-brand{font:29px/1.12 Georgia,serif;letter-spacing:-1.15px;color:#222222}.brand .muted{font-size:11px;margin-top:4px}.project-name{padding:10px 12px 15px;font-weight:600;display:flex;justify-content:space-between;align-items:center}.local-label{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:400}.workflow-nav{display:grid;gap:3px;margin:0 0 21px}.nav-button{background:transparent;color:var(--ink);border-color:transparent;font-weight:450;text-align:left;padding:9px 12px;border-radius:6px}.nav-button:hover:not(:disabled){background:var(--soft)}.nav-button[aria-current=page]{background:var(--soft);font-weight:600}.rail-jobs{border-top:1px solid var(--line);padding:15px 3px 10px;flex:1;min-height:80px;overflow:auto}.eyebrow{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}.rail-jobs>.eyebrow{padding:0 8px 7px}.jobs{display:grid;gap:4px}.job{font-size:12px;line-height:1.45;text-align:left;background:transparent;color:var(--body);border-color:transparent;padding:9px;width:100%;overflow-wrap:anywhere;font-weight:400}.job:hover:not(:disabled){background:var(--soft)}.job[aria-current=true]{background:var(--soft);border-color:var(--line)}.rail-note{font-size:11px;padding:0 8px;margin:12px 0 0;color:var(--muted)}.rail-footer{padding:12px 6px 0;border-top:1px solid var(--line)}.rail-footer .tag{font-size:10px;padding:3px 7px}.rail-footer .muted{font-size:10px;line-height:1.5;margin:8px 0 0}.workspace{min-width:0;max-height:calc(100vh - 16px);overflow:auto;padding:0 2px 18px}.workspace-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 10px 19px;min-height:76px}.workspace-header h2{font-size:15px;font-weight:500;margin-top:5px;max-width:100%;overflow-wrap:anywhere}.workspace-header .eyebrow{font-size:10px}.workspace-header>div{min-width:0}.inspector-toggle{display:none}.panel{padding:22px;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;scroll-margin-top:16px}.panel-head{display:flex;align-items:start;justify-content:space-between;gap:20px;margin-bottom:12px}.step{font-size:10px;letter-spacing:.6px;white-space:nowrap;color:var(--muted);padding-top:6px}.muted{color:var(--muted);font-size:12px}.tag,.status{display:inline-block;border:1px solid var(--line);background:var(--soft);padding:4px 8px;border-radius:5px;font-size:11px;color:var(--body);overflow-wrap:anywhere}.note{background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:10px 12px;font-size:12px;margin:12px 0}.fields{display:grid;grid-template-columns:1fr 1fr;gap:15px}.fields .wide{grid-column:1/-1}label{display:block;font-size:12px;font-weight:550;margin:0 0 6px}.check{display:flex;align-items:start;gap:8px;font-weight:400}.check span{flex:1}.field-note{font-size:11px;color:var(--muted);margin:5px 0 0}.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:15px}.error{color:var(--bad);white-space:pre-wrap}.message{min-height:18px;margin:9px 0 0;font-size:12px;overflow-wrap:anywhere}pre{margin:10px 0 0;padding:13px;background:#f6f6f6;border:1px solid var(--line);border-radius:6px;font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto}details{margin:13px 0}summary{cursor:pointer;font-size:12px;font-weight:550;color:var(--ink)}.empty{color:var(--muted);font-size:12px;padding:12px 0}.metrics{display:flex;gap:15px;flex-wrap:wrap;margin:0;padding:12px 16px;border-bottom:1px solid var(--line)}.metric{font-size:11px;display:flex;gap:5px;align-items:baseline}.metric b{color:var(--ink);font-size:13px;font-weight:600}.metric span{color:var(--muted)}#results{padding:0;border:0;background:transparent}.results-card{background:#ffffff;border:1px solid var(--line);border-radius:12px;overflow:hidden}.figure-toolbar{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:9px;align-items:center}.figure-toolbar label{margin:0;color:var(--muted);font-size:10px}.figure-picker{flex:1;min-width:155px}.figure-picker select{font-size:12px;padding:6px 8px;margin-top:3px}.version-picker{display:flex;gap:5px;align-items:end}.version-picker select{font-size:11px;max-width:170px;padding:6px 5px}.version-picker button{padding:6px 9px;font-size:11px}.figure-heading{padding:14px 16px 9px;display:flex;gap:14px;align-items:start;justify-content:space-between}.figure-heading h3{font-size:13px;font-weight:550;margin:0;overflow-wrap:anywhere}.figure-heading .muted{font:10px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;margin:5px 0 0;overflow-wrap:anywhere}.figure-heading .actions{margin:0;flex-wrap:nowrap}.figure-heading button{font-size:11px;padding:6px 9px;white-space:nowrap}.figure-stage{min-height:365px;padding:10px 12px 4px}.figures{display:grid;gap:14px}.figures figure{margin:0;min-width:0}.figures img{display:block;width:100%;height:auto;max-height:calc(100vh - 330px);min-height:200px;object-fit:contain}.figures figcaption{font-size:10px;color:var(--muted);text-align:center;padding:8px 0 3px;overflow-wrap:anywhere}#presentation-preview{grid-template-columns:repeat(2,minmax(0,1fr))}.figure-foot{padding:10px 16px 14px;border-top:1px solid var(--line);margin-top:8px}.figure-foot .note{padding:0;border:0;background:transparent;margin:0;font-size:11px;color:var(--muted)}.figure-foot .check{font-size:11px;margin:9px 0 0}.result-summary{padding:12px 5px 0}.result-summary>.note{font-size:11px;line-height:1.6;background:transparent;border:0;padding:0 9px;margin:0}.result-summary>.actions{padding:0 8px}.downloads{display:flex;flex-wrap:wrap;gap:6px}.downloads button{font-size:10px;padding:6px 8px;overflow-wrap:anywhere}.report-artifacts{padding:0 8px}.inspector{min-width:0;display:flex;flex-direction:column;overflow:hidden}.inspector-head{display:flex;gap:9px;justify-content:space-between;align-items:center;min-height:57px;padding:14px 15px;border-bottom:1px solid var(--line)}.inspector-head>div{min-width:0}.inspector-head h2{font-size:13px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.inspector-head .muted{margin:3px 0 0;font-size:10px}.inspector-tabs{display:flex;gap:1px;padding:0 8px;border-bottom:1px solid var(--line);overflow-x:auto;flex-shrink:0;min-height:43px}.inspector-tabs button{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;color:var(--muted);padding:11px 7px 9px;font-size:11px;white-space:nowrap;font-weight:450}.inspector-tabs button:hover:not(:disabled){background:var(--soft)}.inspector-tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}.inspector-body{flex:1;overflow:auto;min-height:0}.inspector-panel{padding:16px 14px}.inspector-panel>h3:first-child{margin-top:0}.inspector-panel pre{max-height:none;margin-top:10px}.inspector-panel .fields{gap:11px}.inspector-panel label{font-size:11px}.inspector-panel input,.inspector-panel select{font-size:12px;padding:7px 8px}.inspector-panel .actions button{width:100%;font-size:12px}.inspector-panel .note{font-size:11px;line-height:1.6}.inspector-panel .muted{font-size:11px}.inspector-panel #presentation-versions{display:grid}.inspector-panel #presentation-versions button{text-align:left}.code-heading{display:flex;justify-content:space-between;gap:12px;align-items:center}.code-heading h3{margin:0}.code-heading button{font-size:10px;padding:6px 8px}.code-content{background:#f6f6f6!important;font-size:11px!important;line-height:1.8!important;white-space:pre!important;overflow-x:auto!important;overflow-wrap:normal!important;min-height:300px;border-radius:0!important;border-left:0!important;border-right:0!important;margin-left:-14px!important;margin-right:-14px!important;padding:15px!important}.inspector-close{display:none;padding:5px 9px!important;font-size:11px}.inspector-footer{padding:10px 14px;border-top:1px solid var(--line);color:var(--muted);font-size:10px}.login-heading{max-width:680px;margin:60px auto 22px}.login-heading p{margin-top:10px}.login-heading[hidden]{display:none}#login{max-width:680px;margin:0 auto}#login .actions input{flex:1;min-width:200px}.footer{font-size:10px;color:var(--muted);padding:14px 10px 0;line-height:1.6}.advanced-display{padding-top:3px}.advanced-display .fields{margin-top:13px}#app[hidden],[hidden]{display:none!important}
 @media(min-width:1500px){.layout{grid-template-columns:240px minmax(510px,1fr) minmax(450px,38vw);gap:14px}.rail{padding:22px 13px 13px}.brand h1{font-size:31px}.workspace-header{padding-top:18px}.figure-stage{min-height:440px}.inspector-tabs button{font-size:12px;padding-left:10px;padding-right:10px}}
-@media(max-width:1120px){.layout{grid-template-columns:200px minmax(0,1fr)}.inspector{display:none;position:fixed;right:8px;top:8px;bottom:8px;width:min(460px,calc(100vw - 24px));z-index:10;box-shadow:-12px 0 36px #26281d15}.inspector.is-open{display:flex}.inspector-toggle,.inspector-close{display:block}.workspace{padding-right:2px}.figure-stage{min-height:420px}.figures img{max-height:calc(100vh - 330px)}}
+@media(max-width:1120px){.layout{grid-template-columns:200px minmax(0,1fr)}.inspector{display:none;position:fixed;right:8px;top:8px;bottom:8px;width:min(460px,calc(100vw - 24px));z-index:10;box-shadow:-12px 0 36px #27272715}.inspector.is-open{display:flex}.inspector-toggle,.inspector-close{display:block}.workspace{padding-right:2px}.figure-stage{min-height:420px}.figures img{max-height:calc(100vh - 330px)}}
 @media(max-width:680px){.shell{padding:6px}.layout{display:block;height:auto}.rail{height:auto;padding:12px;margin-bottom:10px}.brand{padding:0 3px 9px}.brand h1{font-size:26px}.brand .muted,.project-name,.rail-footer,.rail-note{display:none}.workflow-nav{display:flex;gap:3px;margin:0;overflow-x:auto}.nav-button{padding:7px 8px;font-size:11px;white-space:nowrap}.rail-jobs{padding:10px 0 0;border:0;max-height:130px}.rail-jobs>.eyebrow{font-size:9px;padding-left:5px}.jobs{display:flex;overflow-x:auto}.job{min-width:150px;width:190px;font-size:10px;padding:7px}.workspace{max-height:none;overflow:visible}.workspace-header{padding:8px 7px 13px;min-height:60px}.workspace-header h2{font-size:14px}.panel{padding:17px}.fields{grid-template-columns:1fr}.panel-head h2{font-size:18px}.step{font-size:9px}.inspector{top:6px;right:6px;height:calc(100dvh - 12px);width:calc(100vw - 12px)}.display-fields{grid-template-columns:1fr 1fr}.figure-toolbar{padding:10px;align-items:end;gap:8px}.figure-picker{min-width:140px}.version-picker select{max-width:150px}.figure-heading{padding:12px 10px;display:block}.figure-heading .actions{margin-top:8px}.figure-stage{min-height:265px;padding:5px}.figures img{min-height:180px;max-height:70vh}.metrics{gap:11px;padding:10px}.metric{font-size:10px}.metric b{font-size:12px}.figure-foot{padding:10px}#presentation-preview{grid-template-columns:1fr}.login-heading{margin:35px 12px 20px}#login{margin:0 5px}.footer{padding:10px 5px}.report-artifacts{padding:0 3px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 
-.inspector-tabs:not(.all-tabs) button:not(#tab-analyst):not(#tab-display){display:none}.inspector-head #evidence-toggle{font-size:10px;padding:6px 9px;margin-left:auto}.inspector-tabs:not(.all-tabs){padding-left:12px}.inspector-tabs:not(.all-tabs) button{padding-left:12px;padding-right:12px;font-size:12px}.analyst-panel{padding:19px 16px;min-height:100%}.analyst-timeline{display:grid;gap:18px}.analyst-welcome{padding:9px 1px}.analyst-welcome h3{font-size:21px;font-weight:500;letter-spacing:-.5px;line-height:1.4;margin:14px 0 14px}.analyst-welcome p{font-size:12px;line-height:1.7;color:var(--muted)}.flow-steps{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:14px 0 17px;font-size:10px;color:var(--body)}.flow-steps span{color:#a4a89e}.analyst-message{font-size:12px;line-height:1.7;overflow-wrap:anywhere}.analyst-message p{margin:7px 0 0;white-space:pre-wrap}.analyst-message .message-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}.analyst-message.user-message{background:#eeefe9;border-radius:13px 13px 4px 13px;padding:13px 15px;margin-left:23px}.analyst-message.record-message{padding:0 1px}.analyst-message.record-message strong{display:block;font-size:13px;line-height:1.55;color:var(--ink);font-weight:550;margin:5px 0 0}.analyst-message.record-message .record-action{font-size:11px;margin-top:11px;padding:6px 10px;background:#fff;color:var(--body);border-color:var(--line)}.analyst-message.record-message .record-action:hover{background:var(--soft)}.analyst-message .record-status{display:inline-block;font-size:10px;line-height:1.4;border-radius:4px;padding:4px 6px;border:1px solid var(--line);color:var(--muted);margin-top:9px;background:var(--soft)}.analyst-message.failure-message{padding:13px;border:1px solid #e8d5cc;border-radius:9px;background:#fffaf6}.analyst-message.failure-message strong{color:var(--bad)}.analyst-composer{padding:12px 12px 7px;border-top:1px solid var(--line);background:#fff}.composer-card{border:1px solid #dadcd5;border-radius:13px;padding:12px 12px 10px;box-shadow:0 3px 12px #25272306}.composer-card label{font-size:10px;letter-spacing:.3px;color:var(--muted);font-weight:400;margin:0 0 3px}.composer-card textarea{border:0;border-radius:0;padding:5px 0;min-height:83px;max-height:170px;resize:vertical;font-size:13px;line-height:1.6}.composer-card textarea:focus-visible{outline:0}.composer-card:focus-within{border-color:#bdc2b7;box-shadow:0 0 0 2px #eef0e9}.composer-actions{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:7px}.composer-actions button{font-size:11px;padding:7px 10px}.composer-actions button.secondary{border:0;background:transparent;padding-left:0;color:var(--muted)}.composer-scope{font-size:10px;text-align:center;color:var(--muted);line-height:1.5;margin:8px 5px 0}.analyst-composer .message{font-size:10px;min-height:0;margin:5px 0 0}.analyst-composer .message:empty{display:none}#data-context>summary{font-size:13px;margin:3px 0 18px;font-weight:550}#data-context{margin:16px 0}.workflow-panel .panel-head{margin-bottom:12px}.inspector-footer{font-size:9px;padding-top:7px;padding-bottom:7px}.workspace-header h2{font-weight:550}
+.inspector-tabs:not(.all-tabs) button:not(#tab-analyst):not(#tab-display){display:none}.inspector-head #evidence-toggle{font-size:10px;padding:6px 9px;margin-left:auto}.inspector-tabs:not(.all-tabs){padding-left:12px}.inspector-tabs:not(.all-tabs) button{padding-left:12px;padding-right:12px;font-size:12px}.analyst-panel{padding:19px 16px;min-height:100%}.analyst-timeline{display:grid;gap:18px}.analyst-welcome{padding:9px 1px}.analyst-welcome h3{font-size:21px;font-weight:500;letter-spacing:-.5px;line-height:1.4;margin:14px 0 14px}.analyst-welcome p{font-size:12px;line-height:1.7;color:var(--muted)}.flow-steps{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:14px 0 17px;font-size:10px;color:var(--body)}.flow-steps span{color:#a6a6a6}.analyst-message{font-size:12px;line-height:1.7;overflow-wrap:anywhere}.analyst-message p{margin:7px 0 0;white-space:pre-wrap}.analyst-message .message-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}.analyst-message.user-message{background:#eeeeee;border-radius:13px 13px 4px 13px;padding:13px 15px;margin-left:23px}.analyst-message.record-message{padding:0 1px}.analyst-message.record-message strong{display:block;font-size:13px;line-height:1.55;color:var(--ink);font-weight:550;margin:5px 0 0}.analyst-message.record-message .record-action{font-size:11px;margin-top:11px;padding:6px 10px;background:#ffffff;color:var(--body);border-color:var(--line)}.analyst-message.record-message .record-action:hover{background:var(--soft)}.analyst-message .record-status{display:inline-block;font-size:10px;line-height:1.4;border-radius:4px;padding:4px 6px;border:1px solid var(--line);color:var(--muted);margin-top:9px;background:var(--soft)}.analyst-message.failure-message{padding:13px;border:1px solid #d8d8d8;border-radius:9px;background:#fbfbfb}.analyst-message.failure-message strong{color:var(--bad)}.analyst-composer{padding:12px 12px 7px;border-top:1px solid var(--line);background:#ffffff}.composer-card{border:1px solid #dbdbdb;border-radius:13px;padding:12px 12px 10px;box-shadow:0 3px 12px #26262606}.composer-card label{font-size:10px;letter-spacing:.3px;color:var(--muted);font-weight:400;margin:0 0 3px}.composer-card textarea{border:0;border-radius:0;padding:5px 0;min-height:83px;max-height:170px;resize:vertical;font-size:13px;line-height:1.6}.composer-card textarea:focus-visible{outline:0}.composer-card:focus-within{border-color:#c0c0c0;box-shadow:0 0 0 2px #efefef}.composer-actions{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:7px}.composer-actions button{font-size:11px;padding:7px 10px}.composer-actions button.secondary{border:0;background:transparent;padding-left:0;color:var(--muted)}.composer-scope{font-size:10px;text-align:center;color:var(--muted);line-height:1.5;margin:8px 5px 0}.analyst-composer .message{font-size:10px;min-height:0;margin:5px 0 0}.analyst-composer .message:empty{display:none}#data-context>summary{font-size:13px;margin:3px 0 18px;font-weight:550}#data-context{margin:16px 0}.workflow-panel .panel-head{margin-bottom:12px}.inspector-footer{font-size:9px;padding-top:7px;padding-bottom:7px}.workspace-header h2{font-weight:550}
 @media(max-width:680px){.analyst-panel{padding:16px}.analyst-welcome h3{font-size:19px}.analyst-composer{padding:10px}.composer-card textarea{min-height:72px}}
 .zoom-picker{width:100px;flex:none}.zoom-picker label{font-size:11px;margin-bottom:3px}#figure-stage{overflow:auto}#figure-stage[data-scale="native"] .figures{display:block;width:max-content;max-width:none}#figure-stage[data-scale="native"] .figures figure{width:max-content;max-width:none}#figure-stage[data-scale="native"] .figures img{width:auto;max-width:none;max-height:none}#figure-stage[data-scale="native"] #presentation-preview{display:flex;gap:16px}
-.proposal-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0}.proposal-summary div{padding:12px;border:1px solid var(--line);border-radius:8px;background:#fafbf8}.proposal-summary span{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}.proposal-summary strong{font-size:13px;font-weight:550;overflow-wrap:anywhere}@media(max-width:680px){.proposal-summary{grid-template-columns:1fr}}
-.project-name{display:block;padding-bottom:13px;overflow-wrap:anywhere}.project-name .local-label{display:block;margin-top:3px}.project-search{padding:0 5px 15px}.project-search label{font-size:11px;color:var(--muted);margin-bottom:5px}.project-search input{font-size:12px;background:#fafbf8}.workflow-nav{margin-bottom:14px}.nav-new{margin:0 4px 13px}.rail-jobs{padding-top:13px}.activity-control{width:100%;font-size:11px;text-align:left;margin-bottom:9px}.selection-nav{display:flex;gap:3px;border-bottom:1px solid var(--line);padding:0 0 12px;margin-bottom:16px}.selection-nav button{font-size:12px;padding:6px 10px}.workspace-notice{font-size:11px;line-height:1.6;margin:0 8px 13px}.workspace-notice:empty{display:none}.collection-panel{padding:26px}.collection-panel>p{margin-top:10px;color:var(--muted);font-size:12px;line-height:1.75}.collection-panel h2{font:27px/1.3 Georgia,serif;letter-spacing:-.5px}.object-list{display:grid;gap:9px;margin:20px 0}.object-row{display:block;width:100%;text-align:left;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--body);padding:15px 16px;white-space:pre-line;font-size:12px;line-height:1.9;font-weight:400;overflow-wrap:anywhere}.object-row::first-line{font-size:14px;font-weight:550;color:var(--ink)}.object-row:hover:not(:disabled){background:#f5f6f1;border-color:#bec5b6}.object-row:focus-visible{outline-offset:2px}.object-row[aria-current=true]{border-color:#b15b3b}.collection-tools{display:flex;gap:12px;align-items:center;margin:18px 0}.collection-tools label{margin:0;color:var(--muted);font-size:12px}.collection-tools select{width:auto;font-size:12px}.overview-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:25px 0}.overview-stat{border:1px solid var(--line);background:#fafbf8;border-radius:8px;padding:16px 12px}.overview-stat strong{display:block;font:28px Georgia,serif;margin-bottom:5px}.overview-stat span{font-size:11px;color:var(--muted)}.overview-lede{max-width:55ch}.overview-section{margin-top:28px}.section-caption{display:flex;justify-content:space-between;align-items:baseline}.section-caption h3{font-size:14px;margin:0}.section-caption span{font-size:11px;color:var(--muted)}.project-settings{padding-top:14px;margin-top:20px;border-top:1px solid var(--line)}.project-settings summary{font-size:12px;color:var(--muted)}.project-settings .actions{margin-top:12px}.project-settings input{max-width:290px}.result-origin{margin:0;padding:10px 18px;background:#fafbf8;border-bottom:1px solid var(--line);font-size:10px;color:var(--muted);overflow-wrap:anywhere}.context-facts{font-size:12px;line-height:1.8;white-space:pre-line;overflow-wrap:anywhere}.collection-note{border-top:1px solid var(--line);padding-top:16px;font-size:11px;color:var(--muted);line-height:1.7}.workspace-save-status{font-size:10px;color:var(--muted);margin-top:7px}.save-workspace{font-size:11px;padding:6px 9px}.rail{overflow:auto}.rail-jobs{flex:1;min-height:150px}.collection-panel .downloads{margin-top:15px}
+.proposal-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0}.proposal-summary div{padding:12px;border:1px solid var(--line);border-radius:8px;background:#fbfbfb}.proposal-summary span{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}.proposal-summary strong{font-size:13px;font-weight:550;overflow-wrap:anywhere}@media(max-width:680px){.proposal-summary{grid-template-columns:1fr}}
+.project-name{display:block;padding-bottom:13px;overflow-wrap:anywhere}.project-name .local-label{display:block;margin-top:3px}.project-search{padding:0 5px 15px}.project-search label{font-size:11px;color:var(--muted);margin-bottom:5px}.project-search input{font-size:12px;background:#fbfbfb}.workflow-nav{margin-bottom:14px}.nav-new{margin:0 4px 13px}.rail-jobs{padding-top:13px}.activity-control{width:100%;font-size:11px;text-align:left;margin-bottom:9px}.selection-nav{display:flex;gap:3px;border-bottom:1px solid var(--line);padding:0 0 12px;margin-bottom:16px}.selection-nav button{font-size:12px;padding:6px 10px}.workspace-notice{font-size:11px;line-height:1.6;margin:0 8px 13px}.workspace-notice:empty{display:none}.collection-panel{padding:26px}.collection-panel>p{margin-top:10px;color:var(--muted);font-size:12px;line-height:1.75}.collection-panel h2{font:27px/1.3 Georgia,serif;letter-spacing:-.5px}.object-list{display:grid;gap:9px;margin:20px 0}.object-row{display:block;width:100%;text-align:left;border:1px solid var(--line);border-radius:8px;background:#ffffff;color:var(--body);padding:15px 16px;white-space:pre-line;font-size:12px;line-height:1.9;font-weight:400;overflow-wrap:anywhere}.object-row::first-line{font-size:14px;font-weight:550;color:var(--ink)}.object-row:hover:not(:disabled){background:#f5f5f5;border-color:#c2c2c2}.object-row:focus-visible{outline-offset:2px}.object-row[aria-current=true]{border-color:#6b6b6b}.collection-tools{display:flex;gap:12px;align-items:center;margin:18px 0}.collection-tools label{margin:0;color:var(--muted);font-size:12px}.collection-tools select{width:auto;font-size:12px}.overview-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:25px 0}.overview-stat{border:1px solid var(--line);background:#fbfbfb;border-radius:8px;padding:16px 12px}.overview-stat strong{display:block;font:28px Georgia,serif;margin-bottom:5px}.overview-stat span{font-size:11px;color:var(--muted)}.overview-lede{max-width:55ch}.overview-section{margin-top:28px}.section-caption{display:flex;justify-content:space-between;align-items:baseline}.section-caption h3{font-size:14px;margin:0}.section-caption span{font-size:11px;color:var(--muted)}.project-settings{padding-top:14px;margin-top:20px;border-top:1px solid var(--line)}.project-settings summary{font-size:12px;color:var(--muted)}.project-settings .actions{margin-top:12px}.project-settings input{max-width:290px}.result-origin{margin:0;padding:10px 18px;background:#fbfbfb;border-bottom:1px solid var(--line);font-size:10px;color:var(--muted);overflow-wrap:anywhere}.context-facts{font-size:12px;line-height:1.8;white-space:pre-line;overflow-wrap:anywhere}.collection-note{border-top:1px solid var(--line);padding-top:16px;font-size:11px;color:var(--muted);line-height:1.7}.workspace-save-status{font-size:10px;color:var(--muted);margin-top:7px}.save-workspace{font-size:11px;padding:6px 9px}.rail{overflow:auto}.rail-jobs{flex:1;min-height:150px}.collection-panel .downloads{margin-top:15px}
 @media(max-width:680px){.collection-panel{padding:19px}.overview-stats{gap:7px}.overview-stat{padding:12px 8px}.project-search{max-width:320px}.rail-jobs{min-height:0}.selection-nav{flex-wrap:wrap}.collection-tools{flex-wrap:wrap}}
 .work-kind{display:block;width:fit-content;font-size:9px;line-height:1.4;letter-spacing:.3px;border:1px solid var(--line);border-radius:4px;padding:2px 5px;color:var(--muted);margin-bottom:5px}.work-title{display:block}
-.scientific-section{border-top:1px solid var(--line);margin-top:24px;padding-top:22px}.scientific-section h3{font:21px/1.3 Georgia,serif;margin:0 0 9px}.scientific-section>p{font-size:12px;color:var(--muted)}.scientific-section .fields{margin-top:14px}.scientific-section details{margin-top:17px}.scientific-facts{white-space:pre-line;overflow-wrap:anywhere;font-size:12px;line-height:1.8}.scientific-exact{font:10px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;color:var(--muted)}.scientific-cards{display:grid;gap:9px;margin:14px 0}.scientific-card{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fafbf8;font-size:12px;white-space:pre-line;overflow-wrap:anywhere}.scientific-links{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;margin:9px 0}.scientific-inspector{overflow:auto;padding:18px 15px;flex:1}.scientific-inspector h3:first-child{margin-top:0}.scientific-inspector pre{max-height:360px}.scientific-step{font-size:10px;letter-spacing:.8px;color:var(--muted);display:block;margin-bottom:6px}.scientific-message{border-left:3px solid var(--line);padding-left:10px}.scientific-message:empty{display:none}.scientific-json{min-height:180px;font:11px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace}.scientific-grant{margin:16px 0 5px;padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:7px}.scientific-grant label{margin:0}.scientific-summary{margin:12px 0}.scientific-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.scientific-toolbar button{font-size:12px}.scientific-preview{max-height:300px}
-</style></head><body><div class="shell">
+.scientific-section{border-top:1px solid var(--line);margin-top:24px;padding-top:22px}.scientific-section h3{font:21px/1.3 Georgia,serif;margin:0 0 9px}.scientific-section>p{font-size:12px;color:var(--muted)}.scientific-section .fields{margin-top:14px}.scientific-section details{margin-top:17px}.scientific-facts{white-space:pre-line;overflow-wrap:anywhere;font-size:12px;line-height:1.8}.scientific-exact{font:10px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;color:var(--muted)}.scientific-cards{display:grid;gap:9px;margin:14px 0}.scientific-card{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fbfbfb;font-size:12px;white-space:pre-line;overflow-wrap:anywhere}.scientific-links{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;margin:9px 0}.scientific-inspector{overflow:auto;padding:18px 15px;flex:1}.scientific-inspector h3:first-child{margin-top:0}.scientific-inspector pre{max-height:360px}.scientific-step{font-size:10px;letter-spacing:.8px;color:var(--muted);display:block;margin-bottom:6px}.scientific-message{border-left:3px solid var(--line);padding-left:10px}.scientific-message:empty{display:none}.scientific-json{min-height:180px;font:11px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace}.scientific-grant{margin:16px 0 5px;padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:7px}.scientific-grant label{margin:0}.scientific-summary{margin:12px 0}.scientific-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.scientific-toolbar button{font-size:12px}.scientific-preview{max-height:300px}
+/*__WORKBENCH_THEME__*/
+</style></head><body><a class="skip-link" href="#question">Skip to research question</a><div class="shell">
 <header id="session-heading" class="login-heading"><div class="login-brand">RNA Workbench</div><p class="muted">A local workspace for recorded analysis and figure evidence.</p></header>
 <section id="login" class="panel">
     <h2>Connect to your local session</h2>
     <p>The launch URL carries a session token in its fragment. You can also paste the token from your terminal here.</p>
     <label for="token">Session token</label>
     <div class="actions"><input id="token" type="password" autocomplete="off" spellcheck="false"><button id="connect" type="button">Connect</button></div>
+    <button type="button" class="secondary synthetic-gallery-trigger" data-synthetic-gallery>Explore synthetic atlas</button>
     <p id="login-error" class="message error" role="alert"></p>
   </section>
 <div id="app" class="layout" hidden>
-<aside class="rail" aria-label="Workspace navigation">
-  <div class="brand"><h1>RNA Workbench</h1><div class="muted">Local research</div></div>
-  <div class="project-name"><span id="project-name">RNA research</span><span class="local-label">Local project</span></div>
-  <button id="nav-register" class="secondary nav-new" type="button">＋ New analysis</button>
+<button id="toggle-navigation" class="secondary panel-toggle edge-panel-toggle" type="button" aria-controls="workspace-rail" aria-expanded="true" aria-label="Hide navigation" title="Hide navigation"><svg class="panel-toggle-glyph" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path class="panel-edge" d="M4 4v12"/><path class="panel-arrow" d="m12 5-5 5 5 5"/></svg></button>
+<button id="toggle-workbench" class="secondary panel-toggle edge-panel-toggle" type="button" aria-controls="workspace-canvas" aria-expanded="true" aria-label="Hide workbench" title="Hide workbench"><svg class="panel-toggle-glyph" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path class="panel-edge" d="M16 4v12"/><path class="panel-arrow" d="m8 5 5 5-5 5"/></svg></button>
+<aside id="workspace-rail" class="rail" aria-label="Workspace navigation">
+  <div class="brand"><h1>RNA Workbench</h1></div>
+    <button id="project-switcher" class="secondary project-context-button" type="button" aria-haspopup="dialog" aria-controls="projects-dialog" aria-expanded="false"><span class="project-context-copy"><span class="project-context-label">Project</span><strong id="project-name">RNA research</strong></span><svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m6 8 4 4 4-4"/></svg></button>
   <div class="project-search"><label for="workspace-search">Search project records</label><input id="workspace-search" type="search" maxlength="500" placeholder="Question, run, file or identity"></div>
-  <nav class="workflow-nav" aria-label="Project">
-    <button id="nav-overview" class="nav-button" type="button" aria-current="page">Overview</button>
-    <button id="nav-data" class="nav-button" type="button">Inputs</button>
-    <button id="nav-analyses" class="nav-button" type="button">Analyses &amp; plans</button>
-    <button id="nav-runs" class="nav-button" type="button">Runs <span id="runs-count"></span></button>
-    <button id="nav-library" class="nav-button" type="button">Results</button>
-    <button id="nav-files" class="nav-button" type="button">Files &amp; exports</button>
+  <nav class="project-data-nav" aria-label="Project data">
+    <button id="nav-data" class="nav-button" type="button">Data<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><ellipse cx="10" cy="4.5" rx="6.5" ry="2.5"/><path d="M3.5 4.5v10c0 3.3 13 3.3 13 0v-10M3.5 9.5c0 3.3 13 3.3 13 0"/></svg></button>
   </nav>
-  <div class="rail-jobs"><div class="eyebrow">Recent work</div><div id="jobs" class="jobs"></div></div>
-  <div class="rail-footer"><button id="activity-control" type="button" class="secondary activity-control">Activity</button><span id="planning-mode" class="tag">Proposal selection</span><p id="model-access" class="muted">Connect to inspect proposal selection.</p></div>
+  <details id="project-tools" class="project-tools"><summary>Project tools</summary>
+  <div class="workflow-nav" aria-label="Project tools">
+    <button id="nav-analyses" class="nav-button" type="button">Project plans<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M7 2.5h6M8 2.5v5l-4.5 8a1.5 1.5 0 0 0 1.3 2.2h10.4a1.5 1.5 0 0 0 1.3-2.2L12 7.5v-5M6 12h8"/></svg></button>
+    <button id="nav-runs" class="nav-button" type="button">Project runs <span id="runs-count"></span><svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="7"/><path d="M10 5.5V10l3 2"/></svg></button>
+    <button id="nav-library" class="nav-button" type="button">Project results<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 3v14h14M6.5 12.5l3-4 3 2 4-5"/></svg></button>
+    <button id="nav-files" class="nav-button" type="button">Project exports<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 3.5h9l5 5v9H3zM12 3.5v5h5M10 10v5m-2-2 2 2 2-2"/></svg></button>
+  </div>
+  </details>
+  <div class="rail-jobs"><section class="chat-list-section" aria-label="Project chats"><details id="chat-section" open><summary id="chat-section-title"><svg class="chat-section-chevron" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m7 5 5 5-5 5"/></svg><span>Chats</span></summary><div id="investigation-history" class="investigation-history" hidden></div></details><button id="nav-register" class="secondary nav-new chat-create-icon" type="button" aria-label="New chat" title="New chat"><svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M11.5 3.5h-7v13h13v-7M10 10l1.5-4 4-4 2.5 2.5-4 4z"/></svg></button></section><section id="legacy-history" aria-labelledby="legacy-history-title" hidden><h3 id="legacy-history-title">Analysis history</h3><div id="jobs" class="jobs"></div></section></div>
+  <div class="rail-footer"><button type="button" class="secondary synthetic-gallery-trigger" data-synthetic-gallery>Synthetic atlas</button><button id="activity-control" type="button" class="secondary activity-control">Activity</button><span id="planning-mode" class="tag" hidden>Proposal selection</span><p id="model-access" class="muted" hidden>Connect to inspect proposal selection.</p><div class="theme-controls"><label for="theme-select">Appearance</label><select id="theme-select"><option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option></select></div></div>
 </aside>
-<main class="workspace">
-  <header class="workspace-header"><div><div id="workspace-kicker" class="eyebrow">Local analysis</div><h2><span id="workspace-title">New analysis</span></h2></div><button id="toggle-inspector" class="secondary inspector-toggle" type="button" aria-controls="inspector" aria-expanded="false">Evidence</button></header>
-  <p id="workspace-message" class="workspace-notice" role="status"></p>
+<div id="rail-divider" class="panel-divider" role="separator" aria-label="Resize navigation" aria-orientation="vertical" aria-controls="workspace-rail" aria-valuemin="156" aria-valuemax="360" aria-valuenow="196" tabindex="0" title="Drag to resize navigation. Arrow keys adjust; double-click resets."></div>
+<aside id="inspector" class="inspector" aria-label="Chat and recorded evidence">
+  <header class="inspector-head"><div class="chat-header-title"><h2><span id="inspector-title">Chat</span></h2><p id="inspector-subtitle" class="muted" hidden>Local operator workflow</p></div><div class="chat-header-actions"><button id="evidence-toggle" class="secondary" type="button" aria-controls="evidence-tabs" aria-expanded="false">Evidence<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m10 2 6.5 3v5c0 4-6.5 7.5-6.5 7.5S3.5 14 3.5 10V5zM7 9.5l2 2 4-4"/></svg></button><button id="close-inspector" class="secondary inspector-close" type="button" aria-label="Close evidence inspector">Close</button></div></header>
+  <div id="evidence-tabs" class="inspector-tabs" role="tablist" aria-label="Analyst and evidence views"><button id="tab-analyst" type="button" role="tab" aria-selected="true" aria-controls="panel-analyst" tabindex="0">Analyst</button>
+    <button id="tab-code" type="button" role="tab" aria-selected="false" aria-controls="panel-code" tabindex="-1">Code</button>
+    <button id="tab-execution" type="button" role="tab" aria-selected="false" aria-controls="panel-execution" tabindex="-1">Execution Log</button>
+    <button id="tab-messages" type="button" role="tab" aria-selected="false" aria-controls="panel-messages" tabindex="-1">Discussion</button>
+    <button id="tab-provenance" type="button" role="tab" aria-selected="false" aria-controls="panel-provenance" tabindex="-1">Provenance</button>
+    <button id="tab-environment" type="button" role="tab" aria-selected="false" aria-controls="panel-environment" tabindex="-1">Environment</button>
+    <button id="tab-review" type="button" role="tab" aria-selected="false" aria-controls="panel-review" tabindex="-1">Review</button>
+    <button id="tab-display" type="button" role="tab" aria-selected="false" aria-controls="panel-display" tabindex="-1">Display</button>
+  </div>
+  <div id="legacy-inspector-body" class="inspector-body"><section id="panel-analyst" class="inspector-panel analyst-panel" role="tabpanel" aria-labelledby="tab-analyst" tabindex="0"><div id="analyst-timeline" class="analyst-timeline"><div class="analyst-welcome"><h3>What would you like to investigate?</h3><p>Choose project data and ask a question.</p></div></div><div id="conversation-gates" class="conversation-gates" hidden><section id="inline-review-host" class="inline-gate" hidden><h3>Review this plan</h3></section><section id="inline-run-host" class="inline-gate" hidden><h3>Ready to run</h3><p id="inline-run-message"></p></section><section id="inline-operation-host" class="inline-gate" hidden><h3>Execution</h3><div id="inline-operation-actions" class="actions"></div></section></div></section>
+    <section id="panel-code" class="inspector-panel" role="tabpanel" aria-labelledby="tab-code" tabindex="0" hidden><div class="code-heading"><h3>Executed notebook</h3><button id="notebook-download" class="secondary" type="button" disabled>Download notebook</button></div><p id="notebook-message" class="muted">The verified executed notebook will appear after a completed analysis.</p><pre id="notebook-code" class="code-content">No executed notebook selected.</pre><details><summary>Figure source and generating records</summary><pre id="code-record"></pre></details></section>
+    <section id="panel-execution" class="inspector-panel" role="tabpanel" aria-labelledby="tab-execution" tabindex="0" hidden><h3 id="execution-context">Analysis execution</h3><p class="muted">Recorded attempts for this analysis, including failed or interrupted work. This is not an interactive terminal.</p><pre id="execution-record">No execution record.</pre><h3>Selected presentation attempt</h3><pre id="revision-record">No presentation attempt selected.</pre></section>
+    <section id="panel-messages" class="inspector-panel" role="tabpanel" aria-labelledby="tab-messages" tabindex="0" hidden><h3>Recorded discussion context</h3><p class="muted">The original question and planning decisions are retained below. Anchored comments and side conversations are not available in this local increment.</p><p id="model-message" class="muted">No model conversation is selected.</p><pre id="inspector-messages">Select a retained job to inspect its recorded question and decisions.</pre></section>
+    <section id="panel-provenance" class="inspector-panel" role="tabpanel" aria-labelledby="tab-provenance" tabindex="0" hidden><h3>Where this result came from</h3><p id="provenance-summary" class="context-facts">Select a result to inspect its provenance.</p><details><summary>Exact identities and relationships</summary><pre id="provenance-record"></pre></details><p class="muted">A presentation version inherits the source analysis and its review context. Latest does not imply canonical or independently validated.</p></section>
+    <section id="panel-environment" class="inspector-panel" role="tabpanel" aria-labelledby="tab-environment" tabindex="0" hidden><h3>Recorded environment</h3><p class="muted">The frozen local profile and recorded renderer identity. No interactive kernel is connected.</p><pre id="inspector-environment"></pre></section>
+    <section id="panel-review" class="inspector-panel" role="tabpanel" aria-labelledby="tab-review" tabindex="0" hidden><h3>Review evidence</h3><p id="inspector-review-context" class="note">No review evidence selected.</p><details open><summary>Deterministic output checks</summary><pre id="result-review">No completed output checks.</pre></details><details><summary>Results and diagnostics</summary><pre id="result-report">No completed result report.</pre></details></section>
+    <section id="panel-display" class="inspector-panel" role="tabpanel" aria-labelledby="tab-display" tabindex="0" hidden><h3>Figure presentation</h3><p id="display-base" class="note">Style based on the original analysis figure.</p><p class="muted">Save a separate presentation version. Scientific data, population and analysis settings remain fixed.</p>
+<form id="presentation-form">
+            <div class="fields display-fields">
+              <div><label for="presentation-author">Author label</label><input id="presentation-author" value="Operator" maxlength="200" required><p class="field-note">A recorded label, not an authenticated signature.</p></div>
+              <div><label for="point-size">Point size</label><input id="point-size" type="number" min="1" max="24" step="1" value="4" required></div>
+              <div><label for="figure-opacity">Point opacity</label><input id="figure-opacity" type="number" min="0.1" max="1" step="0.05" value="0.65" required></div>
+              <div><label for="figure-font">Font size</label><input id="figure-font" type="number" min="8" max="28" value="9" required></div>
+            </div><details class="advanced-display"><summary>More display options</summary><div class="fields display-fields">
+              <div><label for="figure-width">Width (pixels)</label><input id="figure-width" type="number" min="320" max="2400" value="770" required></div>
+              <div><label for="figure-height">Height (pixels)</label><input id="figure-height" type="number" min="320" max="2400" value="550" required></div>
+              <div><label for="legend-position">Legend position</label><select id="legend-position"><option value="best">Automatic</option><option value="upper right">Upper right</option><option value="upper left">Upper left</option><option value="lower right">Lower right</option><option value="lower left">Lower left</option><option value="none">Hidden</option></select></div>
+              <div><label for="figure-label">Reposition an existing label</label><select id="figure-label"><option value="">Keep label positions</option></select><p class="field-note">Label wording and scientific meaning stay fixed.</p></div>
+              <div><label for="label-x">Label horizontal position (axes fraction)</label><input id="label-x" type="number" min="-0.5" max="1.5" step="0.01" value="0.5"></div>
+              <div><label for="label-y">Label vertical position (axes fraction)</label><input id="label-y" type="number" min="-0.5" max="1.5" step="0.01" value="1.05"></div>
+            </div>
+            </details><div class="actions"><button id="presentation-submit" type="submit" disabled>Save presentation version</button></div>
+          </form>
+      <p id="presentation-message" class="message" aria-live="polite"></p><details><summary>Source data and scientific meaning</summary><pre id="figure-evidence"></pre></details><details><summary>Presentation history</summary><div id="presentation-versions" class="downloads"></div></details>
+    </section>
+  </div>
+  <section id="scientific-inspector" class="scientific-inspector" aria-label="Exact scientific evidence" hidden>
+    <span class="eyebrow">Scientific context</span><h3>Exact versions and evidence</h3><p id="scientific-inspector-summary" class="scientific-facts"></p><div id="scientific-exact-links" class="scientific-links"></div>
+    <details open><summary>Method origin and trust</summary><pre id="scientific-methods">No method selected.</pre><label for="scientific-method-source">Method source version</label><select id="scientific-method-source"><option value="">Select a method version</option></select><button id="scientific-source-preview" type="button" class="secondary" disabled>Inspect verified source</button><p id="scientific-source-message" class="message" role="status"></p><pre id="scientific-source-code" hidden></pre></details>
+    <details><summary>Dataset manifest and analysis definition</summary><pre id="scientific-context-record"></pre></details>
+    <details open><summary>Run, attempts and receipts</summary><pre id="scientific-attempts">No run selected.</pre></details>
+    <details><summary>Validation, result review and scoped selection</summary><pre id="scientific-review-evidence"></pre></details>
+    <details><summary>Planning record and unexecuted source drafts</summary><pre id="scientific-planning-evidence"></pre></details>
+    <p class="field-note">Local review labels record the current research decision. They do not establish independent scientific or clinical validation.</p>
+  </section>
+  <div id="analyst-composer" class="analyst-composer"><div id="investigation-context" class="investigation-composer" hidden><div class="dataset-context"><select id="investigation-dataset" aria-label="Legacy dataset binding" hidden><option value="">Choose a dataset</option></select><button id="dataset-attachments-trigger" class="secondary" type="button" popovertarget="dataset-attachments-picker" aria-haspopup="dialog"><svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m7 10 5-5a3 3 0 0 1 4 4l-7 7a4.5 4.5 0 0 1-6-6l7-7M6 11l6-6"/></svg><span id="dataset-attachments-caption">Add datasets</span></button></div><label class="plan-mode" for="investigation-mode" hidden>Model planning<select id="investigation-mode"><option value="agent" selected>Agent proposal</option></select></label><button id="investigation-inputs-toggle" class="secondary" type="button" aria-controls="investigation-inputs" aria-expanded="false">Project data</button><div id="dataset-attachment-chips" class="dataset-attachment-chips" aria-label="Attached datasets"></div></div><div id="dataset-attachments-picker" class="dataset-attachments-picker" popover role="dialog" aria-labelledby="dataset-attachments-title"><header><h3 id="dataset-attachments-title">Attach project data</h3><button class="secondary" type="button" popovertarget="dataset-attachments-picker" popovertargetaction="hide" aria-label="Close dataset picker">Close</button></header><p class="muted">Choose up to eight datasets for this question.</p><div id="dataset-attachments-list" class="dataset-attachments-list"></div></div><div id="selection-context" class="selection-context" hidden></div>
+  <p id="draft-context" class="draft-context" role="status"></p><div class="composer-card"><label for="question">Biological question</label><textarea id="question" form="registration" required maxlength="8000" placeholder="Ask a follow-up question or refine parameters..."></textarea><div class="composer-actions"><button id="composer-context" class="secondary" type="button">Data context</button><button id="composer-submit" type="button">Prepare plan</button></div></div><p id="composer-message" class="message" aria-live="polite"></p><p id="composer-scope" class="composer-scope" hidden>A plan is prepared before an analysis can run.</p>
+</div><div class="inspector-footer"><button id="save-workspace" type="button" class="secondary save-workspace">Save location &amp; draft</button><div id="workspace-save-status" class="workspace-save-status">Navigation and question drafts save to this local project.</div></div>
+</aside>
+<div id="investigation-divider" class="panel-divider" role="separator" aria-label="Resize chat and workbench" aria-orientation="vertical" aria-controls="inspector workspace-canvas" aria-valuemin="300" aria-valuemax="900" aria-valuenow="420" tabindex="0" title="Drag to resize chat. Arrow keys adjust; double-click resets."></div>
+<dialog id="projects-dialog" class="projects-dialog" aria-labelledby="projects-dialog-title" hidden>
+  <header class="project-dialog-header"><h2 id="projects-dialog-title">Projects</h2><button id="close-projects-dialog" class="secondary" type="button" aria-label="Close projects">Close</button></header>
+  <div id="project-catalog-list" class="project-catalog-list"></div>
+  <section id="project-create-panel" class="project-create-panel" hidden><form id="project-create-form"><label for="new-project-name">Project name</label><input id="new-project-name" maxlength="120" required autocomplete="off" placeholder="My research project"><label for="new-project-source">Initial data (optional)</label><select id="new-project-source"><option value="">No data yet</option></select><div class="actions"><button id="project-create-back" class="secondary" type="button">Back</button><button id="project-create-submit" type="submit" data-primary="true">Create project</button></div></form></section>
+  <p id="project-catalog-status" class="message" role="status"></p>
+  <footer class="project-catalog-actions"><button id="project-create-open" type="button" data-primary="true">+ New project</button><button id="nav-overview" class="secondary" type="button" aria-haspopup="dialog" aria-controls="project-dialog">Project details<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M2.5 5.5h6l2 2h7v9h-15z"/></svg></button></footer>
+</dialog>
+<dialog id="project-dialog" class="project-dialog" aria-labelledby="project-dialog-title" hidden><header class="project-dialog-header"><div><h2 id="project-dialog-title">Project details</h2><p id="project-dialog-scope" class="muted" hidden></p></div><button id="close-project-dialog" class="secondary" type="button" aria-label="Close project panel">Close</button></header>
+  <section id="overview" class="panel collection-panel"><h2 id="overview-name">RNA research</h2><div id="overview-stats" class="overview-stats"></div><div class="project-settings"><label for="project-name-input">Name</label><div class="actions"><input id="project-name-input" maxlength="120"><button id="save-project-name" class="secondary" type="button">Save</button></div><p id="project-identity" class="field-note" hidden></p></div><section id="overview-recent-section" class="overview-section" hidden><h3>Recent activity</h3><div id="overview-recent" class="object-list"></div></section></section>
+<section id="investigation-inputs" class="panel inputs-drawer" aria-label="Dataset inspection" hidden><div class="panel-head"><h2>Project data</h2><button id="close-investigation-inputs" type="button" class="secondary">Close</button></div><div id="project-data-import" hidden></div><div id="investigation-input-list"></div></section>
+</dialog>
+<main id="workspace-canvas" class="workspace">
+  <header class="workspace-header"><div><div id="workspace-kicker" class="eyebrow">Local analysis</div><h2><span id="workspace-title">New analysis</span></h2><p id="workspace-dataset" class="dataset-badge" hidden></p></div><button id="toggle-inspector" class="secondary inspector-toggle" type="button" aria-controls="inspector" aria-expanded="false">Evidence</button></header>
+  <p id="workspace-message" class="workspace-notice" role="status"></p><nav id="canvas-tabs" class="canvas-tabs" aria-label="Scientific canvas" hidden><button id="canvas-figures" type="button" class="secondary" aria-current="page">Figures<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><circle cx="7" cy="7.5" r="1.25"/><path d="m3 14 4-4 3 3 3-4 4 5"/></svg></button><button id="canvas-code" type="button" class="secondary">Code &amp; notebook<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m7 5-5 5 5 5m6-10 5 5-5 5m-2-12-2 14"/></svg></button><button id="canvas-evidence" type="button" class="secondary">Evidence &amp; provenance<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 2.5h8l3 3v12H5zM13 2.5v3h3M8 9h5m-5 3h5m-5 3h3"/></svg></button><button id="canvas-display" type="button" class="secondary">Display settings<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14M3 10h14M3 15h14"/><circle cx="7" cy="5" r="2"/><circle cx="13" cy="10" r="2"/><circle cx="8" cy="15" r="2"/></svg></button></nav><section id="canvas-detail" class="panel canvas-detail" hidden><div id="canvas-artifacts" hidden></div></section>
   <nav id="selection-nav" class="selection-nav" aria-label="Selected analysis" hidden><button id="nav-review" class="nav-button" type="button">Plan &amp; decision</button><button id="nav-execute" class="nav-button" type="button">Execution</button><button id="nav-results" class="nav-button" type="button">Figures</button></nav>
-  <section id="overview" class="panel collection-panel"><span class="eyebrow">RESEARCH PROJECT</span><h2 id="overview-name">RNA research</h2><p class="overview-lede">Keep your question, data and evidence together. Review a plan, follow its execution, then explore the results.</p><div id="overview-stats" class="overview-stats"></div><div class="overview-section"><div class="section-caption"><h3>Continue your research</h3><span>Recent work</span></div><div id="overview-recent" class="object-list"></div></div><div class="collection-note">This project is a local, single-user workspace. Saved results retain their source runs and review context; recency does not make a result canonical.</div><details class="project-settings"><summary>Project details</summary><label for="project-name-input">Project name</label><div class="actions"><input id="project-name-input" maxlength="120"><button id="save-project-name" class="secondary" type="button">Save name</button></div><p id="project-identity" class="field-note"></p></details></section>
   <section id="search" class="panel collection-panel" hidden><h2>Search project records</h2><p>Match questions, operation states, input locations and recorded identities. Results link to their original analysis context.</p><div id="search-list" class="object-list"></div></section>
   <section id="data" class="panel collection-panel" hidden><h2>Inputs</h2><p>Verified content and uninspected registrations. Hashes identify file content; every registered location stays visible. These groups are not logical datasets or dataset versions.</p><div id="data-list" class="object-list"></div></section>
-  <section id="analyses" class="panel collection-panel" hidden><h2>Analyses &amp; plans</h2><p>Saved questions and their frozen analysis plans. Open a record to inspect its input, operator decision and execution limits.</p><div id="scientific-entry" class="note" hidden><p>Connect studies, exact dataset versions, method plans and reviewed results.</p><button id="open-scientific" type="button">Open scientific analyses</button></div><div id="analysis-list" class="object-list"></div></section>
+  <section id="analyses" class="panel collection-panel" hidden><h2>Project plans</h2><p>Saved plans across this project. Each entry opens its source chat or retained analysis.</p><div id="scientific-entry" class="note" hidden><p>Connect studies, exact dataset versions, method plans and reviewed results.</p><button id="open-scientific" type="button">Open scientific records</button></div><div id="analysis-list" class="object-list"></div></section>
   <section id="scientific" class="panel collection-panel" hidden>
-    <span class="eyebrow">SCIENTIFIC WORKSPACE</span><h2>From question to reviewed evidence</h2><p>Select exact data and analysis versions, prepare a trial, then inspect its evidence before accepting a result.</p>
+    <span class="eyebrow">Scientific workspace</span><h2>From question to reviewed evidence</h2><p>Select exact data and analysis versions, prepare a trial, then inspect its evidence before accepting a result.</p>
     <div class="scientific-toolbar"><button id="scientific-back" type="button" class="secondary">All analyses &amp; plans</button><button id="scientific-refresh" type="button" class="secondary">Refresh evidence</button></div>
     <p id="scientific-message" class="message scientific-message" role="status" aria-live="polite"></p><p id="scientific-recovery" class="note" hidden></p>
     <div id="scientific-setup" class="note" hidden><p>Connect scientific records to this project. Existing method history is preserved, and saved locations gain exact version references.</p><button id="scientific-initialize" type="button">Initialize scientific workspace</button></div>
@@ -100,11 +169,11 @@
       <details class="scientific-section"><summary>Explicitly import a legacy record</summary><p class="field-note">Select a retained record and supply its scientific context. Missing mappings or insufficient evidence remain unresolved.</p><form id="scientific-import-form"><button id="scientific-use-earlier-import" type="button" class="secondary" disabled>Use selected earlier invocation</button><label for="scientific-import-kind">Record source</label><select id="scientific-import-kind"><option value="method_run">Method run</option><option value="workbench_job">Workbench job</option></select><label for="scientific-import-id">Existing record identity</label><input id="scientific-import-id" required maxlength="200"><label class="check"><input id="scientific-import-mappings" type="checkbox"><span>Explicitly map this record to the selected Study, DatasetVersion and AnalysisVersion.</span></label><button id="scientific-import" type="submit">Inspect and import selected record</button></form><pre id="scientific-imports">No explicit imports.</pre></details>
     </div>
   </section>
-  <section id="runs" class="panel collection-panel" hidden><h2>Runs &amp; activity</h2><p>Execution attempts are separate from plans. Presentation renders keep the original scientific analysis fixed.</p><div class="collection-tools"><label for="run-filter">Show</label><select id="run-filter"><option value="all">All attempts</option><option value="active">Active</option><option value="attention">Needs attention</option><option value="analysis">Analysis runs</option><option value="presentation">Presentation renders</option></select><button id="refresh-project" class="secondary" type="button">Refresh activity</button></div><h3>Pending work &amp; attention</h3><div id="activity-list" class="object-list"></div><h3>Execution history</h3><div id="run-list" class="object-list"></div></section>
-  <section id="library" class="panel collection-panel" hidden><h2>Results</h2><p>Completed analysis outputs and separate presentation versions. Each opens with its source run, exact artifact identity and recorded review context.</p><div id="result-list" class="object-list"></div><p class="collection-note">These are retained outputs, not promoted canonical results. Independent scientific review remains separately unqualified.</p></section>
-  <section id="files" class="panel collection-panel" hidden><h2>Files &amp; exports</h2><p>Verified exports from completed analyses. Original inputs remain in their registered locations; materialized files do not define scientific result identity.</p><div id="file-bundles" class="object-list"></div><h3 id="files-heading">Select an analysis to inspect its files</h3><div id="file-downloads" class="downloads"></div><p id="files-message" class="message" role="status"></p></section>
+  <section id="runs" class="panel collection-panel" hidden><h2>Project runs</h2><p>Execution and presentation attempts saved across this project.</p><div class="collection-tools"><label for="run-filter">Show</label><select id="run-filter"><option value="all">All attempts</option><option value="active">Active</option><option value="attention">Needs attention</option><option value="analysis">Analysis runs</option><option value="presentation">Presentation renders</option></select><button id="refresh-project" class="secondary" type="button">Refresh activity</button></div><h3>Pending work &amp; attention</h3><div id="activity-list" class="object-list"></div><h3>Execution history</h3><div id="run-list" class="object-list"></div></section>
+  <section id="library" class="panel collection-panel" hidden><h2>Project results</h2><p>Completed outputs across this project, linked to their source chat or retained analysis.</p><div id="result-list" class="object-list"></div><p class="collection-note">These are retained outputs, not promoted canonical results. Independent scientific review remains separately unqualified.</p></section>
+  <section id="files" class="panel collection-panel" hidden><h2>Project exports</h2><p>Export bundles from completed analyses across this project.</p><div id="file-bundles" class="object-list"></div><h3 id="files-heading">Select an analysis to inspect its files</h3><div id="file-downloads" class="downloads"></div><p id="files-message" class="message" role="status"></p></section>
 <section id="register" class="panel workflow-panel" hidden>
-        <div class="panel-head"><h2>Set up your analysis</h2><span class="step">DATA CONTEXT</span></div>
+        <div class="panel-head"><h2>Set up your analysis</h2><span class="step">Data context</span></div>
         <p>Connect a local scRNA count matrix to the question in your analyst panel. Review its provenance before preparing the plan.</p>
         <details><summary>Input roots and frozen execution profile</summary><pre id="config"></pre></details>
         <form id="registration"><details id="data-context" open><summary>Local dataset and provenance</summary>
@@ -125,7 +194,7 @@
           <p id="register-message" class="message" aria-live="polite"></p>
         </form>
       </section><section id="review" class="panel workflow-panel" hidden>
-        <div class="panel-head"><h2>Review the frozen plan</h2><span class="step">02 / REVIEW</span></div>
+        <div class="panel-head"><h2>Review the frozen plan</h2><span class="step">Plan review</span></div>
         <p id="plan-empty" class="empty">Register an input or select a retained job to see its recorded plan.</p>
         <div id="plan" hidden>
           <p><span id="plan-status" class="status"></span> <span id="plan-author" class="tag"></span></p>
@@ -144,7 +213,7 @@
           <p id="revision-note" class="note" hidden>Submit updated information above to address a clarification, refusal or review decision. Identical requests may reuse the previous record.</p>
         </div>
       </section><section id="execute" class="panel workflow-panel" hidden>
-        <div class="panel-head"><h2>Run &amp; inspect</h2><span class="step">03 / EXECUTION</span></div>
+        <div class="panel-head"><h2>Run &amp; inspect</h2><span class="step">Execution</span></div>
         <p id="execution-permission" class="muted"></p>
         <p id="run-status" class="status">No job selected</p>
         <div class="actions"><button id="run-button" type="button" disabled>Execute approved plan</button><button id="cancel-button" type="button" class="secondary" disabled>Cancel operation</button><button id="resume-button" type="button" class="secondary" disabled>Resume eligible operation</button><button id="refresh" type="button" class="secondary">Refresh evidence</button></div>
@@ -152,108 +221,268 @@
         <p class="muted">Open Execution Log to inspect the retained operation, failure and worker records.</p>
         <p class="muted">One job runs at a time within the recorded limits. An interrupted or failed job keeps its evidence; no automatic retry or budget expansion occurs.</p>
       </section>
-<section id="results" class="workflow-panel" hidden>
+<section id="results" class="workflow-panel" hidden><section id="investigation-artifacts" class="panel investigation-artifacts" hidden></section>
   <p id="results-empty" class="panel empty">Verified complete results are not available for the selected job.</p>
   <div id="result-view" hidden>
     <div class="results-card">
-      <p id="result-origin" class="result-origin"></p>
-      <div class="figure-toolbar">
-        <div class="figure-picker"><label for="figure-select">Recorded figure</label><select id="figure-select"></select></div>
-        <div class="version-picker"><button id="version-prev" class="secondary" type="button" aria-label="Previous presentation version" disabled>Previous</button><div><label for="version-select">Version</label><select id="version-select"><option value="">Original</option></select></div><button id="version-next" class="secondary" type="button" aria-label="Next presentation version" disabled>Next</button></div>
-        <div class="zoom-picker"><label for="figure-zoom">Figure size</label><select id="figure-zoom"><option value="fit">Fit canvas</option><option value="native">Actual pixels</option></select></div>
+      <p id="result-origin" class="result-origin" hidden></p>
+      <div class="figure-toolbar figure-unified-header">
+        <div class="figure-picker"><label for="figure-select">Figure</label><select id="figure-select" aria-label="Recorded figure"></select></div>
+        <div class="version-picker"><button id="version-prev" class="secondary version-step" type="button" aria-label="Previous presentation version" disabled>Previous</button><div><label for="version-select">Version</label><select id="version-select"><option value="">Original</option></select></div><button id="version-next" class="secondary version-step" type="button" aria-label="Next presentation version" disabled>Next</button></div>
+        <div class="figure-mode-picker"><label for="figure-mode">View</label><select id="figure-mode" aria-label="Viewing mode"><option value="interactive">Interactive</option><option value="original">Original image</option></select></div>
+        <div id="figure-tools" class="figure-tools"></div><details class="figure-more"><summary>More</summary><div class="actions"><button id="figure-download" class="secondary" type="button" disabled>Download original image</button><button id="edit-display" class="secondary" type="button">Edit saved display</button></div></details>
       </div>
-      <div class="figure-heading"><div><h3><span id="figure-filename">Recorded figure</span></h3><p id="figure-root"></p></div><div class="actions"><button id="figure-download" class="secondary" type="button" disabled>Download image</button><button id="edit-display" class="secondary" type="button">Edit display</button></div></div>
-      <div id="metrics" class="metrics"></div>
-      <div class="figure-stage" id="figure-stage"><div id="figures" class="figures"></div><div id="presentation-preview" class="figures" hidden></div><p id="version-status" class="message" aria-live="polite"></p></div>
-      <div class="figure-foot"><p id="figure-context" class="note"></p><label class="check"><input id="compare-version" type="checkbox" disabled><span>Compare with the original analysis figure</span></label></div>
+      <details class="figure-record-details"><summary>Figure record</summary><div class="figure-heading"><div><h3><span id="figure-filename">Recorded figure</span></h3><p id="figure-root"></p></div></div><div id="metrics" class="metrics"></div><div class="zoom-picker"><label for="figure-zoom">Image size</label><select id="figure-zoom"><option value="fit">Fit canvas</option><option value="native">Actual pixels</option></select></div></details>
+      <div class="figure-stage" id="figure-stage"><div id="interactive-figure" hidden></div><div id="figures" class="figures"></div><div id="presentation-preview" class="figures" hidden></div><p id="version-status" class="message" aria-live="polite"></p></div>
+      <div class="figure-foot"><details class="figure-record-details"><summary>Population and review</summary><p id="figure-context" class="note"></p></details><label class="check"><input id="compare-version" type="checkbox" disabled><span>Compare with the original analysis figure</span></label></div>
     </div>
-    <div class="result-summary"><p id="result-scope" class="note"></p><div class="actions"><button id="archive" type="button" class="secondary">Download analysis evidence</button><button id="revision-archive" type="button" class="secondary" disabled>Download presentation evidence</button></div><details class="report-artifacts"><summary>Report artifacts</summary><div id="downloads" class="downloads"></div></details><p id="download-message" class="message" aria-live="polite"></p></div>
+    <div class="result-summary"><details class="result-scope-details"><summary>Evidence and interpretation</summary><p id="result-scope" class="note"></p></details><div class="actions"><button id="archive" type="button" class="secondary">Download analysis evidence</button><button id="revision-archive" type="button" class="secondary" disabled>Download presentation evidence</button></div><details class="report-artifacts"><summary>Report artifacts</summary><div id="downloads" class="downloads"></div></details><p id="download-message" class="message" aria-live="polite"></p></div>
   </div>
 </section>
-<footer class="footer">Research use · Backed scRNA route · Biological validity and independent scientific review remain separately unqualified. Bulk analyses use the existing bounded contrast interface.</footer>
+<footer class="footer" hidden>Research use · Backed scRNA route · Biological validity and independent scientific review remain separately unqualified. Bulk analyses use the existing bounded contrast interface.</footer>
 </main>
-<aside id="inspector" class="inspector" aria-label="Artifact evidence inspector">
-  <header class="inspector-head"><div><h2><span id="inspector-title">Analyst</span></h2><p id="inspector-subtitle" class="muted">Local operator workflow</p></div><button id="evidence-toggle" class="secondary" type="button" aria-controls="evidence-tabs" aria-expanded="false">Evidence</button><button id="close-inspector" class="secondary inspector-close" type="button" aria-label="Close evidence inspector">Close</button></header>
-  <div id="evidence-tabs" class="inspector-tabs" role="tablist" aria-label="Analyst and evidence views"><button id="tab-analyst" type="button" role="tab" aria-selected="true" aria-controls="panel-analyst" tabindex="0">Analyst</button>
-    <button id="tab-code" type="button" role="tab" aria-selected="false" aria-controls="panel-code" tabindex="-1">Code</button>
-    <button id="tab-execution" type="button" role="tab" aria-selected="false" aria-controls="panel-execution" tabindex="-1">Execution Log</button>
-    <button id="tab-messages" type="button" role="tab" aria-selected="false" aria-controls="panel-messages" tabindex="-1">Discussion</button>
-    <button id="tab-provenance" type="button" role="tab" aria-selected="false" aria-controls="panel-provenance" tabindex="-1">Provenance</button>
-    <button id="tab-environment" type="button" role="tab" aria-selected="false" aria-controls="panel-environment" tabindex="-1">Environment</button>
-    <button id="tab-review" type="button" role="tab" aria-selected="false" aria-controls="panel-review" tabindex="-1">Review</button>
-    <button id="tab-display" type="button" role="tab" aria-selected="false" aria-controls="panel-display" tabindex="-1">Display</button>
-  </div>
-  <div id="legacy-inspector-body" class="inspector-body"><section id="panel-analyst" class="inspector-panel analyst-panel" role="tabpanel" aria-labelledby="tab-analyst" tabindex="0"><div id="analyst-timeline" class="analyst-timeline"><div class="analyst-welcome"><span class="eyebrow">YOUR LOCAL WORKSPACE</span><h3>A question, with a clear path to evidence.</h3><p>Connect your dataset in the canvas, then describe what you want to investigate below.</p><div class="flow-steps">Proposal <span>→</span> Approval <span>→</span> Run <span>→</span> Results</div><p class="muted">This session uses an operator-created plan. Your approval controls when the recorded analysis runs.</p></div></div></section>
-    <section id="panel-code" class="inspector-panel" role="tabpanel" aria-labelledby="tab-code" tabindex="0" hidden><div class="code-heading"><h3>Executed notebook</h3><button id="notebook-download" class="secondary" type="button" disabled>Download notebook</button></div><p id="notebook-message" class="muted">The verified executed notebook will appear after a completed analysis.</p><pre id="notebook-code" class="code-content">No executed notebook selected.</pre><details><summary>Figure source and generating records</summary><pre id="code-record"></pre></details></section>
-    <section id="panel-execution" class="inspector-panel" role="tabpanel" aria-labelledby="tab-execution" tabindex="0" hidden><h3 id="execution-context">Analysis execution</h3><p class="muted">Recorded attempts for this analysis, including failed or interrupted work. This is not an interactive terminal.</p><pre id="execution-record">No execution record.</pre><h3>Selected presentation attempt</h3><pre id="revision-record">No presentation attempt selected.</pre></section>
-    <section id="panel-messages" class="inspector-panel" role="tabpanel" aria-labelledby="tab-messages" tabindex="0" hidden><h3>Recorded discussion context</h3><p class="muted">The original question and planning decisions are retained below. Anchored comments and side conversations are not available in this local increment.</p><p id="model-message" class="muted">No model conversation is selected.</p><pre id="inspector-messages">Select a retained job to inspect its recorded question and decisions.</pre></section>
-    <section id="panel-provenance" class="inspector-panel" role="tabpanel" aria-labelledby="tab-provenance" tabindex="0" hidden><h3>Where this result came from</h3><p id="provenance-summary" class="context-facts">Select a result to inspect its provenance.</p><details><summary>Exact identities and relationships</summary><pre id="provenance-record"></pre></details><p class="muted">A presentation version inherits the source analysis and its review context. Latest does not imply canonical or independently validated.</p></section>
-    <section id="panel-environment" class="inspector-panel" role="tabpanel" aria-labelledby="tab-environment" tabindex="0" hidden><h3>Recorded environment</h3><p class="muted">The frozen local profile and recorded renderer identity. No interactive kernel is connected.</p><pre id="inspector-environment"></pre></section>
-    <section id="panel-review" class="inspector-panel" role="tabpanel" aria-labelledby="tab-review" tabindex="0" hidden><h3>Review evidence</h3><p id="inspector-review-context" class="note">No review evidence selected.</p><details open><summary>Deterministic output checks</summary><pre id="result-review">No completed output checks.</pre></details><details><summary>Results and diagnostics</summary><pre id="result-report">No completed result report.</pre></details></section>
-    <section id="panel-display" class="inspector-panel" role="tabpanel" aria-labelledby="tab-display" tabindex="0" hidden><h3>Figure presentation</h3><p id="display-base" class="note">Style based on the original analysis figure.</p><p class="muted">Save a separate presentation version. Scientific data, population and analysis settings remain fixed.</p>
-<form id="presentation-form">
-            <div class="fields display-fields">
-              <div><label for="presentation-author">Author label</label><input id="presentation-author" value="Operator" maxlength="200" required><p class="field-note">A recorded label, not an authenticated signature.</p></div>
-              <div><label for="point-size">Point size</label><input id="point-size" type="number" min="1" max="24" step="1" value="4" required></div>
-              <div><label for="figure-opacity">Point opacity</label><input id="figure-opacity" type="number" min="0.1" max="1" step="0.05" value="0.65" required></div>
-              <div><label for="figure-font">Font size</label><input id="figure-font" type="number" min="8" max="28" value="9" required></div>
-            </div><details class="advanced-display"><summary>More display options</summary><div class="fields display-fields">
-              <div><label for="figure-width">Width (pixels)</label><input id="figure-width" type="number" min="320" max="2400" value="770" required></div>
-              <div><label for="figure-height">Height (pixels)</label><input id="figure-height" type="number" min="320" max="2400" value="550" required></div>
-              <div><label for="legend-position">Legend position</label><select id="legend-position"><option value="best">Automatic</option><option value="upper right">Upper right</option><option value="upper left">Upper left</option><option value="lower right">Lower right</option><option value="lower left">Lower left</option><option value="none">Hidden</option></select></div>
-              <div><label for="figure-label">Reposition an existing label</label><select id="figure-label"><option value="">Keep label positions</option></select><p class="field-note">Label wording and scientific meaning stay fixed.</p></div>
-              <div><label for="label-x">Label horizontal position (axes fraction)</label><input id="label-x" type="number" min="-0.5" max="1.5" step="0.01" value="0.5"></div>
-              <div><label for="label-y">Label vertical position (axes fraction)</label><input id="label-y" type="number" min="-0.5" max="1.5" step="0.01" value="1.05"></div>
-            </div>
-            </details><div class="actions"><button id="presentation-submit" type="submit" disabled>Save presentation version</button></div>
-          </form>
-      <p id="presentation-message" class="message" aria-live="polite"></p><details><summary>Source data and scientific meaning</summary><pre id="figure-evidence"></pre></details><details><summary>All presentation attempts</summary><div id="presentation-versions" class="downloads"></div></details>
-    </section>
-  </div>
-  <section id="scientific-inspector" class="scientific-inspector" aria-label="Exact scientific evidence" hidden>
-    <span class="eyebrow">SELECTED SCIENTIFIC CONTEXT</span><h3>Exact versions and evidence</h3><p id="scientific-inspector-summary" class="scientific-facts"></p><div id="scientific-exact-links" class="scientific-links"></div>
-    <details open><summary>Method origin and trust</summary><pre id="scientific-methods">No method selected.</pre><label for="scientific-method-source">Method source version</label><select id="scientific-method-source"><option value="">Select a method version</option></select><button id="scientific-source-preview" type="button" class="secondary" disabled>Inspect verified source</button><p id="scientific-source-message" class="message" role="status"></p><pre id="scientific-source-code" hidden></pre></details>
-    <details><summary>Dataset manifest and analysis definition</summary><pre id="scientific-context-record"></pre></details>
-    <details open><summary>Run, attempts and receipts</summary><pre id="scientific-attempts">No run selected.</pre></details>
-    <details><summary>Validation, result review and scoped selection</summary><pre id="scientific-review-evidence"></pre></details>
-    <details><summary>Planning record and unexecuted source drafts</summary><pre id="scientific-planning-evidence"></pre></details>
-    <p class="field-note">Local review labels record the current research decision. They do not establish independent scientific or clinical validation.</p>
-  </section>
-  <div id="analyst-composer" class="analyst-composer">
-  <div class="composer-card"><label for="question">Biological question</label><textarea id="question" form="registration" required maxlength="8000" placeholder="What would you like to investigate in your dataset?"></textarea><div class="composer-actions"><button id="composer-context" class="secondary" type="button">Data context</button><button id="composer-submit" type="button">Prepare plan</button></div></div><p id="composer-message" class="message" aria-live="polite"></p><p id="composer-scope" class="composer-scope">A plan is prepared before an analysis can run.</p>
-</div><div class="inspector-footer"><button id="save-workspace" type="button" class="secondary save-workspace">Save location &amp; draft</button><div id="workspace-save-status" class="workspace-save-status">Navigation and question drafts save to this local project.</div></div>
-</aside>
+
 </div></div>
 <script nonce="__NONCE__">
+/*__WORKBENCH_MODULES__*/
 
 (() => {
   'use strict';
   const el=id=>document.getElementById(id), json=value=>JSON.stringify(value,null,2);
+  let activeProjectId='';
+  if(typeof URLSearchParams==='function'){const project=new URLSearchParams(location.search||'').get('project_id');if(project&&/^[0-9a-f]{32}$/.test(project))activeProjectId=project;}
+  let projectController=null;
   const confirmationLabels={question_and_scope:'The question fits this supported workflow.',input_provenance:'I reviewed count and annotation provenance.',capture_units:'I reviewed the experimental capture-unit mapping.',settings_and_limits:'I reviewed the frozen settings and resource limits.',interpretation_limits:'I reviewed the interpretation and qualification limits.'};
   const active=new Set(['queued','inspecting','planning','recording_review','preparing','running','cancel_requested','finalizing']);
   let token=location.hash.slice(1), config=null, selected=null, state=null, timer=null, loadedResult=null, figureState=null, revisionTimer=null;
   const imageURLs=[];
   const views=['overview','data','analyses','scientific','runs','library','files','search','register','review','execute','results'], tabs=['analyst','code','execution','messages','provenance','environment','review','display'];
   const detailViews=['register','review','execute','results'];
+  const projectCollections=['analyses','runs','library','files'];
   const attention=new Set(['awaiting_operator_review','operation_failed','failed','recovery_required','cancelled','interrupted','interrupted_service','needs_information','awaiting_information','refusal','invalid_proposal','rejected','completed_review_failed','infrastructure_failure','execution_failure_unclassified']);
   let currentView='overview', inspectorTab='analyst', inspectorOpen=false, resultsData=null, notebookLoaded=null, selectedRevisionId='', selectedRevisionRecord=null, figureGeneration=0;
-  let workspaceRecord=null, allJobs=[], restoringWorkspace=true, saveChain=Promise.resolve(), lastSavedUI='', saveBlocked=false, draftTimer=null, jobsTimer=null;
-  let navigationGeneration=0;
+  let workspaceRecord=null, allJobs=[], allInvestigations=[], restoringWorkspace=true, saveChain=Promise.resolve(), lastSavedUI='', saveBlocked=false, draftTimer=null, jobsTimer=null;
+  let scientificArtifactController=null, scientificArtifactKey='', canvasArtifactController=null, canvasArtifactKey='';
+  let investigationController=null, investigationMode=false, canvasView='figures', gateSyncGeneration=0, activeViewTransition=null;
+  const gateHomes={review:el('review-form').parentNode,run:el('run-button').parentNode}, panelHomes=new Map(), operationHomes=new Map(['run-status','run-message','cancel-button','resume-button','refresh'].map(id=>[id,el(id).parentNode]));
+  let navigationGeneration=0, interactiveFigure=null, interactiveKey='', interactivePending='', interactiveRequest=0;
+  const presentationModules=typeof window!=='undefined';
+  let refreshPanelSizes=()=>{};
+  function installPanelResize(){
+    const layout=el('app'),rail=el('rail-divider'),investigation=el('investigation-divider');
+    if(typeof window==='undefined'||!layout.style||typeof layout.getBoundingClientRect!=='function'||typeof window.addEventListener!=='function')return;
+    const storageKey='rna-workbench-panel-widths-v1',minimum={rail:156,investigation:300,canvas:320},handles=16;
+    let widths=null,drag=null,collapsed={rail:false,canvas:false};
+    try{const saved=JSON.parse(window.localStorage.getItem(storageKey));if(saved&&Number.isFinite(saved.rail)&&Number.isFinite(saved.investigation))widths={rail:saved.rail,investigation:saved.investigation};if(saved&&saved.collapsed)collapsed={rail:saved.collapsed.rail===true,canvas:saved.collapsed.canvas===true};}catch(_){}
+    const clamp=(value,min,max)=>Math.max(min,Math.min(value,max));
+    function defaults(total){const railWidth=total<=1180?166:196;return {rail:railWidth,investigation:Math.max(minimum.investigation,(total-railWidth-handles)*.85/2.15)};}
+    function apply(){
+      layout.dataset.railCollapsed=String(collapsed.rail);layout.dataset.canvasCollapsed=String(collapsed.canvas);
+      el('workspace-rail').hidden=collapsed.rail;el('workspace-canvas').hidden=collapsed.canvas;
+      rail.hidden=collapsed.rail;investigation.hidden=collapsed.canvas;
+      for(const [id,key,name] of [['toggle-navigation','rail','navigation'],['toggle-workbench','canvas','workbench']]){const button=el(id),label=(collapsed[key]?'Show ':'Hide ')+name;button.setAttribute('aria-expanded',String(!collapsed[key]));button.setAttribute('aria-label',label);button.title=label;}
+      const total=layout.getBoundingClientRect().width;if(total<=860){if(interactiveFigure)interactiveFigure.redraw();return;}
+      if(!widths)widths=defaults(total);
+      const railMax=Math.min(360,total-(collapsed.canvas?8:handles)-minimum.investigation-(collapsed.canvas?0:minimum.canvas));
+      if(!collapsed.rail)widths.rail=clamp(widths.rail,minimum.rail,railMax);
+      const investigationMax=total-(collapsed.rail?0:widths.rail+8)-8-minimum.canvas;
+      if(!collapsed.canvas)widths.investigation=clamp(widths.investigation,minimum.investigation,investigationMax);
+      layout.style.setProperty('--rail-width',widths.rail+'px');layout.style.setProperty('--investigation-width',widths.investigation+'px');
+      for(const [node,key,max] of [[rail,'rail',railMax],[investigation,'investigation',investigationMax]]){
+        node.setAttribute('aria-valuemin',minimum[key]);node.setAttribute('aria-valuemax',Math.floor(max));node.setAttribute('aria-valuenow',Math.round(widths[key]));node.setAttribute('aria-valuetext',Math.round(widths[key])+' pixels');
+      }
+      if(interactiveFigure)interactiveFigure.redraw();
+    }
+    function save(){try{window.localStorage.setItem(storageKey,JSON.stringify({...widths,collapsed}));}catch(_){} }
+    function finish(node){if(!drag)return;drag=null;delete node.dataset.dragging;delete layout.dataset.resizing;save();}
+    for(const [id,key] of [['toggle-navigation','rail'],['toggle-workbench','canvas']])el(id).onclick=()=>{collapsed[key]=!collapsed[key];apply();save();};
+    for(const [node,key] of [[rail,'rail'],[investigation,'investigation']]){
+      node.onpointerdown=event=>{if(node.hidden||event.button!==0||event.isPrimary===false||layout.getBoundingClientRect().width<=860)return;apply();event.preventDefault();node.focus();drag={key,start:event.clientX,width:widths[key],id:event.pointerId};node.dataset.dragging='true';layout.dataset.resizing='true';node.setPointerCapture(event.pointerId);};
+      node.onpointermove=event=>{if(!drag||drag.key!==key||drag.id!==event.pointerId)return;widths[key]=drag.width+event.clientX-drag.start;apply();};
+      node.onpointerup=event=>{if(!drag||drag.key!==key||drag.id!==event.pointerId)return;finish(node);if(node.hasPointerCapture(event.pointerId))node.releasePointerCapture(event.pointerId);};
+      node.onpointercancel=()=>finish(node);node.onlostpointercapture=()=>finish(node);
+      node.onkeydown=event=>{if(node.hidden||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)||layout.getBoundingClientRect().width<=860)return;event.preventDefault();apply();const step=event.shiftKey?50:10;widths[key]=event.key==='Home'?minimum[key]:event.key==='End'?Number(node.getAttribute('aria-valuemax')):widths[key]+(event.key==='ArrowRight'?step:-step);apply();save();};
+      node.ondblclick=()=>{widths=defaults(layout.getBoundingClientRect().width);apply();save();};
+    }
+    refreshPanelSizes=apply;window.addEventListener('resize',apply);
+    if(typeof window.ResizeObserver==='function')new window.ResizeObserver(apply).observe(layout);
+    apply();
+  }
+  installPanelResize();
+
+  function installChatListCollapse(){
+    const section=el('chat-section');if(!section)return;
+    const key='rna-workbench-chat-list-collapsed-v1';let storage=null;
+    section.open=true;
+    try{storage=typeof window!=='undefined'&&window.localStorage;if(storage)section.open=storage.getItem(key)!=='true';}catch(_){}
+    section.ontoggle=()=>{try{if(storage)storage.setItem(key,String(!section.open));}catch(_){}};
+  }
+  installChatListCollapse();
+
+  function clearInteractive(){interactiveRequest++;interactivePending='';el('figures').hidden=false;if(interactiveFigure){interactiveFigure.destroy();interactiveFigure=null;}interactiveKey='';el('interactive-figure').replaceChildren();el('interactive-figure').hidden=true;}
+  function draftQuestion(action){
+    if(action.sourceRunId){
+      const proposal=state&&state.id===action.sourceRunId&&state.proposal, input=proposal&&proposal.external_input, declarations=proposal&&proposal.configuration&&proposal.configuration.declarations||{};
+      for(const id of ['source','digest','counts','capture','annotation','assay','measurement'])el(id).value='';el('capture-confirmed').checked=false;
+      if(input){el('source').value=input.path||'';el('digest').value=input.sha256||'';
+        for(const [id,key] of [['counts','count_provenance'],['capture','capture_unit_key'],['annotation','annotation_provenance'],['assay','assay'],['measurement','measurement']])el(id).value=declarations[key]||'';
+        el('capture-confirmed').checked=declarations.capture_units_confirmed===true;
+      }
+    }
+    el('question').value=action.question.slice(0,8000);
+    el('draft-context').textContent=action.sourceRunId?'Follow-up draft · source run '+action.sourceRunId.slice(0,8)+' · review dataset and scope before preparing a new plan.':'Suggested question · review the dataset and scope before preparing a plan.';
+    showInspectorTab('analyst');openInspector(true);el('question').focus();message('composer-message','Question drafted. No plan or analysis has been submitted.');rememberWorkspace();
+  }
+  el('theme-select').onchange=()=>{const choice=el('theme-select').value;let dark=choice==='dark'||choice==='system'&&typeof matchMedia==='function'&&matchMedia('(prefers-color-scheme: dark)').matches;if(document.documentElement)document.documentElement.dataset.theme=dark?'dark':'light';if(interactiveFigure)interactiveFigure.redraw();};
+  el('question').onkeydown=event=>{if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();el('composer-submit').click();}};
+  if(typeof document.addEventListener==='function')document.addEventListener('keydown',event=>{if(event.key==='Escape'&&inspectorTab!=='analyst'){showInspectorTab('analyst',true);rememberWorkspace();}});
   let scientificCatalog=null, scientificBusy=false, scientificTimer=null, scientificGeneration=0;
   let scientificSelection={study_id:null,dataset_ref:null,analysis_ref:null,result_ref:null,scientific_run_id:null,planner_session_id:null};
   let scientificResolved={}, scientificExperiment='', scientificDraftKey='', scientificActionMessage='', scientificActionError=false;
   const scientificRequests=new Map();
   let scientificPlotURL=null, scientificPreviewReference='', scientificPreviewGeneration=0;
+  function reducedMotion(){return typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;}
+  function withViewTransition(update){
+    if(typeof document.startViewTransition!=='function'||reducedMotion())return update();
+    if(activeViewTransition&&typeof activeViewTransition.skipTransition==='function')activeViewTransition.skipTransition();
+    let result;const transition=document.startViewTransition(()=>{result=update();return result;});activeViewTransition=transition;
+    if(transition.finished)transition.finished.catch(()=>{}).finally(()=>{if(activeViewTransition===transition)activeViewTransition=null;});
+    return transition.updateCallbackDone?transition.updateCallbackDone.then(()=>result):result;
+  }
+  function datasetCaption(){
+    const inv=investigationController&&investigationMode&&investigationController.current(),input=state&&state.proposal&&state.proposal.external_input,preview=state&&state.proposal&&state.proposal.preview||inv&&inv.profile&&inv.profile.observed||{};
+    if(inv&&Array.isArray(inv.sources)&&inv.sources.length>1)return inv.sources.length+' datasets';
+    const path=input&&input.path||state&&state.source||inv&&inv.source||'', parts=path?[String(path).split('/').pop()]:[];
+    if(Number.isFinite(preview.cells)&&Number.isFinite(preview.genes))parts.push(preview.cells.toLocaleString()+' cells × '+preview.genes.toLocaleString()+' genes');
+    return parts.join(' · ');
+  }
+  function renderWorkspaceHeader(){
+    const detail=detailViews.includes(currentView),caption=detail?datasetCaption():'';
+    if(detail&&(state||investigationMode&&investigationController&&investigationController.current()))el('workspace-title').textContent='Workbench';
+    el('workspace-dataset').textContent=caption;el('workspace-dataset').hidden=!caption;
+  }
+  function restoreGateHomes(){
+    if(gateHomes.review&&el('review-form').parentNode!==gateHomes.review)gateHomes.review.append(el('review-form'));
+    if(gateHomes.run&&el('run-button').parentNode!==gateHomes.run)gateHomes.run.append(el('run-button'));
+    for(const [id,home] of operationHomes)if(home&&el(id).parentNode!==home)home.append(el(id));el('conversation-gates').hidden=true;
+  }
+  function restoreCanvasPanels(){
+    for(const [id,home] of panelHomes){if(home&&el(id).parentNode!==home)home.append(el(id));el(id).hidden=true;}panelHomes.clear();
+  }
+  function renderInvestigationArtifacts(record,detail=false){
+    const host=el(detail?'canvas-artifacts':'investigation-artifacts'),items=record&&Array.isArray(record.artifacts)?record.artifacts.filter(item=>typeof item.download_path==='string'&&/^\/api\/scientific\/artifacts\/[0-9a-f]{64}$/.test(item.download_path)):[];
+    const mode=detail?canvasView:'figures',key=JSON.stringify([record&&record.id,mode,items]);
+    if(detail?canvasArtifactKey===key:scientificArtifactKey===key)return;
+    const previous=detail?canvasArtifactController:scientificArtifactController;if(previous)previous.destroy();host.replaceChildren();host.hidden=!items.length;
+    if(detail){canvasArtifactKey=key;canvasArtifactController=null;}else{scientificArtifactKey=key;scientificArtifactController=null;}
+    if(!items.length||!presentationModules||!window.WorkbenchArtifactCanvas)return;if(!detail)el('results-empty').hidden=true;
+    const controller=window.WorkbenchArtifactCanvas.mount(host,{artifacts:items,request:path=>api(path),mode,context:{investigation_id:record.id,label:record.profile&&record.profile.filename||'Saved scientific outputs'},onStatus:(text,error)=>message('composer-message',text,error)});
+    if(detail)canvasArtifactController=controller;else scientificArtifactController=controller;
+  }
+  function showCanvas(name){
+    if(!['figures','code','evidence','display'].includes(name))name='figures';canvasView=name;
+    restoreCanvasPanels();showView('results',true);
+    el('results').hidden=name!=='figures';el('canvas-detail').hidden=name==='figures';
+    for(const key of ['figures','code','evidence','display'])el('canvas-'+key).setAttribute('aria-current',key===name?'page':'false');
+    if(name!=='figures'){
+      const ids=name==='code'?['panel-code']:name==='display'?['panel-display']:['panel-provenance','panel-review','panel-execution','panel-environment'];
+      for(const id of ids){const node=el(id);panelHomes.set(id,node.parentNode);el('canvas-detail').append(node);node.hidden=false;}
+      if(name==='code')loadNotebook();renderInvestigationArtifacts(investigationController&&investigationController.current(),true);
+    }else if(figureState&&!selectedRevisionRecord)showInteractive();
+    rememberWorkspace();
+  }
+  async function syncInvestigationGate(gate){
+    if(!investigationController||!investigationMode)return;const stamp=++gateSyncGeneration,record=gate.investigation;
+    const operation=record&&gate.jobState&&(active.has(gate.jobState.status)||gate.jobState.cancellable||gate.jobState.resumable||gate.jobState.error);
+    el('conversation-gates').hidden=!record||!['review','run'].includes(gate.kind)&&!operation;el('inline-operation-host').hidden=!operation;
+    el('inline-review-host').hidden=gate.kind!=='review';el('inline-run-host').hidden=gate.kind!=='run';
+    if(record&&gate.jobState){
+      if(selected!==gate.jobState.id){selected=gate.jobState.id;resetResults();}
+      state=gate.jobState;render();clearTimeout(timer);
+      if(operation){for(const id of ['run-status','run-message'])el('inline-operation-host').append(el(id));for(const id of ['cancel-button','resume-button','refresh'])el('inline-operation-actions').append(el(id));}
+      const portal=typeof el('analyst-timeline').querySelector==='function'?el('analyst-timeline').querySelector('[data-inline-gate="'+gate.kind+'"]'):null;
+      if(gate.kind==='review'){(portal||el('inline-review-host')).append(el('review-form'));el('review-form').hidden=false;el('inline-review-host').hidden=Boolean(portal);}
+      if(gate.kind==='run'){(portal||el('inline-run-host')).append(el('run-button'));el('run-button').disabled=!config.execution_allowed;el('inline-run-host').hidden=Boolean(portal);el('inline-run-message').textContent=config.execution_allowed?'The reviewed plan is ready. Start the analysis when you are ready.':'Execution is disabled for this service.';}
+      if(portal)el('conversation-gates').hidden=!operation;
+      if(state.status.startsWith('completed_review_')&&loadedResult!==selected)await results();
+    }else if(record&&record.parent_job&&record.profile){
+      const parent=await read('/api/jobs/'+record.parent_job);
+      if(stamp!==gateSyncGeneration)return;
+      const input=parent.proposal&&parent.proposal.external_input;
+      if(input&&input.sha256===record.profile.sha256&&input.path===record.source&&parent.status.startsWith('completed_review_')){
+        if(selected!==parent.id){selected=parent.id;state=parent;resetResults();}state=parent;render();clearTimeout(timer);
+        if(loadedResult!==selected)await results();
+      }else if(selected||state){selected=null;state=null;resetResults();}
+    }else if(selected||state){selected=null;state=null;resetResults();}
+    if(stamp!==gateSyncGeneration)return;renderInvestigationArtifacts(record);if(canvasView!=='figures')renderInvestigationArtifacts(record,true);
+    if(el('project-dialog').open)return;
+    showView('results',true);el('results-empty').textContent=record?'Figures will appear here when verified results are available.':'Start a chat with project data. Figures, code and evidence stay connected here.';
+    renderWorkspaceHeader();
+  }
+  function initializeInvestigations(){
+    if(investigationController||!presentationModules||!window.WorkbenchInvestigations||!(config.investigations&&config.investigations.enabled))return;
+    investigationMode=true;
+    for(const view of projectCollections){el('project-dialog').append(el(view));el(view).hidden=true;}
+    el('investigation-context').hidden=false;el('investigation-history').hidden=false;el('canvas-tabs').hidden=false;
+    el('composer-context').textContent='Dataset details';el('composer-submit').textContent='Send question';el('composer-scope').textContent='⌘ / Ctrl + Enter to send';
+    investigationController=window.WorkbenchInvestigations.mount({request:async(path,body)=>body===undefined?read(path):(await api(path,body)).json(),config,
+      conversation:{...window.WorkbenchConversation,renderInvestigation:(container,settings)=>{restoreGateHomes();return window.WorkbenchConversation.renderInvestigation(container,settings);}},
+      conversationContainer:el('analyst-timeline'),historyContainer:el('investigation-history'),inputsContainer:el('investigation-input-list'),datasetSelect:el('investigation-dataset'),initialSources:workspaceRecord&&workspaceRecord.ui&&workspaceRecord.ui.draft_sources||[],
+      questionInput:el('question'),transition:withViewTransition,modeSelect:el('investigation-mode'),selectionHost:el('selection-context'),submitButton:el('composer-submit'),
+      onStatus:(text,error)=>{message('composer-message',text,error);if(!restoringWorkspace)rememberWorkspace();},onHistory:rows=>{allInvestigations=rows;renderProjectViews();},
+      onJob:async id=>{investigationMode=true;await select(id);clearTimeout(timer);},
+      onGate:gate=>{syncInvestigationGate(gate).catch(error=>message('composer-message',error.message,true));},
+      onCanvas:view=>withViewTransition(()=>showCanvas(({results:'figures',execute:'evidence',review:'evidence'})[view]||view)),
+      onNewThread:()=>{closeProjectDialog();selected=null;state=null;el('draft-context').textContent='';resetResults();showCanvas('figures');}});
+    investigationController.ready.catch(error=>message('composer-message',error.message,true));
+    selected=null;state=null;resetResults();if(!scientificDeepLink())showView('results',true);el('results-empty').textContent='Ask a question to begin. Figures, code and evidence will appear here.';
+    el('evidence-toggle').onclick=()=>withViewTransition(()=>showCanvas('evidence'));
+    el('nav-register').onclick=()=>withViewTransition(()=>{investigationMode=true;restoreGateHomes();investigationController.newThread();});
+    el('nav-overview').onclick=()=>openProjectDialog('overview');
+    el('nav-data').onclick=()=>openInputDrawer();
+    for(const view of projectCollections)el('nav-'+view).onclick=()=>openProjectDialog(view);
+    el('open-scientific').onclick=()=>{closeProjectDialog();showView('scientific');return rememberWorkspace();};
+    el('composer-context').onclick=()=>openInputDrawer();
+    el('composer-submit').onclick=async()=>{
+      if(!investigationMode){
+        const draft=el('question').value,parent=state&&state.id,input=state&&state.proposal&&state.proposal.external_input,chosen=typeof investigationController.selectedSources==='function'?investigationController.selectedSources():[],path=el('investigation-dataset').value||input&&input.path||state&&state.source||'';
+        investigationMode=true;investigationController.newThread();
+        if(path){const options=el('investigation-dataset').options||el('investigation-dataset').children;if(!Array.from(options).some(option=>option.value===path)){const option=document.createElement('option');option.value=path;option.textContent=path.split('/').pop();el('investigation-dataset').append(option);}el('investigation-dataset').value=path;}
+        await investigationController.handleAction(chosen.length>1?{type:'draft',question:draft,sourceRunId:parent||null,sources:chosen}:{type:'draft',question:draft,sourceRunId:parent||null,input:path?{path}:null});
+      }
+      return investigationController.submit();
+    };
+    el('investigation-inputs-toggle').onclick=()=>openInputDrawer();
+    el('close-investigation-inputs').onclick=()=>closeProjectDialog();
+    for(const name of ['figures','code','evidence','display'])el('canvas-'+name).onclick=()=>withViewTransition(()=>showCanvas(name));
+  }
+  function openProjectDialog(section){
+    renderProjectViews();
+    const dialog=el('project-dialog'),titles={overview:'Project details',data:'Project data',analyses:'Project plans',runs:'Project runs',library:'Project results',files:'Project exports'};
+    dialog.dataset.section=section;
+    for(const view of ['overview','investigation-inputs',...projectCollections])el(view).hidden=view!==(section==='data'?'investigation-inputs':section);
+    const project=workspaceRecord?workspaceRecord.project.name:'Current project';
+    el('project-dialog-title').textContent=projectCollections.includes(section)?project+' / '+titles[section]:titles[section]||'Project details';
+    el('project-dialog-scope').textContent=projectCollections.includes(section)?'Across chats in this project':section==='data'?'Shared across this project’s chats':project;
+    el('project-dialog-scope').hidden=false;el('investigation-inputs-toggle').setAttribute('aria-expanded',String(section==='data'));dialog.hidden=false;
+    if(typeof dialog.showModal==='function'){if(!dialog.open)dialog.showModal();}else dialog.open=true;
+    updateProjectNavigation();
+  }
+  function updateProjectNavigation(){const dialog=el('project-dialog'),section=dialog.open?dialog.dataset.section:'';for(const view of projectCollections)el('nav-'+view).setAttribute('aria-current',section===view||!investigationMode&&currentView===view?'page':'false');}
+  function closeProjectDialog(){const dialog=el('project-dialog');if(typeof dialog.close==='function'&&dialog.open)dialog.close();else dialog.open=false;dialog.hidden=true;dialog.dataset.section='';for(const view of ['overview','investigation-inputs',...projectCollections])el(view).hidden=true;el('investigation-inputs-toggle').setAttribute('aria-expanded','false');updateProjectNavigation();}
+  el('close-project-dialog').onclick=()=>closeProjectDialog();
+  el('project-dialog').oncancel=()=>closeProjectDialog();
+  function openInputDrawer(){openProjectDialog('data');}
+
   function showView(name,automatic=false){
-    if(!views.includes(name))return;if(!automatic){navigationGeneration++;if(!restoringWorkspace)clearScientificDeepLink();}currentView=name;
-    for(const view of views){el(view).hidden=view!==name;if(el('nav-'+view))el('nav-'+view).setAttribute('aria-current',view===name?'page':'false');}
-    const names={overview:'Project overview',data:'Inputs',analyses:'Analyses & plans',scientific:'Scientific analyses',runs:'Runs & activity',library:'Results',files:'Files & exports',search:'Project search',register:'New analysis',review:'Review the frozen plan',execute:'Run & inspect',results:'Figure workspace'};
-    el('workspace-title').textContent=name==='results'&&state?state.question:names[name];
-    el('workspace-kicker').textContent=({register:'Local analysis',review:'Plan and operator decision',execute:'Controlled execution',results:'Results / recorded figures'})[name]||'Local project / '+(workspaceRecord?workspaceRecord.project.name:'RNA research');
-    el('selection-nav').hidden=!selected||!['review','execute','results'].includes(name);
-    if(['review','execute','scientific'].includes(name))el('nav-analyses').setAttribute('aria-current','page');
-    if(name==='results')el('nav-library').setAttribute('aria-current','page');
-    const scientific=name==='scientific';el('scientific-inspector').hidden=!scientific;el('legacy-inspector-body').hidden=scientific;el('evidence-tabs').hidden=scientific;el('evidence-toggle').hidden=scientific;el('analyst-composer').hidden=scientific||inspectorTab!=='analyst';inspectRecords();
+    if(!views.includes(name))return;if(investigationController&&projectCollections.includes(name)){openProjectDialog(name);return;}if(investigationMode&&['register','review','execute'].includes(name))name='results';if(!automatic){navigationGeneration++;if(!restoringWorkspace)clearScientificDeepLink();}currentView=name;el('app').dataset.view=name;if(name!=='results'){clearInteractive();restoreCanvasPanels();el('canvas-detail').hidden=true;}
+    for(const view of views){if(investigationController&&projectCollections.includes(view))continue;el(view).hidden=view!==name;if(el('nav-'+view))el('nav-'+view).setAttribute('aria-current',view===name?'page':'false');}
+    const names={overview:'Project overview',data:'Inputs',analyses:'Analyses & plans',scientific:'Scientific analyses',runs:'Runs & activity',library:'Results',files:'Files & exports',search:'Project search',register:'New analysis',review:'Review the frozen plan',execute:'Run & inspect',results:'Workbench'};
+    el('workspace-title').textContent=names[name];renderWorkspaceHeader();
+    el('workspace-kicker').textContent=({register:'Local analysis',review:'Plan and operator decision',execute:'Controlled execution',results:'Results'})[name]||'Local project / '+(workspaceRecord?workspaceRecord.project.name:'RNA research');
+    el('selection-nav').hidden=investigationMode||!selected||!['review','execute','results'].includes(name);el('canvas-tabs').hidden=!investigationMode||name!=='results';
+    updateProjectNavigation();
+    const scientific=name==='scientific'&&!investigationMode;el('scientific-inspector').hidden=!scientific;el('legacy-inspector-body').hidden=scientific;el('evidence-tabs').hidden=scientific;el('evidence-toggle').hidden=scientific;el('analyst-composer').hidden=scientific||inspectorTab!=='analyst';inspectRecords();if(name==='results'&&figureState&&!selectedRevisionRecord&&(!investigationMode||canvasView==='figures'))showInteractive();if(investigationMode&&name==='results'&&canvasView!=='figures')el('results').hidden=true;
   }
   function viewForStatus(status){
     if(status.startsWith('completed_review_'))return 'results';
@@ -261,12 +490,13 @@
   }
   function openInspector(value){inspectorOpen=value;el('inspector').classList.toggle('is-open',value);el('toggle-inspector').setAttribute('aria-expanded',String(value));}
   function showInspectorTab(name,focus=false){
+    if(investigationMode){if(name!=='analyst'){showCanvas(name==='code'?'code':name==='display'?'display':'evidence');return;}inspectorTab='analyst';el('panel-analyst').hidden=false;el('analyst-composer').hidden=false;inspectRecords();return;}
     if(!tabs.includes(name))return;inspectorTab=name;el('analyst-composer').hidden=currentView==='scientific'||name!=='analyst';if(name!=='analyst'&&name!=='display'){el('evidence-tabs').classList.toggle('all-tabs',true);el('evidence-toggle').setAttribute('aria-expanded','true');}
     for(const tab of tabs){el('panel-'+tab).hidden=tab!==name;el('tab-'+tab).setAttribute('aria-selected',String(tab===name));el('tab-'+tab).tabIndex=tab===name?0:-1;}
     if(focus)el('tab-'+name).focus();inspectRecords();
     if(name==='code')loadNotebook();
   }
-  for(const view of views)if(el('nav-'+view))el('nav-'+view).onclick=()=>{showView(view);if(view==='register'){showInspectorTab('analyst');openInspector(true);}return rememberWorkspace();};
+  for(const view of views)if(el('nav-'+view))el('nav-'+view).onclick=()=>withViewTransition(()=>{showView(view);if(view==='register'){showInspectorTab('analyst');openInspector(true);}return rememberWorkspace();});
   for(const tab of tabs){el('tab-'+tab).onclick=()=>{showInspectorTab(tab);return rememberWorkspace();};el('tab-'+tab).onkeydown=event=>{
     const visible=el('evidence-toggle').getAttribute&&el('evidence-toggle').getAttribute('aria-expanded')==='true'?tabs:['analyst','display'];const position=visible.indexOf(tab);let next=null;
     if(event.key==='ArrowRight')next=visible[(position+1)%visible.length];
@@ -279,11 +509,12 @@
   el('composer-context').onclick=()=>{showView('register');el('data-context').open=true;message('composer-message','Review your local dataset and provenance in the canvas.');};
   el('composer-submit').onclick=()=>{showView('register');el('data-context').open=true;if(el('registration').reportValidity()){message('composer-message','Preparing the recorded plan…');el('registration').requestSubmit();}else message('composer-message','Complete the required data context and biological question to prepare a plan.');};
   el('register-button').onclick=()=>{el('data-context').open=true;showInspectorTab('analyst');openInspector(true);};
-  el('edit-display').onclick=()=>{showInspectorTab('display');openInspector(true);rememberWorkspace();};
+  el('edit-display').onclick=()=>investigationMode?withViewTransition(()=>showCanvas('display')):(()=>{showInspectorTab('display');openInspector(true);rememberWorkspace();})();
   function inspectRecords(){
     if(currentView==='scientific'){inspectScientific();return;}
     const figure=currentFigure(), revision=selectedRevisionRecord;
-    el('inspector-title').textContent=inspectorTab==='analyst'?'Analyst':figure&&figure.image?figure.image.path.split('/').pop():'Analysis evidence';
+    const chat=investigationController&&investigationMode&&investigationController.current(),chatTitle=chat&&chat.question||state&&state.question||'New chat';
+    el('inspector-title').textContent=inspectorTab==='analyst'?chatTitle:figure&&figure.image?figure.image.path.split('/').pop():'Analysis evidence';
     el('inspector-subtitle').textContent=inspectorTab==='analyst'?'Recorded question and analysis activity':revision?'Presentation '+revision.id.slice(0,8)+' · '+revision.status.replaceAll('_',' '):state?state.status.replaceAll('_',' '):'Select a retained job';
     el('code-record').textContent=figure?json({plot_data:figure.plot_data,analysis_binding:figure.analysis_binding,renderer_identity:figure.renderer_identity,parent_root:figureState.parent_root}):'No figure source records selected.';
     el('revision-record').textContent=revision?json(revision):'No presentation attempt selected.';el('display-base').textContent=revision&&revision.status==='completed_presentation'?'Style based on presentation '+revision.id.slice(0,8)+'. The original scientific parent stays fixed.':'Style based on the original analysis figure.';
@@ -300,7 +531,10 @@
   }
 
   function renderAnalyst(){
-    const timeline=el('analyst-timeline');if(!state){if(selected){timeline.replaceChildren();const p=document.createElement('p');p.className='empty';p.textContent='Loading the selected job and its retained evidence…';timeline.append(p);}return;}timeline.replaceChildren();
+    if(investigationController&&investigationMode){investigationController.render();return;}
+    const timeline=el('analyst-timeline');
+    if(presentationModules&&window.WorkbenchConversation){window.WorkbenchConversation.render(timeline,{state,config,loading:Boolean(selected&&!state),revision:selectedRevisionRecord,onAction:action=>{if(action.type==='navigate'){showView(action.view);rememberWorkspace();}else if(action.type==='draft')draftQuestion(action);}});el('composer-submit').textContent=state?'Prepare new plan':'Prepare plan';el('composer-scope').textContent=config&&config.model_access?'Bounded proposal selection · Every analysis requires operator review.':'Operator-created plan · No model conversation is requested.';return;}
+    if(!state){if(selected){timeline.replaceChildren();const p=document.createElement('p');p.className='empty';p.textContent='Loading the selected job and its retained evidence…';timeline.append(p);}return;}timeline.replaceChildren();
     function record(label,title,text,kind='record-message',action=null){
       const article=document.createElement('article');article.className='analyst-message '+kind;
       const heading=document.createElement('div');heading.className='message-label';heading.textContent=label;article.append(heading);
@@ -347,13 +581,34 @@
   function message(id,text,error=false){el(id).textContent=text;el(id).classList.toggle('error',error);}
   async function api(path,body){
     const options={headers:{'X-Workbench-Token':token},cache:'no-store',credentials:'omit'};
+    if(activeProjectId)options.headers['X-Workbench-Project']=activeProjectId;
     if(body!==undefined){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
     const response=await fetch(path,options);
     if(!response.ok){let detail;try{detail=await response.json();}catch{detail={message:'Local request failed.'};}const error=Error(detail.message);error.status=response.status;throw error;}
     return response;
   }
   async function read(path){return (await api(path)).json();}
-  function workspaceLocation(){const ui={selected_job:selected||'',view:currentView==='scientific'&&workspaceRecord&&workspaceRecord.schema_version!==3?'analyses':currentView,figure:currentFigure()?currentFigure().figure_id:'',selected_revision:selectedRevisionId,parent_root:figureState?figureState.parent_root:'',tab:inspectorTab,zoom:el('figure-zoom').value||'fit',search:el('workspace-search').value,run_filter:el('run-filter').value||'all',question_draft:el('question').value,inspector_open:inspectorOpen,evidence_open:el('evidence-toggle').getAttribute('aria-expanded')==='true'};if(workspaceRecord&&workspaceRecord.schema_version===3){Object.assign(ui,scientificSelection);for(const key of ['study_id','scientific_run_id','planner_session_id'])ui[key]=ui[key]||'';}return ui;}
+  function projectQuery(){const query=new URLSearchParams(location.search||'');if(activeProjectId)query.set('project_id',activeProjectId);return query;}
+  async function switchProject(id){
+    if(!/^[0-9a-f]{32}$/.test(id))throw Error('Select an available project.');
+    await saveChain;
+    if(saveBlocked||!workspaceRecord)throw Error('Save or copy the current draft before switching projects.');
+    const ui=workspaceLocation(),encoded=json(ui);
+    if(encoded!==lastSavedUI){workspaceRecord=await (await api('/api/workspace',{expected_revision:workspaceRecord.revision,ui})).json();lastSavedUI=encoded;}
+    const query=new URLSearchParams();query.set('project_id',id);
+    const url=location.pathname+'?'+query.toString()+'#'+token;
+    if(typeof location.assign==='function')location.assign(url);else location.href=url;
+  }
+  function initializeProjects(){
+    if(projectController)projectController.destroy();projectController=null;
+    if(!(config&&config.project_catalog&&config.project_catalog.enabled&&presentationModules&&window.WorkbenchProjects)){
+      el('project-switcher').onclick=()=>openProjectDialog('overview');el('project-data-import').hidden=true;return;
+    }
+    projectController=window.WorkbenchProjects.mount({request:async(path,body)=>body===undefined?read(path):(await api(path,body)).json(),currentProjectId:activeProjectId,onSwitch:switchProject,
+      onDataChanged:async()=>{if(investigationController)await investigationController.reloadInputs();renderProjectViews();}});
+    projectController.ready.catch(error=>message('workspace-message',error.message,true));
+  }
+  function workspaceLocation(){const ui={selected_job:selected||'',view:currentView==='scientific'&&workspaceRecord&&workspaceRecord.schema_version!==3?'analyses':currentView,figure:currentFigure()?currentFigure().figure_id:'',selected_revision:selectedRevisionId,parent_root:figureState?figureState.parent_root:'',tab:inspectorTab,zoom:el('figure-zoom').value||'fit',search:el('workspace-search').value,run_filter:el('run-filter').value||'all',question_draft:el('question').value,inspector_open:inspectorOpen,evidence_open:el('evidence-toggle').getAttribute('aria-expanded')==='true'};if(workspaceRecord&&workspaceRecord.schema_version===3){Object.assign(ui,scientificSelection);for(const key of ['study_id','scientific_run_id','planner_session_id'])ui[key]=ui[key]||'';}if(config&&config.project_catalog&&!config.project_catalog.read_only&&investigationController&&typeof investigationController.selectedSources==='function')ui.draft_sources=investigationController.selectedSources();return ui;}
   function rememberWorkspace(extra={}){
     if(restoringWorkspace||!workspaceRecord||saveBlocked)return Promise.resolve();
     const ui=workspaceLocation(),encoded=json(ui);
@@ -366,7 +621,7 @@
   function renderProjectIdentity(updateName=false){
     if(!workspaceRecord)return;const project=workspaceRecord.project;
     el('project-name').textContent=project.name;el('overview-name').textContent=project.name;
-    if(updateName)el('project-name-input').value=project.name;el('project-identity').textContent='Project '+project.id+' · single-user local workspace';
+    if(updateName)el('project-name-input').value=project.name;el('project-identity').textContent=project.id;el('project-identity').hidden=true;
   }
   async function restoreWorkspace(){
     restoringWorkspace=true;workspaceRecord=await read('/api/workspace');renderProjectIdentity(true);const saved=workspaceRecord.ui||{};
@@ -391,7 +646,7 @@
     if(unavailable){resetResults();el('results-empty').textContent=unavailable;}
     if(config.scientific&&config.scientific.enabled)await restoreScientific(saved);
     const notices=[workspaceRecord.recovery_notice,unavailable].filter(Boolean);if(notices.length)message('workspace-message',notices.join(' '),Boolean(unavailable));
-    showView(scientificDeepLink()?'scientific':saved.view==='scientific'&&!(config.scientific&&config.scientific.enabled)?'analyses':saved.view||'overview');showInspectorTab(saved.tab||'analyst');openInspector(saved.inspector_open===true);
+    showView(scientificDeepLink()?'scientific':saved.view==='scientific'&&!(config.scientific&&config.scientific.enabled)?'analyses':saved.view||(config.investigations&&config.investigations.enabled?'results':'overview'));showInspectorTab(saved.tab||'analyst');openInspector(saved.inspector_open===true);
     if(saved.evidence_open){el('evidence-tabs').classList.toggle('all-tabs',true);el('evidence-toggle').setAttribute('aria-expanded','true');}
     lastSavedUI=json(workspaceLocation());restoringWorkspace=false;if(scientificDeepLink()){lastSavedUI='';await rememberWorkspace();}
   }
@@ -407,7 +662,13 @@
   function matchesSearch(job){const query=el('workspace-search').value.trim().toLowerCase();return !query||[job.id,job.question,job.status,job.figure_id,job.input&&job.input.path,job.input&&job.input.sha256,job.proposal_root,job.bundle_root].filter(Boolean).join(' ').toLowerCase().includes(query);}
   function objectRow(target,title,description,action){const row=document.createElement('button');row.type='button';row.className='object-row';row.textContent=title+'\n'+description;row.onclick=action;el(target).append(row);return row;}
   function emptyList(target,text){if(el(target).children.length)return;const p=document.createElement('p');p.className='empty';p.textContent=text;el(target).append(p);}
-  async function openRecord(job,view){
+  function sourceChat(job){const source=job.parent_job||job.id;return allInvestigations.find(chat=>chat.job_id===source)||null;}
+  function sourceLabel(job){const chat=sourceChat(job);return chat?'Source chat: '+chat.question:'Source analysis: '+(job.parent_job||job.id).slice(0,8);}
+  function openRecord(job,view){
+    const chat=!job.parent_job&&job.operation_kind!=='presentation'&&sourceChat(job);
+    if(chat&&investigationController&&typeof investigationController.open==='function')return (async()=>{closeProjectDialog();investigationMode=true;await investigationController.open(chat.id);showCanvas(['review','execute','files'].includes(view)?'evidence':'figures');return rememberWorkspace();})();
+    closeProjectDialog();return withViewTransition(()=>{investigationMode=false;restoreGateHomes();restoreCanvasPanels();el('canvas-detail').hidden=true;return openRecordNow(job,view);});}
+  async function openRecordNow(job,view){
     const navigation=++navigationGeneration;
     await select(job.parent_job||job.id,navigation);
     if(navigation!==navigationGeneration)return;
@@ -421,13 +682,14 @@
   }
   function renderProjectViews(){
     const native=allJobs.filter(job=>job.operation_kind!=='presentation'),matching=allJobs.filter(matchesSearch),live=allJobs.filter(job=>active.has(job.status)),needs=allJobs.filter(job=>attention.has(job.status));
-    el('activity-control').textContent=live.length+' active · '+needs.length+' need attention';el('runs-count').textContent=live.length?'('+live.length+' active)':'';
+    const liveIds=new Set(live.map(row=>row.id)),attentionIds=new Set(needs.map(row=>row.id)),threadLive=allInvestigations.filter(row=>(active.has(row.status)||row.operation_pending)&&!liveIds.has(row.job_id)),threadAttention=allInvestigations.filter(row=>attention.has(row.status)&&!attentionIds.has(row.job_id));const liveCount=live.length+threadLive.length,attentionCount=needs.length+threadAttention.length;el('activity-control').textContent=liveCount+' active · '+attentionCount+' need attention';el('runs-count').textContent=liveCount?'('+liveCount+' active)':'';
     for(const id of ['overview-recent','analysis-list','data-list','activity-list','run-list','result-list','file-bundles','overview-stats','search-list'])el(id).replaceChildren();
     const datasets=new Map();
     for(const job of native){if(!job.input||!job.input.path)continue;const key=job.input.sha256||'unverified:'+job.id;if(!datasets.has(key))datasets.set(key,[]);datasets.get(key).push(job);}
-    for(const [value,label] of [[datasets.size,'input groups'],[native.length,'analysis requests'],[allJobs.filter(job=>job.status.startsWith('completed_')).length,'saved outputs']]){const card=document.createElement('div'),count=document.createElement('strong'),caption=document.createElement('span');card.className='overview-stat';count.textContent=String(value);caption.textContent=label;card.append(count,caption);el('overview-stats').append(card);}
+    const availableFiles=Array.from(el('investigation-dataset').options||el('investigation-dataset').children||[]).filter(option=>option.value).length;
+    for(const [value,label] of [[investigationController?availableFiles:datasets.size,'available files'],[investigationController?allInvestigations.length:native.length,'chats'],[allJobs.filter(job=>job.status.startsWith('completed_')).length,'saved outputs']]){const card=document.createElement('div'),count=document.createElement('strong'),caption=document.createElement('span');card.className='overview-stat';count.textContent=String(value);caption.textContent=label;card.append(count,caption);el('overview-stats').append(card);}
     for(const job of native.filter(matchesSearch)){
-      const description=job.status.replaceAll('_',' ')+' · '+job.id.slice(0,8)+(job.review_decision?' · decision: '+job.review_decision:'');
+      const description=job.status.replaceAll('_',' ')+(job.review_decision?' · decision: '+job.review_decision:'')+'\n'+sourceLabel(job);
       objectRow('analysis-list',job.question,description,()=>openRecord(job,'review'));
     }
     for(const group of datasets.values()){
@@ -443,13 +705,14 @@
       if((active.has(job.status)||attention.has(job.status)||job.status==='awaiting_operator_review')&&visibleRun(job,job.status))objectRow('activity-list',job.question,job.status.replaceAll('_',' ')+' · '+(job.operation_kind==='presentation'?'Presentation attempt':'Analysis request')+' · '+job.id.slice(0,8)+(job.worker_liveness==='unknown'?' · worker liveness unknown':''),()=>openRecord(job,job.operation_kind==='presentation'?'results':undefined));
       const history=job.execution_history||[],pending=job.pending_execution===true||active.has(job.status)&&(job.operation_kind==='presentation'||['preparing','running'].includes(job.status));
       const attempts=[...history];if(pending&&!['finalizing'].includes(job.status))attempts.push({attempt:history.length+1,status:job.status});
-      for(const attempt of attempts){const status=attempt.status||job.status;if(!visibleRun(job,status))continue;objectRow('run-list',kind+' · attempt '+attempt.attempt+' · '+job.question,status.replaceAll('_',' ')+' · '+job.id.slice(0,8)+(Number.isFinite(attempt.elapsed_sec)?' · '+attempt.elapsed_sec.toFixed(1)+' s':''),()=>openRecord(job,'execute'));}
+      for(const attempt of attempts){const status=attempt.status||job.status;if(!visibleRun(job,status))continue;objectRow('run-list',kind+' · attempt '+attempt.attempt+' · '+job.question,status.replaceAll('_',' ')+' · '+job.id.slice(0,8)+(Number.isFinite(attempt.elapsed_sec)?' · '+attempt.elapsed_sec.toFixed(1)+' s':'')+'\n'+sourceLabel(job),()=>openRecord(job,'execute'));}
       if(job.status.startsWith('completed_review_')||job.status==='completed_presentation'){
-        objectRow('result-list',job.question,(job.operation_kind==='presentation'?'Presentation · '+job.figure_id+' · parent '+job.parent_job.slice(0,8):'Analysis output')+' · '+job.status.replaceAll('_',' ')+'\n'+job.id,()=>openRecord(job,'results'));
-        if(job.operation_kind!=='presentation')objectRow('file-bundles',job.question,'Analysis evidence · '+job.id.slice(0,8),()=>openRecord(job,'files'));
+        objectRow('result-list',job.question,(job.operation_kind==='presentation'?'Presentation · '+job.figure_id+' · parent '+job.parent_job.slice(0,8):'Analysis output')+' · '+job.status.replaceAll('_',' ')+'\n'+sourceLabel(job),()=>openRecord(job,'results'));
+        if(job.operation_kind!=='presentation')objectRow('file-bundles',job.question,'Analysis evidence · '+job.id.slice(0,8)+'\n'+sourceLabel(job),()=>openRecord(job,'files'));
       }
     }
-    for(const id of ['analysis-list','data-list','activity-list','run-list','result-list','file-bundles','overview-recent','search-list'])emptyList(id,'No matching '+({'analysis-list':'analyses','data-list':'registered inputs','activity-list':'pending work or attention records','run-list':'execution attempts','result-list':'completed outputs','file-bundles':'completed analysis exports','overview-recent':'recent work','search-list':'project records'})[id]+'.');
+    el('overview-recent-section').hidden=!el('overview-recent').children.length;
+    for(const id of ['analysis-list','data-list','activity-list','run-list','result-list','file-bundles','search-list'])emptyList(id,'No matching '+({'analysis-list':'analyses','data-list':'registered inputs','activity-list':'pending work or attention records','run-list':'execution attempts','result-list':'completed outputs','file-bundles':'completed analysis exports','search-list':'project records'})[id]+'.');
   }
   function scientificRows(name){return scientificCatalog&&scientificCatalog[name]||[];}
   function scientificRefKey(ref){return ref?[ref.object_type,ref.object_id,ref.version_id].join('|'):'';}
@@ -471,7 +734,7 @@
     return ['dataset','analysis','result'].includes(object_type)&&/^[0-9a-f]{32}$/.test(object_id||'')&&/^[0-9a-f]{64}$/.test(version_id||'')?{object_type,object_id,version_id}:null;
   }
   function scientificSetMessage(text,error=false){scientificActionMessage=text;scientificActionError=error;message('scientific-message',text,error);}
-  function clearScientificDeepLink(){if(config&&config.scientific&&config.scientific.enabled&&location.search)history.replaceState(null,'',location.pathname);}
+  function clearScientificDeepLink(){if(config&&config.scientific&&config.scientific.enabled&&location.search){const query=projectQuery();for(const key of ['object_type','object_id','version_id'])query.delete(key);history.replaceState(null,'',location.pathname+(query.toString()?'?'+query.toString():''));}}
   function scientificClearGrants(){el('scientific-data-grant').checked=false;el('scientific-model-grant').checked=false;el('scientific-warning-ack').checked=false;el('scientific-parameter-confirmation').checked=false;}
   function hydrateScientificLabels(){
     const study=scientificRows('studies').find(row=>row.study_id===scientificSelection.study_id),dataset=scientificLogical('dataset');
@@ -683,7 +946,7 @@
     const dataset=scientificRecord('dataset'),analysis=scientificRecord('analysis'),result=scientificRecord('result'),plan=scientificPlan(),run=scientificRun();
     el('inspector-title').textContent='Scientific evidence';el('inspector-subtitle').textContent='Exact versions · retained evidence';
     el('scientific-inspector-summary').textContent=['dataset','analysis','result'].map(kind=>{const ref=scientificSelection[kind+'_ref'];return kind[0].toUpperCase()+kind.slice(1)+': '+(ref?scientificShort(ref.object_id)+' / '+scientificShort(ref.version_id):'not selected');}).join('\n');
-    el('scientific-exact-links').replaceChildren();for(const kind of ['dataset','analysis','result']){const ref=scientificSelection[kind+'_ref'];if(!ref)continue;const link=document.createElement('a');link.textContent='Exact '+kind+' link';link.href=location.pathname+'?'+new URLSearchParams(ref).toString();el('scientific-exact-links').append(link);}
+    el('scientific-exact-links').replaceChildren();for(const kind of ['dataset','analysis','result']){const ref=scientificSelection[kind+'_ref'];if(!ref)continue;const link=document.createElement('a');link.textContent='Exact '+kind+' link';const query=new URLSearchParams(ref);if(activeProjectId)query.set('project_id',activeProjectId);link.href=location.pathname+'?'+query.toString();el('scientific-exact-links').append(link);}
     const methodIds=new Set([...(analysis&&analysis.definition.method_version_ids||[]),...(plan&&plan.candidates||[]).map(row=>row.method_version_id)]);
     const methods=scientificRows('methods').filter(row=>methodIds.has(row.version_id)).map(row=>({name:row.contract.name,version_id:row.version_id,origin:row.contract.provenance&&row.contract.provenance.origin,lifecycle:row.contract.lifecycle,implementation_trust:row.contract.implementation_trust,implementation:row.contract.implementation,environment:row.contract.environment}));
     el('scientific-methods').textContent=methods.length?json(methods):'No resolved method version selected.';
@@ -849,27 +1112,31 @@
     if(el('token').value)token=el('token').value.trim();
     try{
       config=await read('/api/config');el('token').value='';message('login-error','Restoring your local workspace…');
+      if(config.project_catalog&&config.project_catalog.enabled){
+        const id=config.project_catalog.current_project_id;if(!/^[0-9a-f]{32}$/.test(id))throw Error('The selected project is unavailable.');
+        if(activeProjectId&&activeProjectId!==id)throw Error('The server returned a different project.');
+        activeProjectId=id;const query=projectQuery();history.replaceState(null,'',location.pathname+'?'+query.toString());
+      }
       el('config').textContent=json(config);el('execution-permission').textContent=config.execution_allowed?'This server was started with explicit data-execution permission. An approved plan is still required.':'Inspection and review are available. Execution is disabled because this server was started without data-execution permission.';
       const selection=config.proposal_selection||{mode:'disabled',available:false,label:'Agent selection unavailable'};
       el('agent-proposal').textContent=selection.label;el('agent-proposal').disabled=selection.available!==true||!['recorded_fixture','codex'].includes(selection.mode)||(selection.mode==='codex'&&config.model_access!==true);
       if(el('agent-proposal').disabled)el('proposal-mode').value='operator';proposalMode();
       el('scientific-entry').hidden=!(config.scientific&&config.scientific.enabled);
-      await jobs();await restoreWorkspace();inspectRecords();
-      el('login').hidden=true;el('session-heading').hidden=true;el('app').hidden=false;
+      await jobs();await restoreWorkspace();initializeInvestigations();initializeProjects();inspectRecords();
+      el('login').hidden=true;el('session-heading').hidden=true;el('app').hidden=false;refreshPanelSizes();
     }catch(error){message('login-error',error.message,true);}finally{el('connect').disabled=false;}
   }
   async function jobs(){
     clearTimeout(jobsTimer);const data=await read('/api/jobs');allJobs=data.jobs.sort((a,b)=>String(b.updated_at||'').localeCompare(String(a.updated_at||''))||a.id.localeCompare(b.id));el('jobs').replaceChildren();
-    const recent=allJobs.slice(0,3);
-    if(!recent.length){const p=document.createElement('p');p.className='empty';p.textContent='No retained work yet.';el('jobs').append(p);}
-    for(const job of recent){const button=document.createElement('button'),badge=document.createElement('span'),title=document.createElement('span');button.className='job';button.type='button';button.setAttribute('aria-current',String(job.id===selected||job.id===selectedRevisionId));badge.className='work-kind';badge.textContent=job.operation_kind==='presentation'?'Presentation':'Analysis request';title.className='work-title';title.textContent=job.question;button.append(badge,title);button.onclick=()=>openRecord(job,job.operation_kind==='presentation'?'results':undefined);el('jobs').append(button);}
+    el('legacy-history').hidden=!allJobs.length;el('legacy-history-title').textContent='Analysis history · '+allJobs.length;
+    for(const job of allJobs){const button=document.createElement('button'),badge=document.createElement('span'),title=document.createElement('span'),status=document.createElement('span');button.className='job';button.type='button';button.setAttribute('aria-current',String(job.id===selected||job.id===selectedRevisionId));badge.className='work-kind';badge.textContent=job.operation_kind==='presentation'?'Presentation':'Analysis request';title.className='work-title';title.textContent=job.question;status.className='work-status';status.textContent=String(job.status||'status_unavailable').replaceAll('_',' ');button.append(badge,title,status);button.onclick=()=>openRecord(job,job.operation_kind==='presentation'?'results':undefined);el('jobs').append(button);}
     renderProjectViews();if(allJobs.some(job=>active.has(job.status)))jobsTimer=setTimeout(()=>jobs().catch(error=>message('workspace-message',error.message,true)),2400);
   }
   function resetResults(){
-    loadedResult=null;figureState=null;resultsData=null;notebookLoaded=null;selectedRevisionId='';selectedRevisionRecord=null;figureGeneration++;
+    clearInteractive();loadedResult=null;figureState=null;resultsData=null;notebookLoaded=null;selectedRevisionId='';selectedRevisionRecord=null;figureGeneration++;
     clearTimeout(revisionTimer);for(const url of imageURLs)URL.revokeObjectURL(url);imageURLs.length=0;
     el('result-view').hidden=true;el('results-empty').hidden=false;el('figures').replaceChildren();el('presentation-preview').replaceChildren();el('presentation-versions').replaceChildren();el('presentation-submit').disabled=true;
-    el('results-empty').textContent='Verified complete results are not available for the selected job.';el('file-downloads').replaceChildren();el('files-heading').textContent='Select a completed analysis to inspect its files';message('files-message','');
+    el('results-empty').textContent=selected?'Verified complete results are not available for the selected job.':'Figures, code and evidence will appear here.';el('file-downloads').replaceChildren();el('files-heading').textContent='Select a completed analysis to inspect its files';message('files-message','');
     el('version-select').replaceChildren();const original=document.createElement('option');original.value='';original.textContent='Original';el('version-select').append(original);el('version-select').value='';
     for(const id of ['version-prev','version-next','figure-download','revision-archive','compare-version','notebook-download'])el(id).disabled=true;
     el('compare-version').checked=false;el('presentation-preview').hidden=true;el('figures').hidden=false;
@@ -877,6 +1144,7 @@
     el('result-review').textContent='No completed output checks.';el('result-report').textContent='No completed result report.';el('execution-record').textContent='Loading selected job…';inspectRecords();
   }
   async function select(id,navigation=++navigationGeneration){
+    if(id!==selected){el('decision').value='needs_information';el('rationale').value='';for(const input of el('confirmations').querySelectorAll('input'))input.checked=false;}
     clearTimeout(timer);selected=id;state=null;resetResults();
     el('plan').hidden=true;el('review-form').hidden=true;el('plan-empty').hidden=false;el('plan-empty').textContent='Loading selected job…';
     for(const control of ['run-button','cancel-button','resume-button'])el(control).disabled=true;
@@ -890,7 +1158,7 @@
       const id=selected, observed=await read('/api/jobs/'+id);if(id!==selected)return;const priorStatus=state&&state.status;state=observed;render();if(navigation===navigationGeneration&&state.status!==priorStatus&&(detailViews.includes(currentView)||priorStatus===null))showView(viewForStatus(state.status),true);await jobs();
       if(state.operation_kind==='presentation'&&state.parent_job){await select(state.parent_job,navigation);return;}
       if(state.status.startsWith('completed_review_')&&loadedResult!==selected){await results();if(id===selected&&navigation===navigationGeneration&&detailViews.includes(currentView))showView('results',true);}
-      if(active.has(state.status))timer=setTimeout(refresh,1800);
+      if(active.has(state.status)&&!investigationMode)timer=setTimeout(refresh,1800);
     }catch(error){message('run-message',error.message,true);}
   }
   function render(){
@@ -917,9 +1185,9 @@
     el('run-status').textContent=state.status.replaceAll('_',' ');el('run-button').disabled=state.status!=='approved'||!config.execution_allowed;
     el('cancel-button').disabled=state.cancellable!==true;el('resume-button').disabled=state.resumable!==true;
     el('execution-record').textContent=json({id:state.id,status:state.status,attempts:state.execution_history||[],completed_analysis:state.completed_analysis,execution:state.execution||null,error:state.error||null,operator_review:state.review||null,scientific_review:state.scientific_review,model_sessions_attempted:state.model_sessions_attempted,worker_liveness:state.worker_liveness,cancellable:state.cancellable,resumable:state.resumable});
-    inspectRecords();
-    if(state.error)message('run-message',state.error.message,true);
-    else if(state.execution&&state.execution.reason)message('run-message',state.execution.reason,true);
+    inspectRecords();renderWorkspaceHeader();
+    if(state.error)message('run-message',presentationModules&&window.WorkbenchConversation?window.WorkbenchConversation.failureSummary(state.error.message):String(state.error.message).split('\n')[0].slice(0,360),true);
+    else if(state.execution&&state.execution.reason)message('run-message',presentationModules&&window.WorkbenchConversation?window.WorkbenchConversation.failureSummary(state.execution.reason):String(state.execution.reason).split('\n')[0].slice(0,360),true);
     else if(state.status==='recovery_required')message('run-message','Recovery requires an explicit eligible action. Worker liveness: '+(state.worker_liveness||'unknown')+'. Nothing restarts automatically.');
     else message('run-message',active.has(state.status)?'The recorded operation is in progress. This page polls local state.':'');
   }
@@ -927,18 +1195,18 @@
   el('registration').onsubmit=async event=>{
     event.preventDefault();el('register-button').disabled=true;el('composer-submit').disabled=true;message('register-message','Registering the local input…');message('composer-message','Registering the local input…');
     const request={proposal_mode:el('proposal-mode').value,source:el('source').value.trim(),expected_sha256:el('digest').value.trim(),question:el('question').value.trim(),declarations:{assay:el('assay').value,measurement:el('measurement').value,count_provenance:el('counts').value.trim(),capture_unit_key:el('capture').value.trim(),capture_units_confirmed:el('capture-confirmed').checked,annotation_provenance:el('annotation').value.trim()}};
-    try{const job=await (await api('/api/jobs',request)).json();message('register-message',job.cached?'Retained job reused for this request. No new job was created.':'Request registered. Status: '+job.status.replaceAll('_',' ')+'.');await select(job.id);message('composer-message',job.cached?'Retained request reused.':'Question and dataset context recorded.');showInspectorTab('analyst');}catch(error){message('register-message',error.message,true);message('composer-message',error.message,true);}finally{el('register-button').disabled=false;el('composer-submit').disabled=false;}
+    try{const job=await (await api('/api/jobs',request)).json();message('register-message',job.cached?'Retained job reused for this request. No new job was created.':'Request registered. Status: '+job.status.replaceAll('_',' ')+'.');if(el('question').value.trim()===request.question){el('question').value='';el('draft-context').textContent='';}await select(job.id);message('composer-message',job.cached?'Retained request reused.':'Question and dataset context recorded.');showInspectorTab('analyst');}catch(error){message('register-message',error.message,true);message('composer-message',error.message,true);}finally{el('register-button').disabled=false;el('composer-submit').disabled=false;}
   };
   el('review-form').onsubmit=async event=>{
     event.preventDefault();if(!selected)return;
     const confirmations={};for(const input of el('confirmations').querySelectorAll('input'))confirmations[input.dataset.confirmation]=input.checked;
-    try{await api('/api/jobs/'+selected+'/review',{reviewer:el('reviewer').value.trim(),decision:el('decision').value,rationale:el('rationale').value.trim(),confirmations});message('review-message','Decision submitted for recording.');await refresh();}catch(error){message('review-message',error.message,true);}
+    try{const decision={reviewer:el('reviewer').value.trim(),decision:el('decision').value,rationale:el('rationale').value.trim(),confirmations};if(investigationMode&&investigationController&&investigationController.current()){await investigationController.review(decision);return;}await api('/api/jobs/'+selected+'/review',decision);message('review-message','Decision submitted for recording.');await refresh();}catch(error){message('review-message',error.message,true);}
   };
-  el('run-button').onclick=async()=>{const id=selected,navigation=navigationGeneration;el('run-button').disabled=true;try{await api('/api/jobs/'+id+'/run',{});if(id!==selected)return;if(navigation===navigationGeneration)showView('execute',true);await refresh(navigation);}catch(error){if(id===selected){if(state)render();message('run-message',error.message,true);}}};
+  el('run-button').onclick=async()=>{if(investigationMode&&investigationController&&investigationController.current()){el('run-button').disabled=true;try{await investigationController.run({allow_data_execution:true});}catch(error){message('run-message',error.message,true);message('composer-message',error.message,true);el('run-button').disabled=state&&state.status!=='approved'||!config.execution_allowed;}return;}const id=selected,navigation=navigationGeneration;el('run-button').disabled=true;try{await api('/api/jobs/'+id+'/run',{});if(id!==selected)return;if(navigation===navigationGeneration)showView('execute',true);await refresh(navigation);}catch(error){if(id===selected){if(state)render();message('run-message',error.message,true);}}};
   async function recoveryAction(action,eligibility){
     if(!selected||!state||state[eligibility]!==true)return;
     el('cancel-button').disabled=true;el('resume-button').disabled=true;
-    try{await api('/api/jobs/'+selected+'/'+action,{});await refresh();}catch(error){if(state)render();message('run-message',error.message,true);}
+    try{await api('/api/jobs/'+selected+'/'+action,{});if(investigationMode&&investigationController)await investigationController.refresh();else await refresh();}catch(error){if(state)render();message('run-message',error.message,true);}
   }
   el('cancel-button').onclick=()=>recoveryAction('cancel','cancellable');el('resume-button').onclick=()=>recoveryAction('resume','resumable');
   el('proposal-mode').onchange=proposalMode;
@@ -984,7 +1252,7 @@
     const data=await read('/api/jobs/'+id+'/figures');if(id!==selected)return;
     if(figureState&&figureState.parent_root===data.parent_root){figureState=data;renderVersions(data.revisions,id);if(selectedRevisionId)await showRevision(id,selectedRevisionId);return;}
     figureState=data;el('figure-select').replaceChildren();
-    for(const figure of data.figures){const option=document.createElement('option');option.value=figure.figure_id;option.textContent=figure.figure_id.replaceAll('_',' ');el('figure-select').append(option);}
+    for(const figure of data.figures){const option=document.createElement('option');option.value=figure.figure_id;option.textContent=figure.family==='G02'?'Cell quality':figure.family==='G08'?'UMAP · '+figure.figure_id.replaceAll('_',' '):figure.figure_id.replaceAll('_',' ');el('figure-select').append(option);}
     const preferred=data.figures.find(item=>/uncorrected|embedding|umap/.test(item.figure_id))||data.figures[0];el('figure-select').value=preferred?preferred.figure_id:'';
     if(!data.figures.length){el('figure-context').textContent=data.reason;el('figure-evidence').textContent='';}
     await figureChanged();renderVersions(data.revisions,id);
@@ -999,7 +1267,9 @@
   }
   function renderVersions(revisions,id){
     el('presentation-versions').replaceChildren();clearTimeout(revisionTimer);renderVersionNavigator();
-    for(const revision of figureRevisions()){
+    const currentRevisions=figureRevisions();
+    if(!currentRevisions.length){const empty=document.createElement('p');empty.className='muted';empty.textContent='No presentation versions yet.';el('presentation-versions').append(empty);}
+    for(const revision of currentRevisions){
       const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=revision.status.replaceAll('_',' ')+' · '+revision.id.slice(0,8);button.onclick=async()=>{selectedRevisionId=revision.id;renderVersionNavigator();await showRevision(id,revision.id);await rememberWorkspace();};el('presentation-versions').append(button);
       if(revision.cancellable){const cancel=document.createElement('button');cancel.type='button';cancel.className='secondary';cancel.textContent='Cancel presentation '+revision.id.slice(0,8);cancel.onclick=async()=>{try{await api('/api/jobs/'+id+'/figure-revisions/'+revision.id+'/cancel',{});if(id===selected)await loadFigureControls(id);}catch(error){if(id===selected)message('presentation-message',error.message,true);}};el('presentation-versions').append(cancel);}
     }
@@ -1010,6 +1280,7 @@
     imageURLs.push(url);const figure=document.createElement('figure'),img=document.createElement('img'),text=document.createElement('figcaption');img.src=url;img.alt=caption;text.textContent=caption;figure.append(img,text);el(target).append(figure);
   }
   async function showOriginal(){
+    clearInteractive();el('figure-mode').disabled=false;
     const id=selected,figure=currentFigure(),stamp=++figureGeneration;selectedRevisionId='';selectedRevisionRecord=null;hydrateDisplayOptions(figure&&figure.display_options);
     el('version-select').value='';el('presentation-preview').hidden=true;el('presentation-preview').replaceChildren();el('figures').hidden=false;el('figures').replaceChildren();
     el('compare-version').disabled=true;el('compare-version').checked=false;el('revision-archive').disabled=true;message('version-status','');
@@ -1019,8 +1290,10 @@
     renderVersionNavigator();inspectRecords();
     if(!path){const p=document.createElement('p');p.className='empty';p.textContent='No previewable PNG figure is available; inspect the recorded artifacts and diagnostics.';el('figures').append(p);return;}
     try{await presentationImage(id,'/api/jobs/'+id+'/artifact?name='+encodeURIComponent(path),'Original analysis · '+(figure?figure.figure_id:path),'figures',stamp);}catch(error){if(id===selected&&stamp===figureGeneration)message('version-status',error.message,true);}
+    if(id===selected&&stamp===figureGeneration)await showInteractive(stamp);
   }
   async function showRevision(id,revisionId){
+    clearInteractive();el('figure-mode').value='original';el('figure-mode').disabled=true;
     const stamp=++figureGeneration;
     try{
       const revision=await read('/api/jobs/'+id+'/figure-revisions/'+revisionId);if(id!==selected||stamp!==figureGeneration||!currentFigure()||revision.figure_id!==currentFigure().figure_id)return;
@@ -1041,13 +1314,29 @@
       const link=document.createElement('a');link.href=url;link.download=kind==='archive'?'presentation-evidence.zip':revision.figure_id+'-presentation.png';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);message('download-message','Verified presentation download prepared.');
     }catch(error){if(id===selected)message('download-message',error.message,true);}
   }
-  el('version-select').onchange=async()=>{selectedRevisionId=el('version-select').value;renderVersionNavigator();if(selectedRevisionId)await showRevision(selected,selectedRevisionId);else await showOriginal();await rememberWorkspace();};
+  el('version-select').onchange=()=>withViewTransition(async()=>{selectedRevisionId=el('version-select').value;renderVersionNavigator();if(selectedRevisionId)await showRevision(selected,selectedRevisionId);else await showOriginal();await rememberWorkspace();});
   function moveVersion(delta){const keys=['',...figureRevisions().map(item=>item.id)],position=keys.indexOf(selectedRevisionId),next=position+delta;if(next<0||next>=keys.length)return;el('version-select').value=keys[next];el('version-select').onchange();}
   el('version-prev').onclick=()=>moveVersion(-1);el('version-next').onclick=()=>moveVersion(1);
   el('compare-version').onchange=()=>{if(selectedRevisionId)showRevision(selected,selectedRevisionId);};
   el('revision-archive').onclick=()=>downloadPresentation('archive');
   el('figure-download').onclick=()=>{if(selectedRevisionRecord)return downloadPresentation('image');const figure=currentFigure(),fallback=resultsData&&resultsData.artifacts.find(item=>item.name.endsWith('.png'));const path=figure&&figure.image?figure.image.path:fallback&&fallback.name;if(path)return download(path);};
-  el('figure-select').onchange=async()=>{await figureChanged();await rememberWorkspace();};
+  async function showInteractive(stamp=figureGeneration){
+    if(!presentationModules||!window.ScientificFigure||el('figure-mode').value!=='interactive'){el('interactive-figure').hidden=true;el('figures').hidden=false;return;}
+    const record=currentFigure(),id=selected;if(!record||!record.plot_data){el('figure-mode').value='original';return;}
+    const key=id+':'+record.figure_id;if(interactiveFigure&&interactiveKey===key){el('interactive-figure').hidden=false;el('figures').hidden=true;interactiveFigure.redraw();return;}
+    if(interactivePending===key)return;interactivePending=key;const request=++interactiveRequest;message('version-status','Loading verified figure values…');
+    try{const payload=await read('/api/jobs/'+id+'/artifact?name='+encodeURIComponent(record.plot_data.path));
+      if(request!==interactiveRequest||id!==selected||stamp!==figureGeneration||el('figure-mode').value!=='interactive'||currentView!=='results')return;
+      el('interactive-figure').hidden=false;el('figures').hidden=true;
+      el('app').dataset.figureMode='interactive';interactiveFigure=window.ScientificFigure.mount(el('interactive-figure'),{record,payload,toolbarHost:el('figure-tools'),context:{label:datasetCaption()||'Source run '+id.slice(0,8),job_id:id,parent_root:figureState.parent_root},onSelection:selection=>{
+        if(!selection.display_only)return;if(investigationController){investigationMode=true;const source=state&&state.proposal&&state.proposal.external_input&&state.proposal.external_input.path||state&&state.source;if(source){if(!Array.from(el('investigation-dataset').options).some(option=>option.value===source)){const option=document.createElement('option');option.value=source;option.textContent=source.split('/').pop();el('investigation-dataset').append(option);}el('investigation-dataset').value=source;}investigationController.setSelection(selection);el('question').focus();return;}const ids=selection.observation_ids;
+        if(ids.length>120||JSON.stringify(ids).length>5000){message('version-status','Selection exceeds the question-draft limit. Export exact IDs with the figure controls, or choose at most 120 observations. No analysis was submitted.',true);return;}
+        draftQuestion({question:'Follow-up on source run '+id+'; figure '+selection.figure_id+'; panel '+selection.panel_id+'. Selected exact observation IDs: '+JSON.stringify(ids)+'. What can the existing evidence tell us about this selection, and what requires a separately validated analysis?',sourceRunId:id});
+      }});interactiveKey=key;message('version-status','');
+    }catch(error){if(request!==interactiveRequest)return;clearInteractive();el('figure-mode').value='original';el('figures').hidden=false;message('version-status','Interactive view unavailable: '+error.message+'. The retained image remains available.',true);}finally{if(request===interactiveRequest)interactivePending='';}
+  }
+  el('figure-mode').onchange=()=>{el('app').dataset.figureMode=el('figure-mode').value;return withViewTransition(()=>showInteractive());};
+  el('figure-select').onchange=()=>withViewTransition(async()=>{await figureChanged();await rememberWorkspace();});
   el('figure-zoom').onchange=()=>{el('figure-stage').dataset.scale=el('figure-zoom').value;rememberWorkspace();};
   el('presentation-form').onsubmit=async event=>{
     event.preventDefault();const figure=currentFigure();if(!figure||!selected)return;const id=selected;el('presentation-submit').disabled=true;
@@ -1057,7 +1346,7 @@
     if(el('figure-label').value)options.label_positions[el('figure-label').value]={x:Number(el('label-x').value),y:Number(el('label-y').value)};
     try{const result=await (await api('/api/jobs/'+id+'/figure-revisions',{figure_id:figure.figure_id,expected_parent_root:figureState.parent_root,display_options:options,author_label:el('presentation-author').value.trim()})).json();if(id!==selected)return;message('presentation-message',result.cached?'Retained presentation request reused.':'Presentation version queued; scientific analysis remains unchanged.');await loadFigureControls(id);}catch(error){message('presentation-message',error.message,true);}finally{if(id===selected)el('presentation-submit').disabled=!currentFigure();}
   };
-  el('archive').onclick=()=>download('archive');el('refresh').onclick=()=>refresh();el('connect').onclick=connect;
+  el('archive').onclick=()=>download('archive');el('refresh').onclick=()=>investigationMode&&investigationController?investigationController.refresh():refresh();el('connect').onclick=connect;
   if(token)connect();
 })();
 

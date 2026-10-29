@@ -1,17 +1,31 @@
-"""Opt-in serial LangGraph adapter; the harness retains all execution authority."""
+"""Required serial LangGraph controller; the harness retains execution authority."""
 import os
 import sqlite3
 import stat
 from contextlib import contextmanager
+from contextvars import ContextVar
 import fcntl
 
-from .workflow_state import WorkflowState, validate_workflow_state
+from .workflow_state import SERIAL_ROUTE, WorkflowState, digest, validate_workflow_state
+
+
+_active_node_dispatch = ContextVar("devbench_active_serial_node_dispatch", default=None)
+_active_graph_invocation = ContextVar("devbench_active_serial_graph_invocation", default=None)
+
+
+def _require_active_node_dispatch(controller, node, state):
+    active = _active_node_dispatch.get()
+    if (_active_graph_invocation.get() is not controller
+            or active is None or active[0] is not controller or active[1] != node
+            or active[2] != digest(state)):
+        raise PermissionError("Qualification dispatch requires the current serial graph node invocation")
+    return active[3]
 
 
 class SerialRNAWorkflow:
-    def __init__(self, actions, checkpoint_path, *, enabled=False):
+    def __init__(self, actions, checkpoint_path, *, enabled=True, stepwise=False):
         if enabled is not True:
-            raise ValueError("LangGraph workflow adapter is disabled")
+            raise ValueError("LangGraph is required; workflow graph bypass is not supported")
         if any(os.environ.get(key, "").lower() not in {"", "false", "0"} for key in ("LANGCHAIN_TRACING", "LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING")):
             raise ValueError("External tracing is not supported by this local workflow")
         from .method_executor import _path
@@ -31,19 +45,23 @@ class SerialRNAWorkflow:
         saver = SqliteSaver(self.connection, serde=JsonPlusSerializer(pickle_fallback=False,
             allowed_json_modules=None, allowed_msgpack_modules=None))
         builder = StateGraph(WorkflowState)
-        for node in ("audit", "question", "generate", "resolve", "design", "declare", "run", "verify", "recommend"):
+        for node in SERIAL_ROUTE:
+            if node in {"review", "execution_review"}:
+                continue
             builder.add_node(node, lambda state, selected=node: self._node(selected, state))
 
         def review(state):
+            self.actions.check_node_entry("review", state)
             self.actions.check(state)
             if self.actions.ledger.is_cancelled(state["workflow_id"]):
                 return {**state, "phase": "review", "status": "cancelled"}
             interrupt({"phase": "review", "session_id": state["session_id"], "planner_hash": state["expected_planner_hash"],
                        "instruction": "Review frozen trial drafts and inject exact caller-selected draft/branch references"})
             self.actions.check(state)
-            return {**state, "phase": "review", "status": "ready"}
+            return self.actions.perform("review", state)
 
         def execution_review(state):
+            self.actions.check_node_entry("execution_review", state)
             self.actions.check(state)
             if self.actions.ledger.is_cancelled(state["workflow_id"]):
                 return {**state, "phase": "execution_review", "status": "cancelled"}
@@ -52,12 +70,12 @@ class SerialRNAWorkflow:
                            "planner_hash": state["expected_planner_hash"], "trial_ids": state["trial_ids"],
                            "instruction": "Review declarations; runtime execution authority must be supplied separately"})
                 self.actions.check(state)
-            return {**state, "phase": "execution_review", "status": "ready"}
+            return self.actions.perform("execution_review", state)
 
         builder.add_node("review", review)
         builder.add_node("execution_review", execution_review)
         builder.add_edge(START, "audit")
-        sequence = ["audit", "question", "generate", "resolve", "design", "review", "declare", "execution_review", "run", "verify", "recommend"]
+        sequence = SERIAL_ROUTE
         for before, after in zip(sequence, sequence[1:]):
             if before == "run":
                 builder.add_conditional_edges(before, lambda state: END if state["status"] != "ready" else
@@ -67,15 +85,27 @@ class SerialRNAWorkflow:
                     ("run" if state["trial_ids"] else "verify"))
             else:
                 builder.add_conditional_edges(before, lambda state, following=after: following if state["status"] == "ready" else END)
-        builder.add_edge("recommend", END)
-        self.graph = builder.compile(checkpointer=saver)
+        builder.add_edge("conclusion_review", END)
+        self.graph = builder.compile(checkpointer=saver, interrupt_after=(
+            [node for node in SERIAL_ROUTE if node not in {"review", "execution_review"}]
+            if stepwise else None))
 
     def _node(self, node, state):
+        active = _active_node_dispatch.set((self, node, digest(state), object()))
         try:
+            if node == "run":
+                from .workflow_actions import _COLAB_FACTORY_ADMISSION
+                if getattr(self, "_qualification_factory_token", None) is _COLAB_FACTORY_ADMISSION:
+                    from .colab_workflow import ColabQualificationActions
+                    if type(self.actions) is ColabQualificationActions:
+                        with self.actions.graph_run_scope(self, state):
+                            return self.actions.perform(node, state)
             return self.actions.perform(node, state)
         except Exception as error:
             return validate_workflow_state({**state, "phase": node, "status": "failed",
                 "failure": {"kind": type(error).__name__, "message": str(error)[:500]}})
+        finally:
+            _active_node_dispatch.reset(active)
 
     @staticmethod
     def _config(workflow_id):
@@ -88,13 +118,22 @@ class SerialRNAWorkflow:
         from .langchain_tools import ensure_local_observability
         ensure_local_observability()
         state = validate_workflow_state(state)
+        if (state["phase"] != "audit" or state["status"] != "ready" or state["operation_refs"]
+                or state["trial_ids"] or state["trial_index"] or state["outcome_ref"] is not None or state["failure"] is not None):
+            raise ValueError("Start requires an unused initial audit cursor; resume existing workflows")
+        if self.actions.ledger.replay(state["workflow_id"]):
+            raise ValueError("Start requires an unused workflow; resume retained operations")
         config = self._config(state["workflow_id"])
         with self.invocation_lease(state["workflow_id"]):
             if self.graph.get_state(config).values:
                 raise ValueError("Workflow checkpoint already exists; resume instead of restarting")
-            return self.graph.invoke(state, config=config)
+            active = _active_graph_invocation.set(self)
+            try:
+                return self.graph.invoke(state, config=config)
+            finally:
+                _active_graph_invocation.reset(active)
 
-    def resume(self, workflow_id):
+    def resume(self, workflow_id, *, expected_nodes=None):
         from langgraph.types import Command
         from .langchain_tools import ensure_local_observability
         ensure_local_observability()
@@ -106,9 +145,15 @@ class SerialRNAWorkflow:
             state = validate_workflow_state(snapshot.values)
             if state["workflow_id"] != workflow_id:
                 raise ValueError("Checkpoint is bound to another workflow")
+            if expected_nodes is not None and (len(snapshot.next) != 1 or snapshot.next[0] not in expected_nodes):
+                raise ValueError("Requested workflow action differs from the next retained graph node")
             if not snapshot.next:
                 return self.actions.verify_terminal(state)
-            return self.graph.invoke(Command(resume="continue") if snapshot.interrupts else None, config=config)
+            active = _active_graph_invocation.set(self)
+            try:
+                return self.graph.invoke(Command(resume="continue") if snapshot.interrupts else None, config=config)
+            finally:
+                _active_graph_invocation.reset(active)
 
     def reconcile(self, workflow_id):
         """Continue only after deriving completed effects from actual harness evidence."""

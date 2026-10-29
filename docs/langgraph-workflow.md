@@ -1,17 +1,19 @@
-# Optional serial RNA workflow
+# Required serial RNA workflow
 
-The LangGraph adapter advances the existing scientific planner through data audit,
-question and requirement attribution, scientific candidates, capability resolution,
-trial design, explicit declaration, execution, evidence verification and synthesis.
+The required LangGraph controller advances the scientific planner through data
+audit, question attribution, discovery, candidate review, capability resolution,
+implementation checks, design review, declaration, execution, evidence verification
+and conclusion review.
 The planner and method service retain permissions, budgets, numerical execution,
 immutable artifacts and provenance. LangChain supplies only explicitly selected
 registered tool interfaces. Neither component replaces the native model selector.
 
 ## Installation and scope
 
-Install the optional `workflow` extra in a separate environment. The project lock
-and `requirements-langgraph.lock` pin LangGraph 1.2.12, LangChain Core 1.6.6 and
-SQLite checkpoints 3.1.1. The hash lock covers workflow dependencies; it is not a
+LangGraph 1.2.12, LangChain Core 1.6.6 and SQLite checkpoints 3.1.1 are pinned base
+project dependencies. The `workflow` extra remains a compatibility alias; it no
+longer enables an optional route. The project lock and `requirements-langgraph.lock`
+retain those versions. The hash lock covers workflow dependencies; it is not a
 complete numerical environment lock. Preserve a qualified numerical environment
 and record loaded module identities when installing or overlaying these packages.
 
@@ -20,6 +22,14 @@ For the current checkout, the isolated verification interpreter is
 modules and has its own workflow dependencies. Its WebSocket package is 16.1.1,
 required by the new SDK; the canonical environment retains 17.1. This is a new
 runtime qualification, not an assertion that the historical runtime is unchanged.
+The canonical `.venv` currently lacks LangGraph; declaring the dependency does not
+install it there. Sync the locked project before using that environment:
+
+```sh
+uv sync --project /Users/vajraang/Documents/ChatGPT/bio-agent-harness --locked --extra dev
+```
+
+The existing isolated verification environment can retain its qualified overlay:
 
 ```sh
 uv pip install --python /Users/vajraang/Documents/ChatGPT/bio-agent-harness/.venv-workflow/bin/python --require-hashes -r /Users/vajraang/Documents/ChatGPT/bio-agent-harness/requirements-langgraph.lock
@@ -51,6 +61,110 @@ planner continue to enforce their own contrast, rank, representation and biologi
 unit requirements. This does not add general single-cell, raw-read or remote HPC
 execution support.
 
+## Enforced route and node contracts
+
+For registered RNA plans, the supported high-level planner CLI, scientific workspace
+and RNA trial entrypoints use durable LangGraph checkpoints. Their single-action
+controller stops after the requested stage: discovery, reviews and implementation
+drafting are explicit actions, not extra model calls hidden inside generation.
+Read-only audit and question checks precede discovery. The trial generation path
+stops at execution review after the required scientific gates and caller's exact
+draft/branch selection. Generic non-RNA planning and low-level planner APIs remain
+trusted services; this routing is not a Python sandbox.
+
+Every serial node requires the exact predecessor phase, `ready` status, ordered
+completed prerequisite receipts, and current data/task/requirement/planner bindings.
+Output checks restrict cursor fields, status and permitted planner mutations before
+ledger completion. `run` advances exactly one declared trial; verification and
+recommendation require exact retained outcome references. A recommendation is
+provisional until `conclusion_review` completes.
+
+| Node | Required prerequisite | Retained output | Allowed next step |
+| --- | --- | --- | --- |
+| `audit` | Unused initial cursor and registered RNA artifacts | Completion receipt after rechecking input bindings | `question` |
+| `question` | Completed audit | Completion receipt after checking the objective | `discovery` |
+| `discovery` | Completed question check and configured runtime | Verified observations/acquisitions, or explicit supplied-only scope | `generate` |
+| `generate` | Completed discovery | Scientific candidates and selection evidence | `candidate_review` |
+| `candidate_review` | Completed generation; final reassessment in independent mode | Substantive suitability review of exact candidates | `resolve` |
+| `resolve` | Completed candidate review | Capability resolution | `implementation` |
+| `implementation` | Completed resolution and explicit drafting scope | Available/gap decision, or validated unreviewed draft | `design` |
+| `design` | Completed implementation checks | Frozen drafts, or no eligible implementation | `design_review` |
+| `design_review` | Completed design | Substantive review of the exact comparison design | `review` |
+| `review` | Completed design review and resumed pause | Durable orchestration-review receipt | `declare` |
+| `declare` | Completed review and exact caller-selected drafts/branches | Ordered immutable trial IDs, possibly empty | `execution_review` |
+| `execution_review` | Completed declaration; resumed pause when trials exist | Durable execution-review receipt | `run`, or `verify` for no trials |
+| `run` | Completed execution review or preceding run; matching runtime authority | One trial result and next trial index | Next `run`, or `verify` after all trials |
+| `verify` | All declared trials complete, or empty execution review | Evidence-assessment reference | `recommend` |
+| `recommend` | Completed verification | Provisional recommendation or abstention reference | `conclusion_review` |
+| `conclusion_review` | Completed recommendation | Substantive results/conclusions review and final outcome reference | Terminal |
+
+The table describes successful serial transitions. Failed, cancelled, uncertain or
+scientifically blocked states cannot advance along those edges. `review` and
+`execution_review` record orchestration continuation. They are separate from the
+substantive `candidate_review`, `design_review` and `conclusion_review` gates;
+none grants scientific approval or execution authority.
+
+Retained before/after planner hashes must link across completed operations. The
+scientific workspace may bridge only its ancillary base-revision and trial-reference
+metadata updates using immutable snapshots and a completed `workspace_context`
+receipt. Independent investigation mode separately verifies its special attachment,
+reassessment and preliminary-explanation receipts, including frozen policy, allowed
+field changes, captured model responses and settled usage where applicable. A changed
+phase label, matching hash string or self-reported model result is insufficient.
+
+These checks enforce execution order and retained evidence. They do not establish
+scientific optimality, independent scientific review or clinical validation.
+
+## Discovery, scientific reviews and implementation gaps
+
+Discovery consumes the audited data summary, objective and supplied sources before
+candidate generation. It retains bounded requests, raw provider responses, source
+identities, explicit acquisitions, failures and consumption. Crossref searches
+publisher-deposited paper metadata and available abstracts. The GitHub adapter
+searches public repository metadata within declared owner accounts; it does not
+authenticate author identity, clone code or verify algorithm correspondence. The
+documentation adapter matches URL/label metadata in a bounded declared official
+HTML/XML link index; it is not a full-text search, and official-host status remains
+a coordinator declaration. Acquired text is retained but not automatically marked
+as inspected or scientifically supportive. Empty, failed or unavailable searches
+remain visible and blocking.
+
+`supplied_only` is an explicit descriptive route: no external search took place.
+It cannot be presented as successful literature discovery or inferential
+qualification. Candidate-generation context receives the verified discovery
+observations without exposing installed method availability. Late retrieval after
+candidates are frozen is rejected by the planner. Use an explicit new planning
+cycle while preserving the original candidates and evidence; same-cycle
+late-source reassessment is not implemented by these entrypoints.
+
+Each substantive review requires a trusted `WorkflowScientificReviewAdapter`, an
+actual claim-packet builder and frozen evaluation policy. One dispatch obtains an
+advisory assessment and a `ClaimJudgment` in the actual raw response. The gate
+checks the exact stage material, retained sources, objective/numerical checks and
+policy outcome. It does not invent another reviewer vote or an adjudication.
+Missing packets, insufficient evidence and blocked judgments cannot be replaced by
+a successful-looking receipt. An explicitly permitted descriptive outcome retains
+its limited scope. Reviewer qualification and independence remain unverified.
+
+Unavailable implementations remain explicit scientific alternatives. Drafting needs
+separate runtime model permission, an exact justified request, OCI interface and
+environment lock. Source stays inert, custom and unreviewed. A new draft blocks
+reliance until matching retained OCI execution, independently recomputed numerical
+checks and source/implementation correspondence review are verified. The current
+arithmetic verifier supports the existing profile comparator; unsupported generated
+algorithms remain unvalidated. Neither drafting nor validation grants execution,
+trust promotion or registry promotion.
+
+`ScientificWorkflowRuntime` freezes service identities and policies, retains exact
+before/after snapshots and immutable evidence, and uses a completed-artifact index
+for recovery. Recovery never repeats a search, review or draft. An incomplete
+reservation remains uncertain rather than dispatching again.
+
+CLI/workspace configuration uses a fixed data-only loader and separately supplied
+network, review-model and implementation-model grants. JSON configuration carries
+no authority. Loading it is not evidence that discovery, review or numerical work
+has happened; the corresponding verified operation must exist.
+
 ## Using the adapter
 
 Create a planner session with `rna_input_contract` using registered immutable matrix
@@ -70,13 +184,16 @@ root = Path("/Users/vajraang/Documents/ChatGPT/bio-agent-harness/workflow-exampl
 root.mkdir(exist_ok=True)
 ledger = WorkflowOperationLedger(root / "operations.sqlite")
 actions = WorkflowActions(planner, ledger, actor="local-unverified",
-                          selector=selector, version_ids=method_version_ids)
+                          selector=selector, version_ids=method_version_ids,
+                          scientific_workflow=scientific_runtime)
 state = actions.create_state(session_id)
-with SerialRNAWorkflow(actions, root / "checkpoints.sqlite", enabled=True) as flow:
+with SerialRNAWorkflow(actions, root / "checkpoints.sqlite") as flow:
     result = flow.start(state)
 ```
 
-`enabled` defaults to false. Construction does not dispatch scientific work.
+LangGraph is required for this controller. Construction works without an opt-in
+flag; the legacy `enabled=True` argument is accepted, while `enabled=False` is
+rejected before opening a checkpoint. Construction does not dispatch scientific work.
 The first durable pause exposes frozen trial designs for review. Supply exact
 caller-selected `draft_id` and exploratory `branch_id` pairs through runtime
 `WorkflowActions.declarations`, then resume the same workflow. A second pause
@@ -89,7 +206,7 @@ independent scientific review or constitute analysis approval.
 ```python
 actions.declarations = [{"draft_id": selected_draft_id,
                          "branch_id": exploratory_branch_id}]
-with SerialRNAWorkflow(actions, root / "checkpoints.sqlite", enabled=True) as flow:
+with SerialRNAWorkflow(actions, root / "checkpoints.sqlite") as flow:
     declared = flow.resume(state["workflow_id"])
     # The second pause retains the declarations for inspection.
     actions.allow_data_execution = explicitly_authorized_data_execution
@@ -100,24 +217,28 @@ with SerialRNAWorkflow(actions, root / "checkpoints.sqlite", enabled=True) as fl
 Model execution likewise requires runtime authorization through the existing
 selector and planner. Recorded fixture decisions exercise workflow mechanics;
 they are not native model evaluation evidence. A recommendation retains the
-planner's evidence floor and may abstain. Approval remains a separate operation.
+planner's evidence floor and may abstain. It becomes a terminal workflow outcome
+only after substantive conclusion review. Approval remains a separate operation.
 
-Run the standalone offline example in a fresh output directory:
+The earlier standalone `scripts.run_serial_rna_workflow_demo` does not configure
+the newly required scientific runtime. It stops at discovery rather than proving
+completion of this expanded route. Explicit recording fixtures in engineering
+tests verify ordering, tamper rejection and replay; their accepted responses do not
+establish scientific merit, reviewer independence or runtime qualification.
 
-```sh
-cd /Users/vajraang/Documents/ChatGPT/bio-agent-harness
-/Users/vajraang/Documents/ChatGPT/bio-agent-harness/.venv-workflow/bin/python -m scripts.run_serial_rna_workflow_demo --workspace /Users/vajraang/Documents/ChatGPT/bio-agent-harness/workflow-example-offline --representation raw_counts
-```
+## Governed full execution and reruns
 
-Use the checkout as the working directory, or set `PYTHONPATH` to that absolute
-checkout path when invoking the module from another directory.
+Supported RNA CLI full execution and scientific workspace reruns use a separate
+durable `check → execute → verify` graph. Its entry check requires the completed
+parent route through `conclusion_review`, exact scientific bindings and retained
+receipts. Existing approval and runtime data-execution controls still apply.
+Post-conclusion approval, full-execution and analysis-proposal records are narrowly
+verified; they do not permit changing the frozen scientific comparison.
 
-The example imports immutable synthetic matrix and sample metadata artifacts,
-preserves repeated-donor uncertainty and reordered metadata, persists the planning
-pause, then abstains because its recorded alternatives have no available
-implementation. It makes no provider call or numerical fit. A normalized-expression
-fixture is also available. The separate integration tests exercise both review
-pauses and serial trial dispatch through the existing method service.
+The follow-up graph retains its execution reservation and verifies actual method
+provenance and requested run binding before completion or replay. An uncertain
+reservation prevents redispatch. Missing or ambiguous RNA plan anchors and analysis
+definitions are refused; generic non-RNA reruns keep their existing behavior.
 
 ## Recovery and cancellation
 
@@ -133,6 +254,16 @@ claimed result. A method receipt can survive a crash before the planner commits 
 trial: that receipt is retained, but an incomplete trial remains uncertain and is
 not dispatched again. Explicit planner recovery can record interruption. Only
 complete, verified planner commits are eligible for completion reconciliation.
+
+A crash after a completed ledger operation but before checkpoint advancement can
+replay that exact operation's retained result without repeating its side effects.
+Failed or uncertain effects cannot be treated as this successful replay path; they
+stop until explicit supported recovery establishes what actually committed.
+
+Historical source snapshots and reports remain frozen. Older checkpoints that lack
+the now-required predecessor or review receipts fail closed; they are not imported,
+silently restarted or credited with newly fabricated evidence. Preserve the original
+records and use an explicitly authorized new planning cycle where appropriate.
 
 Checkpoints are cursors, not scientific receipts or authenticated approvals. State
 contains bounded artifact references, hashes, phase, operation references and
@@ -174,8 +305,14 @@ and [checkpoint behavior](https://docs.langchain.com/oss/python/langgraph/checkp
 The additive `create_rna_workflow` factory defaults to the existing serial
 `single_agent` controller. Explicit `independent_investigations` mode requires
 the pinned graph runtime and an admitted audited backend; it has no graph bypass
-flag. The independent cursor nests the unchanged exact serial v1 cursor, retains
-review and execution pauses, and adds at most two ID-keyed child references for
-one frozen conditional fork. Full neutral packets and child results stay in the
+flag. The independent cursor nests the serial v1 cursor, retains the mandatory
+scientific nodes and orchestration pauses, and adds at most two ID-keyed child
+references for one frozen conditional fork. A pre-fit investigation follows
+generation, then child evidence and reassessment return to `candidate_review` before
+registry resolution. The final alternatives are therefore reviewed before installed
+capabilities are exposed. Its outer node contracts additionally check the frozen
+investigation stage, permitted predecessor, completed decision and barrier receipts,
+and child allocation/evidence before attachment or further parent work. Full neutral
+packets and child results stay in the
 existing immutable artifact store. See [the caller contract and retained evidence
 boundaries](rna-independent-investigations.md).

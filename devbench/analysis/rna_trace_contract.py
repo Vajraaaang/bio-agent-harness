@@ -7,11 +7,13 @@ import math
 import re
 import uuid
 
+from .workflow_state import SERIAL_ROUTE
+
 CONTEXT_FORMAT = "devbench.rna-trace-context/1"
 EVENT_FORMAT = "devbench.rna-trace-event/1"
 MAX_RECEIPT_BYTES = 4096
 ROLES = frozenset({"lead", "investigator", "coordinator", "numerical", "review"})
-PHASES = frozenset({"workflow", "invocation", "audit", "question", "generate", "resolve", "design", "declare", "run", "verify", "recommend", "investigate", "investigation_decision", "investigation_barrier", "attach", "reassess", "preliminary_explanation", "permission_preflight", "selection", "synthesis", "review", "execution_review", "method_scientific_planning", "method_capability_resolution", "method_trial_design", "method_recommendation", "method_candidates_reassessment", "method_preliminary_explanation"})
+PHASES = frozenset({"workflow", "invocation", "audit", "question", "generate", "resolve", "design", "declare", "run", "verify", "recommend", "investigate", "investigation_decision", "investigation_barrier", "attach", "reassess", "preliminary_explanation", "permission_preflight", "selection", "synthesis", "review", "execution_review", "method_scientific_planning", "method_capability_resolution", "method_trial_design", "method_recommendation", "method_candidates_reassessment", "method_preliminary_explanation"}) | frozenset(SERIAL_ROUTE)
 KINDS = frozenset({"reservation", "dispatch", "capture", "completion", "failure", "cancel", "pause", "reconcile", "verification", "gap"})
 SOURCE_STATUSES = frozenset({"reserved", "active", "completed", "failed", "cancelled", "uncertain", "incomplete", "abstained", "skipped", "blocked", "ready", "running", "review_required", "paused", "reconciliation_required", "open", "closed", "returned_unvalidated"})
 DISPATCH_STATUSES = frozenset({"not_dispatched", "prepared", "attempted", "unknown"})

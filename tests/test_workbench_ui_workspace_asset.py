@@ -84,7 +84,8 @@ def test_ids_form_association_and_contextual_panels():
     assert 'id="question" form="registration" required' in page
     assert 'id="tab-analyst" type="button" role="tab" aria-selected="true"' in page
     assert 'id="panel-analyst" class="inspector-panel analyst-panel" role="tabpanel"' in page
-    assert '--accent:#b15b3b' in page
+    theme=(ASSET.parent/'workbench-theme.css').read_text()
+    assert re.search(r'--accent:\s*#242424\b',theme,re.I)
 
 
 def test_completed_version_style_is_carried_to_next_request_and_original_restores():

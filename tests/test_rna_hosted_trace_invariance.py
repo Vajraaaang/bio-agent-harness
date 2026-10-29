@@ -61,11 +61,19 @@ def verification_selection(tmp_path):
     return runner, epoch, manifest, selection
 
 
-def test_verification_runner_selection_contains_exact_twelve_modules(verification_selection):
+def test_verification_runner_selection_contains_exact_seventeen_modules(verification_selection):
     runner, epoch, manifest, selection = verification_selection
-    assert len(runner.NEW_TESTS) == 12
+    additions = {
+        "tests/test_rna_hosted_preflight.py",
+        "tests/test_rna_publication_evidence.py",
+        "tests/test_rna_publication_comparison.py",
+        "tests/test_rna_scientific_trial_contract.py",
+        "tests/test_rna_scientific_trial.py",
+    }
+    assert additions <= runner.NEW_TESTS
+    assert len(runner.NEW_TESTS) == 17
     assert len(runner.HISTORICAL_TESTS) == 112
-    assert len(runner.validate_selection(epoch, manifest, selection)) == 19
+    assert len(runner.validate_selection(epoch, manifest, selection)) == 24
 
 
 @pytest.mark.parametrize("mutation", ["missing", "duplicate", "unapproved", "hash", "source", "scope"])
@@ -103,7 +111,7 @@ def test_verification_runner_broad_is_exact_retained_names(verification_selectio
     selection["tests"] = [{"path": name, "sha256": manifest["files"][name]} for name in sorted(names)]
     (epoch / "source-manifest.json").write_text(json.dumps(manifest))
     selection["source_manifest_sha256"] = runner.sha(epoch / "source-manifest.json")
-    assert len(runner.validate_selection(epoch, manifest, selection)) == 124
+    assert len(runner.validate_selection(epoch, manifest, selection)) == 129
 
 
 def test_verification_runner_source_drift_is_rejected(verification_selection):

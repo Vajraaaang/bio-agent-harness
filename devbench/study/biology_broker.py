@@ -74,6 +74,8 @@ def validate_biology_request(tool, arguments, public_task, *, enforced):
             raise ValueError("Method option changes the assigned column role: " + option)
     if "batch_cols" in options and list(options["batch_cols"]) != roles.get("batches", []):
         raise ValueError("Required batch terms cannot be removed or changed")
+    if "block_cols" in options and options["block_cols"] != roles.get("blocking", []):
+        raise ValueError("Required fixed-block terms cannot be removed or changed")
     context = public_task.get("context", {})
     design = context.get("design", {})
     levels = design.get("condition_levels", context.get("condition_labels", []))

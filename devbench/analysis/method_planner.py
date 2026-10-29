@@ -104,7 +104,7 @@ def _applicability(candidate, summary):
     for assumption in candidate["assumptions"]:
         value = _observed(summary, assumption["field"])
         expected, operator = assumption["expected"], assumption["operator"]
-        if value is _ABSENT:
+        if value is _ABSENT or (value is None and {"scrna_input", "rna_input_set"} & summary["observed"].keys()):
             status = "unknown"
         else:
             if operator == "present":
@@ -149,19 +149,96 @@ class ScientificMethodPlanner:
 
     def create(self, task, dataset_summary, *, actor, prior_state=None, data_classification="unclassified",
                limits=None, anchors=None, evaluation_purpose="method_selection", user_parameter_requirements=None,
-               rna_input_contract=None):
+               rna_input_contract=None, rna_execution_inputs_ref=None, rna_execution_workspace=None,
+               scientific_contract=None, rna_design=None):
+        if rna_execution_workspace is not None:
+            if rna_execution_inputs_ref is None:
+                raise ValueError("An explicit execution workspace requires a governed RNA bridge")
+            if not self.methods.root.is_relative_to(_path(rna_execution_workspace)):
+                raise ValueError("Artifact service lies outside the assigned execution-input workspace")
         dataset_summary = deepcopy(dataset_summary)
-        if rna_input_contract is None and "bulk_rna_input" in dataset_summary.get("observed", {}):
-            raise ValueError("Bulk RNA inspection requires an explicit registered artifact binding")
+        reserved = {"bulk_rna_input", "scrna_input", "rna_input_set", "fastq_input"} & set(dataset_summary.get("observed", {}))
+        if rna_input_contract is None and reserved:
+            raise ValueError("RNA inspection requires an explicit registered artifact binding")
         if rna_input_contract is not None:
-            from .rna_input_contract import inspect_registered_bulk_rna_input
-            inspection = inspect_registered_bulk_rna_input(self.methods, rna_input_contract, actor=actor)
+            if type(rna_input_contract) is dict and rna_input_contract.get("format") == "devbench.fastq-input-binding/1":
+                from .fastq_planner_binding import inspect_registered_fastq_input
+                if reserved - {"fastq_input"}:
+                    raise ValueError("FASTQ and matrix inspections cannot be mixed")
+                inspection = inspect_registered_fastq_input(self.methods, rna_input_contract)
+                inspection_key = "fastq_input"
+            elif type(rna_input_contract) is dict and rna_input_contract.get("format") == "devbench.rna-input-set-binding/1":
+                from .rna_input_set_contract import inspect_registered_input_set, header_only_facts
+                if reserved - {"rna_input_set"}:
+                    raise ValueError("An input set cannot be replaced by a singular RNA inspection")
+                inspection = inspect_registered_input_set(self.methods, rna_input_contract, actor=actor)
+                inspection_key = "rna_input_set"
+                facts = header_only_facts()
+                prior = {key: deepcopy(dataset_summary.get("observed", {})[key]) for key in facts
+                         if key in dataset_summary.get("observed", {})}
+                if prior:
+                    dataset_summary.setdefault("inferred", {})["unverified_supplied_observed_claims"] = {
+                        "origin": "supplied_dataset_summary", "values": prior,
+                        "status": "Not verified by source-set header admission"}
+                dataset_summary.setdefault("observed", {}).update(facts)
+            elif type(rna_input_contract) is dict and rna_input_contract.get("format") == "devbench.scrna-input-binding/1":
+                from .rna_scrna_input_contract import inspect_registered_scrna_input, header_only_facts
+                if reserved - {"scrna_input"}:
+                    raise ValueError("AnnData and bulk RNA bindings cannot be mixed in one input inspection")
+                inspection = inspect_registered_scrna_input(self.methods, rna_input_contract, actor=actor)
+                inspection_key = "scrna_input"
+                facts = header_only_facts()
+                prior = {key: deepcopy(dataset_summary.get("observed", {})[key]) for key in facts
+                         if key in dataset_summary.get("observed", {})}
+                if prior:
+                    dataset_summary.setdefault("inferred", {})["unverified_supplied_observed_claims"] = {
+                        "origin": "supplied_dataset_summary", "values": prior,
+                        "status": "Not verified by the AnnData header-only audit"}
+                dataset_summary.setdefault("observed", {}).update(facts)
+            else:
+                if reserved - {"bulk_rna_input"}:
+                    raise ValueError("AnnData and bulk RNA bindings cannot be mixed in one input inspection")
+                from .rna_input_contract import inspect_registered_bulk_rna_input
+                inspection = inspect_registered_bulk_rna_input(self.methods, rna_input_contract, actor=actor)
+                inspection_key = "bulk_rna_input"
             identities = {ref["artifact_id"] for ref in inspection["input_artifact_refs"].values()}
             if identities != set(dataset_summary.get("artifact_ids", [])):
-                raise ValueError("Bulk RNA binding must match the declared dataset artifacts exactly")
-            dataset_summary.setdefault("observed", {})["bulk_rna_input"] = inspection
+                raise ValueError("RNA binding must match the declared dataset artifacts exactly")
+            dataset_summary.setdefault("observed", {})[inspection_key] = inspection
+        execution_binding = None
+        if rna_execution_inputs_ref is not None:
+            if rna_input_contract is None:
+                raise ValueError("A governed execution bridge requires the exact original RNA binding")
+            from .rna_execution_inputs import load_execution_inputs
+            load_execution_inputs(rna_execution_inputs_ref, artifact_service=self.methods, dataset_binding=rna_input_contract,
+                workspace=rna_execution_workspace)
+            execution_binding = {"record_ref": deepcopy(rna_execution_inputs_ref), "dataset_binding": deepcopy(rna_input_contract)}
+            if rna_execution_workspace is not None:
+                execution_binding["workspace"] = str(_path(rna_execution_workspace))
+        if "fastq_input" in dataset_summary.get("observed", {}) and rna_design is None:
+            raise ValueError("FASTQ planning requires an explicit RNA design and durable audit")
+        if rna_design is not None:
+            from .rna_design_audit import validate_rna_design
+            rna_design = validate_rna_design(rna_design)
+            if not {"bulk_rna_input", "fastq_input"} & dataset_summary.get("observed", {}).keys():
+                raise ValueError("An RNA design declaration requires a registered bulk or FASTQ input")
         context = scientific_context(task, dataset_summary, prior_state)
         metadata = validate_planning_metadata(evaluation_purpose, user_parameter_requirements)
+        companion = None
+        if scientific_contract is not None:
+            if "rna_input_set" in context["dataset_summary"].get("observed", {}):
+                raise ValueError("A singular assay companion cannot silently describe a multi-source input set")
+            from .rna_scientific_contract import validate_scientific_contract
+            companion = validate_scientific_contract(scientific_contract, methods=self.methods,
+                artifact_ids=context["dataset_summary"].get("artifact_ids", []), task=context["task"],
+                user_parameter_requirements=metadata["user_parameter_requirements"],
+                rna_input_inspection=context["dataset_summary"].get("observed", {}).get("bulk_rna_input"))
+            if "scrna_input" in context["dataset_summary"].get("observed", {}):
+                from .rna_scrna_input_contract import match_scrna_scientific_contract
+                match_scrna_scientific_contract(companion, context["dataset_summary"]["observed"]["scrna_input"])
+        if rna_design is not None:
+            from .rna_design_audit import match_scientific_design
+            match_scientific_design(rna_design, companion)
         if data_classification not in {"synthetic", "public", "private_clinical", "private", "unclassified"}:
             raise ValueError("Declare a supported data classification")
         for identity in context["dataset_summary"].get("artifact_ids", []):
@@ -175,6 +252,13 @@ class ScientificMethodPlanner:
                   "candidates": [], "experiments": [], "results": [], "recommendation": _empty_recommendation(),
                   "selection_history": [], "selection_in_progress": None, "approvals": {}, "analysis_proposal_id": None,
                   "created_by": _label(actor), "created_at": _now()}
+        if rna_design is not None:
+            record.update(rna_design=rna_design, rna_design_sha256=_digest(rna_design))
+        if execution_binding is not None:
+            record["rna_execution_inputs"] = execution_binding
+        if companion is not None:
+            record["scientific_contract"] = companion
+            record["scientific_contract_sha256"] = _digest(companion)
         if anchors is not None:
             if not isinstance(anchors, dict) or set(anchors) != {"project_id", "study_id", "dataset_versions", "analysis_version"}:
                 raise ValueError("Use exact project, study, dataset and analysis anchors")
@@ -198,7 +282,128 @@ class ScientificMethodPlanner:
         return record
 
     def get(self, session_id):
-        return self.methods.get("method_plan", session_id)
+        state = self.methods.get("method_plan", session_id)
+        from .rna_design_audit import retained_rna_design
+        retained_rna_design(state)
+        if "scientific_contract" in state:
+            from .rna_scientific_contract import retained_scientific_contract
+            retained_scientific_contract(state, self.methods)
+        return state
+
+    def export_scientific_contract(self, session_id):
+        """Separate optional companion export; the legacy six-field export stays fixed."""
+        from .rna_scientific_contract import retained_scientific_contract
+        state = self.get(session_id)
+        companion = retained_scientific_contract(state, self.methods)
+        if companion is None:
+            return None
+        return {"record_format": "devbench.rna-scientific-contract-export/1", "session_id": session_id,
+                "scientific_contract": companion, "sha256": state["scientific_contract_sha256"]}
+
+    def _governed_execution_inputs(self, state, *, inputs=None, method_version_id=None, parameters=None, subset_spec=None, workspace=None):
+        """Revalidate exact /2 lineage; scientific preconditions keep original IDs."""
+        binding = state.get("rna_execution_inputs")
+        if binding is None:
+            return None
+        if workspace is not None:
+            workspace = _path(workspace)
+            if not self.methods.root.is_relative_to(workspace):
+                raise ValueError("Artifact service lies outside the current caller workspace")
+            if binding.get("workspace") is not None and binding["workspace"] != str(workspace):
+                raise ValueError("Retained execution bridge workspace differs from the current caller workspace")
+        if "fastq_input" in state["context"]["dataset_summary"].get("observed", {}):
+            from .fastq_planner_binding import require_fastq_execution
+            return require_fastq_execution(state, self.methods, inputs=inputs, method_version_id=method_version_id,
+                parameters=parameters, subset_spec=subset_spec)
+        from .rna_execution_inputs import load_execution_inputs, validate_execution_method_binding
+        record = load_execution_inputs(binding["record_ref"], artifact_service=self.methods, dataset_binding=binding["dataset_binding"],
+            workspace=workspace if workspace is not None else binding.get("workspace"))
+        original_ids = {ref["artifact_id"] for ref in record["original_refs"].values()}
+        if original_ids != set(state["context"]["dataset_summary"].get("artifact_ids", [])):
+            raise ValueError("Governed execution bridge differs from the original scientific dataset")
+        if inputs is not None:
+            if subset_spec.get("kind") != "full_dataset":
+                raise ValueError("Governed execution bridge requires the exact full-dataset snapshot")
+            expected = {port: ref["artifact_id"] for port, ref in record["execution_refs"].items()}
+            if inputs != expected:
+                raise ValueError("Trial execution ports or artifacts differ from the sealed bridge")
+            validate_execution_method_binding(record, method_version_id, parameters, artifact_service=self.methods)
+        return record
+
+    @staticmethod
+    def _original_rna_binding(state):
+        fastq = state["context"]["dataset_summary"].get("observed", {}).get("fastq_input")
+        if fastq is not None:
+            return {"format": "devbench.fastq-input-binding/1",
+                "manifest_artifact_id": fastq["input_artifact_refs"]["manifest"]["artifact_id"]}
+        inspection = state["context"]["dataset_summary"].get("observed", {}).get("bulk_rna_input")
+        if inspection is None:
+            raise ValueError("Late execution inputs require the original registered bulk RNA binding")
+        refs = inspection["input_artifact_refs"]
+        declarations = {key: deepcopy(inspection[key]) for key in
+                        ("format", "representation", "axes", "provenance", "biological_independence")}
+        if "metadata_roles" in inspection:
+            declarations["metadata_roles"] = deepcopy(inspection["metadata_roles"])
+        return {"format": "devbench.bulk-rna-binding/1", "matrix_artifact_id": refs["matrix"]["artifact_id"],
+                "metadata_artifact_id": refs["metadata"]["artifact_id"], "declarations": declarations}
+
+    def prepare_execution_inputs(self, session_id, method_ports, *, output, allow_data_execution=False):
+        """Serialize a selected method's inputs; never fit or mutate the plan."""
+        if allow_data_execution is not True:
+            raise PermissionError("Input preparation requires explicit data-execution authorization")
+        if type(method_ports) is not dict:
+            raise ValueError("Input preparation requires explicit method-port declarations")
+        output = _path(output)
+        if not output.is_relative_to(self.methods.root.parent):
+            raise ValueError("Prepared inputs must stay inside the planner workspace")
+        state = self.get(session_id)
+        if state.get("rna_design") is None:
+            raise ValueError("Input preparation requires an explicit audited rna_design")
+        from .rna_design_audit import require_rna_design_audit, require_rna_design_execution
+        require_rna_design_audit(state, self.methods)
+        if (state.get("rna_execution_inputs") is not None or state.get("trial_designs") or state["experiments"]
+                or state["results"] or state["selection_in_progress"] or state["recommendation"]["choice"] is not None):
+            raise ValueError("Execution inputs or trial design are already frozen")
+        if not any(row.get("method_version_id") == method_ports.get("method_version_id")
+                   and row.get("method_version_id") is not None and row.get("applicability") == "eligible"
+                   for row in state.get("candidates", [])):
+            raise ValueError("Resolve an eligible method before preparing its execution inputs")
+        declaration = state["rna_design"]
+        if (_digest(method_ports.get("objective")) != _digest(declaration["objective"])
+                or _digest(method_ports.get("design")) != _digest(declaration["design"])):
+            raise ValueError("Execution ports must preserve the exact audited objective and design")
+        if "fastq_input" in state["context"]["dataset_summary"].get("observed", {}):
+            from .fastq_planner_binding import prepare_fastq_execution
+            return prepare_fastq_execution(state, self.methods, method_ports, output)
+        from .rna_execution_inputs import prepare_execution_inputs
+        result = prepare_execution_inputs(self._original_rna_binding(state), method_ports,
+            artifact_service=self.methods, output=output)
+        prospective = {**state, "rna_execution_inputs": {"record_ref": result,
+            "dataset_binding": self._original_rna_binding(state)}}
+        require_rna_design_execution(prospective, self.methods)
+        if _digest(self.get(session_id)) != _digest(state):
+            raise ValueError("The plan changed during input preparation; retained transport was not attached")
+        return result
+
+    def _late_execution_binding(self, state, reference, workspace):
+        """Validate prospective transport without publishing a partial plan."""
+        if reference is None and workspace is None:
+            return None
+        if reference is None or workspace is None:
+            raise ValueError("Late execution inputs require both a sealed reference and an explicit absolute workspace")
+        if (state.get("rna_execution_inputs") is not None or state.get("trial_designs")
+                or state["experiments"] or state["results"]):
+            raise ValueError("Execution inputs are already bound or trial design is frozen")
+        if state.get("rna_design") is None:
+            raise ValueError("Late execution inputs require an explicit audited rna_design")
+        from .rna_design_audit import require_rna_design_audit
+        require_rna_design_audit(state, self.methods)
+        workspace = _path(workspace)
+        binding = {"record_ref": deepcopy(reference), "workspace": str(workspace),
+                   "dataset_binding": self._original_rna_binding(state)}
+        prospective = {**state, "rna_execution_inputs": binding}
+        self._governed_execution_inputs(prospective, workspace=workspace)
+        return binding
 
     @plan_operation
     def attach_model_campaign(self, session_id, ledger, campaign_id, backend, *, expected_plan_hash, actor):
@@ -210,11 +415,16 @@ class ScientificMethodPlanner:
             raise ValueError("Attach the model campaign before the first parent selection; history cannot be reset")
         from .workflow_operations import WorkflowOperationLedger, _limits
         from .rna_investigation_backend import AuditedInvestigationBackend
-        if not isinstance(ledger, WorkflowOperationLedger) or not isinstance(backend, AuditedInvestigationBackend):
+        from .rna_mediated_backend import MediatedInvestigationBackend
+        from .codex_signedin import SignedInCodexInvestigationBackend
+        if not isinstance(ledger, WorkflowOperationLedger) or (not isinstance(backend, (AuditedInvestigationBackend, MediatedInvestigationBackend))
+                and type(backend) is not SignedInCodexInvestigationBackend):
             raise TypeError("Use the existing ledger and a trusted protected investigation backend")
         if ledger.readonly or backend.methods.root != self.methods.root:
             raise ValueError("Campaign runtime requires the bound writable ledger and protected method store")
         campaign = ledger.get_campaign(campaign_id)
+        if campaign["policy"]["kind"] == "generation_jobs" and type(backend) is not SignedInCodexInvestigationBackend:
+            raise TypeError("Generation jobs require the exact registered signed-in backend")
         capability = backend.require_admission(campaign["policy"]["kind"])
         identity = campaign["identity"]
         if (campaign["session_id"] != session_id or campaign["status"] != "open"
@@ -322,6 +532,59 @@ class ScientificMethodPlanner:
         """Retain shared bounded evidence and return a detached observed overlay."""
         inspected = deepcopy(summary)
         identities = sorted(set(artifact_ids))
+        if "fastq_input" in summary.get("observed", {}):
+            from .fastq_planner_binding import load_fastq_manifest
+            fastq = summary["observed"]["fastq_input"]
+            load_fastq_manifest(self.methods, fastq)
+            if set(identities) != {ref["artifact_id"] for ref in fastq["input_artifact_refs"].values()}:
+                raise ValueError("FASTQ prerequisite inspection requires the original manifest")
+            record = {"origin": "devbench.fastq-input/1", "inspection_kind": "fastq_input",
+                "input_artifact_ids": identities, "observed": {}, "requested_fields": sorted(requested),
+                "failures": [], "retention": fastq["retention"]}
+            identity = _digest(record)
+            with self.methods._db() as db:
+                if db.execute("SELECT 1 FROM records WHERE kind='method_prerequisite_inspection' AND id=?", (identity,)).fetchone() is None:
+                    self.methods._put(db, "method_prerequisite_inspection", identity, record)
+                self.methods._audit(db, actor, "fastq_prerequisites_inspected", {"inspection_id": identity})
+            return inspected, identity, record
+        if "rna_input_set" in summary.get("observed", {}):
+            from .rna_input_set_contract import verify_input_set_inspection, header_only_facts
+            actual = verify_input_set_inspection(self.methods, summary["observed"]["rna_input_set"])
+            if set(identities) != {ref["artifact_id"] for ref in actual["input_artifact_refs"].values()}:
+                raise ValueError("RNA input-set inspection must bind every selected original artifact exactly")
+            facts = header_only_facts()
+            inspected["observed"].update(facts)
+            record = {"origin": "devbench.rna-input-set-inspection/1", "inspection_kind": "rna_input_set",
+                "input_artifact_ids": identities, "input_set_sha256": actual["input_set_sha256"],
+                "observed": facts, "requested_fields": sorted(requested), "failures": [],
+                "expression_values_read": False, "observation_ids_read": False,
+                "interpretation": "Original source/header integrity only; no joint matrix or cross-file scientific compatibility is established."}
+            identity = _digest(record)
+            with self.methods._db() as db:
+                if db.execute("SELECT 1 FROM records WHERE kind='method_prerequisite_inspection' AND id=?", (identity,)).fetchone() is None:
+                    self.methods._put(db, "method_prerequisite_inspection", identity, record)
+                self.methods._audit(db, actor, "rna_input_set_prerequisites_inspected", {"inspection_id": identity})
+            return inspected, identity, record
+        if "scrna_input" in summary.get("observed", {}):
+            from .rna_scrna_input_contract import verify_scrna_inspection, header_only_facts
+            actual = verify_scrna_inspection(self.methods, summary["observed"]["scrna_input"])
+            if set(identities) != {ref["artifact_id"] for ref in actual["input_artifact_refs"].values()}:
+                raise ValueError("AnnData RNA binding must match the exact selected dataset artifacts")
+            # Header admission cannot establish numeric/identity/design facts or
+            # turn caller declarations into independently observed prerequisites.
+            facts = header_only_facts()
+            inspected["observed"].update(facts)
+            record = {"origin": "devbench.scrna-inspection/1", "inspection_kind": "scrna_input",
+                "input_artifact_ids": identities, "observed": facts,
+                "requested_fields": sorted(requested), "failures": [],
+                "expression_values_read": False, "observation_ids_read": False,
+                "interpretation": "Registered AnnData byte/header integrity only; scientific prerequisites remain unassessed."}
+            identity = _digest(record)
+            with self.methods._db() as db:
+                if db.execute("SELECT 1 FROM records WHERE kind='method_prerequisite_inspection' AND id=?", (identity,)).fetchone() is None:
+                    self.methods._put(db, "method_prerequisite_inspection", identity, record)
+                self.methods._audit(db, actor, "scrna_header_prerequisites_inspected", {"inspection_id": identity})
+            return inspected, identity, record
         if "bulk_rna_input" in summary.get("observed", {}):
             # Bulk matrices have gene/sample axes, not observation/QC rows.
             # Recheck registered bytes; never reuse the observation adapter.
@@ -463,11 +726,23 @@ class ScientificMethodPlanner:
         return updated
 
     def _select(self, state, selector, context, *, actor, allow_model_execution):
+        from .rna_design_audit import require_rna_design_audit
+        design_audit = require_rna_design_audit(state, self.methods)
+        if design_audit is not None:
+            context = {**context, "rna_design": deepcopy(state["rna_design"]), "rna_design_audit": design_audit}
         context = {**context, **validate_planning_metadata(state.get("evaluation_purpose", "method_selection"),
                                                           state.get("user_parameter_requirements", [])),
                    "parameter_requirement_assurance": "caller-declared; not authenticated human authorship",
                    "planning_metadata_recorded": "evaluation_purpose" in state and "user_parameter_requirements" in state}
+        if "scientific_contract" in state:
+            from .rna_scientific_contract import retained_scientific_contract, scientific_projection
+            context["scientific_contract"] = scientific_projection(retained_scientific_contract(state, self.methods))
         context["action_prerequisite_policy"] = deepcopy(ACTION_PREREQUISITE_POLICY)
+        from .rna_mediated_backend import MediatedActionSelector, MediatedInvestigationBackend
+        from .codex_signedin import SignedInCodexActionSelector, SignedInCodexInvestigationBackend
+        from .rna_scientific_trial import GroundedSelector
+        if type(selector) is GroundedSelector and type(selector.selector) in {MediatedActionSelector, SignedInCodexActionSelector}:
+            context = selector.prepare_context(context)
         if state.get("investigation_evidence"):
             context["investigation_evidence"] = self._investigation_projection(state)
         config = selector_configuration(selector)
@@ -504,7 +779,7 @@ class ScientificMethodPlanner:
                 {**limits, "session_timeout_seconds": timeout}))
             if (len(canonical_json(context)) > allocation["context_bytes"]
                     or allocation["context_bytes"] > limits["max_context_bytes"]
-                    or allocation["memory_mb"] > limits["memory_mb"] or allocation["seconds"] > timeout):
+                    or allocation.get("memory_mb", limits["memory_mb"]) > limits["memory_mb"] or allocation["seconds"] > timeout):
                 raise ValueError("Parent call allocation exceeds its existing AgentLimits")
             timeout = allocation["seconds"]
             purpose = ("parent_reconciliation" if context["decision_kind"] in
@@ -535,24 +810,41 @@ class ScientificMethodPlanner:
         completed = deepcopy(reserved)
         capture_settled = False
         trace_reference = None
+        def observe_mediated_settlement(capture_ref=None):
+            if type(backend) is not MediatedInvestigationBackend:
+                return
+            from .rna_mediated_observability import settle_mediated_observation
+            settle_mediated_observation(backend, reservation, trace_reference, capture_ref=capture_ref)
+            if getattr(backend, "trace_observer", None) is not None:
+                backend.trace_observer.complete_invocation(trace_reference, reservation=reservation,
+                    status=ledger.get_model_reservation(reservation)["status"],
+                    capture_verified=capture_ref is not None, db_timeout=0)
         def settle_capture():
             nonlocal capture_settled
             capture_ref, receipt = backend.verify_selection_capture(directory,
                 bindings=bindings, reservation=reservation)
-            if getattr(backend, "trace_observer", None) is not None:
+            job_capture = receipt.get("format") == "devbench.codex-job-capture/1"
+            if type(backend) is SignedInCodexInvestigationBackend:
+                from .codex_job_trace import complete_job_trace
+                complete_job_trace(backend.trace_observer, trace_reference, reservation=reservation,
+                    capture=receipt, status=receipt["status"])
+            elif type(backend) is not MediatedInvestigationBackend and getattr(backend, "trace_observer", None) is not None:
                 backend.trace_observer.complete_invocation(trace_reference,reservation=reservation,
                     status=receipt["status"],capture_verified=True)
             completed["selection_history"][-1].update(model_capture_ref=capture_ref,
-                model_usage=deepcopy(receipt["usage"]), native_session_ids=receipt["native_session_ids"])
+                native_session_ids=receipt["native_session_ids"])
+            if "usage" in receipt:
+                completed["selection_history"][-1]["model_usage"] = deepcopy(receipt["usage"])
             ledger.settle_model_call(reservation, capture=capture_ref, verify_capture=backend.verify_capture)
             capture_settled = True
+            observe_mediated_settlement(capture_ref)
             from .rna_investigations import retain_investigation_json
             usage_ref = retain_investigation_json(self.methods,
-                {"format": "devbench.rna-investigation-usage/1", "capture_ref": capture_ref,
+                {"format": "devbench.rna-generation-job-receipt/1" if job_capture else "devbench.rna-investigation-usage/1", "capture_ref": capture_ref,
                  "receipt": backend.verify_capture(capture_ref, reservation)}, actor=actor,
-                artifact_type="rna_investigation_usage", max_bytes=24_000)
-            completed["selection_history"][-1]["model_usage_ref"] = usage_ref
-            if receipt["usage"]["normalized_total_tokens"] is None:
+                artifact_type="json" if job_capture else "rna_investigation_usage", max_bytes=24_000)
+            completed["selection_history"][-1]["model_job_receipt_ref" if job_capture else "model_usage_ref"] = usage_ref
+            if not job_capture and receipt["usage"]["normalized_total_tokens"] is None:
                 raise ValueError("Unresolved parent model usage blocks further calls")
             return receipt
         try:
@@ -564,18 +856,27 @@ class ScientificMethodPlanner:
             transport_limits = {}
             if reservation is not None:
                 from .episode_codex import CodexActionSelector
-                if isinstance(selector, CodexActionSelector):
+                underlying = selector.selector if type(selector) is GroundedSelector else selector
+                if isinstance(selector, CodexActionSelector) or type(underlying) in {MediatedActionSelector, SignedInCodexActionSelector}:
                     transport_limits["max_context_bytes"] = reservation.limits["context_bytes"]
                     transport_limits["protected_model_gate"] = backend.model_dispatch_gate(reservation)
                     if getattr(backend, "trace_observer", None) is not None:
-                        reference = backend.trace_observer.prepare_invocation(state["session_id"], bindings,
-                            reservation, role="review" if context["decision_kind"] == "scientific_review" else "lead")
+                        workflow_id = (campaign["identity"]["trial_id"]
+                            if type(backend) in {MediatedInvestigationBackend, SignedInCodexInvestigationBackend}
+                            else state["session_id"])
+                        if type(backend) is SignedInCodexInvestigationBackend:
+                            from .codex_job_trace import prepare_job_trace
+                            reference = prepare_job_trace(backend.trace_observer, workflow_id, bindings,
+                                reservation, role="lead")
+                        else:
+                            reference = backend.trace_observer.prepare_invocation(workflow_id, bindings,
+                                reservation, role="review" if context["decision_kind"] == "scientific_review" else "lead")
                         if reference is not None:
                             trace_reference = reference
                             transport_limits["trace_sidecar"] = reference
             answer = selector.select(deepcopy(context), directory,
                 timeout_seconds=timeout,
-                memory_mb=reservation.limits["memory_mb"] if reservation is not None else limits["memory_mb"],
+                memory_mb=reservation.limits.get("memory_mb") if reservation is not None else limits["memory_mb"],
                 allow_model_execution=allow_model_execution, **transport_limits)
             if not isinstance(answer, Selection):
                 raise ValueError("Planner selectors must return a Selection with actual evidence")
@@ -583,7 +884,9 @@ class ScientificMethodPlanner:
             completed["selection_history"][-1].update(status="returned_unvalidated", response=answer.action, evidence=answer.evidence)
             if reservation is not None:
                 receipt = settle_capture()
-                if receipt.get("response_digest") != _digest(answer.action) or receipt["status"] != "completed":
+                job_capture = receipt.get("format") == "devbench.codex-job-capture/1"
+                response_digest = receipt.get("response_sha256") if job_capture else receipt.get("response_digest")
+                if response_digest != _digest(answer.action) or receipt["status"] != "completed":
                     raise ValueError("Parent selection response differs from actual protected capture")
                 # A late completion remains charged and inspectable, but cannot
                 # authorize a new scientific decision after campaign invalidation.
@@ -606,6 +909,11 @@ class ScientificMethodPlanner:
                     completed["selection_history"][-1]["capture_error"] = f"{type(capture_error).__name__}: {capture_error}"[:1000]
                     if ledger.get_model_reservation(reservation)["status"] in {"reserved", "active"}:
                         ledger.mark_model_call_uncertain(reservation, error_type=type(capture_error).__name__)
+                    if type(backend) is SignedInCodexInvestigationBackend:
+                        from .codex_job_trace import complete_job_trace
+                        complete_job_trace(backend.trace_observer, trace_reference, reservation=reservation,
+                            capture=None, status="uncertain")
+                    observe_mediated_settlement()
             raise
         finally:
             completed["selection_in_progress"] = None
@@ -619,6 +927,8 @@ class ScientificMethodPlanner:
         state = self.get(session_id)
         if state["experiments"] or state["selection_in_progress"]:
             raise ValueError("Source evidence is frozen during selection and after trial declaration")
+        if state["scientific_candidates"] is not None:
+            raise ValueError("Source evidence is frozen with scientific candidates; late evidence requires a new planning cycle")
         if allow_network is not True:
             raise PermissionError("Source retrieval requires explicit network authorization")
         if len(state["sources"]) >= 3:
@@ -634,13 +944,30 @@ class ScientificMethodPlanner:
         return updated["sources"][-1]
 
     @plan_operation
-    def generate_candidates(self, session_id, selector, *, actor, allow_model_execution=False):
+    def generate_candidates(self, session_id, selector, *, actor, allow_model_execution=False, discovery_context=None):
         state = self.get(session_id)
         if state["scientific_candidates"] is not None:
             raise ValueError("Scientific candidates are frozen; start a new plan to revise them")
         # No registry read occurs in this method. Live selectors use fresh,
         # tool-less actors with the method workspace in protected private roots.
         context = {"decision_kind": "method_scientific_planning", **deepcopy(state["context"]), "sources": state["sources"]}
+        if discovery_context is not None:
+            from .workflow_discovery import load_discovery
+            discovered = load_discovery(self, discovery_context, session_id=session_id)
+            if discovered["status"] not in {"completed", "descriptive"}:
+                raise ValueError("Unresolved discovery evidence cannot authorize scientific generation")
+            if discovered["after_planner_hash"] != _digest(state):
+                raise ValueError("Discovery evidence does not bind the current scientific planning baseline")
+            context["discovery_evidence"] = {"record_ref": deepcopy(discovery_context["record_ref"]),
+                "query": discovered["request"]["query"], "provider": deepcopy(discovered["provider"]),
+                "sources": [deepcopy(source) for source in discovered["sources"]
+                            if source["kind"] != "author_repository"], "status": discovered["status"],
+                "search_performed": discovered["request"].get("mode") != "supplied_only",
+                "scope": discovered["scope"],
+                "limitations": ["Provider observations are distinct from inspected full text and verified scientific support.",
+                                "No implementation registry or availability information is supplied."]}
+            from .method_planner_contract import _reject_capabilities
+            _reject_capabilities(context["discovery_evidence"])
         summary = state["context"]["dataset_summary"]
         inspected, identity, record = self._observation_inspection(summary, summary.get("artifact_ids", []),
             set(ACTION_PREREQUISITE_POLICIES["retain"]), actor=actor, require_roles=True)
@@ -688,7 +1015,8 @@ class ScientificMethodPlanner:
         return candidates
 
     @plan_operation
-    def resolve_capabilities(self, session_id, selector, version_ids, *, actor, allow_model_execution=False):
+    def resolve_capabilities(self, session_id, selector, version_ids, *, actor, allow_model_execution=False,
+                             discovery_context=None):
         state = self.get(session_id)
         if state["scientific_candidates"] is None:
             raise ValueError("Scientific generation must precede capability resolution")
@@ -702,6 +1030,15 @@ class ScientificMethodPlanner:
         registry = {identity: self.methods.method(identity)["contract"] for identity in version_ids}
         context = {"decision_kind": "method_capability_resolution", **state["context"],
                    "candidates": state["scientific_candidates"], "registry": registry, "sources": state["sources"]}
+        if discovery_context is not None:
+            from .workflow_discovery import load_discovery
+            discovered = load_discovery(self, discovery_context, session_id=session_id)
+            if discovered["status"] not in {"completed", "descriptive"}:
+                raise ValueError("Unresolved discovery cannot become verified implementation availability")
+            context["implementation_discovery"] = {"record_ref": deepcopy(discovery_context["record_ref"]),
+                "sources": [deepcopy(source) for source in discovered["sources"]
+                            if source["kind"] == "author_repository"],
+                "scope": "Unverified external implementation leads; no repository inspection, correspondence or numerical validation is established."}
         answer, state = self._select(state, selector, context, actor=actor, allow_model_execution=allow_model_execution)
         bindings = validate_resolution(answer)["bindings"]
         names = [row["name"] for row in state["scientific_candidates"]]
@@ -737,7 +1074,8 @@ class ScientificMethodPlanner:
         return candidates
 
     @plan_operation
-    def design_trials(self, session_id, selector, *, actor, allow_model_execution=False):
+    def design_trials(self, session_id, selector, *, actor, allow_model_execution=False,
+                      execution_inputs_ref=None, execution_workspace=None):
         """Ask for trial specifications; declaration and execution remain separate."""
         from .method_authoring_contract import validate_trial_design
         state = self.get(session_id)
@@ -746,13 +1084,21 @@ class ScientificMethodPlanner:
         if not state["candidates"] or state["recommendation"]["choice"] is not None:
             raise ValueError("Resolve candidates before proposing trials, and freeze designs before recommendation")
         self._verified_results(state)
-        descriptors = {identity: self.methods.get("artifact", identity)
-                       for identity in state["context"]["dataset_summary"].get("artifact_ids", [])}
+        attachment = self._late_execution_binding(state, execution_inputs_ref, execution_workspace)
+        prospective = {**state, "rna_execution_inputs": attachment} if attachment is not None else state
+        execution = self._governed_execution_inputs(prospective)
+        available_ids = ([ref["artifact_id"] for ref in execution["execution_refs"].values()] if execution is not None
+                         else state["context"]["dataset_summary"].get("artifact_ids", []))
+        descriptors = {identity: self.methods.get("artifact", identity) for identity in available_ids}
         references = {identity: self._trial_input_reference(identity) for identity in descriptors}
         context = {"decision_kind": "method_trial_design", "plan": self.export(session_id),
                    "registry": state["registry"], "available_artifacts": descriptors,
                    "available_input_artifact_refs": references, "sources": state["sources"]}
+        if prospective.get("rna_design", {}).get("objective", {}).get("intent") == "infer" and execution is not None:
+            from .rna_design_audit import rna_design_execution_parameters
+            context["frozen_execution_binding"] = rna_design_execution_parameters(prospective, self.methods)
         answer, state = self._select(state, selector, context, actor=actor, allow_model_execution=allow_model_execution)
+        prospective = {**state, "rna_execution_inputs": attachment} if attachment is not None else state
         proposals = validate_trial_design(answer)
         for proposal in proposals:
             self._bind_trial_inputs(proposal, allowed_ids=set(descriptors))
@@ -763,9 +1109,13 @@ class ScientificMethodPlanner:
                 ports = self.methods.method(candidate["method_version_id"])["contract"]["inputs"]
                 if set(proposal["inputs"][name]) != set(ports):
                     raise ValueError("Trial input ports must match the exact method contract")
+                self._governed_execution_inputs(prospective, inputs=proposal["inputs"][name], method_version_id=candidate["method_version_id"],
+                    parameters=proposal["parameters"][name], subset_spec=proposal["subset_spec"])
             if any(row["id"] == proposal["id"] for row in state["experiments"]):
                 raise ValueError("A proposed trial cannot overwrite a frozen experiment")
         updated = deepcopy(state)
+        if attachment is not None:
+            updated["rna_execution_inputs"] = attachment
         updated.setdefault("trial_designs", []).append({"proposals": proposals, "status": "unexecuted_drafts",
                                                          "selection_attempt": state["selection_history"][-1]["attempt"]})
         updated["selection_history"][-1]["status"] = "accepted"
@@ -936,6 +1286,8 @@ class ScientificMethodPlanner:
             self._check_action_binding(candidate, contract)
             parameters = MethodContract.from_dict(contract).validate_parameters(spec["parameters"][name])
             inputs = spec["inputs"][name]
+            execution = self._governed_execution_inputs(state, inputs=inputs, method_version_id=identity,
+                parameters=parameters, subset_spec=spec["subset_spec"])
             ids = set(inputs.values())
             if population is not None and ids != population:
                 raise ValueError("Candidate trials must use comparable immutable input states")
@@ -943,7 +1295,8 @@ class ScientificMethodPlanner:
             for artifact in ids:
                 self.methods.artifact_path(artifact)
             if spec["subset_spec"].get("kind") == "full_dataset":
-                if ids != original_ids:
+                expected_ids = {ref["artifact_id"] for ref in execution["execution_refs"].values()} if execution is not None else original_ids
+                if ids != expected_ids:
                     raise ValueError("Full-dataset trial inputs differ from the declared dataset")
                 subset_summary = observed
             else:
@@ -954,7 +1307,8 @@ class ScientificMethodPlanner:
                 if set(inspection.get("input_artifact_ids", [])) != ids or set(inspection.get("parent_artifact_ids", [])) != original_ids:
                     raise ValueError("Subset inspection does not bind the trial and source artifacts")
                 subset_summary = inspection["dataset_summary"]
-            candidate = self._current_candidate(state, name, actor=actor, summary=subset_summary, artifact_ids=ids)
+            candidate = self._current_candidate(state, name, actor=actor, summary=subset_summary,
+                artifact_ids=original_ids if execution is not None else ids)
             if candidate["applicability"] != "eligible":
                 raise ValueError("Trial subset does not preserve hard preconditions")
             if contract["execution"]["memory_mb"] > limits["memory_mb"]:
@@ -991,10 +1345,17 @@ class ScientificMethodPlanner:
         return value
 
     @plan_operation
-    def run_trial(self, session_id, experiment_id, *, actor, allow_data_execution=False, executor=None, execution_bindings=None):
+    def run_trial(self, session_id, experiment_id, *, actor, allow_data_execution=False, executor=None, execution_bindings=None,
+                  before_dispatch=None, cancellation_event=None):
         if allow_data_execution is not True:
             raise PermissionError("Trial data execution requires explicit authorization")
+        if before_dispatch is not None and not callable(before_dispatch):
+            raise TypeError("Use an injected trusted candidate dispatch guard")
         state = self.get(session_id)
+        from .rna_design_audit import require_rna_design_audit
+        require_rna_design_audit(state, self.methods)
+        from .rna_design_audit import require_rna_design_execution
+        require_rna_design_execution(state, self.methods)
         if state["selection_in_progress"] or state["recommendation"]["choice"] is not None or any(
                 item["status"] == "running" for item in state["experiments"]):
             raise ValueError("Trials cannot run during model selection or after a recommendation")
@@ -1006,6 +1367,12 @@ class ScientificMethodPlanner:
         declaration_hash = expected.pop("declaration_sha256")
         if _digest(expected) != declaration_hash:
             raise ValueError("Frozen trial declaration changed")
+        if state.get("rna_design", {}).get("objective", {}).get("intent") == "infer":
+            for name in experiment["candidates"]:
+                candidate = self._candidate(state, name)
+                self._governed_execution_inputs(state, inputs=experiment["inputs"][name],
+                    method_version_id=candidate["method_version_id"], parameters=experiment["parameters"][name],
+                    subset_spec=experiment["subset_spec"])
         reserved = deepcopy(state)
         index = state["experiments"].index(matches[0])
         if execution_bindings is not None:
@@ -1028,17 +1395,35 @@ class ScientificMethodPlanner:
                        "parameters": experiment["parameters"][name]}}
             try:
                 summary = state["context"]["dataset_summary"]
+                execution = self._governed_execution_inputs(state, inputs=experiment["inputs"][name],
+                    method_version_id=candidate["method_version_id"], parameters=experiment["parameters"][name],
+                    subset_spec=experiment["subset_spec"])
                 if experiment["subset_spec"].get("kind") != "full_dataset":
                     inspection = finite_json(self.methods.artifact_path(experiment["subset_spec"]["inspection_artifact_id"]))
                     summary = inspection["dataset_summary"]
                 current = self._current_candidate(state, name, actor=actor, summary=summary,
-                    artifact_ids=experiment["inputs"][name].values())
+                    artifact_ids=summary.get("artifact_ids", []) if execution is not None else experiment["inputs"][name].values())
                 if current["applicability"] != "eligible":
                     raise ValueError("Current trial preconditions are not eligible: " + "; ".join(current["blockers"]))
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Trial budget exhausted before the next candidate")
                 binding = execution_bindings[name] if execution_bindings is not None else None
+                if before_dispatch is not None:
+                    descriptor = {"session_id": session_id, "experiment_id": experiment_id, "candidate": name,
+                        "step_id": experiment["step_ids"][name], "method_version_id": candidate["method_version_id"],
+                        "input_artifact_ids": sorted(experiment["inputs"][name].values()),
+                        "parameters": deepcopy(experiment["parameters"][name]), "declaration_sha256": declaration_hash,
+                        "resource_limits": deepcopy(experiment["resource_limits"])}
+                    try:
+                        before_dispatch(deepcopy(descriptor))
+                    except Exception as error:
+                        row.update(status="failed", failures=[f"{type(error).__name__}: {error}"[:2000]],
+                            warnings=["trial_admission_denied_no_dispatch"])
+                        results.append(row)
+                        break  # Retain the refusal and prior results; no later candidate dispatch.
                 run = self.methods.run_step(experiment["step_ids"][name], actor=actor, executor=executor,
+                    **({"data_execution_authorized": allow_data_execution, "cancellation_event": cancellation_event}
+                       if "fastq_input" in summary.get("observed", {}) else {}),
                     **({"run_id": binding["controller_id"], "correlation": binding["correlation"]} if binding else {}))
                 row["provenance"].update(run_id=run["run_id"], evidence_root=run["evidence"]["root_hash"],
                     environment=state["registry"][candidate["method_version_id"]]["environment"],

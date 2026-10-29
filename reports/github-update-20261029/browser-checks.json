@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "desktop": [
+    1440,
+    1200
+  ],
+  "mobile": [
+    390,
+    844
+  ],
+  "generated_cells": 300000,
+  "cells_per_batch": 100000,
+  "full_scatter_draw_calls": 600000,
+  "filtered_scatter_draw_calls": 200000,
+  "open_ms": 753,
+  "filter_ms": 105,
+  "export_provenance": true,
+  "escape_and_focus": true,
+  "page_errors": [],
+  "network_requests": 0,
+  "scope": "Synthetic presentation browser proof only. No live trial or biological evidence."
+}

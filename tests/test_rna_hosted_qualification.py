@@ -43,6 +43,31 @@ def test_cli_relative_manifest_fails_before_reads():
         main(['--manifest','relative','--criteria','relative','--output','relative'])
 
 
+def test_a2b_driver_routes_exclusive_child_entry_without_campaign(monkeypatch):
+    from tests.test_rna_hosted_exporter_isolation import _hosted_exporter_module
+    exporter = _hosted_exporter_module()
+    calls = []
+    monkeypatch.setattr(exporter, 'main', lambda argv: calls.append(argv) or 0)
+    assert main(['--hosted-exporter-child']) == 0
+    assert calls == [[]]
+    command = exporter._child_command()
+    assert command[-1] == '--hosted-exporter-child'
+    assert command[-2].endswith('rna_hosted_qualification.py')
+
+
+@pytest.mark.parametrize('conflict', [
+    ['--mode', 'fake'], ['--mode', 'hosted'], ['--allow-upload'],
+    ['--manifest', '/unread'], ['--criteria', '/unread'], ['--output', '/unwritten'],
+    ['--exporter-root', '/unwritten'], ['--fixture-root', '/unwritten'],
+    ['--fixture-request', '/unread'], ['--hosted-exporter-child']])
+def test_a2b_driver_child_entry_rejects_conflicts_before_delegation(monkeypatch, conflict):
+    from tests.test_rna_hosted_exporter_isolation import _hosted_exporter_module
+    exporter = _hosted_exporter_module()
+    monkeypatch.setattr(exporter, 'main', lambda argv: pytest.fail('child delegated'))
+    with pytest.raises(ValueError, match='Exclusive hosted exporter child entry'):
+        main(['--hosted-exporter-child', *conflict])
+
+
 def _fault_controls_snapshot(root):
     from hashlib import sha256
     return {str(path.relative_to(root)): sha256(path.read_bytes()).hexdigest()

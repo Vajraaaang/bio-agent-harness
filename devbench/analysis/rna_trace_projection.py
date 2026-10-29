@@ -8,17 +8,21 @@ import uuid
 from .rna_trace_contract import (canonical_bytes, trace_digest, validate_trace_event,
     validate_cost_record, _closed, _enum, _uuid, _digest, _integer, ROLES, PHASES,
     KINDS, SOURCE_STATUSES, DISPATCH_STATUSES, CAPTURE_STATUSES, REASONS)
+from .workflow_state import SERIAL_ROUTE
 
 SNAPSHOT_FORMAT = "devbench.rna-trace-snapshot/1"
 PROJECTION_FORMAT = "devbench.rna-trace-projection/1"
-CAPABILITY_KINDS = {"codex-cli", "offline_recorded", "offline_replay", "offline-fixture", "enforced-offline-fixture", "recorded", "unknown"}
-QUALIFICATIONS = {"source_inspected_not_multiagent_qualified", "offline_qualified", "offline_recorded_qualified", "offline_replay_qualified", "unknown"}
+JOB_SNAPSHOT_FORMAT = "devbench.rna-trace-snapshot/2"
+JOB_PROJECTION_FORMAT = "devbench.rna-trace-projection/2"
+JOB_ACCOUNTING_FORMAT = "devbench.codex-job-trace-accounting/1"
+CAPABILITY_KINDS = {"codex-cli", "offline_recorded", "offline_replay", "offline-fixture", "enforced-offline-fixture", "recorded", "unknown", "openai-responses-mediated"}
+QUALIFICATIONS = {"source_inspected_not_multiagent_qualified", "offline_qualified", "offline_recorded_qualified", "offline_replay_qualified", "unknown", "mediated_qualified"}
 
 
-def _capability(value):
+def _capability(value, *, generation_jobs=False):
     _closed(value, {"backend_kind", "qualification_status", "admitted"}, "capability summary")
-    _enum(value["backend_kind"], CAPABILITY_KINDS, "backend kind")
-    _enum(value["qualification_status"], QUALIFICATIONS, "qualification status")
+    _enum(value["backend_kind"], {"codex-chatgpt-cli", "enforced-offline-job-fixture"} if generation_jobs else CAPABILITY_KINDS, "backend kind")
+    _enum(value["qualification_status"], {"unqualified", "offline_qualified"} if generation_jobs else QUALIFICATIONS, "qualification status")
     if type(value["admitted"]) is not bool:
         raise ValueError("Invalid admission summary")
     if value["backend_kind"] == "codex-cli" and value["admitted"] and value["qualification_status"] == "source_inspected_not_multiagent_qualified":
@@ -58,7 +62,7 @@ def validate_projected_span(value):
     _enum(row["investigation_stage"], {"pre_fit_methods", "post_fit_explanation", "unspecified"}, "investigation stage")
     _digest(row["source_digest"], "exported source", nullable=True)
     _digest(row["runtime_digest"], "exported runtime", nullable=True)
-    _capability(row["capability"])
+    _capability(row["capability"], generation_jobs=type(row["capability"]) is dict and row["capability"].get("backend_kind") in {"codex-chatgpt-cli", "enforced-offline-job-fixture"})
     _counts(row)
     # Reuse the finite, closed metrics validator without importing scientific execution.
     validate_trace_event({"format": "devbench.rna-trace-event/1", "event_id": value["id"], "trace_id": value["trace_id"], "span_id": value["id"], "parent_span_id": value["parent_run_id"], **{key: row[key] for key in ("sequence", "attempt", "role", "phase", "kind", "source_status", "dispatch_status", "capture_status", "metrics", "reason_code", "origin")}, "clock": {"utc": "2000-01-01T00:00:00Z" if row["timing_basis"] == "observed" else None, "monotonic_ns": None, "process_alias": value["id"], "timing_basis": row["timing_basis"]}, "bindings": {"workflow": "0" * 64}})
@@ -67,11 +71,21 @@ def validate_projected_span(value):
 
 def _validate_snapshot(snapshot):
     base = {"format", "workflow_binding", "events", "capability", "allocation", "actual_children", "complete", "gaps"}
+    generation_jobs = type(snapshot) is dict and snapshot.get("format") == JOB_SNAPSHOT_FORMAT
+    if generation_jobs:
+        base.add("accounting_kind")
     optional = {"investigation_stage", "observer_events", "ledger_accounting"}
     if type(snapshot) is not dict or not base <= set(snapshot) or not set(snapshot) <= base | optional:
         raise ValueError("Invalid closed snapshot fields")
     _enum(snapshot.get("investigation_stage", "unspecified"), {"pre_fit_methods", "post_fit_explanation", "unspecified"}, "investigation stage")
-    if "ledger_accounting" in snapshot:
+    if generation_jobs:
+        if snapshot["accounting_kind"] != "generation_jobs" or "ledger_accounting" not in snapshot:
+            raise ValueError("Generation job snapshot requires its exact accounting discriminator")
+        _validate_job_accounting(snapshot["ledger_accounting"])
+        if snapshot["complete"] and (snapshot["ledger_accounting"]["qualification"] != "complete"
+                or snapshot["ledger_accounting"]["unresolved_count"] or snapshot["ledger_accounting"]["outstanding_reserved_jobs"]):
+            raise ValueError("Unresolved job lifecycle cannot claim complete capture")
+    elif "ledger_accounting" in snapshot:
         ledger = snapshot["ledger_accounting"]
         _closed(ledger, {"verified_spent_tokens", "verified_calls", "unresolved_count", "unknown_usage_count", "qualification", "policy_kind"}, "retained ledger accounting")
         for key in ("verified_spent_tokens", "verified_calls", "unresolved_count", "unknown_usage_count"):
@@ -83,11 +97,13 @@ def _validate_snapshot(snapshot):
             raise ValueError("Invalid retained observer event count")
         for event in snapshot["observer_events"]:
             validate_trace_event(event)
-    if snapshot["format"] != SNAPSHOT_FORMAT:
+    if snapshot["format"] not in {SNAPSHOT_FORMAT, JOB_SNAPSHOT_FORMAT}:
         raise ValueError("Unsupported RNA snapshot format")
     _digest(snapshot["workflow_binding"], "workflow binding")
-    _capability(snapshot["capability"])
+    _capability(snapshot["capability"], generation_jobs=generation_jobs)
     _counts(snapshot)
+    if generation_jobs and (snapshot["allocation"] or snapshot["actual_children"]):
+        raise ValueError("Generation job traces are parent-only")
     if type(snapshot["events"]) is not list or len(snapshot["events"]) > 10000:
         raise ValueError("Invalid snapshot event count")
     if type(snapshot["gaps"]) is not list or len(snapshot["gaps"]) > 32:
@@ -98,6 +114,41 @@ def _validate_snapshot(snapshot):
         raise ValueError("A gapped snapshot cannot claim complete capture")
     if len(canonical_bytes(snapshot)) > 8 * 1024 * 1024:
         raise ValueError("Snapshot exceeds byte cap")
+
+
+def _validate_job_accounting(value):
+    _closed(value, {"format", "policy_kind", "verified_jobs", "outstanding_reserved_jobs",
+        "unresolved_count", "qualification", "reported_token_subtotal", "reported_usage_jobs",
+        "unknown_usage_jobs", "verified_seconds"}, "generation job accounting")
+    if value["format"] != JOB_ACCOUNTING_FORMAT or value["policy_kind"] != "generation_jobs":
+        raise ValueError("Unsupported generation job accounting discriminator")
+    for key in ("verified_jobs", "outstanding_reserved_jobs", "unresolved_count", "reported_usage_jobs", "unknown_usage_jobs"):
+        _integer(value[key], key)
+    _integer(value["reported_token_subtotal"], "reported token subtotal", nullable=True)
+    from .rna_trace_contract import _number
+    _number(value["verified_seconds"], "verified job elapsed seconds")
+    _enum(value["qualification"], {"complete", "pending", "incomplete", "violated"}, "job lifecycle qualification")
+    if ((value["reported_usage_jobs"] == 0) != (value["reported_token_subtotal"] is None)
+            or value["reported_usage_jobs"] > value["verified_jobs"]
+            or value["reported_usage_jobs"] + value["unknown_usage_jobs"] != value["verified_jobs"] + value["outstanding_reserved_jobs"]):
+        raise ValueError("Generation job usage summary is inconsistent")
+
+
+def _job_accounting(ledger):
+    _validate_job_accounting(ledger)
+    result = dict(policy_kind="generation_jobs", ledger_qualification=ledger["qualification"],
+        job_accounting_basis="preventively_reserved", verified_jobs=ledger["verified_jobs"],
+        outstanding_reserved_jobs=ledger["outstanding_reserved_jobs"], unresolved_jobs=ledger["unresolved_count"],
+        job_lifecycle_complete=ledger["qualification"] == "complete" and not ledger["unresolved_count"] and not ledger["outstanding_reserved_jobs"],
+        internal_model_requests=None, internal_model_requests_basis="unknown", verified_calls=None,
+        total_tokens=None, observed_token_subtotal=ledger["reported_token_subtotal"],
+        usage_basis="reported_optional" if ledger["reported_usage_jobs"] else "unavailable",
+        reported_usage_jobs=ledger["reported_usage_jobs"], unknown_usage_jobs=ledger["unknown_usage_jobs"],
+        preventive_token_enforcement=False, credit_usage=None, credit_usage_basis="unknown",
+        provider_cost_total=None, provider_cost_subtotals=[], provider_cost_basis="unknown",
+        duration_seconds=ledger["verified_seconds"], duration_basis="verified_local_job_lifecycle")
+    canonical_bytes(result)
+    return result
 
 
 def _accounting(events, complete_capture, ledger=None):
@@ -158,6 +209,10 @@ def project_rna_trace(snapshot: dict, *, export_namespace: str, limits: dict) ->
     unique, by_span = {}, {}
     for value in snapshot["events"]:
         event = validate_trace_event(value)
+        if snapshot["format"] == JOB_SNAPSHOT_FORMAT and (event["metrics"]["usage_basis"] == "verified_complete"
+                or event["role"] in {"investigator", "numerical"}
+                or event["phase"] in {"permission_preflight", "selection"}):
+            raise ValueError("Generation job traces cannot claim complete provider usage or internal call phases")
         if event["bindings"]["workflow"] != snapshot["workflow_binding"]:
             raise ValueError("Event belongs to a different verified workflow")
         old = unique.get(event["event_id"])
@@ -256,7 +311,8 @@ def project_rna_trace(snapshot: dict, *, export_namespace: str, limits: dict) ->
         for span in spans:
             span["extra"]["metadata"]["complete"] = False
     # A bounded completeness record lives in projection metadata rather than an invented executed span.
-    return {"format": PROJECTION_FORMAT, "spans": spans, "local_evidence": {"namespace": export_namespace, "workflow_binding": snapshot["workflow_binding"], "aliases": local, "gaps": sorted(set(gaps)), "omitted_spans": len(ordered) - len(spans), "authority": "local_verified_evidence_not_external_root_attestation", "observer_events": deepcopy(snapshot.get("observer_events", []))}, "complete": complete, "accounting": _accounting([by_span[identity][-1] for identity in ordered], complete, snapshot.get("ledger_accounting"))}
+    generation_jobs = snapshot["format"] == JOB_SNAPSHOT_FORMAT
+    return {"format": JOB_PROJECTION_FORMAT if generation_jobs else PROJECTION_FORMAT, "spans": spans, "local_evidence": {"namespace": export_namespace, "workflow_binding": snapshot["workflow_binding"], "aliases": local, "gaps": sorted(set(gaps)), "omitted_spans": len(ordered) - len(spans), "authority": "local_verified_evidence_not_external_root_attestation", "observer_events": deepcopy(snapshot.get("observer_events", []))}, "complete": complete, "accounting": _job_accounting(snapshot["ledger_accounting"]) if generation_jobs else _accounting([by_span[identity][-1] for identity in ordered], complete, snapshot.get("ledger_accounting"))}
 
 
 def _absolute(path):
@@ -289,9 +345,21 @@ def _source_identity(paths):
     return identity
 
 
-def read_rna_trace_snapshot(*, actions, checkpoint_path, investigation_backend, workflow_id: str, allow_evidence_read: bool) -> dict:
+def read_rna_trace_snapshot(*, actions, checkpoint_path, investigation_backend, workflow_id: str,
+                            allow_evidence_read: bool, campaign_id=None) -> dict:
     if allow_evidence_read is not True:
         raise PermissionError("Explicit RNA evidence read authorization required")
+    from .codex_signedin import SignedInCodexInvestigationBackend
+    if type(investigation_backend) is SignedInCodexInvestigationBackend:
+        if (campaign_id is None or actions.ledger is not investigation_backend.ledger
+                or actions.planner.methods is not investigation_backend.methods):
+            raise PermissionError("Exact signed-in job campaign and source stores required")
+        from .codex_job_trace import read_codex_job_trace_snapshot
+        return read_codex_job_trace_snapshot(backend=investigation_backend, campaign_id=campaign_id,
+            workflow_id=workflow_id, observer_path=getattr(actions, "trace_observer_path", None),
+            allow_evidence_read=True)
+    if campaign_id is not None:
+        raise ValueError("Explicit job campaign requires the signed-in job loader")
     methods, ledger = actions.planner.methods, actions.ledger
     if methods.readonly is not True or ledger.readonly is not True:
         raise PermissionError("RNA trace snapshots require read-only existing stores")
@@ -426,14 +494,14 @@ def read_rna_trace_snapshot(*, actions, checkpoint_path, investigation_backend, 
         parent_cursor = cursor["parent_cursor"]
         for ref in parent_cursor.get("operation_refs", []):
             node, attempt_text = ref.rsplit(":", 1)
-            if node not in PHASES:
+            if node not in SERIAL_ROUTE:
                 raise ValueError("Unknown retained workflow phase")
             if any(row["node"] == node and row["attempt"] == int(attempt_text) for row in reservations):
                 continue
             record = ledger.get(workflow_id, node, int(attempt_text))
             if record is None:
                 raise ValueError("Retained numerical operation missing")
-            emit("operation:" + ref, root, "numerical" if node == "run" else "review" if node == "verify" else "coordinator", node, record["status"], "verification", request=record["request"])
+            emit("operation:" + ref, root, "numerical" if node == "run" else "review" if node in {"verify", "candidate_review", "design_review", "conclusion_review"} else "coordinator", node, record["status"], "verification", request=record["request"])
             events[-1]["attempt"] = int(attempt_text) + 1
         if cursor.get("reconciliation_ref") is not None:
             barrier = emit("barrier", root, "coordinator", "investigation_barrier", "completed", request=cursor["result_refs"])

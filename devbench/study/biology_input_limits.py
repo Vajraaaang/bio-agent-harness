@@ -23,6 +23,9 @@ PUBLIC_MAX_CHUNK_BYTES = 4 * 1024 * 1024
 PUBLIC_MAX_AGGREGATE_BYTES = 125_000_000
 PUBLIC_MAX_ZARR_FILES = 20_000
 PUBLIC_MAX_FEATURES = 5000
+# Complete bulk families have a separate transport ceiling. This does not
+# enlarge synthetic dataset generation or the byte/runtime budgets of a fit.
+PUBLIC_MAX_BULK_FEATURES = 100_000
 MINIMUM_BIOLOGICAL_UNITS = 3  # Shared benchmark policy; not a power or identity guarantee.
 PUBLIC_MAX_LABEL_CHARS = 200
 

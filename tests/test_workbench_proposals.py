@@ -27,7 +27,7 @@ def fixture(root):
     counts_fixture().write_h5ad(source)
     parameters = default_parameters(data_sha256=sha256(source), counts_layer=None,
         min_genes=3, mad_limit=None, n_top_genes=30, n_pcs=8, seed=128,
-        stage_timeout_seconds=90, memory_mb=1024, correction="none",
+        stage_timeout_seconds=90, memory_mb=1024, correction="none", capture_key="batch",
         markers={"T": ["Cd3d", "Cd3e", "Trac", "Il7r"], "B": ["Ms4a1", "Cd79a", "Cd79b", "Cd19"]})
     declarations = {"assay": "scrna", "measurement": "umi_counts",
         "count_provenance": "Artificial integer-count software fixture",

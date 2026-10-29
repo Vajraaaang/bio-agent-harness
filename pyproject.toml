@@ -30,9 +30,13 @@ dependencies = [
   "PyNaCl>=1.6.2,<2",
   "tree-sitter==0.26.0",
   "tree-sitter-bash==0.25.1",
+  "langgraph==1.2.12",
+  "langchain-core==1.6.6",
+  "langgraph-checkpoint-sqlite==3.1.1",
 ]
 
 [project.optional-dependencies]
+# Compatibility alias: the workflow runtime is also installed by the base project.
 workflow = [
   "langgraph==1.2.12",
   "langchain-core==1.6.6",
@@ -71,6 +75,7 @@ devharness-controlled = "devharness_controlled.cli:main"
 devharness-verify-synthetic = "devharness_controlled.qualification:main"
 devbench-study = "devbench.study.cli:main"
 devbench-analyze = "devbench.analysis.workbench:main"
+devbench-fastq-de = "devbench.analysis.fastq_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -79,7 +84,7 @@ include = ["devharness*", "devbench*", "benchmarks*", "experiments*", "scripts*"
 [tool.setuptools.package-data]
 benchmarks = ["task_definitions/*.json", "task_definitions/expanded/*.json", "reference_data/*.json", "reference_data/*.md"]
 devbench_engine = ["AGENTS.md"]
-devbench = ["tasks/catalog.json", "study/public_sources.json", "study/biology_catalog.json", "analysis/assets/workbench-ui.html", "analysis/assets/source-bundle.zip"]
+devbench = ["tasks/catalog.json", "study/public_sources.json", "study/biology_catalog.json", "analysis/assets/workbench-ui.html", "analysis/assets/workbench-theme.css", "analysis/assets/workbench-conversation.js", "analysis/assets/workbench-investigations.js", "analysis/assets/workbench-artifacts.js", "analysis/assets/workbench-projects.js", "analysis/assets/workbench-synthetic.js", "analysis/assets/workbench-synthetic.css", "analysis/assets/scientific-figure.js", "analysis/assets/source-bundle.zip", "analysis/assets/community-workflow/*"]
 devharness_controlled = ["native-package-sources.lock.json"]
 devharness_server = ["r/*.R"]
 

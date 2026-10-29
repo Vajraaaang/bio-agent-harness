@@ -53,7 +53,7 @@ def test_restart_with_unknown_workers_requires_reconciliation(root):
         job=app.register(request)['id'];wait(app,job)
         app._update(job,status='running')  # Simulated abrupt lost controller state.
         parameters={k:v for k,v in app.parameters.items() if k not in
-            {'workflow','prompt','execution_tier','data_sha256','parent_root','model_path','model_sha256'}}
+            {'workflow','prompt','execution_tier','data_sha256','parent_root','model_path','model_sha256','integration_decision'}}
     finally:app.close()
 
     from devbench.analysis.workbench_ui import WorkbenchService
@@ -140,7 +140,7 @@ def test_cancel_after_real_qc_resumes_verified_checkpoint_with_remaining_budget(
         assert 0 < stopped['remaining_execution_seconds'] < 180
         with pytest.raises(RuntimeError):app.run(job)
         monkeypatch.setattr(native,'_execute_worker',original)
-        app.resume(job);finished=wait(app,job)
+        app.resume(job);finished=wait(app,job,timeout_seconds=app.run_timeout_seconds)
         assert finished['status']=='completed_review_passed',finished.get('execution',finished)
         assert sha256(checkpoint)==before
         assert len(finished['execution_history'])==2

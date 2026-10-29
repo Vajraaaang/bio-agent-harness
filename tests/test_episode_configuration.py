@@ -74,6 +74,36 @@ def test_frozen_column_batch_and_contrast_options_are_preserved(cellular):
     assert task["analysis_columns"]["batches"] == ["site"]
 
 
+@pytest.mark.parametrize("partial", [False, True])
+def test_context_only_roles_resolve_before_episode_defaults_and_remain_idempotent(partial):
+    episodes, normalize = api()
+    task = public_task(cellular=True)
+    roles = {"time": "visit_day"} if partial else {
+        "condition": "condition", "time": "visit_day", "dose": None, "covariate": None,
+        "population_unit": "donor_id", "batches": ["capture_batch"]}
+    task["context"]["analysis_columns"] = roles
+    before = deepcopy(task)
+    result = normalize(**specification(assay="scrna", public_task=task))
+    assert result["public_task"]["analysis_columns"]["time"] == "visit_day"
+    assert result["public_task"]["analysis_columns"]["condition"] == "condition"
+    assert result["public_task"]["context"]["analysis_columns"] == roles
+    assert task == before
+    assert normalize(**dict(result, limits=episodes.EpisodeLimits(**result["limits"]))) == result
+    assert json.loads(json.dumps(result, allow_nan=False)) == result
+
+
+def test_role_default_bridge_preserves_legacy_partial_top_record_and_rejects_conflicts():
+    _, normalize = api()
+    task = public_task(cellular=True)
+    task["analysis_columns"] = {"condition": "condition", "provenance_note": "retained caller note"}
+    result = normalize(**specification(assay="scrna", public_task=task))
+    assert json.dumps(result["public_task"]["analysis_columns"]) == json.dumps(task["analysis_columns"])
+    task["context"]["analysis_columns"] = {"time": "visit_day"}
+    task["analysis_columns"]["time"] = None
+    with pytest.raises(ValueError, match="Contradictory"):
+        normalize(**specification(assay="scrna", public_task=task))
+
+
 @pytest.mark.parametrize("option,value", [("condition_col", "other"), ("batch_cols", []),
     ("reference_condition", "treated"), ("comparison_condition", "control")])
 def test_conflicting_frozen_design_options_are_rejected(option, value):
