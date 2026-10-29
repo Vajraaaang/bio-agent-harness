@@ -1,0 +1,662 @@
+{
+  "schema_version": "workbench-simulation-gallery/1",
+  "preview_sha256": "22f718e4f5b29a0b48cbda741a90816e806b1c2ec399968633a9245c8680c5ae",
+  "renderer": "ScientificFigure.mountSimulation",
+  "synthetic_only": true,
+  "live_trials": 0,
+  "model_service_calls": 0,
+  "network_requests": 0,
+  "page_errors": [],
+  "project_count": 6,
+  "projects": [
+    {
+      "id": "airway",
+      "title": "Airway Immune Landscape",
+      "seed": 20261029,
+      "batchSizes": [
+        94817,
+        101206,
+        91440
+      ],
+      "defaultView": "landscape",
+      "total_cells": 287463
+    },
+    {
+      "id": "repair",
+      "title": "Tissue Repair Atlas",
+      "seed": 104729,
+      "batchSizes": [
+        71283,
+        83519,
+        65874
+      ],
+      "defaultView": "quality",
+      "total_cells": 220676
+    },
+    {
+      "id": "immune",
+      "title": "Immune Activation Map",
+      "seed": 130363,
+      "batchSizes": [
+        88342,
+        79615,
+        92708
+      ],
+      "defaultView": "activity",
+      "total_cells": 260665
+    },
+    {
+      "id": "vascular",
+      "title": "Vascular Cell Landscape",
+      "seed": 155921,
+      "batchSizes": [
+        56843,
+        64127,
+        59306
+      ],
+      "defaultView": "batches",
+      "total_cells": 180276
+    },
+    {
+      "id": "stromal",
+      "title": "Stromal Remodeling Study",
+      "seed": 196613,
+      "batchSizes": [
+        106318,
+        87429,
+        99761
+      ],
+      "defaultView": "mitochondrial",
+      "total_cells": 293508
+    },
+    {
+      "id": "cycle",
+      "title": "Cell-Cycle Reference",
+      "seed": 262147,
+      "batchSizes": [
+        43719,
+        52864,
+        49173
+      ],
+      "defaultView": "landscape",
+      "total_cells": 145756
+    }
+  ],
+  "plot_count": 18,
+  "source_sha256": [
+    {
+      "file": "devbench/analysis/assets/scientific-figure.js",
+      "sha256": "a11a34c6c07c00b77959fffdcd2fa9105d3066eeb5da8f44eb157ab3e5c9c7aa"
+    },
+    {
+      "file": "devbench/analysis/assets/workbench-demo.js",
+      "sha256": "33a5f420986cbe8a2d5dd7d6efb88865fd9b3ebbde74770df7745086f1de4bef"
+    },
+    {
+      "file": "devbench/analysis/assets/workbench-synthetic.js",
+      "sha256": "cde5067731820231cd78275254f368772a6e7ffef25fa73f8818ee932106e5e7"
+    },
+    {
+      "file": "devbench/analysis/assets/workbench-demo.css",
+      "sha256": "523a791d2bbc8c77f8f67f93338065c69fa6e1100d7bbf6bdc84fd0537b3a300"
+    }
+  ],
+  "files": [
+    {
+      "file": "01-airway-landscape-all.png",
+      "project_id": "airway",
+      "project_title": "Airway Immune Landscape",
+      "title": "Airway Immune Landscape \u00b7 Cell landscape \u00b7 groups",
+      "view": "landscape",
+      "batch": "all",
+      "point_count": 287463,
+      "viewport_points": 287463,
+      "dataset_total": 287463,
+      "seed": 20261029,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "d76fbdb9f91d5cb3fedd5c61caa9362ad94c4da84f79ee1ec291667997084348",
+      "byte_size": 1177667,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 20261029,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          94817,
+          101206,
+          91440
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "02-airway-batches-all.png",
+      "project_id": "airway",
+      "project_title": "Airway Immune Landscape",
+      "title": "Airway Immune Landscape \u00b7 Cell landscape \u00b7 batches",
+      "view": "batches",
+      "batch": "all",
+      "point_count": 287463,
+      "viewport_points": 287463,
+      "dataset_total": 287463,
+      "seed": 20261029,
+      "width": 1788,
+      "height": 1504,
+      "sha256": "2d4e5db965b2eec87e8afba02ff3d2ac2e62d4007335a73a435a0559c3bf7ae6",
+      "byte_size": 1540106,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 20261029,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          94817,
+          101206,
+          91440
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "03-airway-quality-all.png",
+      "project_id": "airway",
+      "project_title": "Airway Immune Landscape",
+      "title": "Airway Immune Landscape \u00b7 Library complexity",
+      "view": "quality",
+      "batch": "all",
+      "point_count": 287463,
+      "viewport_points": 287463,
+      "dataset_total": 287463,
+      "seed": 20261029,
+      "width": 1788,
+      "height": 1504,
+      "sha256": "324262a4b8694a8e7f78556f8554d4e944564d299701f5157d4b68033a56d098",
+      "byte_size": 389266,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 20261029,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          94817,
+          101206,
+          91440
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "04-airway-mitochondrial-all.png",
+      "project_id": "airway",
+      "project_title": "Airway Immune Landscape",
+      "title": "Airway Immune Landscape \u00b7 Mitochondrial fraction",
+      "view": "mitochondrial",
+      "batch": "all",
+      "point_count": 287463,
+      "viewport_points": 287463,
+      "dataset_total": 287463,
+      "seed": 20261029,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "240e17172c10ef5e8531ff6927986d729538493376f983ee3529e189ba822e25",
+      "byte_size": 1274975,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 20261029,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          94817,
+          101206,
+          91440
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "05-airway-activity-all.png",
+      "project_id": "airway",
+      "project_title": "Airway Immune Landscape",
+      "title": "Airway Immune Landscape \u00b7 Generated immune-module score",
+      "view": "activity",
+      "batch": "all",
+      "point_count": 287463,
+      "viewport_points": 287463,
+      "dataset_total": 287463,
+      "seed": 20261029,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "a1c3c2230a296f5dbfb754fe79c78c58ece46457f46f3d277e46c52b6ac4423e",
+      "byte_size": 1083937,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 20261029,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          94817,
+          101206,
+          91440
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "06-airway-landscape-batch-01.png",
+      "project_id": "airway",
+      "project_title": "Airway Immune Landscape",
+      "title": "Airway Immune Landscape \u00b7 Cell landscape \u00b7 groups \u00b7 Batch 01",
+      "view": "landscape",
+      "batch": "0",
+      "point_count": 94817,
+      "viewport_points": 94817,
+      "dataset_total": 287463,
+      "seed": 20261029,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "be429d2da74f3d837974a4709fc62160e4736445708962549285350473142d90",
+      "byte_size": 1021601,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 20261029,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          94817,
+          101206,
+          91440
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "07-airway-landscape-batch-02.png",
+      "project_id": "airway",
+      "project_title": "Airway Immune Landscape",
+      "title": "Airway Immune Landscape \u00b7 Cell landscape \u00b7 groups \u00b7 Batch 02",
+      "view": "landscape",
+      "batch": "1",
+      "point_count": 101206,
+      "viewport_points": 101206,
+      "dataset_total": 287463,
+      "seed": 20261029,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "43c9a52c21707ae6854a412be9e5ca48e536ef0e4f19a6092bbd59451f446c16",
+      "byte_size": 1045124,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 20261029,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          94817,
+          101206,
+          91440
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "08-airway-landscape-batch-03.png",
+      "project_id": "airway",
+      "project_title": "Airway Immune Landscape",
+      "title": "Airway Immune Landscape \u00b7 Cell landscape \u00b7 groups \u00b7 Batch 03",
+      "view": "landscape",
+      "batch": "2",
+      "point_count": 91440,
+      "viewport_points": 91440,
+      "dataset_total": 287463,
+      "seed": 20261029,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "6aa5b904f6b447592b570f95f4f595207d422a00ebf737130a9730ea124c59eb",
+      "byte_size": 1079275,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 20261029,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          94817,
+          101206,
+          91440
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "09-repair-quality-all.png",
+      "project_id": "repair",
+      "project_title": "Tissue Repair Atlas",
+      "title": "Tissue Repair Atlas \u00b7 Library complexity",
+      "view": "quality",
+      "batch": "all",
+      "point_count": 220676,
+      "viewport_points": 220676,
+      "dataset_total": 220676,
+      "seed": 104729,
+      "width": 1788,
+      "height": 1504,
+      "sha256": "d7b4070aca228d0ed66f3ebe78879e8d18fbb369fe86ea449aca72ce002e2ed8",
+      "byte_size": 484164,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 104729,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          71283,
+          83519,
+          65874
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "10-repair-mitochondrial-all.png",
+      "project_id": "repair",
+      "project_title": "Tissue Repair Atlas",
+      "title": "Tissue Repair Atlas \u00b7 Mitochondrial fraction",
+      "view": "mitochondrial",
+      "batch": "all",
+      "point_count": 220676,
+      "viewport_points": 220676,
+      "dataset_total": 220676,
+      "seed": 104729,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "33a3313ec47eedba2003d5af61ee0dfded29cb309ab92e4b7a3a331ef4672ff3",
+      "byte_size": 1161255,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 104729,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          71283,
+          83519,
+          65874
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "11-immune-activity-all.png",
+      "project_id": "immune",
+      "project_title": "Immune Activation Map",
+      "title": "Immune Activation Map \u00b7 Generated immune-module score",
+      "view": "activity",
+      "batch": "all",
+      "point_count": 260665,
+      "viewport_points": 260665,
+      "dataset_total": 260665,
+      "seed": 130363,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "786f7cc2acccd58135d30374495431c364c91259383d9e85d8c51e17acc9cb37",
+      "byte_size": 1005303,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 130363,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          88342,
+          79615,
+          92708
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "12-immune-batches-all.png",
+      "project_id": "immune",
+      "project_title": "Immune Activation Map",
+      "title": "Immune Activation Map \u00b7 Cell landscape \u00b7 batches",
+      "view": "batches",
+      "batch": "all",
+      "point_count": 260665,
+      "viewport_points": 260665,
+      "dataset_total": 260665,
+      "seed": 130363,
+      "width": 1788,
+      "height": 1504,
+      "sha256": "f8f35a316b6a863dde43861ea905eaa8988db63f8fc3cfbbfcb90755f9c1ca3b",
+      "byte_size": 1426393,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 130363,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          88342,
+          79615,
+          92708
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "13-vascular-batches-all.png",
+      "project_id": "vascular",
+      "project_title": "Vascular Cell Landscape",
+      "title": "Vascular Cell Landscape \u00b7 Cell landscape \u00b7 batches",
+      "view": "batches",
+      "batch": "all",
+      "point_count": 180276,
+      "viewport_points": 180276,
+      "dataset_total": 180276,
+      "seed": 155921,
+      "width": 1788,
+      "height": 1504,
+      "sha256": "90d1b5842920828a5bd07e78a6d91a5cd166c84c4ad0d754ae823ff8e4f9cefa",
+      "byte_size": 1404903,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 155921,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          56843,
+          64127,
+          59306
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "14-vascular-quality-all.png",
+      "project_id": "vascular",
+      "project_title": "Vascular Cell Landscape",
+      "title": "Vascular Cell Landscape \u00b7 Library complexity",
+      "view": "quality",
+      "batch": "all",
+      "point_count": 180276,
+      "viewport_points": 180276,
+      "dataset_total": 180276,
+      "seed": 155921,
+      "width": 1788,
+      "height": 1504,
+      "sha256": "31b6df498b76ea5b51242d7864df234389db0cfb4e421fec9ec2f356dcd6b51a",
+      "byte_size": 536732,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 155921,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          56843,
+          64127,
+          59306
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "15-stromal-mitochondrial-all.png",
+      "project_id": "stromal",
+      "project_title": "Stromal Remodeling Study",
+      "title": "Stromal Remodeling Study \u00b7 Mitochondrial fraction",
+      "view": "mitochondrial",
+      "batch": "all",
+      "point_count": 293508,
+      "viewport_points": 293508,
+      "dataset_total": 293508,
+      "seed": 196613,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "508bf82c21689b8d8522269bf196f7b620fb9a7ab6387bd5dbaa1146e7a3a1d5",
+      "byte_size": 1207961,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 196613,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          106318,
+          87429,
+          99761
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "16-stromal-landscape-all.png",
+      "project_id": "stromal",
+      "project_title": "Stromal Remodeling Study",
+      "title": "Stromal Remodeling Study \u00b7 Cell landscape \u00b7 groups",
+      "view": "landscape",
+      "batch": "all",
+      "point_count": 293508,
+      "viewport_points": 293508,
+      "dataset_total": 293508,
+      "seed": 196613,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "826135596b2b7a6ebff7501271b9e2f0071828022fcf84759411c9002d00f764",
+      "byte_size": 1108396,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 196613,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          106318,
+          87429,
+          99761
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "17-cycle-landscape-all.png",
+      "project_id": "cycle",
+      "project_title": "Cell-Cycle Reference",
+      "title": "Cell-Cycle Reference \u00b7 Cell landscape \u00b7 groups",
+      "view": "landscape",
+      "batch": "all",
+      "point_count": 145756,
+      "viewport_points": 145756,
+      "dataset_total": 145756,
+      "seed": 262147,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "64f55ca07273f79063ca93e20fb882a423cc86b620219a8d17825ec54a0af907",
+      "byte_size": 1113693,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 262147,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          43719,
+          52864,
+          49173
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    },
+    {
+      "file": "18-cycle-activity-all.png",
+      "project_id": "cycle",
+      "project_title": "Cell-Cycle Reference",
+      "title": "Cell-Cycle Reference \u00b7 Generated immune-module score",
+      "view": "activity",
+      "batch": "all",
+      "point_count": 145756,
+      "viewport_points": 145756,
+      "dataset_total": 145756,
+      "seed": 262147,
+      "width": 1788,
+      "height": 1540,
+      "sha256": "395240fa3f5c4b24ac90888824d8e798485fc3ad8910357c8c40dacd48bd0b1b",
+      "byte_size": 950164,
+      "provenance": {
+        "kind": "synthetic",
+        "seed": 262147,
+        "generator": "workbench-simulation/1",
+        "live_trials": 0,
+        "biological_observations": 0,
+        "batch_sizes": [
+          43719,
+          52864,
+          49173
+        ]
+      },
+      "rendering": "Actual ScientificFigure.mountSimulation PNG export; all selected points; no downsampling"
+    }
+  ],
+  "visual_review": {
+    "passed": true,
+    "reviewed_files": [
+      "01-airway-landscape-all.png",
+      "02-airway-batches-all.png",
+      "03-airway-quality-all.png",
+      "04-airway-mitochondrial-all.png",
+      "05-airway-activity-all.png",
+      "06-airway-landscape-batch-01.png",
+      "07-airway-landscape-batch-02.png",
+      "08-airway-landscape-batch-03.png",
+      "09-repair-quality-all.png",
+      "10-repair-mitochondrial-all.png",
+      "11-immune-activity-all.png",
+      "12-immune-batches-all.png",
+      "13-vascular-batches-all.png",
+      "14-vascular-quality-all.png",
+      "15-stromal-mitochondrial-all.png",
+      "16-stromal-landscape-all.png",
+      "17-cycle-landscape-all.png",
+      "18-cycle-activity-all.png"
+    ],
+    "checks": [
+      "Visible synthetic label and project-specific title",
+      "Axes, labels and legends present without visible clipping",
+      "Exact generated population and seed visible",
+      "All eighteen PNG exports visually inspected"
+    ]
+  },
+  "earlier_attempt": {
+    "record": "capture-attempt-01.json",
+    "passed": false,
+    "resolution": "Simulation-only download links now remain within the admitted figure section; all18 actual PNG button downloads passed on retry."
+  }
+}

@@ -23,7 +23,7 @@
     <p>The launch URL carries a session token in its fragment. You can also paste the token from your terminal here.</p>
     <label for="token">Session token</label>
     <div class="actions"><input id="token" type="password" autocomplete="off" spellcheck="false"><button id="connect" type="button">Connect</button></div>
-    <button type="button" class="secondary synthetic-gallery-trigger" data-synthetic-gallery>Explore synthetic atlas</button>
+    <button type="button" class="secondary synthetic-gallery-trigger" data-workbench-demo>Open simulated project</button>
     <p id="login-error" class="message error" role="alert"></p>
   </section>
 <div id="app" class="layout" hidden>
@@ -45,7 +45,7 @@
   </div>
   </details>
   <div class="rail-jobs"><section class="chat-list-section" aria-label="Project chats"><details id="chat-section" open><summary id="chat-section-title"><svg class="chat-section-chevron" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m7 5 5 5-5 5"/></svg><span>Chats</span></summary><div id="investigation-history" class="investigation-history" hidden></div></details><button id="nav-register" class="secondary nav-new chat-create-icon" type="button" aria-label="New chat" title="New chat"><svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M11.5 3.5h-7v13h13v-7M10 10l1.5-4 4-4 2.5 2.5-4 4z"/></svg></button></section><section id="legacy-history" aria-labelledby="legacy-history-title" hidden><h3 id="legacy-history-title">Analysis history</h3><div id="jobs" class="jobs"></div></section></div>
-  <div class="rail-footer"><button type="button" class="secondary synthetic-gallery-trigger" data-synthetic-gallery>Synthetic atlas</button><button id="activity-control" type="button" class="secondary activity-control">Activity</button><span id="planning-mode" class="tag" hidden>Proposal selection</span><p id="model-access" class="muted" hidden>Connect to inspect proposal selection.</p><div class="theme-controls"><label for="theme-select">Appearance</label><select id="theme-select"><option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option></select></div></div>
+  <div class="rail-footer"><button id="activity-control" type="button" class="secondary activity-control">Activity</button><span id="planning-mode" class="tag" hidden>Proposal selection</span><p id="model-access" class="muted" hidden>Connect to inspect proposal selection.</p><div class="theme-controls"><label for="theme-select">Appearance</label><select id="theme-select"><option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option></select></div></div>
 </aside>
 <div id="rail-divider" class="panel-divider" role="separator" aria-label="Resize navigation" aria-orientation="vertical" aria-controls="workspace-rail" aria-valuemin="156" aria-valuemax="360" aria-valuenow="196" tabindex="0" title="Drag to resize navigation. Arrow keys adjust; double-click resets."></div>
 <aside id="inspector" class="inspector" aria-label="Chat and recorded evidence">

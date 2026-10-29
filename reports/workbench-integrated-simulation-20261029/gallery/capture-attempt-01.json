@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "stage": "native_png_export",
+  "passed": false,
+  "error": "page.waitForEvent: Timeout 30000ms exceeded while waiting for event download",
+  "preview_sha256": "756a48fefdb8e3f0eb20b074b81cdad97db76cf1bfea81ec6e49b715c497b724",
+  "diagnosis": "The simulation capture guard rejects events outside admitted demo nodes; the renderer appended its download anchor to document.body. Root was asked to place simulation-only export anchors inside the figure section.",
+  "images_created": 0,
+  "scope": "Offline browser export test; no live trial or network service."
+}

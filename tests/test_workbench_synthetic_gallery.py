@@ -58,7 +58,7 @@ def test_gallery_is_packaged_and_disclosed_in_composed_page():
     assert "WorkbenchSynthetic" in page
     assert "Synthetic atlas" in page
     assert "not computed UMAP" in page
-    assert "data-synthetic-gallery" in page
+    assert "data-workbench-demo" in page
     for suffix in ("js", "css"):
         name = f"devbench/analysis/assets/workbench-synthetic.{suffix}"
         assert allowed_bundle_path(name)

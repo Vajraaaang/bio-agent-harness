@@ -1,0 +1,314 @@
+{
+  "schema_version": "workbench-showcase-verification/1",
+  "focused_tests": {
+    "passed": 144,
+    "seconds": 107.54,
+    "modules": [
+      "test_scientific_figure_redesign.py",
+      "test_scientific_figure_simulation.py",
+      "test_workbench_demo.py",
+      "test_workbench_synthetic_gallery.py",
+      "test_workbench_ui_packaging.py",
+      "test_workbench_ui.py",
+      "test_workbench_projects.py",
+      "test_workbench_inputs.py"
+    ],
+    "scope": "Final copied publication source, after native download repair; local socket/process permission allowed."
+  },
+  "controlled_synthetic": {
+    "seconds": 34.95296899999994,
+    "synthetic_only": true,
+    "model_service_calls": 0,
+    "identity": {
+      "environment": {
+        "dependencies": {
+          "PyNaCl": "1.6.2",
+          "cryptography": "50.0.1",
+          "h5py": "3.16.0",
+          "matplotlib": "3.11.1",
+          "numcodecs": "0.15.1",
+          "numpy": "2.5.3",
+          "pandas": "2.3.3",
+          "patsy": "1.0.3",
+          "psutil": "7.2.2",
+          "pydantic": "2.13.5",
+          "pydeseq2": "0.5.4",
+          "scikit-learn": "1.9.0",
+          "scipy": "1.18.1",
+          "statsmodels": "0.14.6",
+          "zarr": "2.18.7"
+        },
+        "implementation": "CPython",
+        "machine": "arm64",
+        "plotting_backend": "Agg",
+        "python": "3.12.1",
+        "system": "Darwin",
+        "threads": {
+          "MKL_NUM_THREADS": "1",
+          "NUMEXPR_NUM_THREADS": "1",
+          "OMP_NUM_THREADS": "1",
+          "OPENBLAS_NUM_THREADS": "1",
+          "VECLIB_MAXIMUM_THREADS": "1"
+        }
+      },
+      "environment_sha256": "8b6da869ce7222e563c089dc6cb21dce6f81a274df875acaad6cbb01094177c1",
+      "implementation_sha256": "02d484b1c60dde7d2c2deaedc55686e35de094483503126351058e6eabf323b5",
+      "source": {
+        "devharness_controlled/__init__.py": "a77e79b3e191db36249420402c7e577a066483d56498d83ea9f74fb8425ffc9f",
+        "devharness_controlled/authority_contracts.py": "e7a468ad0c9d56c56c96d4ea00cff84483228feeb6769a230a680390ea2fa07b",
+        "devharness_controlled/authority_evidence.py": "4a3eac49d57fd053adad1f603c88d2852ead97aafbadd75adb97fd0905634024",
+        "devharness_controlled/authority_store.py": "087ef815b27983d88149c914e7f6216416da00d8551fb4804b082d890679263a",
+        "devharness_controlled/cli.py": "44234f9d672eb79937a635d732e3378a702e608dfabe7c49b4278afd932382a6",
+        "devharness_controlled/contracts.py": "5e3805f55eaff3dd0ba63980587cbf889edeeba1197cb3a1a995c761f2f6dac9",
+        "devharness_controlled/ed25519_validation.py": "e2ad82c8c2a0a1be1ea41b191dff7068a910a010be11fc674dbb85cfcf783f7a",
+        "devharness_controlled/executor.py": "2bdbf1c050d84ed45629dad196fa7ccbf097b5070ba354ea157c6a1da77deda4",
+        "devharness_controlled/native_contracts.py": "35a95471799b89cb45b25f35343f8c6a1452293203bedb448636346f30f8baed",
+        "devharness_controlled/native_effects.py": "650201b00d6ea5a677ad93676fe46cf07f5a4fcf7dba56897764017e451b690c",
+        "devharness_controlled/native_executor.py": "84eff7ec03e757d9c88db1047c74d084cc39c4ed950c365873e38d1b33dd396b",
+        "devharness_controlled/native_recovery.py": "c69be39dcc28bfbaf2111a05e7d01744d3ba398ab54233dc0574ff95e5cd01a8",
+        "devharness_controlled/native_results.py": "d194f1206fa99fd8a0d70d4c09282a87dc9bf054ada5863e262bc06c6c707341",
+        "devharness_controlled/native_runtime.py": "3d82c57e9f180c879730833bd5d651db97995e3926f19d82dec6ce882cc5b2fb",
+        "devharness_controlled/native_verification.py": "d16d546e32dc2e4b2840dc7d939707fea770e8e9519bc150c320c189b820d1a6",
+        "devharness_controlled/normalization_reference.py": "fbe06d36a16cffa2a5dd148ca915ba32f0d08353180aa67f7e342009a999f9a6",
+        "devharness_controlled/operated_native.py": "b4f46d80ffa2ab3bf33b529b6e26d78a41edd2703cbdda78a9ef9f09db56027a",
+        "devharness_controlled/qualification.py": "b8016b90cdd1175e5eb0e72c4609004f88389e9798b3c80c00f9afc14dee1d19",
+        "devharness_controlled/result_schema.py": "28512daeab580c61eed797126c6363252583bdeab57d72c7779387f5cbe54e6c",
+        "devharness_controlled/run_registry.py": "306daec50a0db64d30be62d613bf652c199f580e9e351e18eb298fefc42670da",
+        "devharness_controlled/sqlite_schema.py": "62d009077fc8f2eb61ee40668d718d82d87724af405c9d3bdcf50cafe23c7cd5",
+        "devharness_controlled/trust.py": "63af4e06faaa5c6317b4bf73198f94c400ccde89c72efabcd2e805c1abde84d3",
+        "devharness_controlled/verification.py": "cf2c4348f03c530805c4f4a2c1013fb9c5b9799b789f0e6bee177b238e209c9e",
+        "devharness_core/__init__.py": "7c8697544e2613e356e60e18ea9986888bfbc25924cc1408ef7053893eab259c",
+        "devharness_core/compactor.py": "b848d0b55400c01adcfc4edbef061f00a82330d9de40f780dc56f3db7cb2ae77",
+        "devharness_core/design_terms.py": "ff8d7f4fb24888f3f856f5d4d3c0237198db3b5b2abf6dd5fe931c0fc7e33bff",
+        "devharness_core/methods.py": "6c2c3786bf30265c28e389b08fb94b875d1a1463fe015940c24297cf1cae3802",
+        "devharness_core/provenance.py": "b3de4c6e77b1ea7c59d7275fbbb97daf915be80366aa10ab3f923d7439e7cb4e",
+        "devharness_core/stages.py": "3bb977c97d8f2a1672709c02d5d36537fdf31daa3864bcd9b27b4d7f3becd6c3",
+        "devharness_core/storage.py": "f0126d0007773b512a7fd2ee9dbb6e02b4b80148e2abe053afd35db981143b21",
+        "devharness_core/units.py": "499526c0ec8345e39c63906179e0edb64b0bef37de54cf281e69315a4ebe759f",
+        "devharness_core/watchdog.py": "d94d6a95cc68927f4e45fcfd3136c897725f9b1ae1696f791dc1c2ee46908aef",
+        "devharness_server/__init__.py": "26de2ab987be2c1fdf4ce9063583d0664f4810358c8096e82bd93e1e40e9eb27",
+        "devharness_server/dispatcher.py": "d79149e4334065231a3b0a8b0c9060bc5e15440ef6f31b459fd07144dae4c513",
+        "devharness_server/method_adapter.py": "c28e6a16b7a9a01cb9d4f4dd84076686ab3eed897a6f6c5b14daddb84d5c93b5",
+        "devharness_server/normalization.py": "f482dc2f6ce012bae374c305698ad091f5747aa5c79649718c30d2e2e1dd708b",
+        "devharness_server/selection_mc.py": "7e4bb391bf53c235eb846b4fe6d25f50c15ccc915b4602088aabae1a687cf82f",
+        "devharness_server/server.py": "0746c5fdcffbb6f8e4e5183dd4248aa6b288db02e50ac88783c56912c33bc040",
+        "devharness_server/tools_bulk.py": "df4f535fb0458f6181243df3ca66b2f9453a0e58bdc4467686ba6252921fb340",
+        "devharness_server/tools_lineage.py": "ab99107b5974e813a71b3612dc820644d723579d4a8bea6d636af3b652bd30b2",
+        "devharness_server/tools_network.py": "8101573cd4ccdf35c77544c2ee196041eebe0fb5d7dd1b7b34b68d38262f495c",
+        "devharness_server/tools_qc.py": "d5726b677c745e8483599899bca3f6bd53a644e9fabac5595a1560c2c4abcd54",
+        "devharness_server/tools_stat.py": "31df2d780f154b9b87e89eebc649b0044ae267775b2408f64bc512584bfe4c68",
+        "devharness_server/tools_trajectory.py": "4ba553449c11213cc9157873515502633f091b1d16e18bd737124471a0773924"
+      }
+    },
+    "cases": {
+      "continuous": {
+        "status": "analysis_complete_pending_review",
+        "repeat_numerical_sha256_equal": true,
+        "audit_valid": true,
+        "controlled_evidence_valid": true,
+        "r_reference": {
+          "differences": {
+            "g000": {
+              "p_absolute_error": 5.735429492448318e-17,
+              "statistic_absolute_error": 1.2434497875801753e-14
+            },
+            "g001": {
+              "p_absolute_error": 1.1379786002407855e-15,
+              "statistic_absolute_error": 9.547918011776346e-15
+            },
+            "g002": {
+              "p_absolute_error": 8.326672684688674e-16,
+              "statistic_absolute_error": 7.993605777301127e-15
+            }
+          },
+          "numerical_agreement": true,
+          "reference": [
+            {
+              "gene": "g000",
+              "p_value": 0.0009627423343542,
+              "statistic": 8.15658104678238
+            },
+            {
+              "gene": "g001",
+              "p_value": 0.193230951919686,
+              "statistic": 1.72919059577218
+            },
+            {
+              "gene": "g002",
+              "p_value": 0.141931780697485,
+              "statistic": 2.03079988964388
+            }
+          ],
+          "scope": "fixed Gaussian F test",
+          "status": "completed",
+          "tolerances": {
+            "p_absolute": 1e-08,
+            "scope": "software comparison, not clinical acceptance",
+            "statistic_absolute": 0.0001
+          },
+          "version": "R version 4.3.2 (2023-10-31)"
+        }
+      },
+      "counts": {
+        "status": "analysis_complete_pending_review",
+        "repeat_numerical_sha256_equal": true,
+        "audit_valid": true,
+        "controlled_evidence_valid": true,
+        "r_reference": {
+          "differences": {
+            "g000": {
+              "p_absolute_error": 1.6978480082874738e-16,
+              "statistic_absolute_error": 6.972747570443971e-07
+            },
+            "g001": {
+              "p_absolute_error": 2.008674993205195e-19,
+              "statistic_absolute_error": 8.88214657379649e-09
+            },
+            "g002": {
+              "p_absolute_error": 4.570282703447639e-12,
+              "statistic_absolute_error": 9.151950415287047e-07
+            }
+          },
+          "numerical_agreement": true,
+          "reference": [
+            {
+              "gene": "g000",
+              "p_value": 4.973068094251251e-10,
+              "statistic": 46.268409206623
+            },
+            {
+              "gene": "g001",
+              "p_value": 4.6097684627251493e-11,
+              "statistic": 51.1211672375759
+            },
+            {
+              "gene": "g002",
+              "p_value": 1.03607482367185e-05,
+              "statistic": 25.8282262305198
+            }
+          ],
+          "scope": "fixed dispersion NB regression only",
+          "status": "completed",
+          "tolerances": {
+            "p_absolute": 1e-08,
+            "scope": "software comparison, not clinical acceptance",
+            "statistic_absolute": 0.0001
+          },
+          "version": "R version 4.3.2 (2023-10-31)"
+        }
+      }
+    }
+  },
+  "browser": {
+    "passed": true,
+    "actual_workbench_container": "#interactive-figure",
+    "actual_renderer": "ScientificFigure.mountSimulation",
+    "generated_cells": 287463,
+    "batch_sizes": [
+      94817,
+      101206,
+      91440
+    ],
+    "projects": [
+      {
+        "id": "airway",
+        "total": 287463,
+        "batches": [
+          94817,
+          101206,
+          91440
+        ],
+        "seed": 20261029
+      },
+      {
+        "id": "repair",
+        "total": 220676,
+        "batches": [
+          71283,
+          83519,
+          65874
+        ],
+        "seed": 104729
+      },
+      {
+        "id": "immune",
+        "total": 260665,
+        "batches": [
+          88342,
+          79615,
+          92708
+        ],
+        "seed": 130363
+      },
+      {
+        "id": "vascular",
+        "total": 180276,
+        "batches": [
+          56843,
+          64127,
+          59306
+        ],
+        "seed": 155921
+      },
+      {
+        "id": "stromal",
+        "total": 293508,
+        "batches": [
+          106318,
+          87429,
+          99761
+        ],
+        "seed": 196613
+      },
+      {
+        "id": "cycle",
+        "total": 145756,
+        "batches": [
+          43719,
+          52864,
+          49173
+        ],
+        "seed": 262147
+      }
+    ],
+    "viewport_points": 287463,
+    "filtered_points": 101206,
+    "point_draws": 287463,
+    "open_ms": 976,
+    "last_render_ms": 77,
+    "native_svg_and_png_downloads": true,
+    "original_state_restored": true,
+    "blocked_connected_race": true,
+    "blocked_token_and_prior_attempt": true,
+    "no_horizontal_overflow_390px": true,
+    "network_requests": 0,
+    "page_errors": [],
+    "scope": "Offline synthetic presentation; no live trial or scientific approval"
+  },
+  "gallery": {
+    "plot_count": 18,
+    "project_count": 6,
+    "manifest": "gallery/manifest.json"
+  },
+  "prior_failures": [
+    {
+      "kind": "browser_launch",
+      "detail": "Initial sandbox Chromium launch failed with MachPort permission denial; rerun with local browser permission succeeded."
+    },
+    {
+      "kind": "simulation_contract",
+      "detail": "Initial demonstration layer label lacked required generated: prefix; corrected before final validation."
+    },
+    {
+      "kind": "native_export",
+      "detail": "Initial real PNG button click was blocked by the demonstration event guard because its anchor was outside the figure. A regression reproduced the failure; synthetic anchors now stay inside the admitted figure. All 18 subsequent native exports succeeded.",
+      "evidence": "gallery/capture-attempt-01.json"
+    }
+  ],
+  "limitations": [
+    "No live trial or model-service session was run.",
+    "Synthetic scenario names do not establish tissue-specific biology.",
+    "No whole-suite or hosted-CI green claim.",
+    "Earlier checks and failed attempts are not counted as additional final passes."
+  ]
+}
