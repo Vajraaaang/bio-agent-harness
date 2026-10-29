@@ -1,0 +1,1601 @@
+{
+  "synthetic_only": true,
+  "plot_count": 48,
+  "project_count": 6,
+  "family_count": 8,
+  "model_calls": 0,
+  "network_requests": [],
+  "page_errors": [],
+  "source_sha256": {
+    "workbench-summary-plots.js": "874ac8e4ef554cbef62aee8b70b1ca95383c1f8bcd742d3bdb7fce73a7fdd1ad",
+    "workbench-demo.js": "15ccc9f0f96e3115771d40ae57c89af5d7f7ecf13639aed5f611f43bbd19fd44",
+    "scientific-figure.js": "a11a34c6c07c00b77959fffdcd2fa9105d3066eeb5da8f44eb157ab3e5c9c7aa",
+    "workbench-synthetic.js": "cde5067731820231cd78275254f368772a6e7ffef25fa73f8818ee932106e5e7"
+  },
+  "files": [
+    {
+      "file": "airway-composition.png",
+      "project_id": "airway",
+      "title": "Airway Immune Landscape · Cell-group composition",
+      "family": "composition",
+      "population_n": 287463,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "airway-summary-composition",
+        "family": "composition",
+        "panel_id": "composition",
+        "population_n": 287463,
+        "generation_population_n": 287463,
+        "batch": "all",
+        "aggregation": "Within-batch proportions; bar widths sum to 100%.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 20261029,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            94817,
+            101206,
+            91440
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "9f9bdcaf22494aaba1a14c72e2bdce263d98bced3e20134524715bce73212a2e",
+      "bytes": 162113
+    },
+    {
+      "file": "airway-depth_histogram.png",
+      "project_id": "airway",
+      "title": "Airway Immune Landscape · Read-depth histogram",
+      "family": "depth_histogram",
+      "population_n": 287463,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "airway-summary-depth_histogram",
+        "family": "depth_histogram",
+        "panel_id": "depth_histogram",
+        "population_n": 287463,
+        "generation_population_n": 287463,
+        "batch": "all",
+        "aggregation": "36 equal bins on log10(read count + 1); counts use every selected record.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 20261029,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            94817,
+            101206,
+            91440
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "ccdde9fa90aa6c4fdcd0272a15211f8b87c7e24c675643e17e87ffb9766f5077",
+      "bytes": 127225
+    },
+    {
+      "file": "airway-mito_ridges.png",
+      "project_id": "airway",
+      "title": "Airway Immune Landscape · Mitochondrial distributions",
+      "family": "mito_ridges",
+      "population_n": 287463,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "airway-summary-mito_ridges",
+        "family": "mito_ridges",
+        "panel_id": "mito_ridges",
+        "population_n": 287463,
+        "generation_population_n": 287463,
+        "batch": "all",
+        "aggregation": "36 equal bins; each batch normalized to its own peak. These are histogram outlines, not fitted densities.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 20261029,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            94817,
+            101206,
+            91440
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "d79e76985931796f257079f93c92a07932c1ae0e35e225428246dbfa396394ea",
+      "bytes": 188907
+    },
+    {
+      "file": "airway-batch_boxplot.png",
+      "project_id": "airway",
+      "title": "Airway Immune Landscape · Read-depth boxplots",
+      "family": "batch_boxplot",
+      "population_n": 287463,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "airway-summary-batch_boxplot",
+        "family": "batch_boxplot",
+        "panel_id": "batch_boxplot",
+        "population_n": 287463,
+        "generation_population_n": 287463,
+        "batch": "all",
+        "aggregation": "Box: quartiles; line: median; whiskers: minimum and maximum. Log10 axis; no outlier filtering.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 20261029,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            94817,
+            101206,
+            91440
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "2c70364c782c960af55416c9c53686455bac49d3a7e055e80374e3e05f4bacd1",
+      "bytes": 126485
+    },
+    {
+      "file": "airway-depth_ecdf.png",
+      "project_id": "airway",
+      "title": "Airway Immune Landscape · Read-depth cumulative distribution",
+      "family": "depth_ecdf",
+      "population_n": 287463,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "airway-summary-depth_ecdf",
+        "family": "depth_ecdf",
+        "panel_id": "depth_ecdf",
+        "population_n": 287463,
+        "generation_population_n": 287463,
+        "batch": "all",
+        "aggregation": "Empirical cumulative distribution at up to 201 displayed rank knots, connected linearly; ties use the full right-inclusive rank. Every record determines the ranks.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 20261029,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            94817,
+            101206,
+            91440
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "3fb035f574c67b3888f2c31723f01f7a40883d8c34cc6b6a5f474a3c7fa5f993",
+      "bytes": 173300
+    },
+    {
+      "file": "airway-module_heatmap.png",
+      "project_id": "airway",
+      "title": "Airway Immune Landscape · Module-score heatmap",
+      "family": "module_heatmap",
+      "population_n": 287463,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "airway-summary-module_heatmap",
+        "family": "module_heatmap",
+        "panel_id": "module_heatmap",
+        "population_n": 287463,
+        "generation_population_n": 287463,
+        "batch": "all",
+        "aggregation": "Arithmetic mean of generated module scores in each designed group; common 0–5 color scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 20261029,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            94817,
+            101206,
+            91440
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "c56182668e5c58ad69227625802e232d0d37913a64154c89917d6be827484748",
+      "bytes": 169665
+    },
+    {
+      "file": "airway-module_dotplot.png",
+      "project_id": "airway",
+      "title": "Airway Immune Landscape · Module-score dot plot",
+      "family": "module_dotplot",
+      "population_n": 287463,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "airway-summary-module_dotplot",
+        "family": "module_dotplot",
+        "panel_id": "module_dotplot",
+        "population_n": 287463,
+        "generation_population_n": 287463,
+        "batch": "all",
+        "aggregation": "Dot area proportional to fraction with score > 1; color is mean generated score on a common 0–5 scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 20261029,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            94817,
+            101206,
+            91440
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "09e5cf9c44cbc263b0a558e2c7829c48a959c5d2c8feaf65f5accb1254f1004a",
+      "bytes": 199130
+    },
+    {
+      "file": "airway-correlation.png",
+      "project_id": "airway",
+      "title": "Airway Immune Landscape · Measurement correlation matrix",
+      "family": "correlation",
+      "population_n": 287463,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "airway-summary-correlation",
+        "family": "correlation",
+        "panel_id": "correlation",
+        "population_n": 287463,
+        "generation_population_n": 287463,
+        "batch": "all",
+        "aggregation": "Pearson correlations across generated log10(reads + 1), genes, mitochondrial fraction and immune score; no p-values.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 20261029,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            94817,
+            101206,
+            91440
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "ce58cc55a6d0f8edfb120ec6ba92e7aaa1bc961d76283aafcc446dfc9578a425",
+      "bytes": 149232
+    },
+    {
+      "file": "repair-composition.png",
+      "project_id": "repair",
+      "title": "Tissue Repair Atlas · Cell-group composition",
+      "family": "composition",
+      "population_n": 220676,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "repair-summary-composition",
+        "family": "composition",
+        "panel_id": "composition",
+        "population_n": 220676,
+        "generation_population_n": 220676,
+        "batch": "all",
+        "aggregation": "Within-batch proportions; bar widths sum to 100%.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 104729,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            71283,
+            83519,
+            65874
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "403a697a538c35c55c3d54c738ee5eaac6f5616d871a718859c89328b97d0ab8",
+      "bytes": 159172
+    },
+    {
+      "file": "repair-depth_histogram.png",
+      "project_id": "repair",
+      "title": "Tissue Repair Atlas · Read-depth histogram",
+      "family": "depth_histogram",
+      "population_n": 220676,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "repair-summary-depth_histogram",
+        "family": "depth_histogram",
+        "panel_id": "depth_histogram",
+        "population_n": 220676,
+        "generation_population_n": 220676,
+        "batch": "all",
+        "aggregation": "36 equal bins on log10(read count + 1); counts use every selected record.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 104729,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            71283,
+            83519,
+            65874
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "256986c4aca20d8d1858658e4a1dfa364d7c8aa56907188fb442df27ccdafbf6",
+      "bytes": 122617
+    },
+    {
+      "file": "repair-mito_ridges.png",
+      "project_id": "repair",
+      "title": "Tissue Repair Atlas · Mitochondrial distributions",
+      "family": "mito_ridges",
+      "population_n": 220676,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "repair-summary-mito_ridges",
+        "family": "mito_ridges",
+        "panel_id": "mito_ridges",
+        "population_n": 220676,
+        "generation_population_n": 220676,
+        "batch": "all",
+        "aggregation": "36 equal bins; each batch normalized to its own peak. These are histogram outlines, not fitted densities.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 104729,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            71283,
+            83519,
+            65874
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "7c5958153a411130f00069027884fd46e9d1bce9cd1e002b2de0090882421883",
+      "bytes": 186827
+    },
+    {
+      "file": "repair-batch_boxplot.png",
+      "project_id": "repair",
+      "title": "Tissue Repair Atlas · Read-depth boxplots",
+      "family": "batch_boxplot",
+      "population_n": 220676,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "repair-summary-batch_boxplot",
+        "family": "batch_boxplot",
+        "panel_id": "batch_boxplot",
+        "population_n": 220676,
+        "generation_population_n": 220676,
+        "batch": "all",
+        "aggregation": "Box: quartiles; line: median; whiskers: minimum and maximum. Log10 axis; no outlier filtering.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 104729,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            71283,
+            83519,
+            65874
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "0b1ca7766daff9ad22ff02cbf310d90f019e831d5e14fc113c7e49a4e925b2f9",
+      "bytes": 123500
+    },
+    {
+      "file": "repair-depth_ecdf.png",
+      "project_id": "repair",
+      "title": "Tissue Repair Atlas · Read-depth cumulative distribution",
+      "family": "depth_ecdf",
+      "population_n": 220676,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "repair-summary-depth_ecdf",
+        "family": "depth_ecdf",
+        "panel_id": "depth_ecdf",
+        "population_n": 220676,
+        "generation_population_n": 220676,
+        "batch": "all",
+        "aggregation": "Empirical cumulative distribution at up to 201 displayed rank knots, connected linearly; ties use the full right-inclusive rank. Every record determines the ranks.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 104729,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            71283,
+            83519,
+            65874
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "a87c5b858ed249c9a66d7f21fae2c9887386db7d979d42eb1573128461a7d270",
+      "bytes": 179665
+    },
+    {
+      "file": "repair-module_heatmap.png",
+      "project_id": "repair",
+      "title": "Tissue Repair Atlas · Module-score heatmap",
+      "family": "module_heatmap",
+      "population_n": 220676,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "repair-summary-module_heatmap",
+        "family": "module_heatmap",
+        "panel_id": "module_heatmap",
+        "population_n": 220676,
+        "generation_population_n": 220676,
+        "batch": "all",
+        "aggregation": "Arithmetic mean of generated module scores in each designed group; common 0–5 color scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 104729,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            71283,
+            83519,
+            65874
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "dfacfa8abb1b06f50a0913388d15102b5c97d1a6b5ed40a25aaa426ac64e1a1e",
+      "bytes": 166237
+    },
+    {
+      "file": "repair-module_dotplot.png",
+      "project_id": "repair",
+      "title": "Tissue Repair Atlas · Module-score dot plot",
+      "family": "module_dotplot",
+      "population_n": 220676,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "repair-summary-module_dotplot",
+        "family": "module_dotplot",
+        "panel_id": "module_dotplot",
+        "population_n": 220676,
+        "generation_population_n": 220676,
+        "batch": "all",
+        "aggregation": "Dot area proportional to fraction with score > 1; color is mean generated score on a common 0–5 scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 104729,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            71283,
+            83519,
+            65874
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "cde35ad0b613f1444a9d9f7756143f10885dc58653e0fd378c1d489150fc62ff",
+      "bytes": 196119
+    },
+    {
+      "file": "repair-correlation.png",
+      "project_id": "repair",
+      "title": "Tissue Repair Atlas · Measurement correlation matrix",
+      "family": "correlation",
+      "population_n": 220676,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "repair-summary-correlation",
+        "family": "correlation",
+        "panel_id": "correlation",
+        "population_n": 220676,
+        "generation_population_n": 220676,
+        "batch": "all",
+        "aggregation": "Pearson correlations across generated log10(reads + 1), genes, mitochondrial fraction and immune score; no p-values.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 104729,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            71283,
+            83519,
+            65874
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "49f9385297b763da049c7a5a7b876f788286e1e4e49258274b74a8367d146118",
+      "bytes": 147728
+    },
+    {
+      "file": "immune-composition.png",
+      "project_id": "immune",
+      "title": "Immune Activation Map · Cell-group composition",
+      "family": "composition",
+      "population_n": 260665,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "immune-summary-composition",
+        "family": "composition",
+        "panel_id": "composition",
+        "population_n": 260665,
+        "generation_population_n": 260665,
+        "batch": "all",
+        "aggregation": "Within-batch proportions; bar widths sum to 100%.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 130363,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            88342,
+            79615,
+            92708
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "da3edde83d2a277766ccac04557edab33b863e7e0b3089692554e09ef41cb26c",
+      "bytes": 161671
+    },
+    {
+      "file": "immune-depth_histogram.png",
+      "project_id": "immune",
+      "title": "Immune Activation Map · Read-depth histogram",
+      "family": "depth_histogram",
+      "population_n": 260665,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "immune-summary-depth_histogram",
+        "family": "depth_histogram",
+        "panel_id": "depth_histogram",
+        "population_n": 260665,
+        "generation_population_n": 260665,
+        "batch": "all",
+        "aggregation": "36 equal bins on log10(read count + 1); counts use every selected record.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 130363,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            88342,
+            79615,
+            92708
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "6d0e81df09ca315b4af9939fd42eddc7728a101d3f2fd853b0c9704d407158d3",
+      "bytes": 122259
+    },
+    {
+      "file": "immune-mito_ridges.png",
+      "project_id": "immune",
+      "title": "Immune Activation Map · Mitochondrial distributions",
+      "family": "mito_ridges",
+      "population_n": 260665,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "immune-summary-mito_ridges",
+        "family": "mito_ridges",
+        "panel_id": "mito_ridges",
+        "population_n": 260665,
+        "generation_population_n": 260665,
+        "batch": "all",
+        "aggregation": "36 equal bins; each batch normalized to its own peak. These are histogram outlines, not fitted densities.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 130363,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            88342,
+            79615,
+            92708
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "a12800efb8ec12a1a0a4378d452c714abf48f15517dae696a225f5d16f30b737",
+      "bytes": 186762
+    },
+    {
+      "file": "immune-batch_boxplot.png",
+      "project_id": "immune",
+      "title": "Immune Activation Map · Read-depth boxplots",
+      "family": "batch_boxplot",
+      "population_n": 260665,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "immune-summary-batch_boxplot",
+        "family": "batch_boxplot",
+        "panel_id": "batch_boxplot",
+        "population_n": 260665,
+        "generation_population_n": 260665,
+        "batch": "all",
+        "aggregation": "Box: quartiles; line: median; whiskers: minimum and maximum. Log10 axis; no outlier filtering.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 130363,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            88342,
+            79615,
+            92708
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "2ec7bacead99fabaa3cd47e69a4c797120fa22b5e95599dfd4a450bd1fa426d1",
+      "bytes": 123051
+    },
+    {
+      "file": "immune-depth_ecdf.png",
+      "project_id": "immune",
+      "title": "Immune Activation Map · Read-depth cumulative distribution",
+      "family": "depth_ecdf",
+      "population_n": 260665,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "immune-summary-depth_ecdf",
+        "family": "depth_ecdf",
+        "panel_id": "depth_ecdf",
+        "population_n": 260665,
+        "generation_population_n": 260665,
+        "batch": "all",
+        "aggregation": "Empirical cumulative distribution at up to 201 displayed rank knots, connected linearly; ties use the full right-inclusive rank. Every record determines the ranks.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 130363,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            88342,
+            79615,
+            92708
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "f5cc9e62cb4d63b24b01abd707c984117eea1a43a98f9cdd9f062db38c4f3504",
+      "bytes": 179971
+    },
+    {
+      "file": "immune-module_heatmap.png",
+      "project_id": "immune",
+      "title": "Immune Activation Map · Module-score heatmap",
+      "family": "module_heatmap",
+      "population_n": 260665,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "immune-summary-module_heatmap",
+        "family": "module_heatmap",
+        "panel_id": "module_heatmap",
+        "population_n": 260665,
+        "generation_population_n": 260665,
+        "batch": "all",
+        "aggregation": "Arithmetic mean of generated module scores in each designed group; common 0–5 color scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 130363,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            88342,
+            79615,
+            92708
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "7c944d66cea38a6901543fa77ab52adf696d79e4d43b4fd3ee85a552c713c097",
+      "bytes": 167671
+    },
+    {
+      "file": "immune-module_dotplot.png",
+      "project_id": "immune",
+      "title": "Immune Activation Map · Module-score dot plot",
+      "family": "module_dotplot",
+      "population_n": 260665,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "immune-summary-module_dotplot",
+        "family": "module_dotplot",
+        "panel_id": "module_dotplot",
+        "population_n": 260665,
+        "generation_population_n": 260665,
+        "batch": "all",
+        "aggregation": "Dot area proportional to fraction with score > 1; color is mean generated score on a common 0–5 scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 130363,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            88342,
+            79615,
+            92708
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "5150e521cac30f1e1238a24d87ba772187883ca8e388dac56ddc43b27824d018",
+      "bytes": 195803
+    },
+    {
+      "file": "immune-correlation.png",
+      "project_id": "immune",
+      "title": "Immune Activation Map · Measurement correlation matrix",
+      "family": "correlation",
+      "population_n": 260665,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "immune-summary-correlation",
+        "family": "correlation",
+        "panel_id": "correlation",
+        "population_n": 260665,
+        "generation_population_n": 260665,
+        "batch": "all",
+        "aggregation": "Pearson correlations across generated log10(reads + 1), genes, mitochondrial fraction and immune score; no p-values.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 130363,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            88342,
+            79615,
+            92708
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "062e845f253016844b72fd80a427efafae3f54328e8adbae40ddab642e6a3b27",
+      "bytes": 147797
+    },
+    {
+      "file": "vascular-composition.png",
+      "project_id": "vascular",
+      "title": "Vascular Cell Landscape · Cell-group composition",
+      "family": "composition",
+      "population_n": 180276,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "vascular-summary-composition",
+        "family": "composition",
+        "panel_id": "composition",
+        "population_n": 180276,
+        "generation_population_n": 180276,
+        "batch": "all",
+        "aggregation": "Within-batch proportions; bar widths sum to 100%.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 155921,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            56843,
+            64127,
+            59306
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "f8aee2ecaa11091481293eb5aca0a803af857545cfcaacc642b5a9d75b0f3e36",
+      "bytes": 160426
+    },
+    {
+      "file": "vascular-depth_histogram.png",
+      "project_id": "vascular",
+      "title": "Vascular Cell Landscape · Read-depth histogram",
+      "family": "depth_histogram",
+      "population_n": 180276,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "vascular-summary-depth_histogram",
+        "family": "depth_histogram",
+        "panel_id": "depth_histogram",
+        "population_n": 180276,
+        "generation_population_n": 180276,
+        "batch": "all",
+        "aggregation": "36 equal bins on log10(read count + 1); counts use every selected record.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 155921,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            56843,
+            64127,
+            59306
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "2f5c5e4ceeb867fa4940ab47fe02ecaa13bf4c71d330e36dfeab17d6b7f89956",
+      "bytes": 123878
+    },
+    {
+      "file": "vascular-mito_ridges.png",
+      "project_id": "vascular",
+      "title": "Vascular Cell Landscape · Mitochondrial distributions",
+      "family": "mito_ridges",
+      "population_n": 180276,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "vascular-summary-mito_ridges",
+        "family": "mito_ridges",
+        "panel_id": "mito_ridges",
+        "population_n": 180276,
+        "generation_population_n": 180276,
+        "batch": "all",
+        "aggregation": "36 equal bins; each batch normalized to its own peak. These are histogram outlines, not fitted densities.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 155921,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            56843,
+            64127,
+            59306
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "873837c2d417ddbddc9923bbd1f387878c69973582d53081615e65d7ebcc0d1e",
+      "bytes": 188920
+    },
+    {
+      "file": "vascular-batch_boxplot.png",
+      "project_id": "vascular",
+      "title": "Vascular Cell Landscape · Read-depth boxplots",
+      "family": "batch_boxplot",
+      "population_n": 180276,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "vascular-summary-batch_boxplot",
+        "family": "batch_boxplot",
+        "panel_id": "batch_boxplot",
+        "population_n": 180276,
+        "generation_population_n": 180276,
+        "batch": "all",
+        "aggregation": "Box: quartiles; line: median; whiskers: minimum and maximum. Log10 axis; no outlier filtering.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 155921,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            56843,
+            64127,
+            59306
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "0e4b71dd8b5b62ddf3604c9cf1c6f3154e493a0cbac9d8a86bf6042b0c144342",
+      "bytes": 124415
+    },
+    {
+      "file": "vascular-depth_ecdf.png",
+      "project_id": "vascular",
+      "title": "Vascular Cell Landscape · Read-depth cumulative distribution",
+      "family": "depth_ecdf",
+      "population_n": 180276,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "vascular-summary-depth_ecdf",
+        "family": "depth_ecdf",
+        "panel_id": "depth_ecdf",
+        "population_n": 180276,
+        "generation_population_n": 180276,
+        "batch": "all",
+        "aggregation": "Empirical cumulative distribution at up to 201 displayed rank knots, connected linearly; ties use the full right-inclusive rank. Every record determines the ranks.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 155921,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            56843,
+            64127,
+            59306
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "ff8058b5ab8f2a467ccddd0142f1e5a84017c756dc2c9cf5b689ee6ab1b471d3",
+      "bytes": 182398
+    },
+    {
+      "file": "vascular-module_heatmap.png",
+      "project_id": "vascular",
+      "title": "Vascular Cell Landscape · Module-score heatmap",
+      "family": "module_heatmap",
+      "population_n": 180276,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "vascular-summary-module_heatmap",
+        "family": "module_heatmap",
+        "panel_id": "module_heatmap",
+        "population_n": 180276,
+        "generation_population_n": 180276,
+        "batch": "all",
+        "aggregation": "Arithmetic mean of generated module scores in each designed group; common 0–5 color scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 155921,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            56843,
+            64127,
+            59306
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "93a500ff2a0c4199ad438791175764405879c37b16461770b5b4ae1dfd63d681",
+      "bytes": 170499
+    },
+    {
+      "file": "vascular-module_dotplot.png",
+      "project_id": "vascular",
+      "title": "Vascular Cell Landscape · Module-score dot plot",
+      "family": "module_dotplot",
+      "population_n": 180276,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "vascular-summary-module_dotplot",
+        "family": "module_dotplot",
+        "panel_id": "module_dotplot",
+        "population_n": 180276,
+        "generation_population_n": 180276,
+        "batch": "all",
+        "aggregation": "Dot area proportional to fraction with score > 1; color is mean generated score on a common 0–5 scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 155921,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            56843,
+            64127,
+            59306
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "3e30d78638587a17e7c74128aff240afda41421defb5093107dead78411213cd",
+      "bytes": 196956
+    },
+    {
+      "file": "vascular-correlation.png",
+      "project_id": "vascular",
+      "title": "Vascular Cell Landscape · Measurement correlation matrix",
+      "family": "correlation",
+      "population_n": 180276,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "vascular-summary-correlation",
+        "family": "correlation",
+        "panel_id": "correlation",
+        "population_n": 180276,
+        "generation_population_n": 180276,
+        "batch": "all",
+        "aggregation": "Pearson correlations across generated log10(reads + 1), genes, mitochondrial fraction and immune score; no p-values.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 155921,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            56843,
+            64127,
+            59306
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "70d425b2d2b864e64f16b80767bfd6115f7da2e542809a653d9137e6e2d3bd0f",
+      "bytes": 147433
+    },
+    {
+      "file": "stromal-composition.png",
+      "project_id": "stromal",
+      "title": "Stromal Remodeling Study · Cell-group composition",
+      "family": "composition",
+      "population_n": 293508,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "stromal-summary-composition",
+        "family": "composition",
+        "panel_id": "composition",
+        "population_n": 293508,
+        "generation_population_n": 293508,
+        "batch": "all",
+        "aggregation": "Within-batch proportions; bar widths sum to 100%.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 196613,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            106318,
+            87429,
+            99761
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "2514ee95013dfeca9418963d2d95216ccee2d242cf406a68f1d94258bb8d28ef",
+      "bytes": 162949
+    },
+    {
+      "file": "stromal-depth_histogram.png",
+      "project_id": "stromal",
+      "title": "Stromal Remodeling Study · Read-depth histogram",
+      "family": "depth_histogram",
+      "population_n": 293508,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "stromal-summary-depth_histogram",
+        "family": "depth_histogram",
+        "panel_id": "depth_histogram",
+        "population_n": 293508,
+        "generation_population_n": 293508,
+        "batch": "all",
+        "aggregation": "36 equal bins on log10(read count + 1); counts use every selected record.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 196613,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            106318,
+            87429,
+            99761
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "3504230c479fb3d74108230291daf73b85f759bbf270030329189a9a9263509f",
+      "bytes": 128090
+    },
+    {
+      "file": "stromal-mito_ridges.png",
+      "project_id": "stromal",
+      "title": "Stromal Remodeling Study · Mitochondrial distributions",
+      "family": "mito_ridges",
+      "population_n": 293508,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "stromal-summary-mito_ridges",
+        "family": "mito_ridges",
+        "panel_id": "mito_ridges",
+        "population_n": 293508,
+        "generation_population_n": 293508,
+        "batch": "all",
+        "aggregation": "36 equal bins; each batch normalized to its own peak. These are histogram outlines, not fitted densities.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 196613,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            106318,
+            87429,
+            99761
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "f13abb246859b3fdb24eb11aca44d5d70d949d207b0abdca9c432d52b0522a91",
+      "bytes": 187031
+    },
+    {
+      "file": "stromal-batch_boxplot.png",
+      "project_id": "stromal",
+      "title": "Stromal Remodeling Study · Read-depth boxplots",
+      "family": "batch_boxplot",
+      "population_n": 293508,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "stromal-summary-batch_boxplot",
+        "family": "batch_boxplot",
+        "panel_id": "batch_boxplot",
+        "population_n": 293508,
+        "generation_population_n": 293508,
+        "batch": "all",
+        "aggregation": "Box: quartiles; line: median; whiskers: minimum and maximum. Log10 axis; no outlier filtering.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 196613,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            106318,
+            87429,
+            99761
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "4a5188d2db725e8e212fa9ccf61bdfb4139442bfd1d11b9f64dab27509f2caa5",
+      "bytes": 126372
+    },
+    {
+      "file": "stromal-depth_ecdf.png",
+      "project_id": "stromal",
+      "title": "Stromal Remodeling Study · Read-depth cumulative distribution",
+      "family": "depth_ecdf",
+      "population_n": 293508,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "stromal-summary-depth_ecdf",
+        "family": "depth_ecdf",
+        "panel_id": "depth_ecdf",
+        "population_n": 293508,
+        "generation_population_n": 293508,
+        "batch": "all",
+        "aggregation": "Empirical cumulative distribution at up to 201 displayed rank knots, connected linearly; ties use the full right-inclusive rank. Every record determines the ranks.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 196613,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            106318,
+            87429,
+            99761
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "dd8c5abed8a096f8eb0e3f42e2506cd552d9e0faaecd1dd25cea11979d1016a2",
+      "bytes": 182495
+    },
+    {
+      "file": "stromal-module_heatmap.png",
+      "project_id": "stromal",
+      "title": "Stromal Remodeling Study · Module-score heatmap",
+      "family": "module_heatmap",
+      "population_n": 293508,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "stromal-summary-module_heatmap",
+        "family": "module_heatmap",
+        "panel_id": "module_heatmap",
+        "population_n": 293508,
+        "generation_population_n": 293508,
+        "batch": "all",
+        "aggregation": "Arithmetic mean of generated module scores in each designed group; common 0–5 color scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 196613,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            106318,
+            87429,
+            99761
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "a16413f132248070fdefb55792818c6bb7d742cc61dbe3a87f377ce4377a8281",
+      "bytes": 170230
+    },
+    {
+      "file": "stromal-module_dotplot.png",
+      "project_id": "stromal",
+      "title": "Stromal Remodeling Study · Module-score dot plot",
+      "family": "module_dotplot",
+      "population_n": 293508,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "stromal-summary-module_dotplot",
+        "family": "module_dotplot",
+        "panel_id": "module_dotplot",
+        "population_n": 293508,
+        "generation_population_n": 293508,
+        "batch": "all",
+        "aggregation": "Dot area proportional to fraction with score > 1; color is mean generated score on a common 0–5 scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 196613,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            106318,
+            87429,
+            99761
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "53bce772f68bd54e3ef5003b163ec76b58efac4e8b2775bb51dfd569b1581e26",
+      "bytes": 197956
+    },
+    {
+      "file": "stromal-correlation.png",
+      "project_id": "stromal",
+      "title": "Stromal Remodeling Study · Measurement correlation matrix",
+      "family": "correlation",
+      "population_n": 293508,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "stromal-summary-correlation",
+        "family": "correlation",
+        "panel_id": "correlation",
+        "population_n": 293508,
+        "generation_population_n": 293508,
+        "batch": "all",
+        "aggregation": "Pearson correlations across generated log10(reads + 1), genes, mitochondrial fraction and immune score; no p-values.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 196613,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            106318,
+            87429,
+            99761
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "b66a4e112648a5223c8f4eb5e23136db32bfc356bd6c91e359b10b30f34d2a85",
+      "bytes": 149514
+    },
+    {
+      "file": "cycle-composition.png",
+      "project_id": "cycle",
+      "title": "Cell-Cycle Reference · Cell-group composition",
+      "family": "composition",
+      "population_n": 145756,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "cycle-summary-composition",
+        "family": "composition",
+        "panel_id": "composition",
+        "population_n": 145756,
+        "generation_population_n": 145756,
+        "batch": "all",
+        "aggregation": "Within-batch proportions; bar widths sum to 100%.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 262147,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            43719,
+            52864,
+            49173
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "37d9d3f209f1a14e49f40df8fd4ced0cb5e232365fe5ff9be422b03d734e6597",
+      "bytes": 159044
+    },
+    {
+      "file": "cycle-depth_histogram.png",
+      "project_id": "cycle",
+      "title": "Cell-Cycle Reference · Read-depth histogram",
+      "family": "depth_histogram",
+      "population_n": 145756,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "cycle-summary-depth_histogram",
+        "family": "depth_histogram",
+        "panel_id": "depth_histogram",
+        "population_n": 145756,
+        "generation_population_n": 145756,
+        "batch": "all",
+        "aggregation": "36 equal bins on log10(read count + 1); counts use every selected record.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 262147,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            43719,
+            52864,
+            49173
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "a6824dc1a0d25f31f8e9c045aebac9ecd23495bdabd9cd3f241ef344652bfad2",
+      "bytes": 122612
+    },
+    {
+      "file": "cycle-mito_ridges.png",
+      "project_id": "cycle",
+      "title": "Cell-Cycle Reference · Mitochondrial distributions",
+      "family": "mito_ridges",
+      "population_n": 145756,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "cycle-summary-mito_ridges",
+        "family": "mito_ridges",
+        "panel_id": "mito_ridges",
+        "population_n": 145756,
+        "generation_population_n": 145756,
+        "batch": "all",
+        "aggregation": "36 equal bins; each batch normalized to its own peak. These are histogram outlines, not fitted densities.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 262147,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            43719,
+            52864,
+            49173
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "27a9df2b316399caaccc0a79ee35b77eefe055287e55279ed801a9438c8978ab",
+      "bytes": 185065
+    },
+    {
+      "file": "cycle-batch_boxplot.png",
+      "project_id": "cycle",
+      "title": "Cell-Cycle Reference · Read-depth boxplots",
+      "family": "batch_boxplot",
+      "population_n": 145756,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "cycle-summary-batch_boxplot",
+        "family": "batch_boxplot",
+        "panel_id": "batch_boxplot",
+        "population_n": 145756,
+        "generation_population_n": 145756,
+        "batch": "all",
+        "aggregation": "Box: quartiles; line: median; whiskers: minimum and maximum. Log10 axis; no outlier filtering.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 262147,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            43719,
+            52864,
+            49173
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "3dfdb825212001f02b4bf08ce620d34ea077f9be86452a803199f8dbaa6d4d2a",
+      "bytes": 122413
+    },
+    {
+      "file": "cycle-depth_ecdf.png",
+      "project_id": "cycle",
+      "title": "Cell-Cycle Reference · Read-depth cumulative distribution",
+      "family": "depth_ecdf",
+      "population_n": 145756,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "cycle-summary-depth_ecdf",
+        "family": "depth_ecdf",
+        "panel_id": "depth_ecdf",
+        "population_n": 145756,
+        "generation_population_n": 145756,
+        "batch": "all",
+        "aggregation": "Empirical cumulative distribution at up to 201 displayed rank knots, connected linearly; ties use the full right-inclusive rank. Every record determines the ranks.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 262147,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            43719,
+            52864,
+            49173
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "a0681b0a5b33bfd53ecf53167b9b12cc5e7391c07eba8b55f55cb9565b004476",
+      "bytes": 179248
+    },
+    {
+      "file": "cycle-module_heatmap.png",
+      "project_id": "cycle",
+      "title": "Cell-Cycle Reference · Module-score heatmap",
+      "family": "module_heatmap",
+      "population_n": 145756,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "cycle-summary-module_heatmap",
+        "family": "module_heatmap",
+        "panel_id": "module_heatmap",
+        "population_n": 145756,
+        "generation_population_n": 145756,
+        "batch": "all",
+        "aggregation": "Arithmetic mean of generated module scores in each designed group; common 0–5 color scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 262147,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            43719,
+            52864,
+            49173
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "bdd2d58e2dc49ea9e49abc034f7e319e5085fcc16e010cc074daac9a1730979f",
+      "bytes": 166223
+    },
+    {
+      "file": "cycle-module_dotplot.png",
+      "project_id": "cycle",
+      "title": "Cell-Cycle Reference · Module-score dot plot",
+      "family": "module_dotplot",
+      "population_n": 145756,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "cycle-summary-module_dotplot",
+        "family": "module_dotplot",
+        "panel_id": "module_dotplot",
+        "population_n": 145756,
+        "generation_population_n": 145756,
+        "batch": "all",
+        "aggregation": "Dot area proportional to fraction with score > 1; color is mean generated score on a common 0–5 scale.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 262147,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            43719,
+            52864,
+            49173
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "e4bef0d4166949fe0cea49cfc8745917a07bdd71dafb9c5c1e76f545724b2130",
+      "bytes": 196992
+    },
+    {
+      "file": "cycle-correlation.png",
+      "project_id": "cycle",
+      "title": "Cell-Cycle Reference · Measurement correlation matrix",
+      "family": "correlation",
+      "population_n": 145756,
+      "configuration": {
+        "format": "devbench.simulated-summary/1",
+        "figure_id": "cycle-summary-correlation",
+        "family": "correlation",
+        "panel_id": "correlation",
+        "population_n": 145756,
+        "generation_population_n": 145756,
+        "batch": "all",
+        "aggregation": "Pearson correlations across generated log10(reads + 1), genes, mitochondrial fraction and immune score; no p-values.",
+        "provenance": {
+          "kind": "synthetic",
+          "seed": 262147,
+          "generator": "workbench-simulation/1",
+          "batch_sizes": [
+            43719,
+            52864,
+            49173
+          ],
+          "live_trials": 0,
+          "biological_observations": 0
+        }
+      },
+      "width": 1800,
+      "height": 1280,
+      "sha256": "a608f02b5c7b942b8858788463abe93f79674da034ec6460470eed286d24e679",
+      "bytes": 145907
+    }
+  ]
+}

@@ -1,0 +1,146 @@
+{
+  "schema_version": "workbench-plot-families-verification/1",
+  "focused_tests": {
+    "passed": 88,
+    "seconds": 89.61,
+    "modules": [
+      "test_workbench_summary_plots.py",
+      "test_workbench_demo.py",
+      "test_workbench_ui_packaging.py",
+      "test_workbench_ui.py",
+      "test_scientific_figure_simulation.py",
+      "test_scientific_figure_redesign.py"
+    ],
+    "scope": "Frozen publication source; local socket/process permission enabled."
+  },
+  "browser": {
+    "native_png_exports": 48,
+    "new_plot_families": 8,
+    "projects": 6,
+    "network_requests": 0,
+    "page_errors": [],
+    "manifest": "gallery/manifest.json",
+    "visual_qa": "Representative exports from all eight families reviewed; all48 hashes/dimensions/header regions verified."
+  },
+  "controlled_synthetic": {
+    "seconds": 32.847990374999426,
+    "model_calls": 0,
+    "synthetic_only": true,
+    "cases": {
+      "continuous": {
+        "status": "analysis_complete_pending_review",
+        "repeat": true,
+        "audit_valid": true,
+        "r_reference": {
+          "differences": {
+            "g000": {
+              "p_absolute_error": 5.735429492448318e-17,
+              "statistic_absolute_error": 1.2434497875801753e-14
+            },
+            "g001": {
+              "p_absolute_error": 1.1379786002407855e-15,
+              "statistic_absolute_error": 9.547918011776346e-15
+            },
+            "g002": {
+              "p_absolute_error": 8.326672684688674e-16,
+              "statistic_absolute_error": 7.993605777301127e-15
+            }
+          },
+          "numerical_agreement": true,
+          "reference": [
+            {
+              "gene": "g000",
+              "p_value": 0.0009627423343542,
+              "statistic": 8.15658104678238
+            },
+            {
+              "gene": "g001",
+              "p_value": 0.193230951919686,
+              "statistic": 1.72919059577218
+            },
+            {
+              "gene": "g002",
+              "p_value": 0.141931780697485,
+              "statistic": 2.03079988964388
+            }
+          ],
+          "scope": "fixed Gaussian F test",
+          "status": "completed",
+          "tolerances": {
+            "p_absolute": 1e-08,
+            "scope": "software comparison, not clinical acceptance",
+            "statistic_absolute": 0.0001
+          },
+          "version": "R version 4.3.2 (2023-10-31)"
+        }
+      },
+      "counts": {
+        "status": "analysis_complete_pending_review",
+        "repeat": true,
+        "audit_valid": true,
+        "r_reference": {
+          "differences": {
+            "g000": {
+              "p_absolute_error": 1.6978480082874738e-16,
+              "statistic_absolute_error": 6.972747570443971e-07
+            },
+            "g001": {
+              "p_absolute_error": 2.008674993205195e-19,
+              "statistic_absolute_error": 8.88214657379649e-09
+            },
+            "g002": {
+              "p_absolute_error": 4.570282703447639e-12,
+              "statistic_absolute_error": 9.151950415287047e-07
+            }
+          },
+          "numerical_agreement": true,
+          "reference": [
+            {
+              "gene": "g000",
+              "p_value": 4.973068094251251e-10,
+              "statistic": 46.268409206623
+            },
+            {
+              "gene": "g001",
+              "p_value": 4.6097684627251493e-11,
+              "statistic": 51.1211672375759
+            },
+            {
+              "gene": "g002",
+              "p_value": 1.03607482367185e-05,
+              "statistic": 25.8282262305198
+            }
+          ],
+          "scope": "fixed dispersion NB regression only",
+          "status": "completed",
+          "tolerances": {
+            "p_absolute": 1e-08,
+            "scope": "software comparison, not clinical acceptance",
+            "statistic_absolute": 0.0001
+          },
+          "version": "R version 4.3.2 (2023-10-31)"
+        }
+      }
+    }
+  },
+  "earlier_failures": [
+    {
+      "kind": "stale_development_test_fixture",
+      "detail": "Root test initially expected300000 although published project used287463. Test was based on the verified publication version before the new module was added."
+    },
+    {
+      "kind": "source_drift_guard",
+      "passed": 87,
+      "failed": 1,
+      "seconds": 61.57,
+      "detail": "Concurrent documentation edits changed the runtime identity during the small numerical UI test. After freezing the publication tree, all88 focused tests passed."
+    }
+  ],
+  "limitations": [
+    "No live trial or model service used.",
+    "Summary marks aggregate generated records; they are not individual cells.",
+    "ECDF uses up to201 displayed rank knots connected linearly; ties are right-inclusive.",
+    "Full-suite hosted CI not claimed green.",
+    "No biological/clinical qualification."
+  ]
+}

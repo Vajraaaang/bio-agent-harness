@@ -13,6 +13,7 @@
   const colors=['#0072b2','#e69f00','#009e73','#cc79a7','#56b4e9','#d55e00'];
   const batches=['Batch 01','Batch 02','Batch 03'];
   const views={landscape:'Cell landscape · groups',batches:'Cell landscape · batches',quality:'Library complexity',mitochondrial:'Mitochondrial fraction',activity:'Generated immune-module score'};
+  const summaryViews=root.WorkbenchSummaryPlots.titles;Object.assign(views,summaryViews);
   const batchSizes=projects[0].batchSizes.slice(),populationSize=batchSizes.reduce((a,b)=>a+b,0);
   function provenanceFor(project){return {kind:'synthetic',seed:project.seed,generator:'workbench-simulation/1',live_trials:0,biological_observations:0,batch_sizes:project.batchSizes.slice()};}
   const provenance=provenanceFor(projects[0]);
@@ -24,7 +25,7 @@
   function conversations(project){
     const prompts={landscape:'Show the cellular landscape across all three generated batches.',batches:'How do the generated batch compositions and technical depth differ?',quality:'Compare generated read depth with detected genes.',mitochondrial:'Where are the higher mitochondrial fractions in this generated population?',activity:'Show how the designed immune module varies across the generated landscape.'};
     const labels={landscape:'Map the cell landscape',batches:'Compare batch structure',quality:'Inspect library complexity',mitochondrial:'Review mitochondrial patterns',activity:'Explore the immune-module signal'};
-    return [project.defaultView,...Object.keys(views).filter(view=>view!==project.defaultView)].map(view=>({title:labels[view],question:prompts[view],view}));
+    return [project.defaultView,...Object.keys(prompts).filter(view=>view!==project.defaultView)].map(view=>({title:labels[view],question:prompts[view],view}));
   }
   function summarize(cells){
     const counts=Array(6).fill(0),immune=Array(6).fill(0),batch=Array.from({length:3},()=>({n:0,reads:0,genes:0,mito:0}));
@@ -34,6 +35,7 @@
     return {n:cells.length,groups:counts,mean_immune_by_group:immune.map((sum,i)=>counts[i]?sum/counts[i]:0),read_gene_correlation:denominator?(cells.length*sxy-sx*sy)/denominator:0,batches:batch.map(b=>({...b,mean_reads:b.n?b.reads/b.n:0,mean_genes:b.n?b.genes/b.n:0,mean_mito:b.n?b.mito/b.n:0}))};
   }
   function figure(data,view='landscape',batch='all'){
+    if(Object.hasOwn(summaryViews,view))throw Error('Use the summary renderer for aggregate views.');
     if(!Object.hasOwn(views,view)||!['all','0','1','2'].includes(batch))throw Error('Choose a defined simulation view and batch.');
     const project=projects.find(p=>p.id===(data.project?.id||projects[0].id));
     if(!project||data.provenance?.seed!==project.seed||JSON.stringify(data.provenance?.batch_sizes)!==JSON.stringify(project.batchSizes)||data.cells.length!==project.batchSizes.reduce((a,b)=>a+b,0))throw Error('Generated project data must match its declared seed and batch sizes.');
@@ -75,6 +77,7 @@
       side.querySelectorAll('[data-chat]').forEach((button,i)=>button.setAttribute('aria-current',String(i===selected)));
     }
     function draw(){
+      if(Object.hasOwn(summaryViews,currentView)){controller?.destroy();controller=root.WorkbenchSummaryPlots.mount(canvas,{data,view:currentView,batch:currentBatch});head.querySelector('[data-point-count]').textContent=number(controller.getPerformance().population_n)+' generated records summarized';head.querySelector('[data-figure]').value=currentView;return;}
       const spec=figure(data,currentView,currentBatch);
       controller?.destroy();
       controller=root.ScientificFigure.mountSimulation(canvas,{...spec,context:{label:currentProject.title+' · synthetic demonstration'}});
@@ -97,7 +100,7 @@
       for(const node of [rail,inspector,workspace,results,resultView,card,stage,canvas])setHidden(node,false);
       side=add(rail,'wd-sidebar',`<div class="brand"><h1>RNA Workbench</h1></div><div class="wd-project"><label for="simulation-project">Project</label><select id="simulation-project" data-project aria-label="Simulation project">${projects.map(p=>`<option value="${p.id}">${p.title}</option>`).join('')}</select><span class="wd-badge">Synthetic demonstration</span></div><div class="wd-navigation">▤ &nbsp; Project data <span data-project-count></span></div><p class="wd-caption">CONVERSATIONS</p><div class="wd-chats"></div><footer><p>Six fictional scenarios.<br>Generated locally · no live trial.</p><button type="button" class="secondary" data-exit>Exit simulation</button></footer>`);
       chat=add(inspector,'wd-chat','<div class="wd-loading">Preparing generated cells…</div>');
-      head=add(workspace,'wd-workspace-head',`<header><div><p class="wd-caption">FIGURES</p><h2 data-project-title></h2><p data-point-count>Preparing generated cells…</p></div><span class="wd-badge">Synthetic</span></header><div class="wd-tabs"><strong>Figures</strong><span>Local simulation · no analysis record</span></div><div class="wd-controls"><label>Figure<select data-figure>${Object.entries(views).map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></label><label>Batch<select data-batch></select></label></div><p class="wd-provenance">All selected generated cells are rendered. Coordinates are simulated, not fitted UMAP.</p>`);
+      head=add(workspace,'wd-workspace-head',`<header><div><p class="wd-caption">FIGURES</p><h2 data-project-title></h2><p data-point-count>Preparing generated cells…</p></div><span class="wd-badge">Synthetic</span></header><div class="wd-tabs"><strong>Figures</strong><span>Local simulation · no analysis record</span></div><div class="wd-controls"><label>Figure<select data-figure>${Object.entries(views).map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></label><label>Batch<select data-batch></select></label></div><p class="wd-provenance">Scatter views draw selected cells; summary views aggregate all selected records. Coordinates and measurements are generated.</p>`);
       workspace.prepend(head);
       side.querySelector('[data-exit]').onclick=exit;
       side.querySelector('[data-project]').onchange=event=>{if(preparing)return;loadProject(event.target.value);};
