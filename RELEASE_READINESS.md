@@ -1,3 +1,13 @@
+# Workbench plot families and workflow guide — October 29, 2026
+
+Eight descriptive summary families add48 native exports across six generated projects, alongside18 scatter exports. The current README and agentic-workflow guide explain the actual planner, harness, dispatcher, scientific tools and evidence boundaries.
+
+88 focused tests passed on frozen publication source. Browser exports exercised all48 PNG buttons, project switching and batch filters with zero HTTP requests/page errors. Representative images across all8 families were reviewed; all output hashes, dimensions and header regions verified. Fresh controlled continuous/count synthetic checks passed with repeat agreement, valid audits, configured R references and zero model calls. An earlier source-drift guard failure remains recorded.
+
+See [the exact verification scope](reports/workbench-plot-families-20261029/verification.json). These are bounded software and synthetic presentation checks. Full-suite hosted CI and scientific/clinical qualification are not established.
+
+---
+
 # Current workbench simulation and plot gallery — October 29, 2026
 
 The current interface includes six explicitly synthetic projects with distinct seeds and unequal populations, five plot views, computed conversation summaries and native figure exports. The homepage now focuses on this interface and its code. The standalone atlas marketing block is removed.

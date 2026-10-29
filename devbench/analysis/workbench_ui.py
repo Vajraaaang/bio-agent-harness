@@ -42,7 +42,7 @@ DOWNLOADS = {"report.json", "summary.md", "citations.json", "measurements.json",
 def render_page(nonce):
     """Compose only shipped presentation assets inside the existing nonce policy."""
     modules = "\n".join((ASSET.parent / name).read_text(encoding="utf-8")
-        for name in ("workbench-conversation.js", "scientific-figure.js", "workbench-investigations.js", "workbench-artifacts.js", "workbench-projects.js", "workbench-synthetic.js", "workbench-demo.js"))
+        for name in ("workbench-conversation.js", "scientific-figure.js", "workbench-investigations.js", "workbench-artifacts.js", "workbench-projects.js", "workbench-synthetic.js", "workbench-summary-plots.js", "workbench-demo.js"))
     theme = "\n".join((ASSET.parent / name).read_text(encoding="utf-8")
         for name in ("workbench-theme.css", "workbench-synthetic.css", "workbench-demo.css"))
     return (ASSET.read_text(encoding="utf-8")

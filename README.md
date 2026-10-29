@@ -6,7 +6,7 @@ The application is built around **Project → Data + Chats**. Project navigation
 
 ![RNA Workbench project, conversations and 287,463-point generated cell landscape](reports/workbench-integrated-simulation-20261029/images/workbench-landscape.png)
 
-The screenshot uses the current workbench’s project navigation, conversation pane and interactive figure renderer. **Airway Immune Landscape** is a clearly labeled synthetic demonstration with 287,463 generated cell-like records across three unequal batches. The conversation summaries are calculated from those records. Six fictional projects offer different generated populations, and the [plot gallery](reports/workbench-integrated-simulation-20261029/gallery/README.md) shows 18 views exported by the workbench. No live trial, model response or biological discovery is claimed.
+The screenshot uses the current workbench’s project navigation, conversation pane and interactive figure renderer. **Airway Immune Landscape** is a clearly labeled synthetic demonstration with 287,463 generated cell-like records across three unequal batches. The conversation summaries are calculated from those records. Six fictional projects offer different generated populations, and the [66-plot gallery](reports/workbench-plot-families-20261029/README.md) combines 48 summary plots and 18 scatter views exported by the workbench. No live trial, model response or biological discovery is claimed.
 
 ## Work in the interface
 
@@ -16,6 +16,16 @@ The screenshot uses the current workbench’s project navigation, conversation p
 - **Recorded work:** retain plans, runs, results, failed attempts and review decisions with their input and source identities. Execution and scientific acceptance remain separate actions.
 
 Multiple attachments are passed to the planning workflow as an exact input set. Their presence does not establish that the files can be combined or that a joint numerical analysis has run; the selected method must support the complete set.
+
+## Plot families
+
+The current figure selector adds stacked composition bars, read-depth histograms, mitochondrial histogram ridges, quartile/min–max boxplots, empirical cumulative distributions, module heatmaps, module dot plots and correlation matrices. These summarize every selected generated record; summary marks are not individual cells. The [gallery](reports/workbench-plot-families-20261029/README.md) documents the exact encodings and source identities.
+
+| Composition | Module means |
+| --- | --- |
+| ![Generated cell-group composition](reports/workbench-plot-families-20261029/gallery/airway-composition.png) | ![Generated module heatmap](reports/workbench-plot-families-20261029/gallery/airway-module_heatmap.png) |
+| Batch distributions | Correlation |
+| ![Generated mitochondrial histogram outlines](reports/workbench-plot-families-20261029/gallery/airway-mito_ridges.png) | ![Generated measurement correlations](reports/workbench-plot-families-20261029/gallery/airway-correlation.png) |
 
 ## Code organization
 
@@ -34,6 +44,25 @@ The browser uses HTML, CSS and JavaScript modules served by a local Python servi
 | Analysis services | [`devbench.analysis`](devbench/analysis), [`devharness_core`](devharness_core), [`devharness_server`](devharness_server) | Scientific planning, registered tools, bounded data access and numerical methods |
 
 The UI presents the five scientific questions in order: identify the data, define the question, assess methods, inspect outputs, and state supported conclusions. Missing inputs, failed tools and unresolved assumptions remain visible in that process.
+
+## Agentic workflow and harness
+
+The agent proposes actions; the harness owns execution and evidence. A chat follows **Data → Question → Methods → Results → Conclusion**, while the serial workflow checks finer-grained stages for scientific review, implementation resolution, trial declaration, execution and verification.
+
+```mermaid
+flowchart LR
+    A[Project data and question] --> B[Planner and bounded selector]
+    B --> C[Review and execution checks]
+    C --> D[Registered tools or admitted method]
+    D --> E[Outputs and captured evidence]
+    E --> F[Verified conclusion or abstention]
+```
+
+Model calls, discovery access, review operations and data execution have separate permissions. Registered tools validate their arguments and bound inputs; supervised numerical workers enforce applicable memory and time limits. Workflow checkpoints and operation records support explicit recovery without treating an interrupted attempt as a completed result.
+
+The harness exposes eleven registered tools, including expression-quality auditing, design-rank validation, batch diagnostics, temporal fitting, bounded bulk contrasts, lineage inference and enrichment. Their outputs retain diagnostics and scientific limits: inferred pseudotime is not collection age, and network association is not causality.
+
+Read the [workflow and harness design](docs/agentic-workflow-and-harness.md) for the exact graph route, source map, tool input/output contracts, request examples, resource boundaries and provenance model. The generated project gallery is a separate presentation path and does not supply scientific execution or review evidence.
 
 ## Run locally
 
@@ -85,6 +114,7 @@ The controlled check needs R for its configured references. A missing reference 
 
 ## Documentation
 
+- [Agentic workflow, harness and tool contracts](docs/agentic-workflow-and-harness.md)
 - [Projects, datasets and chats](docs/workbench-redesign/projects-and-source-sets.md)
 - [Scientific workspace](docs/shared-scientific-workspace.md)
 - [Local RNA analyst](docs/local-rna-analyst.md)

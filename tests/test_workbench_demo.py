@@ -15,7 +15,7 @@ def test_generated_figure_counts_summaries_and_simulation_contract():
     program = r'''
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const sandbox={window:{}};
-for(const name of ['workbench-synthetic.js','workbench-demo.js','scientific-figure.js'])vm.runInNewContext(fs.readFileSync(process.argv[1]+'/'+name,'utf8'),sandbox);
+for(const name of ['workbench-synthetic.js','workbench-summary-plots.js','workbench-demo.js','scientific-figure.js'])vm.runInNewContext(fs.readFileSync(process.argv[1]+'/'+name,'utf8'),sandbox);
 const demo=sandbox.window.WorkbenchDemo,renderer=sandbox.window.ScientificFigure;
 const data=sandbox.window.WorkbenchSynthetic.generate(20261029,demo.batchSizes),summary=demo.summarize(data.cells);
 assert.ok(summary.read_gene_correlation>0 && summary.read_gene_correlation<=1);assert.equal(summary.mean_immune_by_group.length,6);
@@ -31,7 +31,7 @@ assert.equal(full.record.provenance.kind,'synthetic');assert.equal(full.record.p
 assert.throws(()=>renderer.prepare(full.record,full.payload));
 assert.equal(renderer.prepareSimulation(full.record,full.payload).ids.length,287463);
 full=null;
-for(const view of Object.keys(demo.views)){
+for(const view of Object.keys(demo.views).filter(view=>!Object.hasOwn(sandbox.window.WorkbenchSummaryPlots.titles,view))){
  const spec=demo.figure(data,view,'1');
  assert.equal(spec.payload.population_ids.length,101206);assert.ok(spec.payload.panels[0].title.includes('Batch 02'));assert.ok(spec.payload.panels[0].panel_id.endsWith('-batch-1'));
  assert.ok(spec.payload.panels[0].rows.every(r=>r.metadata.batch==='Batch 02'));
@@ -70,7 +70,7 @@ def test_six_project_catalog_generates_distinct_reproducible_populations():
     program = r'''
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const sandbox={window:{}};
-for(const name of ['workbench-synthetic.js','workbench-demo.js','scientific-figure.js'])vm.runInNewContext(fs.readFileSync(process.argv[1]+'/'+name,'utf8'),sandbox);
+for(const name of ['workbench-synthetic.js','workbench-summary-plots.js','workbench-demo.js','scientific-figure.js'])vm.runInNewContext(fs.readFileSync(process.argv[1]+'/'+name,'utf8'),sandbox);
 const demo=sandbox.window.WorkbenchDemo,renderer=sandbox.window.ScientificFigure,seen=new Set();
 assert.equal(demo.projects.length,6);
 for(const project of demo.projects){
