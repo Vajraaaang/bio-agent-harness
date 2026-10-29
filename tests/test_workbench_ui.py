@@ -339,7 +339,7 @@ def test_real_small_fixture_flow_and_tamper_detection(root):
     inputs.mkdir()
     source, parameters, declarations = fixture(inputs)
     overrides = {key: value for key, value in parameters.items()
-        if key not in {"data_sha256", "workflow", "prompt", "execution_tier", "parent_root", "model_path", "model_sha256"}}
+        if key not in {"data_sha256", "workflow", "prompt", "execution_tier", "parent_root", "model_path", "model_sha256", "integration_decision"}}
     app = service(root, parameter_overrides=overrides, allow_data_execution=True, run_timeout_seconds=180)
     before = sha256(source)
     job = app.register({**request(source), "expected_sha256": before, "declarations": declarations})["id"]

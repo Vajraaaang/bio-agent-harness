@@ -238,7 +238,10 @@ def _cell_ids(data):
 
 
 def _column(data, settings, name="condition_col", default="condition"):
-    label = settings.get(name, default)
+    declared = data.context.get("analysis_columns", {}).get("condition") if name == "condition_col" else None
+    if declared is not None and name in settings and settings[name] != declared:
+        raise _Unavailable("condition_option_changes_declared_coordinate")
+    label = declared if declared is not None else settings.get(name, default)
     if label not in data.metadata or any(not str(value).strip() for value in data.metadata[label]):
         raise _Unavailable("missing_or_empty_" + name)
     return label
@@ -318,13 +321,14 @@ def _annotate(data, settings):
     centered = log - log.mean(axis=1, keepdims=True)
     scale = log.std(axis=1, ddof=1, keepdims=True) if len(data.sample_ids) > 1 else np.ones((len(data.gene_ids), 1))
     standardized = np.divide(centered, scale, out=np.zeros_like(centered), where=scale > 1e-12)
-    names, vectors, detected = [], [], []
+    names, vectors, detected, expression_vectors = [], [], [], []
     for label, markers in sets.items():
         rows = [lookup[gene] for gene in markers if gene in lookup]
         if not rows:
             continue
         names.append(label)
         vectors.append(standardized[rows].mean(axis=0))
+        expression_vectors.append(log[rows].mean(axis=0))
         detected.append((data.expression[rows] > 0).sum(axis=0))
     if not names:
         raise _Unavailable("marker_reference_has_no_measured_features")
@@ -334,19 +338,59 @@ def _annotate(data, settings):
     best = scores[top, np.arange(scores.shape[1])]
     second = scores[ranks[1], np.arange(scores.shape[1])] if len(names) > 1 else np.zeros(scores.shape[1])
     margin = best - second
+    # Equal positive marker expression remains ambiguous even when cohort-wide
+    # gene standardization creates a small apparent preference.
+    expression_order = np.sort(np.asarray(expression_vectors), axis=0)
+    expression_margin = expression_order[-1] - (expression_order[-2] if len(names) > 1 else 0)
     labels = [names[int(top[index])] if nonempty[index] and best[index] > 0
-              and margin[index] >= settings.get("annotation_margin", 0.25)
+              and expression_margin[index] > 1e-12
+              and margin[index] > 1e-12 and margin[index] >= settings.get("annotation_margin", 0.25)
               and detections[top[index], index] > 0 else None for index in range(len(data.sample_ids))]
     return {"labels": labels, "marker_scores": scores, "marker_labels": names,
             "top_score": best, "runner_up_score": second, "margin": margin,
+            "expression_margin": expression_margin,
             "missing_marker_feature_ids": absent, "reference_coverage": "restricted",
             "method": "mean within-gene standardized log1p depth-normalized public marker expression",
             "uncertain_cell_count": sum(label is None for label in labels),
             "cell_type_labels_are_measured_truth": False}
 
 
+def _annotation_evidence(data, annotation):
+    """Bounded public score evidence, never a calibrated identity probability."""
+    import numpy as np
+    reference = data.annotations["cell_annotation_reference"]
+    sets, _ = _marker_sets(data)
+    measured = set(data.gene_ids)
+    return {"reference_identity": reference.get("reference_identity"),
+        "reference_version": reference.get("version"), "reference_scope": reference.get("reference_scope"),
+        "method": annotation["method"], "method_version": "public_marker_standardization/1",
+        "marker_labels": annotation["marker_labels"],
+        "marker_coverage": {label: {"requested_count": len(markers),
+            "observed_count": len(measured.intersection(markers)),
+            "missing_feature_ids": [gene for gene in markers if gene not in measured]}
+            for label, markers in sets.items()},
+        "uncertain_cell_count": annotation["uncertain_cell_count"],
+        "scores_are_calibrated_probabilities": False, "cell_type_labels_are_measured_truth": False,
+        "tie_policy": "abstain_for_standardized_or_mean_log_expression_ties_within_1e-12",
+        "cell_score_preview": [{"cell_id": cell, "label": annotation["labels"][index],
+            "scores": {label: float(annotation["marker_scores"][number, index])
+                       for number in np.argsort(-annotation["marker_scores"][:, index], kind="stable")[:2]
+                       for label in [annotation["marker_labels"][number]]},
+            "top_score": float(annotation["top_score"][index]),
+            "runner_up_score": float(annotation["runner_up_score"][index]),
+            "mean_log_expression_margin": float(annotation["expression_margin"][index]),
+            "margin": float(annotation["margin"][index])}
+            for index, cell in enumerate(data.sample_ids[:50])],
+        "preview_limit": 50, "total_cells": len(data.sample_ids)}
+
+
 def _batches(data, settings):
     specified = settings.get("batch_cols")
+    roles = data.context.get("analysis_columns", {})
+    if "batches" in roles:
+        if specified is not None and list(specified) != roles["batches"]:
+            raise _Unavailable("batch_options_change_declared_coordinates")
+        specified = roles["batches"]
     columns = list(specified) if specified is not None else [name for name in ("capture_batch", "batch") if name in data.metadata]
     for column in columns:
         if column not in data.metadata or any(not str(value).strip() for value in data.metadata[column]):
@@ -369,6 +413,15 @@ def _pseudobulk(data, labels, settings, *, grouping=None, population_ids=None):
     import pandas as pd
 
     audit = _units(data)
+    roles = data.context.get("analysis_columns", {})
+    for role in ("time", "dose", "covariate"):
+        column = roles.get(role)
+        if column is not None:
+            if column not in data.metadata or data.metadata[column].isna().any() or any(
+                    not str(value).strip() for value in data.metadata[column]):
+                raise _Unavailable("missing_declared_coordinate_" + role)
+            if data.metadata[column].nunique() > 1:
+                raise _Unavailable("varying_declared_coordinate_" + role + "_model_not_implemented_no_pooling")
     if not audit["capture_batch_available"]:
         raise _Unavailable("capture_batch_identity_unavailable")
     unit = data.unit_hierarchy["population_unit_label"]
@@ -406,6 +459,10 @@ def _pseudobulk(data, labels, settings, *, grouping=None, population_ids=None):
         membership.append({"pseudobulk_id": row["sample_id"], "donor_id": donor, "condition": assigned,
                            "cell_type": label, "cell_count": len(indices),
                            "specimen_ids": sorted(set(observed[specimen])),
+                           "library_ids": sorted(set(observed[data.unit_hierarchy["library_label"]])),
+                           "declared_coordinates": {role: {"column": roles[role],
+                               "value": str(observed[roles[role]].iloc[0])}
+                               for role in ("time", "dose", "covariate") if roles.get(role) is not None},
                            "cell_ids": [data.sample_ids[index] for index in indices]})
     metadata = pd.DataFrame(rows).set_index("sample_id", drop=False)
     expression = np.asarray(values).T
@@ -423,7 +480,43 @@ def _pseudobulk(data, labels, settings, *, grouping=None, population_ids=None):
         "membership": membership, "unavailable_donor_type_combinations": missing,
         "uncertain_cells_not_used_for_type_specific_model": sum(label is None for label in labels),
         "batch_columns": batches, "missing_groups_filled_with_zeros": False}
+    details["analysis_columns"] = roles
+    details["support_policy"] = {"origin": "software_admission_policy",
+        "minimum_independent_units": settings.get("minimum_units", 3),
+        "minimum_origin": "caller_supplied" if "minimum_units" in settings else "software_default",
+        "scientific_sufficiency_established": False,
+        "low_cell_support_rule": "observed_minimum_cell_count_within_type_not_a_universal_threshold",
+        "low_cell_support_action": "contextual_warning_no_automatic_filtering"}
+    details["design_support_by_type"] = _membership_support(membership, missing, sorted(set(condition)), populations)
     return replace(data, expression=expression, sample_ids=tuple(metadata.index), metadata=metadata), details
+
+
+def _membership_support(membership, missing, conditions, populations):
+    """Describe a named pre-fit cohort without inventing missing profiles."""
+    support = {}
+    for label in populations:
+        profiles = [row for row in membership if row["cell_type"] == label]
+        donors = sorted({row["donor_id"] for row in profiles})
+        unit_groups = {donor: {row["condition"] for row in profiles if row["donor_id"] == donor}
+                       for donor in donors if any(row["donor_id"] == donor for row in profiles)}
+        repeated = any(len(groups) > 1 for groups in unit_groups.values())
+        layout = ("complete_repeated" if all(groups == set(conditions) for groups in unit_groups.values())
+                  else "incomplete_repeated") if repeated else "independent_conditions"
+        smallest = min((row["cell_count"] for row in profiles), default=None)
+        low_profiles = [row for row in profiles if row["cell_count"] == smallest]
+        missing_profiles = [row for row in missing if row["cell_type"] == label]
+        support[label] = {
+            "independent_units_per_condition": {level: len({row["donor_id"] for row in profiles
+                if row["condition"] == level}) for level in conditions},
+            "repeated_unit_layout": layout,
+            "specimen_count": len({specimen for row in profiles for specimen in row["specimen_ids"]}),
+            "library_count": len({library for row in profiles for library in row["library_ids"]}),
+            "profile_count": len(profiles), "observed_minimum_cells_per_profile": smallest,
+            "low_support_profile_count": len(low_profiles), "preview_limit": 50,
+            "low_support_profiles": [{key: row[key] for key in ("pseudobulk_id", "donor_id", "condition", "cell_count")}
+                for row in low_profiles[:50]],
+            "missing_membership_count": len(missing_profiles), "missing_memberships": missing_profiles[:50]}
+    return support
 
 
 def _subset(data, indices):
@@ -497,7 +590,7 @@ def _design(data, settings, levels, *, minimum=None):
 
 
 def _levels(data, settings):
-    observed = sorted(set(data.metadata["condition"].astype(str)))
+    observed = sorted(set(data.metadata[_column(data, settings)].astype(str)))
     requested = data.context.get("requested_condition_contrast", {})
     reference = settings.get("reference_condition", requested.get("denominator"))
     comparison = settings.get("comparison_condition", requested.get("numerator"))
@@ -507,6 +600,90 @@ def _levels(data, settings):
     if not reference or not comparison or reference == comparison or not {reference, comparison} <= set(observed):
         raise _Unavailable("explicit_supported_condition_contrast_required")
     return [reference, comparison]
+
+
+def _condition_cohort(data, settings, details):
+    """Select the requested cells before annotation or aggregation checks."""
+    condition = data.metadata[_column(data, settings)].astype(str)
+    observed = sorted(set(condition))
+    requested = data.context.get("requested_condition_contrast", {})
+    declared = [settings.get("reference_condition", requested.get("denominator")),
+                settings.get("comparison_condition", requested.get("numerator"))]
+    cohort = {"observed_condition_levels": observed,
+        "missing_requested_condition_levels": [level for level in declared if level and level not in observed],
+        "selection_rule": "validated_requested_condition_levels_before_annotation_and_aggregation",
+        "selection_based_on_model_results": False}
+    details["condition_cohort"] = cohort
+    levels = _levels(data, settings)
+    indices = [index for index, value in enumerate(condition) if value in levels]
+    cohort.update(selected_condition_levels=levels,
+        unselected_condition_levels=[level for level in observed if level not in levels],
+        selected_cell_count=len(indices), unselected_cell_count=len(condition) - len(indices))
+    return levels, indices
+
+
+def _unselected_membership(data, annotation, settings, *, grouping=None):
+    """Retain extra observations without aggregation or design eligibility claims.
+
+    Their marker scores use their own population, so they cannot change the
+    selected cohort's annotation. Unknown labels and all raw declared coordinate
+    and batch values remain observable rather than being silently discarded.
+    """
+    unit = data.unit_hierarchy["population_unit_label"]
+    specimen = data.unit_hierarchy["specimen_label"]
+    library = data.unit_hierarchy["library_label"]
+    roles = data.context.get("analysis_columns", {})
+    batches = roles.get("batches", settings.get("batch_cols", [name for name in ("capture_batch", "batch") if name in data.metadata]))
+    conditions = grouping if grouping is not None else data.metadata[_column(data, settings)].astype(str)
+    groups = {}
+    for index, (donor, condition, label) in enumerate(zip(data.metadata[unit], conditions, annotation["labels"])):
+        groups.setdefault((str(donor), condition, label), []).append(index)
+    membership = []
+    for number, ((donor, condition, label), indices) in enumerate(groups.items()):
+        observed = data.metadata.iloc[indices]
+        membership.append({"pseudobulk_id": f"unselected{number}", "donor_id": donor,
+            "condition": condition, "cell_type": label, "cell_count": len(indices),
+            "specimen_ids": sorted(set(observed[specimen])), "library_ids": sorted(set(observed[library])),
+            "cell_ids": [data.sample_ids[index] for index in indices],
+            "declared_coordinates": {role: {"column": column,
+                "observed_values": sorted(set(observed[column].astype(str))) if column in observed else None}
+                for role in ("time", "dose", "covariate") if (column := roles.get(role)) is not None},
+            "observed_batch_values": {column: sorted(set(observed[column].astype(str))) if column in observed else None
+                                      for column in batches},
+            "membership_role": "unselected_observations_only", "aggregation_performed": False,
+            "annotation_population": "unselected_condition_observations"})
+    return membership
+
+
+def _state_pseudobulk(data, settings, details):
+    """The audit and estimator share the actual selected annotation population."""
+    levels, selected = _condition_cohort(data, settings, details)
+    observed = _subset(data, selected)
+    annotation = _annotate(observed, settings)
+    populations = sorted(_marker_sets(observed)[0])
+    pseudobulk, membership = _pseudobulk(observed, annotation["labels"], settings, population_ids=populations)
+    details.update(membership)
+    details.update(observed_pseudobulk_columns=len(pseudobulk.sample_ids),
+        label_uncertainty_count=annotation["uncertain_cell_count"],
+        annotation_evidence=_annotation_evidence(observed, annotation),
+        annotation_population="selected_requested_condition_cells",
+        observed_cell_count=len(data.sample_ids))
+    selected_membership = list(details["membership"])
+    selected_indices = set(selected)
+    unselected = [index for index in range(len(data.sample_ids)) if index not in selected_indices]
+    extra_membership = []
+    if unselected:
+        extra = _subset(data, unselected)
+        extra_annotation = _annotate(extra, settings)
+        extra_membership = _unselected_membership(extra, extra_annotation, settings)
+        details["unselected_annotation_evidence"] = _annotation_evidence(extra, extra_annotation)
+    details["membership"] = selected_membership + extra_membership
+    details["condition_cohort"].update(selected_profile_count=len(selected_membership),
+        unselected_profile_count=len(extra_membership),
+        unselected_profile_ids_preview=[row["pseudobulk_id"] for row in extra_membership[:50]], preview_limit=50)
+    details["observed_design_support_by_type"] = _membership_support(details["membership"],
+        details["unavailable_donor_type_combinations"], details["condition_cohort"]["observed_condition_levels"], populations)
+    return pseudobulk, annotation, populations, levels
 
 
 def _effect_payload(data, target, rows, details, reference, *, definition, computed_contrast=None):
@@ -530,17 +707,16 @@ def _state_effect(data, target, settings, diagnostics):
     from .biology_tools_bulk import _fit_family, _linear_estimate
     from .biology_answers import ComputedConditionContrast, public_hypothesis_id
 
-    annotation = _annotate(data, settings)
-    population_ids = sorted(_marker_sets(data)[0])
-    pseudobulk, membership = _pseudobulk(data, annotation["labels"], settings, population_ids=population_ids)
-    levels = _levels(pseudobulk, settings)
+    membership = diagnostics.setdefault("pseudobulk", {})
+    pseudobulk, annotation, population_ids, levels = _state_pseudobulk(data, settings, membership)
+    diagnostics.update(annotation_method=annotation["method"], annotation_evidence=membership["annotation_evidence"],
+                       fits_by_type={})
+    cohort_indices = range(len(pseudobulk.sample_ids))
     if len(population_ids) * len(data.gene_ids) > 100000:
         raise _MethodUnavailable("complete_gene_by_type_family_exceeds_answer_bound")
-    diagnostics.update(annotation_method=annotation["method"], pseudobulk=membership, fits_by_type={})
     rows, designs = [], []
     for label in population_ids:
-        indices = [index for index, row in enumerate(pseudobulk.metadata.itertuples())
-                   if row.cell_type == label and row.condition in levels]
+        indices = [index for index in cohort_indices if pseudobulk.metadata.iloc[index]["cell_type"] == label]
         subset = _subset(pseudobulk, indices)
         fit_diagnostics = diagnostics["fits_by_type"].setdefault(label, {})
         missing_status = "failed"
@@ -549,10 +725,10 @@ def _state_effect(data, target, settings, diagnostics):
             fit_diagnostics["design"] = details
             fits, failures = _fit_family(subset, design, fit_diagnostics)
             designs.append(details)
-        except _Unavailable as error:
+        except (_Unavailable, _MethodUnavailable) as error:
             fit_diagnostics["unavailable"] = str(error)
             fits, failures = {}, {gene: str(error) for gene in data.gene_ids}
-            missing_status = "unavailable"
+            missing_status = "failed" if isinstance(error, _MethodUnavailable) else "unavailable"
         for gene in data.gene_ids:
             row = {"hypothesis_id": public_hypothesis_id(gene, label), "gene_id": gene, "component_id": label}
             if gene not in fits:
@@ -567,7 +743,8 @@ def _state_effect(data, target, settings, diagnostics):
             rows.append(row)
     if not any(row["estimate_status"] == "estimated" for row in rows):
         if any(row["estimate_status"] == "failed" for row in rows):
-            raise _MethodUnavailable("all_attempted_donor_cell_type_fits_failed")
+            reasons = sorted({item["unavailable"] for item in diagnostics["fits_by_type"].values() if "unavailable" in item})
+            raise _MethodUnavailable(";".join(reasons) or "all_attempted_donor_cell_type_fits_failed")
         raise _Unavailable("no_supported_donor_cell_type_estimates")
     limitations = ["marker_annotation_is_uncertain", "conditional_on_observed_type_membership",
                   "capture_is_not_population_sampling", "empirical_bayes_and_annotation_conditional_inference"]
@@ -1410,9 +1587,8 @@ def _achieved_support(data, assignments, targets, control, comparisons, diagnost
     return evidence
 
 
-def _perturbation(data, target, settings, diagnostics):
-    from .biology_tools_bulk import _fit_family, _linear_estimate
-    from .biology_answers import public_hypothesis_id
+def _prepare_perturbation(data, target, settings, diagnostics):
+    """Shared pre-fit checks for actual assignment cohorts and prerequisites."""
 
     if data.measurement == "continuous":
         raise _Unavailable("declared_perturbation_count_estimand_requires_observed_counts")
@@ -1423,7 +1599,12 @@ def _perturbation(data, target, settings, diagnostics):
     if target["target_id"] == "epistasis":
         levels = _factorial_levels(targets, control)
     else:
-        comparisons = [settings["comparison_condition"]] if "comparison_condition" in settings else sorted(set(assignments) - {control})
+        requested = data.context.get("requested_condition_contrast", {})
+        reference = settings.get("reference_condition", requested.get("denominator", control))
+        if reference != control:
+            raise _Unavailable("requested_reference_must_match_declared_nontargeting_control")
+        comparison = settings.get("comparison_condition", requested.get("numerator"))
+        comparisons = [comparison] if comparison is not None else sorted(set(assignments) - {control})
         if target["target_id"] == "successful_intervention" and not comparisons:
             _achieved_support(data, assignments, targets, control, comparisons, diagnostics)
         if not comparisons or not set(comparisons) <= set(assignments) or control in comparisons:
@@ -1435,8 +1616,27 @@ def _perturbation(data, target, settings, diagnostics):
     observed = _subset(data, selected)
     selected_assignments = [assignments[index] for index in selected]
     pseudobulk, membership = _pseudobulk(observed, ["captured_population"] * len(selected), settings, grouping=selected_assignments)
+    selected_indices = set(selected)
+    unselected = [index for index in range(len(assignments)) if index not in selected_indices]
+    membership["assignment_cohort"] = {"selected_assignment_levels": levels,
+        "unselected_assignment_levels": sorted(set(assignments) - set(levels)),
+        "selected_cell_count": len(selected), "unselected_cell_count": len(unselected),
+        "selection_based_on_model_results": False,
+        "unselected_membership": _unselected_membership(_subset(data, unselected),
+            {"labels": ["captured_population"] * len(unselected)}, settings,
+            grouping=[assignments[index] for index in unselected]) if unselected else []}
+    diagnostics["pseudobulk"] = membership
     design, reference, design_details = _design(pseudobulk, settings, levels)
-    diagnostics.update(pseudobulk=membership, design=design_details)
+    diagnostics["design"] = design_details
+    return pseudobulk, design, reference, control, levels, membership, design_details
+
+
+def _perturbation(data, target, settings, diagnostics):
+    from .biology_tools_bulk import _fit_family, _linear_estimate
+    from .biology_answers import public_hypothesis_id
+
+    pseudobulk, design, reference, control, levels, membership, design_details = _prepare_perturbation(
+        data, target, settings, diagnostics)
     fits, failures = _fit_family(pseudobulk, design, diagnostics)
     rows = []
     for gene in data.gene_ids:
@@ -1518,13 +1718,38 @@ def _analyze_singlecell_worker(tool_name, public_task, counts_path, metadata_pat
     if tool_name in _AUDIT_TOOLS:
         try:
             if tool_name == "pseudobulk_membership_audit":
-                annotation = _annotate(data, settings)
-                pseudobulk, details = _pseudobulk(data, annotation["labels"], settings,
-                                                population_ids=sorted(_marker_sets(data)[0]))
-                details["observed_pseudobulk_columns"] = len(pseudobulk.sample_ids)
-                details["label_uncertainty_count"] = annotation["uncertain_cell_count"]
+                details = {}
+                result["diagnostics"] = details
+                pseudobulk, _, _, levels = _state_pseudobulk(data, settings, details)
+                cohort_indices = range(len(pseudobulk.sample_ids))
+                supported = 0
+                for label, support in details["design_support_by_type"].items():
+                    indices = [index for index in cohort_indices if pseudobulk.metadata.iloc[index]["cell_type"] == label]
+                    try:
+                        _, _, design = _design(_subset(pseudobulk, indices), settings, levels)
+                        support.update(status="supported_by_software_design_checks", design=design)
+                        supported += 1
+                    except (_Unavailable, _MethodUnavailable) as error:
+                        support.update(status="support_unavailable", reason=str(error))
+                if not supported:
+                    raise _Unavailable(";".join(sorted({support["reason"] for support in
+                        details["design_support_by_type"].values()})))
             else:
-                _, _, _, details = _assignment(data, settings)
+                details = {"design_support_by_target": {}}
+                result["diagnostics"] = details
+                supported = []
+                for target in targets:
+                    support = details["design_support_by_target"].setdefault(target["target_id"], {})
+                    try:
+                        _prepare_perturbation(data, target, settings, support)
+                        support["status"] = "supported_by_software_design_checks"
+                        supported.append(target["target_id"])
+                    except (_Unavailable, _MethodUnavailable) as error:
+                        support.update(status="support_unavailable", reason=str(error))
+                    details.update(support.get("assignment_audit", {}))
+                if not supported:
+                    raise _Unavailable(";".join(sorted({support["reason"] for support in
+                        details["design_support_by_target"].values()})))
             result["diagnostics"].update(status="audited", audited_target_ids=[target["target_id"] for target in targets], **details)
         except _Unavailable as error:
             result["diagnostics"].update(status="support_unavailable", reason=str(error))

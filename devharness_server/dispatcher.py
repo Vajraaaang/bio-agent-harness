@@ -18,6 +18,7 @@ from devharness_server.tools_trajectory import calculate_temporal_monotonicity
 from devharness_server.tools_lineage import infer_lineage
 from devharness_server.tools_network import infer_regulatory_network, regulon_enrichment, motif_enrichment
 from devharness_server.tools_qc import audit_expression_quality
+from devharness_server.tools_bulk import bulk_condition_contrast
 
 _EVENTS: contextvars.ContextVar[Optional[List[dict]]] = contextvars.ContextVar("tool_events", default=None)
 
@@ -61,7 +62,7 @@ class ToolDispatcher:
         for function in (validate_design_matrix, fit_temporal_trajectory,
                          calculate_temporal_monotonicity, compact_temporal_state, analyze_batch_effects,
                          infer_lineage, infer_regulatory_network, regulon_enrichment, motif_enrichment,
-                         audit_expression_quality):
+                         audit_expression_quality, bulk_condition_contrast):
             self.register(function)
 
     def register(self, function: Callable, name: Optional[str] = None) -> None:

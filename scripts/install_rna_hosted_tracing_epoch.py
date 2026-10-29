@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -35,11 +36,16 @@ def main():
     for path in (epoch, report, runtime):
         if path != path.resolve() or not path.is_relative_to(workspace):
             raise ValueError('Nonsymlink assigned-workspace storage required')
-    if runtime != workspace / '.venv-rna-hosted-qualification':
+    if re.fullmatch(r'hosted-[1-9][0-9]*', epoch.name) is None:
+        raise ValueError('A numbered hosted source epoch is required')
+    expected_runtime = workspace / ('.venv-rna-hosted-qualification' if epoch.name == 'hosted-1'
+                                   else '.venv-rna-hosted-qualification-' + epoch.name)
+    if runtime != expected_runtime:
         raise ValueError('Only the fresh hosted qualification runtime may be installed')
     if not epoch.is_relative_to(report / 'source') or report == workspace:
         raise ValueError('Epoch must belong to its fresh report root')
-    preparation_path = report / 'runtime-preparation-approved.json'
+    preparation_path = report / ('runtime-preparation-approved.json' if epoch.name == 'hosted-1'
+                                 else 'runtime-preparation-approved-' + epoch.name + '.json')
     if preparation_path.is_symlink() or preparation_path.stat().st_size > 2_000_000:
         raise ValueError('Bounded approved runtime preparation required')
     preparation = json.loads(preparation_path.read_bytes())
@@ -70,13 +76,22 @@ def main():
     wheels.mkdir(parents=True, exist_ok=False)
     shutil.copytree(epoch, work)
     cache = report / 'installation-cache'
+    temporary = report / 'build-tmp' / epoch.name
+    temporary.mkdir(parents=True, exist_ok=False)
+    environment = {
+        'PATH': str(build_python.parent) + ':/usr/bin:/bin',
+        'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
+        'PYTHONDONTWRITEBYTECODE': '1', 'PIP_CONFIG_FILE': '/dev/null',
+        'PIP_NO_INDEX': '1', 'TMPDIR': str(temporary),
+        'XDG_CACHE_HOME': str(report / 'build-cache'),
+    }
     commands = [[str(build_python), '-I', '-B', '-m', 'pip', 'wheel', '--no-deps',
         '--no-build-isolation', '--no-index', '--wheel-dir', str(wheels), str(work)]]
     evidence = {'started_at': datetime.now(timezone.utc).isoformat(), 'epoch': str(epoch),
         'source_manifest_sha256': source_manifest_digest,
         'runtime_preparation_sha256': preparation_digest, 'commands': []}
     for command in commands:
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, env=environment)
         evidence['commands'].append({'argv': command, 'exit_code': result.returncode,
             'stdout': result.stdout, 'stderr': result.stderr})
         if result.returncode:
@@ -91,9 +106,9 @@ def main():
         raise ValueError('Sealed source changed during wheel build')
     if sha(preparation_path) != preparation_digest:
         raise ValueError('Runtime approval changed during build')
-    command = ['/opt/homebrew/bin/uv', '--cache-dir', str(cache), 'pip', 'install',
+    command = ['/opt/homebrew/bin/uv', '--offline', '--cache-dir', str(cache), 'pip', 'install',
         '--python', str(runtime / 'bin/python'), '--no-deps', '--reinstall', str(wheel)]
-    result = subprocess.run(command, capture_output=True, text=True)
+    result = subprocess.run(command, capture_output=True, text=True, env=environment)
     evidence['commands'].append({'argv': command, 'exit_code': result.returncode,
         'stdout': result.stdout, 'stderr': result.stderr})
     if result.returncode:
@@ -113,7 +128,7 @@ r=next(p for p in d.files if str(p).endswith('.dist-info/RECORD'))
 print(hashlib.sha256(Path(d.locate_file(r)).read_bytes()).hexdigest())
 '''.format(runner=str(epoch / 'scripts/run_rna_hosted_tracing_verification.py'), inventory=str(inventory))
     command = [str(runtime / 'bin/python'), '-I', '-B', '-c', probe]
-    result = subprocess.run(command, capture_output=True, text=True)
+    result = subprocess.run(command, capture_output=True, text=True, env=environment)
     evidence['commands'].append({'argv': command[:4] + ['<retained inventory probe>'],
         'exit_code': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr})
     if result.returncode:

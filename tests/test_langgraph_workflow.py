@@ -1,4 +1,5 @@
 """Offline serial orchestration: real checkpoints, no external model calls."""
+from tests.support.workflow_science_fixtures import RecordingScientificRuntime
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -22,17 +23,27 @@ def test_workflow_state_rejects_matrices_authority_and_nonfinite_values():
         validate_workflow_state({"score": float("nan")})
 
 
-def test_disabled_adapter_does_not_import_optional_dependencies(tmp_path):
+def test_required_adapter_rejects_explicit_graph_bypass(tmp_path):
     from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
-    with pytest.raises(ValueError, match="disabled"):
+    with pytest.raises(ValueError, match="required"):
         SerialRNAWorkflow(None, tmp_path / "checkpoint.sqlite", enabled=False)
     assert not (tmp_path / "checkpoint.sqlite").exists()
+
+
+def test_required_adapter_constructs_without_opt_in(tmp_path):
+    from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
+    from devbench.analysis.workflow_actions import WorkflowActions
+    planner = FakePlanner(tmp_path)
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
+    with SerialRNAWorkflow(actions, tmp_path / "checkpoint.sqlite") as workflow:
+        assert workflow.graph is not None
+        assert planner.calls == []
 
 
 def test_bounded_state_has_only_artifact_references(tmp_path):
     from devbench.analysis.workflow_actions import WorkflowActions
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
     assert state["phase"] == "audit"
     assert len(state["artifact_refs"]) == 2
@@ -55,6 +66,11 @@ class FakePlanner:
         self.fail_after_generate = False
     def get(self, session):
         assert session == self.session_id
+        # The controlled planner emulates the real planner immutable snapshots.
+        from devbench.analysis.workflow_state import digest
+        with self.methods._db() as db:
+            if db.execute("SELECT 1 FROM records WHERE kind=? AND id=?", ("method_plan_snapshot", digest(self.plan))).fetchone() is None:
+                self.methods._put(db, "method_plan_snapshot", digest(self.plan), self.plan)
         return deepcopy(self.plan)
     def generate_candidates(self, session, selector, **kwargs):
         self.calls.append("generate")
@@ -82,8 +98,9 @@ class FakePlanner:
 def test_completed_operation_replays_without_second_planner_call(tmp_path):
     from devbench.analysis.workflow_actions import WorkflowActions
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
+    state = actions.perform("discovery", actions.perform("question", actions.perform("audit", state)))
     result = actions.perform("generate", state)
     assert planner.calls == ["generate"]
     assert actions.perform("generate", state) == result
@@ -96,8 +113,9 @@ def test_completed_operation_replays_without_second_planner_call(tmp_path):
 def test_failed_operation_never_redispatches_and_requires_reconciliation(tmp_path):
     from devbench.analysis.workflow_actions import WorkflowActions
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
+    state = actions.perform("discovery", actions.perform("question", actions.perform("audit", state)))
     planner.fail_after_generate = True
     result = actions.perform("generate", state)
     assert result["status"] in {"failed", "reconciliation_required"}
@@ -113,7 +131,7 @@ def test_actual_sqlite_interrupt_survives_reconstruction(tmp_path):
     from langgraph.types import Command
     planner = FakePlanner(tmp_path)
     operations = ledger(tmp_path)
-    actions = WorkflowActions(planner, operations, actor="scientist", selector=object())
+    actions = WorkflowActions(planner, operations, actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
     checkpoint = tmp_path / "checkpoint.sqlite"
     with SerialRNAWorkflow(actions, checkpoint, enabled=True) as workflow:
@@ -151,8 +169,9 @@ def rna_plan(tmp_path, representation="raw_counts"):
 def test_new_state_cannot_bypass_abandoned_operation(tmp_path):
     from devbench.analysis.workflow_actions import WorkflowActions
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
+    state = actions.perform("discovery", actions.perform("question", actions.perform("audit", state)))
     planner.fail_after_generate = True
     actions.perform("generate", state)
     with pytest.raises(ValueError, match="resume|existing"):
@@ -164,7 +183,7 @@ def test_new_state_cannot_bypass_abandoned_operation(tmp_path):
 def test_real_planner_rna_audit_preserves_values_alignment_and_unknowns(tmp_path, representation):
     from devbench.analysis.workflow_actions import WorkflowActions
     planner, plan, *_ = rna_plan(tmp_path, representation)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(plan["session_id"])
     after = actions.perform("audit", state)
     assert after["status"] == "ready"
@@ -179,7 +198,7 @@ def test_real_planner_rna_audit_preserves_values_alignment_and_unknowns(tmp_path
 def test_run_requires_retained_declaration_and_exact_trial_cursor(tmp_path):
     from devbench.analysis.workflow_actions import WorkflowActions
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), allow_data_execution=True)
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), allow_data_execution=True, scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
     state.update(phase="run", trial_ids=["made-up-trial"])
     with pytest.raises(ValueError, match="declaration|cursor"):
@@ -192,7 +211,7 @@ def test_tracing_rechecked_after_construction(tmp_path, monkeypatch):
     from devbench.analysis.workflow_actions import WorkflowActions
     from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
     with SerialRNAWorkflow(actions, tmp_path / "checkpoint.sqlite", enabled=True) as workflow:
         monkeypatch.setenv("LANGSMITH_TRACING", "true")
@@ -233,7 +252,7 @@ def test_real_serial_planner_two_trials_checkpoint_restart_and_no_promotions(tmp
     planner, plan, analysis, branch, method, specs, selector, executor = executable_rna(tmp_path, representation, trials=2)
     operations = ledger(tmp_path)
     choices = [{"draft_id": spec["id"], "branch_id": branch["branch_id"]} for spec in specs]
-    actions = WorkflowActions(planner, operations, actor="scientist", selector=selector, version_ids=[method["version_id"]])
+    actions = WorkflowActions(planner, operations, actor="scientist", selector=selector, version_ids=[method["version_id"]], scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(plan["session_id"])
     checkpoint = tmp_path / "checkpoint.sqlite"
     with SerialRNAWorkflow(actions, checkpoint, enabled=True) as workflow:
@@ -266,7 +285,7 @@ def test_checkpoint_resume_never_restores_runtime_execution_authority(tmp_path):
     from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
     planner, plan, _, branch, method, specs, selector, executor = executable_rna(tmp_path)
     actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=selector,
-        version_ids=[method["version_id"]], declarations=[{"draft_id": specs[0]["id"], "branch_id": branch["branch_id"]}])
+        version_ids=[method["version_id"]], declarations=[{"draft_id": specs[0]["id"], "branch_id": branch["branch_id"]}], scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(plan["session_id"])
     with SerialRNAWorkflow(actions, tmp_path / "checkpoint.sqlite", enabled=True) as workflow:
         workflow.start(state)
@@ -287,7 +306,7 @@ def test_reconcile_completed_planner_effect_after_lost_ledger_write(tmp_path, mo
         original(*args, **kwargs)
         raise RuntimeError("Coordinator lost result after successful API completion")
     monkeypatch.setattr(planner, "generate_candidates", lost_result)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=selector, version_ids=[method["version_id"]])
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=selector, version_ids=[method["version_id"]], scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(plan["session_id"])
     with SerialRNAWorkflow(actions, tmp_path / "checkpoint.sqlite", enabled=True) as workflow:
         result = workflow.start(state)
@@ -305,13 +324,13 @@ def test_terminal_resume_rejects_changed_plan(tmp_path):
     from devbench.analysis.workflow_actions import WorkflowActions
     from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
     with SerialRNAWorkflow(actions, tmp_path / "checkpoint.sqlite", enabled=True) as workflow:
         workflow.start(state)
         workflow.resume(state["workflow_id"])
         planner.plan["changed"] = True
-        with pytest.raises(ValueError, match="stale"):
+        with pytest.raises(ValueError, match="stale|evidence"):
             workflow.resume(state["workflow_id"])
 
 
@@ -335,7 +354,7 @@ def test_completed_api_effects_reconcile_without_new_model_or_execution(tmp_path
     monkeypatch.setattr(planner, method_name, lost_result)
     actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=selector,
         version_ids=[method["version_id"]], declarations=[{"draft_id": specs[0]["id"], "branch_id": branch["branch_id"]}],
-        allow_data_execution=True, executor=executor)
+        allow_data_execution=True, executor=executor, scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(plan["session_id"])
     checkpoint = tmp_path / "checkpoint.sqlite"
     with SerialRNAWorkflow(actions, checkpoint, enabled=True) as workflow:
@@ -360,7 +379,7 @@ def test_completed_ledger_replays_after_crash_before_graph_checkpoint(tmp_path, 
     planner, plan, _, branch, method, specs, selector, executor = executable_rna(tmp_path)
     actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=selector,
         version_ids=[method["version_id"]], declarations=[{"draft_id": specs[0]["id"], "branch_id": branch["branch_id"]}],
-        allow_data_execution=True, executor=executor)
+        allow_data_execution=True, executor=executor, scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(plan["session_id"])
     checkpoint = tmp_path / "checkpoint.sqlite"
     class CoordinatorCrash(BaseException):
@@ -389,14 +408,14 @@ def test_terminal_resume_rejects_forged_success_and_outcome_reference(tmp_path):
     from devbench.analysis.workflow_actions import WorkflowActions
     from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
     with SerialRNAWorkflow(actions, tmp_path / "checkpoint.sqlite", enabled=True) as workflow:
         workflow.start(state)
         final = workflow.resume(state["workflow_id"])
         final["status"] = "completed"
         final["outcome_ref"]["kind"] = "recommendation"
-        workflow.graph.update_state(workflow._config(state["workflow_id"]), final, as_node="recommend")
+        workflow.graph.update_state(workflow._config(state["workflow_id"]), final, as_node="conclusion_review")
         with pytest.raises(ValueError, match="outcome|terminal|retained"):
             workflow.resume(state["workflow_id"])
 
@@ -407,7 +426,7 @@ def test_cancellation_prevents_following_nodes_without_killing_active_work(tmp_p
     from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
     planner = FakePlanner(tmp_path)
     operations = ledger(tmp_path)
-    actions = WorkflowActions(planner, operations, actor="scientist", selector=object())
+    actions = WorkflowActions(planner, operations, actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
     with SerialRNAWorkflow(actions, tmp_path / "checkpoint.sqlite", enabled=True) as workflow:
         workflow.start(state)
@@ -425,7 +444,7 @@ def test_concurrent_real_resume_rejects_second_invocation_before_declaration(tmp
     from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
     planner, plan, _, branch, method, specs, selector, executor = executable_rna(tmp_path)
     actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=selector,
-        version_ids=[method["version_id"]], declarations=[{"draft_id": specs[0]["id"], "branch_id": branch["branch_id"]}])
+        version_ids=[method["version_id"]], declarations=[{"draft_id": specs[0]["id"], "branch_id": branch["branch_id"]}], scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(plan["session_id"])
     checkpoint = tmp_path / "checkpoint.sqlite"
     entered, release = threading.Event(), threading.Event()
@@ -467,7 +486,7 @@ def test_run_reconciliation_preserves_exact_controller_correlations(tmp_path, mo
     monkeypatch.setattr(planner, "run_trial", lost_result)
     actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=selector,
         version_ids=[method["version_id"]], declarations=[{"draft_id": specs[0]["id"], "branch_id": branch["branch_id"]}],
-        allow_data_execution=True, executor=executor, execution_bindings=binding)
+        allow_data_execution=True, executor=executor, execution_bindings=binding, scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(plan["session_id"])
     with SerialRNAWorkflow(actions, tmp_path / "checkpoint.sqlite", enabled=True) as workflow:
         workflow.start(state)
@@ -488,7 +507,7 @@ def test_checkpoint_serializer_blocks_arbitrary_constructor_execution(tmp_path):
     from devbench.analysis.workflow_actions import WorkflowActions
     from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     CHECKPOINT_SIDE_EFFECTS.clear()
     payload = ormsgpack.packb(ormsgpack.Ext(EXT_CONSTRUCTOR_SINGLE_ARG,
         ormsgpack.packb([__name__, "unsafe_checkpoint_constructor", "should-not-execute"])))
@@ -508,7 +527,7 @@ def test_noop_design_reconciles_only_when_no_eligible_implementation(tmp_path, m
     item["assumptions"] = []
     selector = Selector({"candidates": [item]}, {"bindings": [{"candidate": item["name"], "method_version_id": None, "discovery": None}]},
         recommendation(None))
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=selector)
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=selector, scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(plan["session_id"])
     original_json = workflow_operations._json
     failed = False
@@ -537,7 +556,7 @@ def test_checkpoint_database_rejects_hardlink_alias(tmp_path):
     from devbench.analysis.workflow_actions import WorkflowActions
     from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     checkpoint = tmp_path / "checkpoint.sqlite"
     with SerialRNAWorkflow(actions, checkpoint, enabled=True):
         pass
@@ -554,7 +573,7 @@ def test_checkpoint_database_replacement_rejected_before_dispatch(tmp_path, oper
     from devbench.analysis.workflow_actions import WorkflowActions
     from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
     checkpoint = tmp_path / "checkpoint.sqlite"
     with SerialRNAWorkflow(actions, checkpoint, enabled=True) as workflow:
@@ -573,7 +592,7 @@ def test_full_invocation_lease_rejects_simultaneous_start(tmp_path):
     from devbench.analysis.workflow_actions import WorkflowActions
     from devbench.analysis.langgraph_workflow import SerialRNAWorkflow
     planner = FakePlanner(tmp_path)
-    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object())
+    actions = WorkflowActions(planner, ledger(tmp_path), actor="scientist", selector=object(), scientific_workflow=RecordingScientificRuntime())
     state = actions.create_state(planner.session_id)
     with SerialRNAWorkflow(actions, tmp_path / "checkpoint.sqlite", enabled=True) as workflow:
         with workflow.invocation_lease(state["workflow_id"]):

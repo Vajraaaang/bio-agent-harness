@@ -70,14 +70,14 @@ def _sources():
              *(project / "devharness_server").rglob("*.py"),
              *(project / "devharness_server").rglob("*.R")}
     paths.update(project / "devbench" / "analysis" / name for name in
-                 ("checkpoints.py", "resources.py", "runtime.py", "episode_agent.py", "episode_codex.py", "episode_cli.py", "episode_handoff.py", "episode_synthesis.py", "episode_proposals.py", "episode_planning.py"))
+                 ("checkpoints.py", "resources.py", "runtime.py", "episode_agent.py", "model_authority.py", "episode_codex.py", "episode_cli.py", "episode_handoff.py", "episode_synthesis.py", "episode_proposals.py", "episode_planning.py"))
     paths.update(project / name for name in ("devbench_engine/adapters.py", "devbench/staging.py",
         "devbench/adapters/code_action.py", "devbench/adapters/execution_capture.py", "devbench/study/execution.py",
         "devbench/study/adapter.py", "devbench/study/exec_preflight.py",
         "devbench/study/cli_identity.py", "devbench/study/model_telemetry.py"))
     paths.update(project / "devbench" / "study" / name for name in (
         "biology_broker.py", "broker.py", "biology_tools_bulk.py", "biology_tools_singlecell.py",
-        "biology_tool_io.py", "biology_input_limits.py", "biology_answers.py", "contracts.py",
+        "biology_tool_io.py", "biology_input_limits.py", "zarr_bounds.py", "biology_answers.py", "contracts.py",
         "permissions.py", "evidence.py", "evidence_keys.py", "execution_ledger.py"))
     return {str(path.relative_to(project)): sha256(path) for path in sorted(paths)}
 
@@ -101,6 +101,7 @@ def normalize_episode_configuration(*, question, assay, public_task, limits=None
     """
     from devbench.study.biology_tool_io import validate_public_task
     from devbench.study.biology_broker import COMMON_CHECKS, biology_tool_menu, validate_biology_request
+    from devbench.study.biology_input_limits import PUBLIC_MAX_BULK_FEATURES, PUBLIC_MAX_FEATURES
 
     if not isinstance(question, str) or not question.strip() or len(question) > 8000:
         raise ValueError("A bounded biological question is required")
@@ -109,15 +110,27 @@ def normalize_episode_configuration(*, question, assay, public_task, limits=None
     task = _json_copy(public_task)
     _public_only(task)
     projected = validate_public_task(task)
+    if (any(isinstance(task.get(key), dict) for key in ("measurement_layer", "measurement", "measurement_type"))
+            or isinstance(projected["analysis_context"].get("measurement"), dict)):
+        # Preserve the selected assay declaration before canonicalizing its name.
+        task["measurement_layer"] = _json_copy(projected["measurement_layer"])
     task["measurement"] = projected["measurement"]
     task["questions"] = projected["targets"]
     task["unit_hierarchy"] = projected["unit_hierarchy"]
     task["population_unit_label"] = projected["unit_hierarchy"]["population_unit_label"]
     task["context"] = projected["analysis_context"]
-    task.setdefault("analysis_columns", {"condition": "condition", "time": "numeric_time", "dose": None,
-        "covariate": None, "population_unit": task["population_unit_label"], "batches": []})
+    # Public validation resolves consistent top/context declarations first.
+    # Defaults must not manufacture a conflicting coordinate. Retain existing
+    # top-level records (including extra provenance) without adding new keys.
+    if "analysis_columns" not in task:
+        task["analysis_columns"] = {"condition": "condition", "time": "numeric_time" if assay == "bulk" else None, "dose": None,
+            "covariate": None, "population_unit": task["population_unit_label"], "batches": [],
+            **projected.get("analysis_columns", {})}
+    else:
+        task["analysis_columns"].update(projected.get("analysis_columns", {}))
     genes = task.get("gene_ids")
-    if not isinstance(genes, list) or not genes or len(genes) > 5000 or len(set(genes)) != len(genes):
+    maximum_features = PUBLIC_MAX_BULK_FEATURES if assay == "bulk" else PUBLIC_MAX_FEATURES
+    if not isinstance(genes, list) or not genes or len(genes) > maximum_features or len(set(genes)) != len(genes):
         raise ValueError("A declared bounded feature universe is required")
     limits = limits or EpisodeLimits()
     if not isinstance(limits, EpisodeLimits):
@@ -137,7 +150,14 @@ def normalize_episode_configuration(*, question, assay, public_task, limits=None
         values = dict(options.get(tool, {}))
         roles = task["analysis_columns"]
         values.setdefault("condition_col", roles["condition"])
-        if roles.get("batches"):
+        if menu[tool]["driver"] == "bulk":
+            values.setdefault("batch_cols", roles.get("batches", []))
+            if "blocking" in roles:
+                values.setdefault("block_cols", roles["blocking"])
+            if (values["batch_cols"] != roles.get("batches", [])
+                    or values.get("block_cols", []) != roles.get("blocking", [])):
+                raise ValueError("Fixed options cannot change declared batch or fixed-block columns")
+        elif roles.get("batches"):
             values.setdefault("batch_cols", roles["batches"])
         options[tool] = values
     for tool, values in options.items():
@@ -386,6 +406,8 @@ class AnalysisEpisode:
             "steps": len(self.actions), "revisions": self.revisions,
             "steps_remaining": max(0, self.limits.max_steps-len(self.actions)),
             "scientific_correctness": None, "harness_accepted": self.outcome in {"completed", "refusal"} if self.outcome else None,
+            "harness_acceptance_scope": "software_execution_or_supported_refusal",
+            "scientific_trial_passed": False,
             "agent_execution": agent,
             "usage": {"tokens": sum(tokens) if tokens and all(type(value) is int and value >= 0 for value in tokens) else None,
                       "cost": None, "model": model,
@@ -403,6 +425,16 @@ class AnalysisEpisode:
         for result in self.results:
             diagnostic = result.get("diagnostics", {})
             if diagnostic.get("status") == "support_unavailable":
+                return True
+            # This diagnostic has no target fragment: the design audit fails
+            # before fitting. Recognize its specific scientific refusal, never
+            # arbitrary worker, dependency, or numerical errors as success.
+            method, error = result.get("method", {}), diagnostic.get("analysis_error", {})
+            if (method.get("tool") == "validate_design_matrix"
+                    and method.get("version") == "observed-bulk-1"
+                    and method.get("uses_observed_inputs_only") is True
+                    and error.get("type") == "ValueError"
+                    and error.get("code") == "repeated_units_across_design_coordinates_require_cluster_model"):
                 return True
             design = diagnostic.get("design", {})
             if design.get("condition_number_validated") is False:
@@ -486,6 +518,18 @@ class AnalysisEpisode:
         self._record("episode.action_rejected", result)
         return result
 
+    def _claim_attempts(self):
+        # Derive from the retained journal so replay and clarification handoffs
+        # cannot reset the shared schema/evidence repair budget.
+        return sum(action.get("kind") == "finish" or action == {
+            "kind": "invalid", "reason": "invalid_claim_values"} for action in self.actions)
+
+    def _reject_claim(self, code):
+        result = self._reject(code)
+        if self._claim_attempts() >= 2:
+            return self._finish("scientific_failure", "claim_rewrite_budget_exhausted")
+        return result
+
     def step(self, action, *, deadline=None):
         with self.lock:
             if self.outcome is not None:
@@ -508,9 +552,13 @@ class AnalysisEpisode:
             fields = {"tool": {"kind", "tool", "options"}, "finish": {"kind", "findings"},
                       "refuse": {"kind", "reason"}, "revise": {"kind", "reason"},
                       "request_information": {"kind", "message"}}
+            claim_attempt = isinstance(action, dict) and (action.get("kind") == "finish" or action == {
+                "kind": "invalid", "reason": "invalid_claim_values"})
             if (not isinstance(action, dict) or not isinstance(action.get("kind"), str) or action["kind"] not in fields
                     or set(action)-fields[action["kind"]]):
-                self.actions.append({"kind": "invalid", "reason": "unknown_action_fields"})
+                self.actions.append({"kind": "invalid", "reason": "invalid_claim_values" if claim_attempt else "unknown_action_fields"})
+                if claim_attempt:
+                    return self._reject_claim("invalid_claim_values")
                 return self._reject("unknown_action_fields")
             try:
                 _public_only(action)
@@ -525,11 +573,10 @@ class AnalysisEpisode:
                         raise ValueError("invalid_tool_name")
                     if "options" in action and action["options"] != self.config["fixed_options"].get(action["tool"], {}):
                         raise ValueError("method_parameters_are_coordinator_frozen")
-                if action["kind"] == "finish" and "findings" in action:
-                    from .episode_synthesis import validate_finding_requests
-                    validate_finding_requests(action["findings"])
             except (TypeError, ValueError):
-                self.actions.append({"kind": "invalid", "reason": "invalid_action_values"})
+                self.actions.append({"kind": "invalid", "reason": "invalid_claim_values" if claim_attempt else "invalid_action_values"})
+                if claim_attempt:
+                    return self._reject_claim("invalid_claim_values")
                 return self._reject("invalid_action_values")
             self.actions.append(accepted)
             self._record("episode.action", {"sequence": len(self.actions), "action": accepted,
@@ -554,13 +601,17 @@ class AnalysisEpisode:
                 return self._finish("refusal" if self._refusal_supported() else "scientific_failure",
                                     "diagnostic_or_policy_refusal" if self._refusal_supported() else "unsupported_refusal_claim")
             if kind == "finish":
-                from .episode_synthesis import check_finding_requests
+                from .episode_synthesis import check_finding_requests, validate_finding_requests
                 requests = action.get("findings", [])
+                try:
+                    validate_finding_requests(requests)
+                except (TypeError, ValueError):
+                    return self._reject_claim("invalid_claim_values")
                 try:
                     if requests:
                         check_finding_requests(self, requests)
                 except (OSError, ValueError, TypeError, KeyError):
-                    return self._reject("finding_reference_not_supported_by_current_results")
+                    return self._reject_claim("finding_reference_not_supported_by_current_results")
                 self.synthesis_requests = _json_copy(requests)
                 latest = {target["target_id"]: target for result in self.results for target in result.get("target_results", [])}
                 expected = {target["target_id"] for target in self.config["public_task"]["questions"]}
@@ -572,6 +623,8 @@ class AnalysisEpisode:
                                     "requested_outputs_checked" if complete else "requested_outputs_not_fully_supported")
             if self.state != "ready":
                 return self._reject("resolve_current_decision_before_another_tool")
+            if self._claim_attempts():
+                return self._reject("claim_repair_cannot_reenter_execution")
             tool = action.get("tool")
             if tool not in self.menu or self.broker is None:
                 return self._reject("unsupported_tool_or_workflow")

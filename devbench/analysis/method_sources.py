@@ -189,7 +189,7 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
                 transport.close()
 
 
-def _fetch_hop(host, target, deadline, max_bytes):
+def _fetch_hop(host, target, deadline, max_bytes, *, content_types=None):
     family, address = _resolve(host, deadline)
     connection = _PinnedHTTPSConnection(host, family, address, deadline)
     timer = threading.Timer(_remaining(deadline), connection.abort)
@@ -211,7 +211,7 @@ def _fetch_hop(host, target, deadline, max_bytes):
         if response.status != 200:
             raise ValueError(f"Source retrieval returned HTTP {response.status}")
         content_type = response.getheader("Content-Type", "").split(";", 1)[0].strip().lower()
-        if content_type not in _CONTENT_TYPES:
+        if content_type not in (_CONTENT_TYPES if content_types is None else content_types):
             raise ValueError("Source response has an unsupported content type")
         if response.getheader("Content-Encoding", "identity").strip().lower() != "identity":
             raise ValueError("Compressed source responses are not permitted")

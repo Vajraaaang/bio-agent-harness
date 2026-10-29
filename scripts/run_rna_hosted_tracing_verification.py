@@ -30,11 +30,39 @@ PRIOR_SELECTION_SHA256 = historical.PRIOR_SELECTION_SHA256
 NEW_TESTS = historical.NEW_TESTS | frozenset('tests/' + name + '.py' for name in (
     'test_rna_hosted_trace_contract', 'test_rna_langsmith_verify',
     'test_rna_hosted_qualification', 'test_rna_hosted_trace_invariance',
-    'test_rna_hosted_exporter_isolation'))
+    'test_rna_hosted_exporter_isolation', 'test_rna_hosted_preflight',
+    'test_rna_publication_evidence', 'test_rna_publication_comparison',
+    'test_rna_scientific_trial_contract', 'test_rna_scientific_trial'))
 RUNNER_PATH = 'scripts/run_rna_hosted_tracing_verification.py'
 GENERATED_RESOURCE = 'devbench/analysis/assets/source-bundle.zip'
 HELPER_PATHS = ('tests/support/rna_trace_fixture_paths.py',
                 'tests/support/rna_hosted_trace_fixtures.py')
+CHANGED_TESTS = frozenset('tests/' + name + '.py' for name in (
+    'test_rna_hosted_preflight', 'test_rna_publication_evidence',
+    'test_rna_publication_comparison', 'test_rna_scientific_trial_contract',
+    'test_rna_scientific_trial', 'test_method_sources',
+    'test_rna_hosted_trace_invariance'))
+OPTIONAL_TESTS = frozenset({'tests/test_rna_langsmith_schema.py'})
+WIRE_TESTS = frozenset({'tests/test_rna_provider_root_wire.py'})
+READBACK_TESTS = frozenset({'tests/test_rna_readback_compatibility.py'})
+READBACK_SELECTION_TESTS = READBACK_TESTS | frozenset('tests/' + name + '.py' for name in (
+    'test_rna_langsmith_verify', 'test_rna_langsmith_binding', 'test_rna_langsmith_schema',
+    'test_rna_hosted_connection', 'test_rna_provider_root_wire', 'test_rna_langsmith_live'))
+NATIVE_TESTS = frozenset({'tests/test_rna_keychain_native.py'})
+NATIVE_CREDENTIAL_TESTS = frozenset('tests/' + name + '.py' for name in (
+    'test_rna_keychain_native', 'test_rna_hosted_exporter_isolation',
+    'test_rna_hosted_connection'))
+CONNECTION_TESTS = frozenset('tests/' + name + '.py' for name in (
+    'test_rna_hosted_connection_contract', 'test_rna_hosted_connection',
+    'test_rna_langsmith_binding', 'test_langsmith_connection_prepare'))
+OPTIONAL_HELPER_PATHS = ('tests/support/rna_connection_fixtures.py',)
+A2B_TESTS = frozenset('tests/' + name + '.py' for name in (
+    'test_rna_langsmith_verify', 'test_rna_hosted_qualification',
+    'test_rna_hosted_exporter_isolation'))
+ROOT_WIRE_TESTS = A2B_TESTS | OPTIONAL_TESTS | CONNECTION_TESTS | WIRE_TESTS | frozenset(
+    'tests/' + name + '.py' for name in (
+        'test_rna_trace_contract', 'test_rna_trace_projection', 'test_rna_langsmith_export',
+        'test_rna_langsmith_live'))
 SOURCE_FORMAT = 'devbench.rna-tracing-source/1'
 SELECTION_FORMAT = 'devbench.rna-hosted-tracing-selection/1'
 sha = historical.sha
@@ -100,12 +128,31 @@ def validate_selection(epoch: Path, manifest: dict, selection: dict) -> list[Pat
         raise ValueError('Historical selection provenance mismatch')
     if selection['allowed_fixture_classes'] != ['synthetic', 'local']:
         raise ValueError('Unapproved fixture classes')
-    if selection['kind'] not in ('focused', 'broad'):
+    if selection['kind'] not in ('changed', 'focused', 'broad', 'a2b', 'connection', 'native-credential', 'root-wire', 'readback'):
         raise ValueError('Unknown selection kind')
     rows = selection['tests']
     if not isinstance(rows, list) or not rows:
         raise ValueError('Explicit test paths required')
-    required = (HISTORICAL_TESTS if selection['kind'] == 'broad' else FOCUSED_BASE) | NEW_TESTS
+    optional_tests = OPTIONAL_TESTS & manifest['files'].keys()
+    connection_tests = CONNECTION_TESTS & manifest['files'].keys()
+    native_tests = NATIVE_TESTS & manifest['files'].keys()
+    wire_tests = WIRE_TESTS & manifest['files'].keys()
+    readback_tests = READBACK_TESTS & manifest['files'].keys()
+    if selection['kind'] == 'changed':
+        required = CHANGED_TESTS
+    elif selection['kind'] == 'a2b':
+        required = A2B_TESTS | optional_tests
+    elif selection['kind'] == 'connection':
+        required = A2B_TESTS | OPTIONAL_TESTS | CONNECTION_TESTS
+    elif selection['kind'] == 'native-credential':
+        required = NATIVE_CREDENTIAL_TESTS
+    elif selection['kind'] == 'root-wire':
+        required = ROOT_WIRE_TESTS
+    elif selection['kind'] == 'readback':
+        required = READBACK_SELECTION_TESTS
+    else:
+        required = ((HISTORICAL_TESTS if selection['kind'] == 'broad' else FOCUSED_BASE)
+                    | NEW_TESTS | optional_tests | connection_tests | native_tests | wire_tests | readback_tests)
     names = []
     for row in rows:
         if not isinstance(row, dict):
@@ -298,7 +345,7 @@ def main(argv=None) -> int:
         write_json(output / 'source-before.json', source_before)
         write_json(output / 'checkout-before.json', checkout_before)
         helpers = {}
-        for relative in HELPER_PATHS:
+        for relative in HELPER_PATHS + tuple(path for path in OPTIONAL_HELPER_PATHS if path in source_before):
             path = epoch / relative
             if source_before.get(relative) != sha(path):
                 raise ValueError('Frozen fixture helper missing or mismatched')
@@ -313,6 +360,11 @@ def main(argv=None) -> int:
         plugin = helper.FixturePaths(epoch, output, fixture_root, actor_root)
         os.environ['PYTEST_DISABLE_PLUGIN_AUTOLOAD'] = '1'
         os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+        # Numerical/plot caches belong to this attempt, never a preserved runtime.
+        for key, name in (('NUMBA_CACHE_DIR', 'numba'), ('MPLCONFIGDIR', 'matplotlib')):
+            cache = output / 'cache' / name
+            cache.mkdir(parents=True, exist_ok=False)
+            os.environ[key] = str(cache)
         os.environ['DEVBENCH_RUN_LOCAL_FIXTURES'] = '1'
         bind_frozen_tests(epoch)
         import devbench.analysis.bundles

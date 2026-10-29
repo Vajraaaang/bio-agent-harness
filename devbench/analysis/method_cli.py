@@ -23,6 +23,7 @@ def main(argv=None):
         "import-artifact": ("source", "artifact-type"),
         "register": ("contract", "source", "environment-lock"),
         "register-tool": ("tool",),
+        "register-fastq": ("manifest",),
         "create-analysis": ("name",),
         "branch": ("analysis", "revision"),
         "add-step": ("branch", "method", "inputs", "parameters"),
@@ -49,6 +50,8 @@ def main(argv=None):
                                         environment_lock=args.environment_lock, actor=actor)
     elif action == "register-tool":
         value = service.register_dispatcher(args.tool, actor=actor)
+    elif action == "register-fastq":
+        value = service.register_fastq(finite_json(args.manifest), actor=actor)
     elif action == "create-analysis":
         value = service.create_analysis(args.name, actor=actor)
     elif action == "branch":

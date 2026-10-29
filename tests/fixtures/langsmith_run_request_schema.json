@@ -1,0 +1,101 @@
+{
+  "format": "devbench.langsmith-public-request-schema-fixture/1",
+  "public_projection_sha256": "d84319c23a6812fd87d1f6cb0f980742c2f53aec783b91770cffab7067646859",
+  "schema": {
+    "properties": {
+      "address": {
+        "description": "Beta. Addresses the run to an Agent environment in place of session_id or\nsession_name, as lrn:agents/{id}/environments/{environment}. The environment is\ncase-insensitive. Only workspaces enabled for Agent addressing accept it;\nothers get a 403.",
+        "example": "lrn:agents/support-agent/environments/production",
+        "type": "string"
+      },
+      "dotted_order": {
+        "type": "string"
+      },
+      "end_time": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      },
+      "events": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "extra": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "id": {
+        "type": "string"
+      },
+      "input_attachments": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "inputs": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "name": {
+        "type": "string"
+      },
+      "output_attachments": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "outputs": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "parent_run_id": {
+        "type": "string"
+      },
+      "reference_example_id": {
+        "type": "string"
+      },
+      "run_type": {
+        "enum": [
+          "tool",
+          "chain",
+          "llm",
+          "retriever",
+          "embedding",
+          "prompt",
+          "parser"
+        ],
+        "type": "string"
+      },
+      "serialized": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "session_name": {
+        "type": "string"
+      },
+      "start_time": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "tags": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "trace_id": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "schema_name": "runs.Run",
+  "source_url": "https://api.smith.langchain.com/openapi.json"
+}

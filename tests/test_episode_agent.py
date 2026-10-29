@@ -18,6 +18,9 @@ class ScriptedSelector:
     def __init__(self, actions):
         self.actions, self.contexts = iter(actions), []
 
+    def configuration(self):
+        return {"backend": "offline_scripted_fixture"}
+
     def select(self, context, output, *, timeout_seconds, memory_mb, allow_model_execution=False):
         assert allow_model_execution is False
         assert 128 <= memory_mb <= 4096
@@ -204,6 +207,9 @@ def test_damaged_selector_evidence_does_not_hide_original_failed_attempt(workspa
     _, _, drive = agent_api()
     episode, _ = create(workspace)
     class DamagedCapture:
+        def configuration(self):
+            return {"backend": "offline_scripted_fixture"}
+
         def select(self, context, output, **kwargs):
             (output / "evidence.json").write_text("{damaged capture")
             raise TimeoutError("provider process interrupted")
@@ -218,6 +224,9 @@ def test_invalid_selector_accounting_cannot_produce_success_or_break_sealing(wor
     _, Selection, drive = agent_api()
     episode, _ = create(workspace)
     class InvalidAccounting:
+        def configuration(self):
+            return {"backend": "offline_scripted_fixture"}
+
         def select(self, context, output, **kwargs):
             return Selection({"kind": "finish"}, {"model_sessions_attempted": True, "tokens": -10})
     final = drive(episode, InvalidAccounting(), allow_data_execution=True)

@@ -18,6 +18,8 @@ import struct
 from typing import Any
 import zlib
 
+from .biology_input_limits import PUBLIC_MAX_BULK_FEATURES
+
 
 ARRAYS = ("expression", "gene_names", "sample_names")
 MAX_FILES = 20_000
@@ -202,7 +204,8 @@ def _array_header(header: dict[str, Any], name: str, *, max_chunk_bytes: int, ma
 
 def validate_prepared_zarr(path: Path, *, expected_shape: tuple[int, int] | None = None,
                            measurement_type: str | None = None, max_chunk_bytes: int = DEFAULT_CHUNK_BYTES,
-                           max_metadata_bytes: int = 5_000_000, max_matrix_bytes: int = 100_000_000) -> dict[str, Any]:
+                           max_metadata_bytes: int = 5_000_000, max_matrix_bytes: int = 100_000_000,
+                           max_genes: int = MAX_GENES) -> dict[str, Any]:
     """Preflight actual frames on a verified, exclusively owned prepared snapshot.
 
 This reads bytes and must be called only by an explicitly opted-in operation.
@@ -210,7 +213,8 @@ No expression values, biological metadata or numerical arrays are returned.
 """
     if (type(max_chunk_bytes) is not int or not 1 <= max_chunk_bytes <= DEFAULT_CHUNK_BYTES
             or type(max_metadata_bytes) is not int or not 1 <= max_metadata_bytes <= 5_000_000
-            or type(max_matrix_bytes) is not int or not 1 <= max_matrix_bytes <= 100_000_000):
+            or type(max_matrix_bytes) is not int or not 1 <= max_matrix_bytes <= 100_000_000
+            or type(max_genes) is not int or not 1 <= max_genes <= PUBLIC_MAX_BULK_FEATURES):
         raise ValueError("Prepared-store safety ceilings cannot be enlarged")
     root = Path(path)
     if not root.is_absolute() or ".." in root.parts or any(item.is_symlink() for item in (root, *root.parents)):
@@ -256,7 +260,7 @@ No expression values, biological metadata or numerical arrays are returned.
     if set(arrays) != set(ARRAYS):
         raise ValueError("Every known array requires its declaration")
     shape = arrays["expression"]["shape"]
-    if not 1 <= shape[0] <= MAX_GENES or (expected_shape is not None and shape != tuple(expected_shape)):
+    if not 1 <= shape[0] <= max_genes or (expected_shape is not None and shape != tuple(expected_shape)):
         raise ValueError("Prepared expression shape differs from the bounded declared family")
     if arrays["gene_names"]["shape"] != (shape[0],) or arrays["sample_names"]["shape"] != (shape[1],):
         raise ValueError("Prepared label shapes do not match expression")

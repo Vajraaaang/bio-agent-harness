@@ -10,6 +10,7 @@ pytest.importorskip("scanpy")
 
 @pytest.fixture(scope="module")
 def portable_bundle(tmp_path_factory):
+    pytest.importorskip("harmonypy", reason="Explicit Harmony control requires its optional runtime")
     from tests.test_analysis_singlecell import counts_fixture
     from devbench.analysis.checkpoints import sha256
     from devbench.analysis.workbench import default_parameters, prepare_bundle, execute_bundle
@@ -21,6 +22,7 @@ def portable_bundle(tmp_path_factory):
     data.obs["conf_score"] = .7
     data.write_h5ad(source)
     parameters = default_parameters(data_sha256=sha256(source), counts_layer=None,
+        correction="harmony", integration_rationale="Authored Harmony integration/replay software control",
         min_genes=3, mad_limit=None, n_top_genes=30, n_pcs=8, seed=128,
         markers={"T cell": ["Cd3d", "Cd3e", "Trac", "Il7r"],
                  "B cell": ["Ms4a1", "Cd79a", "Cd79b", "Cd19"]})
@@ -93,3 +95,40 @@ def test_unsupported_prompt_is_not_silently_claimed_as_solved():
     from devbench.analysis.workbench import default_parameters
     with pytest.raises(ValueError, match="Unsupported prompt"):
         default_parameters(prompt="infer a clinical treatment recommendation", data_sha256="a"*64)
+
+
+def test_default_unintegrated_bundle_keeps_capture_evidence(tmp_path):
+    from tests.test_analysis_singlecell import counts_fixture
+    from devbench.analysis.checkpoints import sha256
+    from devbench.analysis.workbench import default_parameters, prepare_bundle, execute_bundle
+    source = tmp_path / "capture-input.h5ad"
+    data = counts_fixture()
+    data.obs["capture_id"] = ["capture-A"]*40 + ["capture-B"]*40
+    data.write_h5ad(source)
+    parameters = default_parameters(data_sha256=sha256(source), counts_layer=None,
+        capture_key="capture_id", min_genes=3, mad_limit=None, n_top_genes=30, n_pcs=8, seed=128)
+    bundle = tmp_path / "unintegrated"
+    prepare_bundle(source, bundle, parameters)
+    result = execute_bundle(bundle)
+    assert result["verified"] and result["review_passed"]
+    report = json.loads((bundle / "report.json").read_text())
+    assert set(report["conditions"]) == {"uncorrected"}
+    doublets = json.loads((bundle / "checkpoints/doublets/report.json").read_text())
+    assert doublets["status"] == "unavailable"
+    assert doublets["capture_key"] == "capture_id"
+    assert sorted(row["cells"] for row in doublets["batches"]) == [40, 40]
+    retained = json.loads((bundle / "parameters.json").read_text())
+    assert retained["integration_decision"]["origin"] == "software_default"
+    assert (bundle / "figures/uncorrected.png").is_file()
+    # Re-run the retained source against a relocated binding, preserving the
+    # actual default-none execution record even without the Harmony extra.
+    moved = tmp_path / "relocated.h5ad"
+    source.rename(moved)
+    parameters = dict(retained)
+    parameters.pop("source_sha256")
+    parameters["parent_root"] = result["manifest_sha256"]
+    replay = tmp_path / "unintegrated-replay"
+    prepare_bundle(moved, replay, parameters, project=bundle / "source")
+    repeated = execute_bundle(replay)
+    assert repeated["verified"] and repeated["review_passed"]
+    assert json.loads((replay / "report.json").read_text()) == report

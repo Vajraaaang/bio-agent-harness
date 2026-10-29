@@ -58,7 +58,7 @@ def inputs(root, *, cellular=False, continuous=True, confounded=False):
     task = {"measurement": "umi_counts" if cellular else "continuous" if continuous else "raw_counts",
             "population_unit_label": "donor_id", "observation_id_label": "sample_id",
             "context": {"biological_unit": "donor", "condition_labels": ["A", "B"]},
-            "analysis_columns": {"condition": "condition", "time": "numeric_time", "dose": None,
+            "analysis_columns": {"condition": "condition", "time": None if cellular else "numeric_time", "dose": None,
                 "covariate": None, "population_unit": "donor_id", "batches": ["capture_batch" if cellular else "batch"]},
             "questions": [{"target_id": "cell_state_effect" if cellular else "mean_contrast",
                 "estimand": "Within-type donor contrast" if cellular else "Donor condition contrast",

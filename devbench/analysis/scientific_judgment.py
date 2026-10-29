@@ -196,6 +196,41 @@ def judgment_sha256(judgment):
     return content_sha256(judgment.model_dump(mode='json'))
 
 
+def _claim_record(value):
+    if hasattr(value, 'model_dump'):
+        value=value.model_dump(mode='json')
+    if isinstance(value,(str,bytes)):
+        value=decode_json(value)
+    content_sha256(value)
+    if not isinstance(value,dict):raise ValueError('Use a versioned claim record')
+    return value
+
+
+def parse_claim_packet(value):
+    """Explicit version dispatch; legacy classes and their hashes stay intact."""
+    import json
+    record=_claim_record(value)
+    version=record.get('record_format')
+    if version=='devbench.scientific-claim-packet/1':model=ClaimPacket
+    elif version=='devbench.scientific-claim-packet/2':
+        from .scientific_result_contract import ClaimPacketV2
+        model=ClaimPacketV2
+    else:raise ValueError('Unsupported scientific claim packet version')
+    return model.model_validate_json(json.dumps(record,allow_nan=False))
+
+
+def parse_claim_judgment(value):
+    import json
+    record=_claim_record(value)
+    version=record.get('record_format')
+    if version=='devbench.scientific-judgment/1':model=ClaimJudgment
+    elif version=='devbench.scientific-judgment/2':
+        from .scientific_result_contract import ClaimJudgmentV2
+        model=ClaimJudgmentV2
+    else:raise ValueError('Unsupported scientific judgment version')
+    return model.model_validate_json(json.dumps(record,allow_nan=False))
+
+
 def _blinded_diagnostics(value):
     """Reject obvious protected metadata; this is not a text-semantics firewall."""
     forbidden={'final_reference','final_references','model_identity','model_id',
@@ -210,7 +245,12 @@ def _blinded_diagnostics(value):
 
 def verified_artifacts(packet):
     """Resolve exact bytes locally; no citation title or URL counts as retrieval."""
-    packet=ClaimPacket.model_validate_json(packet.model_dump_json())
+    packet=parse_claim_packet(packet)
+    if packet.record_format=='devbench.scientific-claim-packet/2':
+        from .scientific_result_contract import capture_v2_artifacts, validate_result_evidence
+        result=capture_v2_artifacts(packet,read=_read,absolute=_absolute)
+        validate_result_evidence(packet,result)
+        return result
     result={}
     for evidence in packet.evidence:
         content=_read(_absolute(evidence.path),128_000)
@@ -254,12 +294,29 @@ def judgment_context(packet):
         'A missing plot or sensitivity check remains absent. Confidence is uncalibrated.',
         'Plot references verify byte identity only; this JSON context does not display plot pixels.',
         'Numerical assertions must cite exact diagnostic JSON pointers; free prose is not numerically verified.']
+    if packet.record_format=='devbench.scientific-claim-packet/2':
+        from .scientific_result_contract import (result_context, project_diagnostics,
+            presentation_evidence, MAX_REVIEW_CONTEXT_BYTES, _reject_review_metadata)
+        context['diagnostics']=project_diagnostics(packet,artifacts)
+        context.update(result_context(packet,artifacts))
+        context['presentation_evidence']=presentation_evidence(packet,artifacts)
+        for plot in context['plots']:
+            plot.update(declared_plot_verified=plot['verified'],verified=False,pixel_content_verified=False,
+                verification_scope='byte_and_declared_source_specification_binding')
+        context['limits'].append('Diagnostic content is a bounded preview; result checks use the full retained family. Omitted rows are disclosed.')
+        _reject_review_metadata(context,allow_pointers=True)
+        from devbench.study.contracts import canonical_json_bytes
+        if len(canonical_json_bytes(context))>MAX_REVIEW_CONTEXT_BYTES:
+            raise ValueError('Claim review projection exceeds its byte bound; scope a smaller packet')
     return context
 
 
 def validate_judgment(packet, judgment):
     artifacts=verified_artifacts(packet)
-    judgment=ClaimJudgment.model_validate_json(judgment.model_dump_json())
+    packet=parse_claim_packet(packet)
+    judgment=parse_claim_judgment(judgment)
+    if packet.record_format.rsplit('/',1)[1]!=judgment.record_format.rsplit('/',1)[1]:
+        raise ValueError('Claim packet and judgment versions must match')
     if judgment.packet_sha256!=packet_sha256(packet) or judgment.claim_id!=packet.claim_id:
         raise ValueError('Judgment does not bind the immutable claim packet')
     if not set(judgment.evidence_ids)<=artifacts.keys():raise ValueError('Unknown judgment evidence reference')
@@ -285,6 +342,10 @@ def validate_judgment(packet, judgment):
             raise ValueError('Unsupported numerical assertion in verified diagnostic evidence') from error
     failed={check.check for check in packet.objective_checks if check.status=='failed'}
     hard=bool(failed&HARD_FAILURES) or packet.objective_validity=='failed'
+    if packet.record_format=='devbench.scientific-claim-packet/2':
+        from .scientific_result_contract import validate_presentation_assertions, qc_checks
+        validate_presentation_assertions(packet,judgment,artifacts)
+        hard=hard or any(item['status']=='fatal_eligibility' for item in qc_checks(packet))
     scientific='demonstrable_error' if hard else judgment.scientific_status
     if not hard and packet.assay_semantics=='unknown' and packet.intent in {'exclude','infer'}:
         scientific='insufficient_evidence'
@@ -320,6 +381,9 @@ def evaluate_judgments(packet, ratings, *, policy, expected_policy_sha256, prima
     else:adjudicated=None
     failed={item.check for item in packet.objective_checks if item.status=='failed'}
     hard=bool(failed&HARD_FAILURES) or packet.objective_validity=='failed'
+    if packet.record_format=='devbench.scientific-claim-packet/2':
+        from .scientific_result_contract import qc_checks
+        hard=hard or any(item['status']=='fatal_eligibility' for item in qc_checks(packet))
     operational=packet.execution!='completed' or 'execution' in failed
     success=None;status='not_assessed';reason='independent_review_incomplete'
     if hard:

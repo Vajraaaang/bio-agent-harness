@@ -26,13 +26,33 @@ def allowed_bundle_path(name):
               "attachments", "credentials", "secrets", "private", ".env"}
     if any(part in denied or PurePosixPath(part).stem in {"credentials", "secrets", "private"} for part in path.parts):
         return False
-    if name in {"pyproject.toml", "uv.lock", "README.md", "LICENSE", "AGENTS.md", "devbench_engine/AGENTS.md",
+    if name in {"pyproject.toml", "uv.lock", "requirements-langgraph.lock", "README.md", "LICENSE", "AGENTS.md", "devbench_engine/AGENTS.md",
                 "devbench/tasks/catalog.json", "benchmarks/reference_data/provenance.json",
                 "benchmarks/reference_data/README.md"}:
         return True
     if name in {"devharness_server/r/native_nb.R", "devharness_controlled/native-package-sources.lock.json"}:
         return True
-    if name == "devbench/analysis/assets/workbench-ui.html":
+    if name in {"devbench/analysis/assets/workbench-ui.html",
+                "devbench/analysis/assets/workbench-theme.css",
+                "devbench/analysis/assets/workbench-conversation.js",
+                "devbench/analysis/assets/workbench-investigations.js",
+                "devbench/analysis/assets/workbench-artifacts.js",
+                "devbench/analysis/assets/workbench-projects.js",
+                "devbench/analysis/assets/workbench-synthetic.js",
+                "devbench/analysis/assets/workbench-synthetic.css",
+                "devbench/analysis/assets/scientific-figure.js"}:
+        return True
+    if name in {
+        "devbench/analysis/assets/community-workflow/Dockerfile",
+        "devbench/analysis/assets/community-workflow/README.md",
+        "devbench/analysis/assets/community-workflow/build_local.py",
+        "devbench/analysis/assets/community-workflow/collect_inventory.py",
+        "devbench/analysis/assets/community-workflow/environment-explicit.linux-arm64.txt",
+        "devbench/analysis/assets/community-workflow/nextflow-launcher",
+        "devbench/analysis/assets/community-workflow/package-lock.linux-arm64.json",
+        "devbench/analysis/assets/community-workflow/prepare_context.py",
+        "devbench/analysis/assets/community-workflow/software_preflight.py",
+    }:
         return True
     if path.parts[0] in {"devharness", "devharness_controlled", "devbench", "devharness_core", "devharness_server",
                          "devbench_engine", "benchmarks", "experiments"} and path.suffix == ".py":
@@ -59,7 +79,7 @@ def allowed_bundle_path(name):
         return True
     if name in {"scripts/__init__.py", "scripts/colab_run.py", "scripts/build_colab_notebook.py", "scripts/build_controlled_notebook.py",
                 "scripts/run_live_benchmark.py", "scripts/make_leaderboard.py", "scripts/native_effect_coverage.py",
-                "scripts/build_source_resource.py"}:
+                "scripts/build_source_resource.py", "scripts/freeze_required_workflow_candidate.py"}:
         return True
     return (path.parts[:2] == ("benchmarks", "task_definitions") and path.suffix == ".json"
             and len(path.parts) in (3, 4))
@@ -68,7 +88,7 @@ def allowed_bundle_path(name):
 def build_source_bundle(project):
     """Read only allowlisted regular source files into a bounded reproducible ZIP."""
     root = Path(project).expanduser().resolve()
-    candidates = [root / name for name in ("pyproject.toml", "uv.lock", "README.md", "LICENSE", "AGENTS.md")]
+    candidates = [root / name for name in ("pyproject.toml", "uv.lock", "requirements-langgraph.lock", "README.md", "LICENSE", "AGENTS.md")]
     for package in ("devharness", "devharness_controlled", "devbench", "devharness_core", "devharness_server", "devbench_engine",
                     "benchmarks", "experiments", "scripts", "tests"):
         candidates.extend((root / package).rglob("*"))

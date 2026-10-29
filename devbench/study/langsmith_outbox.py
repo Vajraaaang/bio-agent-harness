@@ -41,12 +41,13 @@ def _digest(value):
     return value
 
 
-def validate_payload(payload, max_spans=2000, *, live_operation=None):
+def validate_payload(payload, max_spans=2000, *, live_operation=None, session_format=None):
     if not isinstance(payload, dict) or payload.get("data_scope") not in {"synthetic", "public_processed"}:
         raise ValueError("Unsupported evidence scope")
     if payload.get("record_format") == "devbench.rna-langsmith-export/1":
         from .rna_langsmith_export import validate_rna_payload
-        validate_rna_payload(payload, max_spans=max_spans, live_operation=live_operation)
+        validate_rna_payload(payload, max_spans=max_spans, live_operation=live_operation,
+                             **({"session_format": session_format} if session_format is not None else {}))
     elif payload.get("record_format") == FORMAT:
         if payload.get("privacy_policy") != "structure_and_scalars/1":
             raise ValueError("Unsupported redaction policy")
@@ -70,6 +71,50 @@ def validate_payload(payload, max_spans=2000, *, live_operation=None):
     return payload
 
 
+def _workflow_operation_binding(session, operation, payload, db=None):
+    """Bind the explicit /3 journal to its frozen topology and retained starts."""
+    from .rna_hosted_workflow import validate_wire_operation
+    from .rna_langsmith_live import _root_dotted_order
+    validate_wire_operation({'operation': operation, 'payload': payload},
+        packet={'session': session, 'topology': session['span_topology']})
+    if db is None:
+        return
+    first = db.execute("SELECT payload FROM operations WHERE span_id=? AND operation='start'",
+                       (payload['id'],)).fetchone()
+    if first is not None and payload['dotted_order'] != json.loads(first[0])['dotted_order']:
+        raise ValueError('Immutable workflow start order changed')
+    parent = payload.get('parent_run_id')
+    if parent is not None:
+        retained = db.execute("SELECT payload FROM operations WHERE span_id=? AND operation='start'", (parent,)).fetchone()
+        if retained is None:
+            raise ValueError('Retained workflow parent start required')
+        expected = json.loads(retained[0])['dotted_order'] + '.' + _root_dotted_order(payload['start_time'], payload['id'])
+        if payload['dotted_order'] != expected:
+            raise ValueError('Exact retained workflow parent order required')
+
+
+def _context_operation_binding(session, operation, payload, db=None):
+    from .rna_langsmith_live import validate_context_run_bindings, _root_dotted_order
+    validate_context_run_bindings(payload, operation, session)
+    if db is None:
+        return
+    first=db.execute("SELECT payload FROM operations WHERE span_id=? AND operation='start'",(payload['id'],)).fetchone()
+    if first is not None:
+        start=json.loads(first[0])
+        if any(payload.get(key)!=start.get(key) for key in ('start_time','dotted_order','trace_id','parent_run_id')):
+            raise ValueError('Immutable context start/order changed')
+    parent=payload.get('parent_run_id')
+    if parent is not None:
+        row=db.execute("SELECT payload FROM operations WHERE span_id=? AND operation='start'",(parent,)).fetchone()
+        if row is None:
+            raise ValueError('Retained context parent required')
+        start=json.loads(row[0])
+        if payload['dotted_order']!=start['dotted_order']+'.'+_root_dotted_order(payload['start_time'],payload['id']):
+            raise ValueError('Exact retained context parent order required')
+    if db.execute('SELECT count(*) FROM operations').fetchone()[0]>session['context_profile']['operation_count']:
+        raise ValueError('Context operation cap exceeded')
+
+
 class ExportOutbox:
     def __init__(self, path, *, readonly=False):
         self.path = _absolute(path)
@@ -83,7 +128,7 @@ class ExportOutbox:
                 raise ValueError("Unsupported outbox schema")
 
     @classmethod
-    def create(cls, path, *, payload_path, expected_sha256, endpoint, project, max_attempts=3, live_operation=None, _initial_operations=None):
+    def create(cls, path, *, payload_path, expected_sha256, endpoint, project, max_attempts=3, live_operation=None, _initial_operations=None, _context_session=None):
         path, source = _absolute(path), _absolute(payload_path)
         if endpoint not in ENDPOINTS or not isinstance(project, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}", project) is None:
             raise ValueError("Unsupported endpoint/project")
@@ -97,7 +142,16 @@ class ExportOutbox:
             raise ValueError("Reviewed payload mismatch")
         if live_operation not in (None, "start") or (live_operation and payload.get("record_format") != "devbench.rna-langsmith-export/1"):
             raise ValueError("Unsupported initial live operation")
-        validate_payload(payload, live_operation=live_operation)
+        if _context_session is not None:
+            from .rna_langsmith_live import validate_live_session, validate_context_run_bindings
+            context_session=validate_live_session(_context_session)
+            if context_session['format'] not in {'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'} or _initial_operations is None:
+                raise ValueError('Bound context creation required')
+            validate_payload(payload, live_operation=live_operation, session_format=context_session['format'])
+            for run in payload['runs']:
+                validate_context_run_bindings(run,_initial_operations[run['id']],context_session)
+        else:
+            validate_payload(payload, live_operation=live_operation)
         if any(run["session_name"] != project for run in payload["runs"]):
             raise ValueError("Project binding mismatch")
         initial = _initial_operations or {}
@@ -168,7 +222,16 @@ class ExportOutbox:
             if not isinstance(item, dict) or set(item) != {"operation", "payload"}:
                 raise ValueError("Invalid bound live start operation")
             envelope = item["operation"]
-            if session["format"] == "devbench.rna-live-trace-session/2":
+            if session['format'] in {'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'}:
+                _context_operation_binding(session,envelope,item['payload'])
+                if (len(initial_operations)!=1 or envelope['operation']!='start'
+                        or envelope['span_id']!=session['span_topology'][0]['span_id']):
+                    raise ValueError('One initial context root required')
+            if session['format'] == 'devbench.rna-live-trace-session/3':
+                _workflow_operation_binding(session, envelope, item['payload'])
+                if len(initial_operations) != 1 or envelope['span_id'] != session['span_topology'][0]['span_id']:
+                    raise ValueError('One frozen initial workflow root required')
+            if session["format"] in {"devbench.rna-live-trace-session/2", "devbench.rna-live-trace-session/3", "devbench.rna-live-trace-session/4", "devbench.rna-live-trace-session/5"}:
                 from .rna_langsmith_verify import validate_remote_proof
                 proof = validate_remote_proof(item["payload"])
                 if proof["operation_id"] != envelope.get("operation_id") or proof["revision"] != envelope.get("revision"):
@@ -184,11 +247,12 @@ class ExportOutbox:
         payload = reader.read(payload_path)
         if reader.digest(_absolute(payload_path)) != _digest(expected_sha256):
             raise ValueError("Initial live payload hash mismatch")
-        validate_payload(payload, max_spans=session["max_spans"], live_operation="start")
+        validate_payload(payload, max_spans=session["max_spans"], live_operation="start",
+                         **({'session_format':session['format']} if session['format'] in {'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'} else {}))
         if payload["data_scope"] != session["data_scope"] or len(canonical_json_bytes(payload)) > session["max_bytes"]:
             raise ValueError("Initial live scope/cap mismatch")
         for run in payload["runs"]:
-            if session["format"] == "devbench.rna-live-trace-session/2":
+            if session["format"] in {"devbench.rna-live-trace-session/2", "devbench.rna-live-trace-session/3", "devbench.rna-live-trace-session/4", "devbench.rna-live-trace-session/5"}:
                 from .rna_langsmith_verify import validate_remote_proof
                 proof = validate_remote_proof(run)
                 envelope = initial.get(run["id"], {})
@@ -201,8 +265,12 @@ class ExportOutbox:
                 raise ValueError("Initial source/runtime binding mismatch")
         box = cls.create(path, payload_path=payload_path, expected_sha256=expected_sha256,
                          endpoint=session["endpoint"], project=session["project"],
-                         max_attempts=session["max_delivery_attempts"], live_operation="start", _initial_operations=initial)
+                         max_attempts=session["max_delivery_attempts"], live_operation="start", _initial_operations=initial,
+                         **({'_context_session':session} if session['format'] in {'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'} else {}))
         with box._db() as db:
+            if session['format'] in {'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'}:
+                raw=canonical_json_bytes(session)
+                db.execute('INSERT INTO live_session VALUES(?,?)',(raw,digest(raw)))
             export = box._check_payload(db)
             payload = _Evidence(_absolute(payload_path).parent).read(payload_path)
             if payload["data_scope"] != session["data_scope"]:
@@ -212,7 +280,8 @@ class ExportOutbox:
                 if any(metadata.get(key) != session[key] for key in ("source_digest", "runtime_digest")):
                     raise ValueError("Live source/runtime binding mismatch")
             raw = canonical_json_bytes(session)
-            db.execute("INSERT INTO live_session VALUES(?,?)", (raw, digest(raw)))
+            if session['format'] not in {'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'}:
+                db.execute("INSERT INTO live_session VALUES(?,?)", (raw, digest(raw)))
         return box
 
     @classmethod
@@ -270,17 +339,41 @@ class ExportOutbox:
         payload = reader.read(source)
         if reader.digest(source) != export["payload_sha256"]:
             raise ValueError("Immutable reviewed payload changed")
-        validate_payload(payload, live_operation=export["live_operation"])
+        context_binding=db.execute("SELECT * FROM live_session").fetchone()
+        context_session=None
+        if context_binding is not None and json.loads(context_binding['manifest']).get('format') in {'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'}:
+            from .rna_langsmith_live import validate_live_session
+            if context_binding['manifest_sha256']!=digest(context_binding['manifest']):
+                raise ValueError('Immutable context session digest mismatch')
+            context_session=validate_live_session(json.loads(context_binding['manifest']))
+            validate_payload(payload, live_operation=export['live_operation'],session_format=context_session['format'])
+        else:
+            validate_payload(payload, live_operation=export["live_operation"])
         binding = db.execute("SELECT * FROM live_session").fetchone()
         if binding is not None and binding["manifest_sha256"] != digest(binding["manifest"]):
             raise ValueError("Immutable live session digest mismatch")
+        workflow_format = None
+        workflow_session = None
+        if binding is not None and json.loads(binding["manifest"]).get("format") == "devbench.rna-live-trace-session/3":
+            from .rna_langsmith_live import validate_live_session
+            workflow_session = validate_live_session(json.loads(binding["manifest"]))
+            workflow_format = workflow_session['format']
+        if context_session is not None:
+            workflow_session=context_session
+            workflow_format=context_session['format']
         for row in db.execute("SELECT payload,payload_sha256,operation,envelope FROM operations"):
             if digest(row["payload"]) != row["payload_sha256"]:
                 raise ValueError("Immutable operation hash mismatch")
             if row["envelope"] is not None:
                 from .rna_langsmith_live import validate_live_run
-                validate_live_run(json.loads(row["payload"]), row["operation"])
+                validate_live_run(json.loads(row["payload"]), row["operation"],
+                                  **({"session_format": workflow_format} if workflow_format is not None else {}))
                 envelope = json.loads(row["envelope"])
+                if workflow_session is not None:
+                    if workflow_format in {'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'}:
+                        _context_operation_binding(workflow_session,envelope,json.loads(row['payload']),db)
+                    else:
+                        _workflow_operation_binding(workflow_session, envelope, json.loads(row['payload']), db)
                 if envelope["payload_sha256"] != row["payload_sha256"]:
                     raise ValueError("Immutable envelope binding mismatch")
                 operation_payload = json.loads(row["payload"])
@@ -309,10 +402,10 @@ class ExportOutbox:
             raise ValueError("Invalid operation revision")
         raw = canonical_json_bytes(payload)
         envelope = canonical_json_bytes(operation)
-        if len(raw) > 4096 or digest(raw) != operation["payload_sha256"] or payload.get("id") != operation["span_id"]:
+        metadata=payload.get('extra',{}).get('metadata',{})
+        raw_cap=8192 if metadata.get('provenance')=='synthetic_engineering' and 'context_alias' in metadata else 4096
+        if len(raw) > raw_cap or digest(raw) != operation["payload_sha256"] or payload.get("id") != operation["span_id"]:
             raise ValueError("Operation payload binding mismatch")
-        from .rna_langsmith_live import validate_live_run
-        validate_live_run(payload, operation["operation"])
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
             export = self._check_payload(db)
@@ -321,13 +414,23 @@ class ExportOutbox:
                 raise ValueError("Live operation requires frozen session")
             from .rna_langsmith_live import validate_live_session
             session = validate_live_session(json.loads(binding["manifest"]))
+            from .rna_langsmith_live import validate_live_run
+            validate_live_run(payload, operation["operation"],
+                              **({"session_format": session["format"]}
+                                 if session["format"] in {"devbench.rna-live-trace-session/3","devbench.rna-live-trace-session/4","devbench.rna-live-trace-session/5"} else {}))
+            if session['format'] == 'devbench.rna-live-trace-session/3':
+                _workflow_operation_binding(session, operation, payload, db)
+            if session['format'] in {'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'}:
+                _context_operation_binding(session,operation,payload,db)
+            elif len(raw)>4096:
+                raise ValueError('Operation payload binding mismatch')
             max_spans=min(max_spans,session["max_spans"])
             max_bytes=min(max_bytes,session["max_bytes"])
             if operation["source_binding_alias"] != session["workflow_alias"] or operation["redaction_policy_digest"] != session["policy_digest"] or any(payload["extra"]["metadata"].get(k) != session[k] for k in ("source_digest", "runtime_digest")):
                 raise ValueError("Immutable session operation binding mismatch")
             if payload["tags"] != ["devbench", "rna", session["data_scope"]]:
                 raise ValueError("Immutable session data scope mismatch")
-            if session["format"] == "devbench.rna-live-trace-session/2":
+            if session["format"] in {"devbench.rna-live-trace-session/2", "devbench.rna-live-trace-session/3", "devbench.rna-live-trace-session/4", "devbench.rna-live-trace-session/5"}:
                 from .rna_langsmith_verify import validate_remote_proof
                 proof = validate_remote_proof(payload)
                 if payload.get("session_id") != session["project_id"] or proof["operation_id"] != operation["operation_id"] or proof["revision"] != operation["revision"]:
@@ -340,6 +443,8 @@ class ExportOutbox:
                     raise ValueError("Immutable revision conflict")
                 return {"status": "existing"}
             rows = db.execute("SELECT operation,revision FROM operations WHERE span_id=? ORDER BY revision", (operation["span_id"],)).fetchall()
+            if session['format'] in {'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'} and db.execute('SELECT count(*) FROM operations').fetchone()[0]>=session['context_profile']['operation_count']:
+                raise ValueError('Context operation cap exceeded')
             if (not rows and operation["operation"] != "start") or (rows and (operation["operation"] == "start" or operation["revision"] <= rows[-1]["revision"])):
                 raise ValueError("Start must precede increasing finish/annotation revisions")
             if rows:
@@ -379,7 +484,20 @@ class ExportOutbox:
             bound_session = db.execute("SELECT manifest FROM live_session").fetchone()
             if bound_session is not None:
                 from .rna_langsmith_live import validate_live_session
-                validate_live_session(json.loads(bound_session[0]))
+                session = validate_live_session(json.loads(bound_session[0]))
+                if session['format'] == 'devbench.rna-live-trace-session/3':
+                    from .rna_hosted_workflow import _WorkflowRESTTransport
+                    if (type(transport) is not _WorkflowRESTTransport
+                            or transport.workflow.box is not self
+                            or transport.session != session
+                            or transport.workflow._authorize_transport() != session):
+                        raise PermissionError('Original child exact-session workflow transport required')
+                if session['format'] in {'devbench.rna-live-trace-session/4', 'devbench.rna-live-trace-session/5'}:
+                    from .rna_hosted_workflow import _ContextRESTTransport, HostedContextObservation, HostedGenerationContextObservation
+                    if (type(transport) is not _ContextRESTTransport or type(transport.workflow) is not (HostedGenerationContextObservation if session["format"] == "devbench.rna-live-trace-session/5" else HostedContextObservation)
+                            or transport.workflow.box is not self or transport.session!=session
+                            or transport.workflow._authorize_transport()!=session):
+                        raise PermissionError('Original child exact-session context transport required')
             if db.execute("SELECT 1 FROM leases WHERE expires_at>?", (time.time(),)).fetchone():
                 raise RuntimeError("Another exporter holds the lease")
             db.execute("DELETE FROM leases")
@@ -460,6 +578,8 @@ class ExportOutbox:
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
             binding = db.execute("SELECT manifest FROM live_session").fetchone()
+            if binding and json.loads(binding[0]).get("format") in {"devbench.rna-live-trace-session/4", "devbench.rna-live-trace-session/5"}:
+                raise PermissionError("Context observation uncertainty cannot use legacy reconciliation flags")
             if binding and json.loads(binding[0]).get("format") == "devbench.rna-live-trace-session/2":
                 raise PermissionError("UUID-bound hosted session requires exact reviewed verifier receipt")
             if db.execute("SELECT 1 FROM leases WHERE expires_at>?", (time.time(),)).fetchone():
@@ -480,6 +600,10 @@ class ExportOutbox:
         """
         if self.readonly:
             raise PermissionError("Read-only outbox")
+        with self._db() as db:
+            binding = db.execute("SELECT manifest FROM live_session").fetchone()
+            if binding and json.loads(binding[0]).get("format") in {"devbench.rna-live-trace-session/4", "devbench.rna-live-trace-session/5"}:
+                raise PermissionError("Context observation uncertainty has no reviewed reconciliation capability")
         from .rna_langsmith_verify import RemoteRunVerifier
         if not isinstance(verifier, RemoteRunVerifier):
             raise ValueError("Independent verifier instance required")

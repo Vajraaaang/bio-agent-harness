@@ -1,4 +1,18 @@
-# Latest research development snapshot — 2026-10-07
+# Research development snapshot — October 29, 2026
+
+This branch updates the local workbench application, core/server changes, public documentation, and associated test/script source. It includes project-scoped chats and source sets, the bounded local RNA analyst, workflow evaluation/replay, and a synthetic visual atlas. This is a source update with focused software verification, not a qualified release.
+
+No live trial, external model session, patient-data upload, Docker execution, or expression-data download was performed for this publication. The atlas is generated presentation data, visibly labeled synthetic, and creates no scientific run, analysis record, or review approval.
+
+Fresh checks on the integrated publication checkout: 448 focused project/chat/workbench tests passed; repository collection succeeded with 11,344 collected tests and one optional scvi skip (collection is not execution); 458 changed Python source files parsed successfully; continuous and count controlled synthetic verification completed with identical repeated numerical outputs, valid audit checks, and completed configured R references. The numerical check used zero model-service calls. The R count reference shares fitted dispersions and offsets and does not independently validate their estimation. See [latest workbench verification](reports/github-update-20261029/latest-workbench-verification.json) and [earlier publication evidence](reports/github-update-20261029/verification.json).
+
+The full repository suite and hosted CI have not been qualified for this snapshot. Some historical tests and documentation require local reports, frozen sources, native runtimes, or installed artifacts that are intentionally excluded from publication. Existing historical failures remain documented below. No inference of method superiority, biological validity, or clinical readiness follows from these software checks.
+
+The publication manifest identifies changed copied-source files and publication-only documentation. Run directories, downloaded datasets, environments, private grading material, captured source archives, and integration validation outputs are excluded. Existing public historical evidence is preserved.
+
+---
+
+# Historical research development snapshot — 2026-10-07
 
 This update publishes the latest local source for `0.5.0.dev0`, including the scientific workbench, method contracts/planner, discovery evaluation support, and RNA tracing/qualification tooling. It is a research development snapshot published to the default branch at the user's request; complete software qualification remains pending. Existing verified 0.4.17 release evidence remains historical evidence for that release, not qualification of this update.
 

@@ -11,7 +11,7 @@ from .langgraph_workflow import SerialRNAWorkflow
 from .rna_investigations import (decide_investigation, digest, planning_binding,
     read_investigation_json, retain_investigation_json, reconcile_investigations, reduce_investigation_refs,
     compose_investigation_task, verify_investigation_assignment, ASSIGNMENT_POLICY)
-from .workflow_state import validate_workflow_state
+from .workflow_state import SERIAL_ROUTE, validate_workflow_state
 
 
 class _IndependentGraphState(TypedDict):
@@ -117,6 +117,123 @@ def _axis_choices(axis, left, right, plan, evidence):
     return False
 
 
+def _settled_capture_response(methods, ledger, workflow_id, reservation_ref, capture_ref, usage_ref):
+    """Resolve immutable output against an already settled trusted ledger capture."""
+    retained = ledger.get_model_reservation(reservation_ref)
+    if (retained is None or retained["campaign_id"] != workflow_id or retained["status"] != "completed"
+            or retained["capture"] is None or retained["capture"].get("capture_ref") != capture_ref):
+        raise ValueError("Independent bridge requires an exact settled model capture")
+    receipt = retained["capture"]
+    manifest = read_investigation_json(methods, capture_ref)
+    usage = read_investigation_json(methods, usage_ref, max_bytes=24_000)
+    if (manifest.get("reservation_ref") != retained["ref"] or usage.get("capture_ref") != capture_ref
+            or usage.get("receipt") != receipt):
+        raise ValueError("Independent bridge model usage or reservation evidence differs")
+    response_ref = manifest.get("response_ref", manifest.get("files", {}).get("model/answer.json"))
+    if response_ref is None:
+        raise ValueError("Independent bridge requires actual captured response bytes")
+    response = read_investigation_json(methods, response_ref, max_bytes=4_000_000)
+    if digest(response) != manifest.get("response_digest"):
+        raise ValueError("Independent bridge response differs from its immutable capture")
+    return response, retained
+
+
+def verify_parent_bridge(planner, ledger, workflow_id, before_hash, after_hash):
+    """Verify special graph receipts bridging otherwise adjacent serial nodes.
+
+    This read-only check cannot grant a transition from a cursor hash alone.
+    It accepts only narrow, completed effects and independently resolves their
+    retained snapshots, settled model receipts and actual captured responses.
+    """
+    campaign = ledger.get_campaign(workflow_id)
+    if campaign is None:
+        raise ValueError("Independent bridge requires a frozen campaign")
+    policy_digest = campaign["identity"].get("investigation_policy_digest")
+    records = [ledger.get(workflow_id, node, 0) for node in ("attach", "reassess", "preliminary_explanation")]
+    records = [record for record in records if record is not None and record["status"] == "completed"]
+    current = before_hash
+    for _ in range(3):
+        matches = [record for record in records if record["result"].get("before_plan_hash") == current]
+        if len(matches) != 1:
+            raise ValueError("Planner hash change lacks an exact completed independent bridge")
+        record = matches[0]
+        node, request, result = record["node"], record["request"], record["result"]
+        target = result.get("after_plan_hash")
+        before = planner.methods.get("method_plan_snapshot", current)
+        after = planner.methods.get("method_plan_snapshot", target)
+        if (digest(before) != current or digest(after) != target or before["session_id"] != workflow_id
+                or after["session_id"] != workflow_id or planning_binding(before) != planning_binding(after)
+                or request.get("expected_plan_hash") != current or request.get("policy_digest") != policy_digest):
+            raise ValueError("Independent bridge snapshot or frozen request binding differs")
+        allowed = {"investigation_evidence"} if node == "attach" else {"selection_history", "selection_in_progress"} | (
+            {"scientific_candidates", "candidate_reassessment"} if node == "reassess" else {"preliminary_explanation"})
+        if any(before.get(key) != after.get(key) for key in (set(before) | set(after)) - allowed):
+            raise ValueError("Independent bridge changed planner fields outside its node contract")
+        if node == "attach":
+            from .rna_investigations import verify_investigation_bundle
+            links = after.get("investigation_evidence", [])
+            if before.get("investigation_evidence") or len(links) != 1 or links[0].get("attachment_before_hash") != current:
+                raise ValueError("Independent bridge attachment differs from its prior snapshot")
+            if result.get("bundle_ref") != links[0].get("bundle_ref"):
+                raise ValueError("Independent bridge bundle differs from its completed receipt")
+            barrier = ledger.get(workflow_id, "investigation_barrier", 0)
+            if (barrier is None or barrier["status"] != "completed"
+                    or barrier["result"].get("result_refs") != request.get("result_refs")):
+                raise ValueError("Independent bridge requires the completed verified child barrier")
+            def verify_child(packet_ref, result_ref, *, dispatch_ref=None):
+                if result_ref is None:
+                    packet = read_investigation_json(planner.methods, packet_ref, max_bytes=48_000)
+                    retained = ledger.get_model_reservation(workflow_id, "investigator_" + packet["investigation_id"], 0)
+                    if retained is None or retained["status"] not in {"failed", "cancelled", "uncertain"}:
+                        raise ValueError("Missing bridge child lacks retained failure evidence")
+                    return {"status": retained["status"]}
+                child = read_investigation_json(planner.methods, result_ref, max_bytes=24_000)
+                capture = read_investigation_json(planner.methods, child["capture_ref"])
+                response, _ = _settled_capture_response(planner.methods, ledger, workflow_id,
+                    capture["reservation_ref"], child["capture_ref"], child["usage_ref"])
+                if response != {**child, "capture_ref": None, "usage_ref": None}:
+                    raise ValueError("Independent bridge child differs from its actual captured response")
+                return child
+            bundle = verify_investigation_bundle(planner.methods, result["bundle_ref"], plan=before, verify_child=verify_child)
+            if (bundle["policy_digest"] != policy_digest or links[0].get("stage") != bundle["stage"]
+                    or links[0].get("scope_binding") != bundle["binding_digest"]):
+                raise ValueError("Independent bridge attachment policy or scope differs")
+        else:
+            if request.get("session_id") != workflow_id or request.get("binding_digest") != planning_binding(before):
+                raise ValueError("Independent bridge model request differs from its scientific binding")
+            history, old = after["selection_history"], before["selection_history"]
+            phase = _PARENT_MODEL_PHASES[node]
+            if (len(history) != len(old) + 1 or history[:-1] != old or history[-1]["status"] != "accepted"
+                    or history[-1]["phase"] != phase or after.get("selection_in_progress") is not None):
+                raise ValueError("Independent bridge requires one exact accepted selection")
+            selected = history[-1]
+            response, reserved = _settled_capture_response(planner.methods, ledger, workflow_id,
+                selected["model_reservation_ref"], selected["model_capture_ref"], selected["model_usage_ref"])
+            if (response != selected["response"] or reserved["request"].get("purpose") != phase
+                    or reserved["request"].get("session_id") != selected["attempt"]
+                    or reserved["request"].get("context_digest") != selected["context_sha256"]):
+                raise ValueError("Independent bridge selection differs from its reserved captured call")
+            if node == "reassess":
+                from .method_planner_contract import validate_scientific_candidates, validate_parameter_origins
+                candidates = validate_scientific_candidates(response)
+                validate_parameter_origins(candidates, after.get("user_parameter_requirements", []))
+                reassessed = after.get("candidate_reassessment", {})
+                if (after["scientific_candidates"] != candidates or reassessed.get("previous_scientific_candidates") != before["scientific_candidates"]
+                        or reassessed.get("selection_attempt") != selected["attempt"]
+                        or reassessed.get("bundle_ref") != before["investigation_evidence"][0]["bundle_ref"]):
+                    raise ValueError("Independent bridge reassessment differs from its captured proposal")
+            else:
+                from .method_planner_contract import validate_preliminary_explanation
+                explanation = after.get("preliminary_explanation", {})
+                if (explanation.get("response") != validate_preliminary_explanation(response)
+                        or explanation.get("selection_attempt") != selected["attempt"]):
+                    raise ValueError("Independent bridge preliminary explanation differs from its captured proposal")
+        current = target
+        if current == after_hash:
+            return True
+    raise ValueError("Planner change exceeds the admitted independent bridge route")
+
+
 def require_pinned_graph():
     from .langchain_tools import ensure_local_observability
     ensure_local_observability()
@@ -125,9 +242,9 @@ def require_pinned_graph():
         try:
             actual = metadata.version(package)
         except metadata.PackageNotFoundError as error:
-            raise ValueError("Independent investigations require the pinned optional LangGraph runtime") from error
+            raise ValueError("Independent investigations require the required pinned LangGraph runtime") from error
         if actual != expected:
-            raise ValueError("Independent investigations require the pinned optional LangGraph runtime")
+            raise ValueError("Independent investigations require the required pinned LangGraph runtime")
 
 
 class IndependentRNAWorkflow(SerialRNAWorkflow):
@@ -187,8 +304,9 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
         child.add_edge("private_invocation", END)
         self.child_graph = child.compile()
         builder = StateGraph(_IndependentGraphState)
-        for node in ("audit", "question", "generate", "resolve", "design", "declare", "run", "verify", "recommend"):
-            builder.add_node(node, lambda state, selected=node: self._parent_node(selected, state))
+        for node in SERIAL_ROUTE:
+            if node not in {"review", "execution_review"}:
+                builder.add_node(node, lambda state, selected=node: self._parent_node(selected, state))
         for node in ("preliminary_explanation", "reassess"):
             builder.add_node(node, lambda state, selected=node: self._special_parent(selected, state))
         builder.add_node("investigation_decision", self._decision)
@@ -205,7 +323,8 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
 
         def pause(state, phase):
             cursor = self._cursor(state)
-            self._check(cursor)
+            self._check_node_entry(phase, cursor)
+            self.actions.check_node_entry(phase, cursor["parent_cursor"])
             if self._cancelled(cursor["workflow_id"]):
                 return {"cursor": self._failure(cursor, phase, "cancelled", "Campaign was cancelled", status="cancelled")}
             if phase == "review" or cursor["parent_cursor"]["trial_ids"]:
@@ -213,7 +332,8 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
                     "planner_hash": cursor["expected_plan_hash"],
                     "instruction": "Review frozen drafts or declarations and supply current authority separately"})
                 self._check(cursor)
-            return {"cursor": {**cursor, "phase": phase, "status": "ready"}}
+            parent = self.actions.perform(phase, cursor["parent_cursor"])
+            return {"cursor": self._refresh(cursor, parent, phase)}
 
         builder.add_node("review", lambda state: pause(state, "review"))
         builder.add_node("execution_review", lambda state: pause(state, "execution_review"))
@@ -222,15 +342,18 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
         def onward(state, following):
             return following if state["cursor"]["status"] == "ready" else END
 
-        for before, after in (("audit", "question"), ("question", "generate"), ("resolve", "design"),
-                              ("design", "review"), ("review", "declare"), ("declare", "execution_review")):
-            builder.add_conditional_edges(before, lambda state, following=after: onward(state, following))
+        for before, after in zip(SERIAL_ROUTE, SERIAL_ROUTE[1:]):
+            if before not in {"generate", "execution_review", "run", "verify"}:
+                builder.add_conditional_edges(before, lambda state, following=after: onward(state, following),
+                    {after: after, END: END})
         builder.add_conditional_edges("generate", lambda state: onward(state,
-            "investigation_decision" if self.policy["stage"] == "pre_fit_methods" else "resolve"))
+            "investigation_decision" if self.policy["stage"] == "pre_fit_methods" else "candidate_review"),
+            {"investigation_decision": "investigation_decision", "candidate_review": "candidate_review", END: END})
         builder.add_conditional_edges("execution_review", lambda state: onward(state,
-            "run" if state["cursor"]["parent_cursor"]["trial_ids"] else "verify"))
+            "run" if state["cursor"]["parent_cursor"]["trial_ids"] else "verify"), {"run": "run", "verify": "verify", END: END})
         builder.add_conditional_edges("run", lambda state: onward(state, "run" if
-            state["cursor"]["parent_cursor"]["trial_index"] < len(state["cursor"]["parent_cursor"]["trial_ids"]) else "verify"))
+            state["cursor"]["parent_cursor"]["trial_index"] < len(state["cursor"]["parent_cursor"]["trial_ids"]) else "verify"),
+            {"run": "run", "verify": "verify", END: END})
         def after_verify(state):
             if self.policy["stage"] != "post_fit_explanation":
                 return onward(state, "recommend")
@@ -239,25 +362,30 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
                 return onward(state, "investigation_decision")
             evidence = self._verified_evidence(plan)
             return onward(state, "preliminary_explanation" if evidence["assessment_available"] else "investigation_decision")
-        builder.add_conditional_edges("verify", after_verify)
-        builder.add_conditional_edges("preliminary_explanation", lambda state: onward(state, "investigation_decision"))
+        builder.add_conditional_edges("verify", after_verify, {"recommend": "recommend",
+            "preliminary_explanation": "preliminary_explanation", "investigation_decision": "investigation_decision", END: END})
+        builder.add_conditional_edges("preliminary_explanation", lambda state: onward(state, "investigation_decision"),
+            {"investigation_decision": "investigation_decision", END: END})
 
         def fork(state):
             cursor = self._cursor(state)
             if cursor["status"] != "ready":
                 return END
             if not cursor["child_ids"]:
-                return "resolve" if cursor["stage"] == "pre_fit_methods" else "recommend"
+                return "candidate_review" if cursor["stage"] == "pre_fit_methods" else "recommend"
             return [Send("investigate", {"investigation_id": identity, "workflow_id": cursor["workflow_id"],
                 "dispatch_ref": cursor["dispatch_refs"][identity]}) for identity in cursor["child_ids"]]
 
-        builder.add_conditional_edges("investigation_decision", fork)
+        builder.add_conditional_edges("investigation_decision", fork,
+            {"candidate_review": "candidate_review", "recommend": "recommend", "investigate": "investigate", END: END})
         builder.add_edge("investigate", "investigation_barrier")
-        builder.add_conditional_edges("investigation_barrier", lambda state: onward(state, "attach"))
+        builder.add_conditional_edges("investigation_barrier", lambda state: onward(state, "attach"), {"attach": "attach", END: END})
         builder.add_conditional_edges("attach", lambda state: onward(state,
-            "reassess" if state["cursor"]["stage"] == "pre_fit_methods" else "recommend"))
-        builder.add_conditional_edges("reassess", lambda state: onward(state, "resolve"))
-        builder.add_edge("recommend", END)
+            "reassess" if state["cursor"]["stage"] == "pre_fit_methods" else "recommend"),
+            {"reassess": "reassess", "recommend": "recommend", END: END})
+        builder.add_conditional_edges("reassess", lambda state: onward(state, "candidate_review"),
+            {"candidate_review": "candidate_review", END: END})
+        builder.add_edge("conclusion_review", END)
         saver = SqliteSaver(self.connection, serde=JsonPlusSerializer(pickle_fallback=False,
             allowed_json_modules=None, allowed_msgpack_modules=None))
         if self.readonly:
@@ -314,6 +442,84 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
         if digest(self.frozen_policy) != cursor["policy_digest"]:
             raise ValueError("Independent workflow policy bytes changed")
         return campaign
+
+    def _completed_node(self, cursor, node, attempt=0):
+        record = self.actions.ledger.get(cursor["workflow_id"], node, attempt)
+        if record is None or record["status"] != "completed" or type(record.get("result")) is not dict:
+            raise ValueError("Independent node prerequisite lacks completed operation evidence: " + node)
+        return record
+
+    def _check_node_entry(self, node, cursor):
+        """Validate the graph edge and retained prerequisite before any effect.
+
+        The nested serial cursor validates ordinary action evidence; the outer
+        cursor additionally owns the conditional investigation/review edges.
+        Neither a phase label nor a checkpoint grants execution authority.
+        """
+        self._require_writer()
+        parent = cursor["parent_cursor"]
+        if cursor["status"] != "ready" or parent["status"] != "ready" or cursor["failure"] is not None:
+            raise ValueError("Independent node requires a ready cursor without a failure")
+        if cursor["stage"] != self.policy["stage"]:
+            raise ValueError("Independent node stage differs from the frozen route")
+        before, stage = cursor["phase"], cursor["stage"]
+        allowed = {name: {SERIAL_ROUTE[index - 1] if index else "audit"}
+                   for index, name in enumerate(SERIAL_ROUTE)}
+        allowed.update({
+            "run": {"execution_review", "run"}, "verify": {"execution_review", "run"},
+            "preliminary_explanation": {"verify"},
+            "investigation_decision": {"generate"} if stage == "pre_fit_methods" else {"verify", "preliminary_explanation"},
+            "investigation_barrier": {"investigation_decision"}, "attach": {"investigation_barrier"},
+            "reassess": {"attach"},
+            "candidate_review": {"investigation_decision", "reassess"} if stage == "pre_fit_methods" else {"generate"},
+            "recommend": {"verify"} if stage == "pre_fit_methods" else {"investigation_decision", "attach"},
+        })
+        if node not in allowed or before not in allowed[node]:
+            raise ValueError("Independent node transition is not permitted: " + before + " -> " + node)
+        if node != "audit" and before in SERIAL_ROUTE:
+            self._completed_node(cursor, before, parent["trial_index"] - 1 if before == "run" else 0)
+        if node == "audit" and parent["operation_refs"]:
+            raise ValueError("Independent audit node requires an unused cursor")
+        if node == "run" and parent["trial_index"] >= len(parent["trial_ids"]):
+            raise ValueError("Independent run node has no pending declared trial")
+        if node == "verify" and parent["trial_index"] != len(parent["trial_ids"]):
+            raise ValueError("Independent verify node requires every declared trial to finish")
+        if node in {"preliminary_explanation", "reassess"}:
+            expected = "verify" if node == "preliminary_explanation" else "generate"
+            if (stage != ("post_fit_explanation" if node == "preliminary_explanation" else "pre_fit_methods")
+                    or parent["phase"] != expected or expected + ":0" not in parent["operation_refs"]):
+                raise ValueError("Independent special node lacks its serial prerequisite")
+        if node == "investigation_decision":
+            expected = "generate" if stage == "pre_fit_methods" else "verify"
+            if parent["phase"] != expected or expected + ":0" not in parent["operation_refs"]:
+                raise ValueError("Independent decision node lacks its serial prerequisite")
+            self._completed_node(cursor, expected)
+        if before in {"preliminary_explanation", "reassess", "attach"}:
+            record = self._completed_node(cursor, before)
+            if record["result"].get("after_plan_hash") != cursor["expected_plan_hash"]:
+                raise ValueError("Independent predecessor node output differs from the current planner")
+        if node in {"investigation_barrier", "attach", "reassess"} or before == "investigation_decision":
+            record = self._completed_node(cursor, "investigation_decision")
+            retained = record["result"]
+            if retained.get("decision", {}).get("status") == "blocked":
+                raise ValueError("Independent node cannot advance a retained blocked investigation decision")
+            if any(cursor[key] != retained.get(key) for key in ("decision", "child_ids", "dispatch_refs")):
+                raise ValueError("Independent node allocation differs from completed decision evidence")
+            needs_children = node in {"investigation_barrier", "attach", "reassess"}
+            if needs_children != bool(cursor["child_ids"]):
+                raise ValueError("Independent node does not match the admitted investigation branch")
+        if node == "attach":
+            barrier = self._completed_node(cursor, "investigation_barrier")["result"]
+            if barrier.get("result_refs") != cursor["result_refs"]:
+                raise ValueError("Independent attachment node differs from verified barrier output")
+        self._check(cursor)
+        if node == "investigation_decision" and stage == "post_fit_explanation" and before == "verify":
+            plan = self.actions.planner.get(cursor["parent_session_id"])
+            if any(row["status"] == "success" for row in plan["results"]) and self._verified_evidence(plan)["assessment_available"]:
+                raise ValueError("Independent decision node requires the preliminary explanation node first")
+        if node in {"preliminary_explanation", "reassess"}:
+            self._completed_node(cursor, "verify" if node == "preliminary_explanation" else "generate")
+        return cursor
 
     def _freeze_campaign(self, parent):
         self._check_configuration()
@@ -415,7 +621,7 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
     def _parent_node(self, node, state):
         cursor = self._cursor(state)
         try:
-            self._check(cursor)
+            self._check_node_entry(node, cursor)
             if self._cancelled(cursor["workflow_id"]):
                 return {"cursor": self._failure(cursor, node, "cancelled", "Campaign was cancelled", status="cancelled")}
             parent = self.actions.perform(node, cursor["parent_cursor"])
@@ -552,7 +758,7 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
     def _special_parent(self, node, state):
         cursor = self._cursor(state)
         try:
-            self._check(cursor)
+            self._check_node_entry(node, cursor)
             if self._cancelled(cursor["workflow_id"]):
                 return {"cursor": self._failure(cursor, node, "cancelled", "Campaign was cancelled", status="cancelled")}
             method = self.actions.planner.reassess_candidates if node == "reassess" else self.actions.planner.nominate_explanation
@@ -686,7 +892,8 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
     def _decision(self, state):
         cursor = self._cursor(state)
         try:
-            campaign = self._check(cursor)
+            self._check_node_entry("investigation_decision", cursor)
+            campaign = self.actions.ledger.get_campaign(cursor["workflow_id"])
             if self._cancelled(cursor["workflow_id"]):
                 return {"cursor": self._failure(cursor, "investigation_decision", "cancelled", "Campaign was cancelled", status="cancelled")}
             plan = self.actions.planner.get(cursor["parent_session_id"])
@@ -813,9 +1020,28 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
         return all(held[key] >= number for key, number in required.items()) and held["context_bytes"] >= context
 
     def _launch_child(self, state):
+        self._require_writer()
         identity = state["investigation_id"]
         self._check_configuration()
+        decision = self.actions.ledger.get(state["workflow_id"], "investigation_decision", 0)
+        if (decision is None or decision["status"] != "completed"
+                or identity not in decision["result"]["child_ids"]
+                or decision["result"]["dispatch_refs"].get(identity) != state["dispatch_ref"]):
+            raise ValueError("Child node requires an exact completed decision and admitted dispatch")
+        current = self.actions.planner.get(state["workflow_id"])
+        if (digest(current) != decision["request"].get("parent_plan_hash")
+                or planning_binding(current) != decision["request"].get("binding_digest")):
+            raise ValueError("Child node current planner snapshot is stale against its frozen decision")
+        if any(self.actions.ledger.get(state["workflow_id"], node, 0) is not None for node in ("attach", "recommend")):
+            raise ValueError("Child node cannot dispatch after investigation attachment or workflow completion")
+        campaign = self.actions.ledger.get_campaign(state["workflow_id"])
+        if (campaign is None or campaign["identity"].get("configuration_digest") != self.configuration_digest
+                or campaign["capability"] != self.capability):
+            raise ValueError("Child node campaign differs from its frozen workflow route")
         descriptor = self.backend.read_dispatch(state["dispatch_ref"])
+        retained = self.actions.ledger.get_model_reservation(state["workflow_id"], "investigator_" + identity, 0)
+        if retained is None or retained["request"] != descriptor["binding"]:
+            raise ValueError("Child node lacks its exact preallocated model reservation")
         if descriptor["request"]["investigation_id"] != identity or descriptor["request"]["parent_session_id"] != state["workflow_id"]:
             raise ValueError("Child dispatch is bound to another parent or investigation")
         packet = self.backend.read_packet(descriptor["request"]["packet_ref"])
@@ -851,31 +1077,57 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
                     self.actions.ledger.mark_model_call_uncertain(handle, error_type="capture_unavailable")
             return {**state, "result_ref": outcome.get("result_ref"), "status": "incomplete"}
 
+    def _verified_child_returns(self, cursor, collected):
+        if set(collected) != set(cursor["child_ids"]):
+            raise ValueError("Independent barrier node requires every admitted child return")
+        for identity, row in collected.items():
+            outcome = self.backend.reconcile_capture(cursor["dispatch_refs"][identity])
+            actual_status = outcome["status"] if outcome["status"] in {"completed", "abstained", "failed"} else "incomplete"
+            if row != {"status": actual_status, "result_ref": outcome.get("result_ref")}:
+                raise ValueError("Independent barrier node child return differs from retained backend evidence")
+            if actual_status in {"completed", "abstained"} and (row["result_ref"] is None or not outcome.get("capture_ref")):
+                raise ValueError("Successful child node requires an actual captured result as evidence")
+            if row["result_ref"] is not None:
+                dispatch = self.backend.read_dispatch(cursor["dispatch_refs"][identity])
+                self.backend.verify_child_result(dispatch["request"]["packet_ref"], row["result_ref"])
+        return {"result_refs": {identity: row["result_ref"] for identity, row in collected.items() if row["result_ref"] is not None}}
+
+    def _retain_barrier(self, cursor, collected, *, reconcile=False):
+        """Commit only independently verified, terminal fork outputs."""
+        result = self._verified_child_returns(cursor, collected)
+        if any(row["status"] == "incomplete" for row in collected.values()):
+            raise ValueError("Incomplete child calls require explicit reconciliation")
+        request = {"expected_plan_hash": cursor["expected_plan_hash"], "policy_digest": cursor["policy_digest"],
+            "decision_digest": digest(cursor["decision"]), "child_returns": collected}
+        retained = self.actions.ledger.get(cursor["workflow_id"], "investigation_barrier", 0)
+        if reconcile and retained is not None and retained["status"] in {"active", "uncertain"}:
+            if retained["request"] != request:
+                raise ValueError("Barrier recovery differs from its exact retained request")
+            return self.actions.ledger.reconcile(cursor["workflow_id"], "investigation_barrier", 0, result)
+        return self.actions.ledger.run(cursor["workflow_id"], "investigation_barrier", 0, request,
+            lambda: self._verified_child_returns(cursor, collected))
+
     def _barrier(self, state):
         cursor = self._cursor(state)
-        barrier_binding = digest({"children": cursor["child_ids"], "returns": state["child_returns"]})
-        self.actions.ledger._observe(cursor["workflow_id"], "investigation_barrier", 0,
-            barrier_binding, "reservation", "active")
-        collected = reduce_investigation_refs({}, state["child_returns"])
-        self.actions.ledger._observe(cursor["workflow_id"], "investigation_barrier", 0,
-            barrier_binding, "verification",
-            "completed" if set(collected)==set(cursor["child_ids"]) and all(
-                row["status"] != "incomplete" for row in collected.values()) else "incomplete")
-        if set(collected) != set(cursor["child_ids"]):
-            return {"cursor": self._failure(cursor, "investigation_barrier", "incomplete", "Terminal child barrier is incomplete")}
-        updated = {**cursor, "result_refs": {identity: row["result_ref"] for identity, row in collected.items()
-                                             if row["result_ref"] is not None}, "phase": "investigation_barrier"}
-        if self._cancelled(cursor["workflow_id"]):
-            return {"cursor": self._failure(updated, "investigation_barrier", "cancelled",
-                                             "Campaign was cancelled; actual child tails remain retained and charged", status="cancelled")}
-        if any(row["status"] == "incomplete" for row in collected.values()):
-            updated = self._failure(updated, "investigation_barrier", "incomplete", "Incomplete child calls require explicit reconciliation")
-        return {"cursor": updated}
+        try:
+            self._check_node_entry("investigation_barrier", cursor)
+            collected = reduce_investigation_refs({}, state["child_returns"])
+            verified = self._verified_child_returns(cursor, collected)
+            updated = {**cursor, **verified, "phase": "investigation_barrier"}
+            if self._cancelled(cursor["workflow_id"]):
+                return {"cursor": self._failure(updated, "investigation_barrier", "cancelled",
+                    "Campaign was cancelled; actual child tails remain retained and charged", status="cancelled")}
+            result = self._retain_barrier(cursor, collected)
+            if result != verified:
+                raise ValueError("Completed barrier node differs from actual verified child evidence")
+            return {"cursor": updated}
+        except Exception as error:
+            return {"cursor": self._failure(cursor, "investigation_barrier", type(error).__name__, str(error))}
 
     def _attach(self, state):
         cursor = self._cursor(state)
         try:
-            self._check(cursor)
+            self._check_node_entry("attach", cursor)
             request = {"expected_plan_hash": cursor["expected_plan_hash"], "dispatch_refs": cursor["dispatch_refs"],
                        "result_refs": cursor["result_refs"], "policy_digest": cursor["policy_digest"]}
             def callback():
@@ -954,7 +1206,8 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
                                                                 verify_capture=self.backend.verify_capture)
                     self.backend.verify_child_result(descriptor["request"]["packet_ref"], outcome["result_ref"])
                     collected[identity] = {"result_ref": outcome.get("result_ref"), "status": outcome["status"]}
-                updated = {**cursor, "status": "ready", "failure": None,
+                self._retain_barrier(cursor, collected, reconcile=True)
+                updated = {**cursor, "phase": "investigation_barrier", "status": "ready", "failure": None,
                     "parent_cursor": {**cursor["parent_cursor"], "status": "ready", "failure": None},
                     "result_refs": {key: row["result_ref"] for key, row in collected.items() if row["result_ref"] is not None}}
                 from langgraph.types import Overwrite
@@ -1063,17 +1316,17 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
             "binding_digest": planning_binding(origin), "policy_digest": digest(self.frozen_policy), "stage": self.policy["stage"],
             "decision": None, "allocated_children": 0, "child_ids": [], "dispatch_refs": {}, "result_refs": {},
             "reconciliation_ref": None, "phase": "audit", "status": "ready", "failure": None}
-        nodes = ["audit", "question", "generate"]
-        if cursor["stage"] == "pre_fit_methods":
-            nodes += ["investigation_decision", "attach", "reassess"]
-        nodes += ["resolve", "design", "declare", "run", "verify"]
-        if cursor["stage"] == "post_fit_explanation":
-            if self.actions.ledger.get(workflow_id, "preliminary_explanation", 0) is not None:
-                nodes += ["preliminary_explanation"]
-            nodes += ["investigation_decision", "attach"]
-        nodes += ["recommend"]
+        nodes = []
+        for node in SERIAL_ROUTE:
+            nodes.append(node)
+            if node == "generate" and cursor["stage"] == "pre_fit_methods":
+                nodes += ["investigation_decision", "investigation_barrier", "attach", "reassess"]
+            elif node == "verify" and cursor["stage"] == "post_fit_explanation":
+                if self.actions.ledger.get(workflow_id, "preliminary_explanation", 0) is not None:
+                    nodes.append("preliminary_explanation")
+                nodes += ["investigation_decision", "investigation_barrier", "attach"]
         for node in nodes:
-            if node in {"attach", "reassess"} and not cursor["child_ids"]:
+            if node in {"investigation_barrier", "attach", "reassess"} and not cursor["child_ids"]:
                 continue
             attempts = range(len(cursor["parent_cursor"]["trial_ids"])) if node == "run" else [0]
             if node == "run" and not cursor["parent_cursor"]["trial_ids"]:
@@ -1095,6 +1348,9 @@ class IndependentRNAWorkflow(SerialRNAWorkflow):
                         outcome = self.backend.reconcile_capture(dispatch)
                         if outcome.get("result_ref") is not None:
                             cursor["result_refs"][identity] = outcome["result_ref"]
+                elif node == "investigation_barrier":
+                    cursor.update(result)
+                    cursor["phase"] = node
                 elif node in {"attach", "reassess", "preliminary_explanation"}:
                     parent = {**cursor["parent_cursor"], "expected_planner_hash": result["after_plan_hash"]}
                     cursor = self._refresh(cursor, parent, node)

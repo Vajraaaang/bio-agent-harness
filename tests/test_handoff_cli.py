@@ -83,7 +83,8 @@ def test_cli_resumes_frozen_nondefault_selector_settings(workspace, monkeypatch,
     first = FakeCodexSelector(requested_model="fixture-model", memory_mb=128, reasoning_effort="low")
     first.actions = iter(sequence()[:-1] + [{"kind": "request_information", "message": "Confirm interpretation"}])
     episode, _ = create(workspace)
-    pending = drive_episode(episode, first, limits=AgentLimits(memory_mb=128), allow_data_execution=True)
+    pending = drive_episode(episode, first, limits=AgentLimits(memory_mb=128), allow_data_execution=True,
+                            allow_model_execution=True)
     handoff = pending["handoff"]
     reply = workspace / "reply.json"
     reply.write_text(json.dumps(REPLY))

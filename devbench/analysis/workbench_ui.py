@@ -39,6 +39,18 @@ DOWNLOADS = {"report.json", "summary.md", "citations.json", "measurements.json",
              "reviewer-report.json", "notebook.html", "notebook.ipynb", "html-export.json"}
 
 
+def render_page(nonce):
+    """Compose only shipped presentation assets inside the existing nonce policy."""
+    modules = "\n".join((ASSET.parent / name).read_text(encoding="utf-8")
+        for name in ("workbench-conversation.js", "scientific-figure.js", "workbench-investigations.js", "workbench-artifacts.js", "workbench-projects.js", "workbench-synthetic.js"))
+    theme = "\n".join((ASSET.parent / name).read_text(encoding="utf-8")
+        for name in ("workbench-theme.css", "workbench-synthetic.css"))
+    return (ASSET.read_text(encoding="utf-8")
+        .replace("/*__WORKBENCH_MODULES__*/", modules)
+        .replace("/*__WORKBENCH_THEME__*/", theme)
+        .replace("__NONCE__", nonce))
+
+
 def decode_json(body, *, max_bytes=MAX_BODY):
     if not isinstance(body, bytes) or len(body) > max_bytes:
         raise ValueError("JSON size exceeds the permitted bound")
@@ -93,7 +105,7 @@ def _copy(value):
 
 
 def _validate_ui_state(value, *, scientific=False):
-    """Only location and an unsubmitted question; never tokens or execution settings."""
+    """Only location and an unsubmitted draft; never tokens or execution settings."""
     limits = {"selected_job": 32, "selected_revision": 32, "parent_root": 64,
               "figure": 150, "search": 500, "question_draft": 8000}
     choices = {"view": WORKSPACE_VIEWS, "tab": WORKSPACE_TABS, "zoom": {"fit", "native"},
@@ -102,10 +114,15 @@ def _validate_ui_state(value, *, scientific=False):
     refs = {"dataset_ref": "dataset", "analysis_ref": "analysis", "result_ref": "result"} if scientific else {}
     if scientific:
         limits.update(study_id=32, scientific_run_id=32, planner_session_id=32)
-    if not isinstance(value, dict) or set(value) - (limits.keys() | choices.keys() | flags | refs.keys()):
+    if not isinstance(value, dict) or set(value) - (limits.keys() | choices.keys() | flags | refs.keys() | {"draft_sources"}):
         raise ValueError("Use only the declared workspace UI fields")
     for key, item in value.items():
-        if key in refs:
+        if key == "draft_sources":
+            valid = (isinstance(item, list) and len(item) <= 8
+                and all(isinstance(source, str) and len(source) <= 4096 and "\x00" not in source
+                        and Path(source).is_absolute() and ".." not in Path(source).parts for source in item)
+                and len(item) == len(set(item)))
+        elif key in refs:
             valid = item is None or (isinstance(item, dict) and set(item) == {"object_type", "object_id", "version_id"}
                 and item["object_type"] == refs[key] and isinstance(item["object_id"], str)
                 and re.fullmatch(r"[0-9a-f]{32}", item["object_id"]) is not None
@@ -165,11 +182,20 @@ class WorkbenchService:
                  run_timeout_seconds=3600, allow_data_execution=False,
                  proposal_selector=None, codex_model=None, agent_workspaces=None,
                  allow_model_execution=False, model_data_scope="local_only", restore_view_state_backup=False,
-                 enable_scientific=False, scientific_workspace=None, method_selector=None, method_executor=None,
-                 restore_scientific_backup=None):
+                 enable_scientific=False, scientific_workspace=None, method_selector=None, method_executor=None, scientific_workflow=None, scientific_workflow_config=None,
+                 allow_discovery_network=False, allow_review_model_execution=False, allow_implementation_model_execution=False,
+                 restore_scientific_backup=None, shared_executor=None):
         from devbench.study.permissions import require_protected_storage
         from .workbench import default_parameters
+        if shared_executor is not None and (not isinstance(shared_executor, ThreadPoolExecutor)
+                                            or shared_executor._max_workers != 1):
+            raise ValueError("A shared workbench executor must preserve the single-worker ceiling")
+        self._owns_executor = shared_executor is None
         self.workspace = _canonical(workspace)
+        if (allow_discovery_network or allow_review_model_execution or allow_implementation_model_execution) and scientific_workflow_config is None:
+            raise ValueError("Scientific execution grants require an explicit scientific workflow configuration")
+        if scientific_workflow_config is not None and (not enable_scientific or scientific_workflow is not None):
+            raise ValueError("Scientific workflow configuration requires scientific mode and a single explicit runtime source")
         if restore_scientific_backup is not None and not enable_scientific:
             raise ValueError("Explicit scientific recovery requires the scientific workspace to be enabled")
         require_protected_storage(self.workspace)
@@ -257,13 +283,26 @@ class WorkbenchService:
                     self._update(path.name, status="recovery_required", worker_liveness="unknown",
                         interrupted_status=record["status"], operation_pending=False,
                         error={"type": "ServiceRestart", "message": "Prior attempt has no completed service record. Native evidence is retained; inspect and recover it before further execution. Worker liveness is unknown."})
-            self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="reviewed-scrna")
+            self._executor = shared_executor or ThreadPoolExecutor(max_workers=1, thread_name_prefix="reviewed-scrna")
             self.scientific = None
             if enable_scientific:
                 from .scientific_workspace import ScientificWorkspace
-                self.scientific = ScientificWorkspace(self, scientific_workspace or self._path("methods"),
-                    selector=method_selector or (self.proposal_selector if codex_model is not None else None),
-                    executor=method_executor, restore_backup=restore_scientific_backup)
+                selected_methods = scientific_workspace or self._path("methods")
+                selected_selector = method_selector or (self.proposal_selector if codex_model is not None else None)
+                if scientific_workflow_config is not None:
+                    from .workflow_science import load_scientific_workflow_config
+                    scientific_workflow = load_scientific_workflow_config(scientific_workflow_config,
+                        methods_root=_canonical(selected_methods), selector=selected_selector,
+                        allow_network=allow_discovery_network, allow_review_model_execution=allow_review_model_execution,
+                        allow_implementation_model_execution=allow_implementation_model_execution)
+                self.scientific = ScientificWorkspace(self, selected_methods, selector=selected_selector,
+                    executor=method_executor, restore_backup=restore_scientific_backup, scientific_workflow=scientific_workflow)
+            from .workbench_inputs import InputDiscovery
+            from .workbench_investigations import InvestigationService
+            self.inputs = InputDiscovery(self.input_roots,
+                timeout_seconds=min(20, self.parameters["stage_timeout_seconds"]),
+                memory_mb=min(512, self.parameters["memory_mb"]))
+            self.investigations = InvestigationService(self, self.inputs)
         except BaseException:
             self._release_lock()
             raise
@@ -413,6 +452,7 @@ class WorkbenchService:
                           "recorded_fixture":"Recorded offline proposal fixture; no live model"}[mode]},
             "support": "scRNA UMI counts; QC, integration, clustering and available annotation",
             "scope": "Research use; operator declarations are not independent experimental verification",
+            "investigations": {"enabled": True, "format": "devbench.investigation/1"},
             "scientific": self.scientific.configuration() if self.scientific else {"enabled": False}})
 
     def jobs(self):
@@ -463,7 +503,11 @@ class WorkbenchService:
                     raise ValueError("Use a project name of 1 to 120 characters")
                 updated["project"]["name"] = name.strip()
             if "ui" in changes:
-                updated["ui"].update(_validate_ui_state(changes["ui"], scientific=updated["schema_version"] == 3))
+                ui = _validate_ui_state(changes["ui"], scientific=updated["schema_version"] == 3)
+                if any(not any(Path(source).is_relative_to(root) for root in self.input_roots)
+                       for source in ui.get("draft_sources", [])):
+                    raise PermissionError("Draft data must belong to this project's configured input folders")
+                updated["ui"].update(ui)
             updated["revision"] += 1
             _migrate_workspace_state(updated)
             try:
@@ -572,7 +616,7 @@ class WorkbenchService:
                     fields["cancellation_resolution"] = "completed_before_stop"
                 self._update(job, **fields)
 
-    def register(self, request):
+    def register(self, request, *, investigation_id=None):
         from .workbench_proposals import _configuration
         if (not isinstance(request, dict) or set(request) - {"source", "expected_sha256", "question", "declarations", "proposal_mode"}
                 or not {"source", "expected_sha256", "question", "declarations"} <= request.keys()):
@@ -593,6 +637,10 @@ class WorkbenchService:
         request_identity = digest({"source":str(source), "configuration":config, "proposal_mode":mode,
                                    "runtime_identity":self.runtime_identity,
                                    "selector":self.selector_config if mode == "agent" else None})
+        if investigation_id is not None:
+            if not isinstance(investigation_id, str) or re.fullmatch(r"[0-9a-f]{32}", investigation_id) is None:
+                raise ValueError("Use an exact investigation identity for the internal request scope")
+            request_identity = digest({"request_identity": request_identity, "investigation_id": investigation_id})
         with self._lock:
             self._require_known_workers()
             prior = next((row for row in self._jobs.values() if row.get("request_identity") == request_identity),None)
@@ -918,12 +966,13 @@ class WorkbenchService:
         return path, mimetypes.guess_type(name)[0] or "application/octet-stream", path.name
 
     def close(self):
-        if self._executor is not None:
+        if self._executor is not None and self._owns_executor:
             self._executor.shutdown(wait=True, cancel_futures=False)
         self._release_lock()
 
 
-def make_server(app, *, port=8765):
+def make_server(app, *, port=8765, project_hub=None, default_project_id=None):
+    default_app = app
     class Handler(BaseHTTPRequestHandler):
         server_version = "ResearchWorkbench"
 
@@ -966,7 +1015,8 @@ def make_server(app, *, port=8765):
             if self.headers.get("Sec-Fetch-Site") not in {None, "same-origin", "none"}:
                 raise PermissionError("Cross-site requests are unavailable")
             tokens = self.headers.get_all("X-Workbench-Token") or []
-            if api and (len(tokens) != 1 or not hmac.compare_digest(tokens[0], app.token)):
+            expected_token = project_hub.token if project_hub is not None else default_app.token
+            if api and (len(tokens) != 1 or not hmac.compare_digest(tokens[0], expected_token)):
                 raise PermissionError("A valid service session token is required")
 
         def _dispatch(self, mutation=False):
@@ -978,13 +1028,29 @@ def make_server(app, *, port=8765):
                 if not mutation and target.path == "/":
                     if target.query:
                         query = parse_qs(target.query, strict_parsing=True)
-                        if set(query) != {"object_type", "object_id", "version_id"} or any(len(items) != 1 for items in query.values()):
+                        fields = set(query) - {"project_id"}
+                        if (fields not in (set(), {"object_type", "object_id", "version_id"})
+                                or not query or any(len(items) != 1 for items in query.values())
+                                or ("project_id" in query and (project_hub is None
+                                    or not re.fullmatch(r"[0-9a-f]{32}", query["project_id"][0])))):
                             raise ValueError("Use an exact scientific-version page link")
                     nonce = secrets.token_urlsafe(24)
-                    body = ASSET.read_text().replace("__NONCE__", nonce).encode()
+                    body = render_page(nonce).encode()
                     self._headers(200, "text/html; charset=utf-8", len(body), nonce=nonce)
                     self.wfile.write(body)
                     return
+                project_headers = self.headers.get_all("X-Workbench-Project") or []
+                if len(project_headers) > 1:
+                    raise ValueError("Use one project identifier")
+                if project_headers and (project_hub is None or not re.fullmatch(r"[0-9a-f]{32}", project_headers[0])):
+                    raise ValueError("Use a valid project identifier on a project-enabled service")
+                project_id = project_headers[0] if project_headers else default_project_id
+                if project_hub is not None and project_id is None:
+                    project_id = project_hub.default_project_id
+                app = project_hub.resolve(project_id) if project_hub is not None else default_app
+                if project_hub is not None:
+                    if app.workspace_state()["project"]["id"] != project_id:
+                        raise RuntimeError("Selected project identity changed; reconnect and select it explicitly")
                 body = None
                 if mutation:
                     lengths = self.headers.get_all("Content-Length") or []
@@ -996,10 +1062,39 @@ def make_server(app, *, port=8765):
                     if self.headers.get("Content-Type") != "application/json":
                         raise ValueError("Use application/json")
                     body = decode_json(self.rfile.read(size))
+                if project_hub is not None and not target.query:
+                    if target.path == "/api/projects":
+                        return self._json(project_hub.create(body), 201) if mutation else self._json(project_hub.list_projects(project_id))
+                    if target.path == "/api/project-sources" and not mutation:
+                        return self._json(project_hub.list_sources())
+                    if target.path == "/api/project-inputs" and mutation:
+                        return self._json(project_hub.import_source(project_id, body), 201)
+                    if mutation and project_hub.read_only(project_id) and target.path not in {"/api/workspace", "/api/inputs/inspect"}:
+                        raise PermissionError("This retained project is read-only; create or select a working project")
                 if not target.query and not mutation and target.path == "/api/config":
-                    return self._json(app.configuration())
+                    configuration = app.configuration()
+                    if project_hub is not None:
+                        configuration["project_catalog"] = {"enabled": True, "current_project_id": project_id,
+                            "read_only": project_hub.read_only(project_id)}
+                    return self._json(configuration)
+                if project_hub is not None and getattr(app, "is_legacy_proxy", False):
+                    status, content_type, filename, content = app.request("POST" if mutation else "GET", self.path, body)
+                    self._headers(status, content_type, len(content), filename=filename)
+                    self.wfile.write(content)
+                    return
                 if not target.query and target.path == "/api/workspace":
                     return self._json(app.workspace_state(body) if mutation else app.workspace_state())
+                if not target.query and target.path == "/api/inputs" and not mutation:
+                    return self._json(app.inputs.list())
+                if not target.query and target.path == "/api/inputs/inspect" and mutation:
+                    if not isinstance(body, dict) or set(body) != {"source"}:
+                        raise ValueError("Input inspection requires only an allowed source path")
+                    return self._json(app.inputs.inspect(body["source"]))
+                if not target.query and target.path == "/api/investigations":
+                    return self._json(app.investigations.create(body), 202) if mutation else self._json(app.investigations.list())
+                investigation_route = re.fullmatch(r"/api/investigations/([0-9a-f]{32})", target.path)
+                if investigation_route and not target.query:
+                    return self._json(app.investigations.action(investigation_route[1], body), 202) if mutation else self._json(app.investigations.get(investigation_route[1]))
                 if target.path.startswith("/api/scientific"):
                     if app.scientific is None:
                         raise KeyError("Scientific workspace is not enabled for this service")
@@ -1098,6 +1193,10 @@ def main(argv=None):
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--enable-scientific", action="store_true", help="Expose shared scientific metadata; initialization remains an explicit authenticated action")
     parser.add_argument("--scientific-workspace", type=Path, help="Existing method workspace to explicitly bind to this local project")
+    parser.add_argument("--scientific-workflow-config", type=Path, help="Explicit registered discovery, reviewer and implementation policy")
+    parser.add_argument("--allow-discovery-network", action="store_true")
+    parser.add_argument("--allow-review-model-execution", action="store_true")
+    parser.add_argument("--allow-implementation-model-execution", action="store_true")
     parser.add_argument("--recorded-method-decisions", type=Path, help="Explicit offline method-planner responses; never live model evidence")
     parser.add_argument("--restore-scientific-backup", type=Path,
         help="Explicitly recover invalid scientific metadata from its validated retained backup; never restores execution grants or launches work")
@@ -1117,6 +1216,10 @@ def main(argv=None):
         allow_model_execution=args.allow_model_execution, model_data_scope=args.model_data_scope,
         restore_view_state_backup=args.restore_view_state_backup, enable_scientific=args.enable_scientific,
         scientific_workspace=args.scientific_workspace, method_selector=method_selector,
+        scientific_workflow_config=args.scientific_workflow_config,
+        allow_discovery_network=args.allow_discovery_network,
+        allow_review_model_execution=args.allow_review_model_execution,
+        allow_implementation_model_execution=args.allow_implementation_model_execution,
         restore_scientific_backup=args.restore_scientific_backup)
     server = make_server(app, port=args.port)
     print(f"Open http://127.0.0.1:{server.server_address[1]}/#{app.token}", flush=True)

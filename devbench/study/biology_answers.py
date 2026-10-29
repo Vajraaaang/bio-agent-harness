@@ -335,7 +335,7 @@ class EffectsPayload(FrozenContract):
     multiplicity_scope: tuple[Identifier, ...] = Field(default=(), max_length=100000,
         description="IDs with actual p-values. BH uses all declared hypothesis rows; failed/unavailable rows reserve internal p=1 positions without publishing fabricated p/q values.")
     selection_conditional_inference: bool
-    biological_unit: Literal["donor", "organism", "experimental_culture", "observed_library"]
+    biological_unit: Literal["donor", "organism", "experimental_culture", "donor_derived_cell_line", "observed_library"]
     analysis_layer: Literal["raw_counts", "umi_counts", "non_umi_counts", "continuous"]
     effect_definition: Text
     computed_contrast: ComputedConditionContrast | None = Field(default=None,
@@ -623,7 +623,7 @@ class DiagnosticsPayload(FrozenContract):
     diagnostics: tuple[DiagnosticValue, ...] = Field(default=(), max_length=100)
     qc_decisions: tuple[CellDecision, ...] = Field(default=(), max_length=100000)
     biological_unit_count: Annotated[int, Field(ge=0)] | None = None
-    biological_unit: Literal["donor", "organism", "experimental_culture", "observed_library", "cell"] | None = None
+    biological_unit: Literal["donor", "organism", "experimental_culture", "donor_derived_cell_line", "observed_library", "cell"] | None = None
     individual_artifact_identification: Literal["not_identified", "claimed"] | None = None
     measurement_type: Literal["raw_counts", "umi_counts", "non_umi_counts", "continuous"] | None = None
     analysis_route: Literal["count_likelihood", "continuous_likelihood"] | None = None

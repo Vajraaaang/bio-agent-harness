@@ -1,4 +1,5 @@
 """Caller mode selection and bounded independent graph execution, all offline."""
+from tests.support.workflow_science_fixtures import RecordingScientificRuntime
 import importlib
 from copy import deepcopy
 import json
@@ -207,7 +208,7 @@ def independent_setup(tmp_path, allocation=1, *, stage="pre_fit_methods"):
     actions = WorkflowActions(planner, ledger, actor="offline-fixture-coordinator", selector=selector,
         allow_model_execution=True, investigation_policy=policy, investigation_evidence=evidence,
         investigation_authority=InvestigationExecutionAuthority(check=lambda request: True,
-            data_classification="synthetic", budget_policy="hard_total_tokens"))
+            data_classification="synthetic", budget_policy="hard_total_tokens"), scientific_workflow=RecordingScientificRuntime())
     return planner, plan, backend, ledger, actions
 
 

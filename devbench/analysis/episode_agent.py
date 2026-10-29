@@ -10,6 +10,7 @@ import time
 
 from .checkpoints import atomic_json
 from .episodes import _json_copy, _public_only
+from .model_authority import read_model_authority, reservation_binding
 
 
 @dataclass(frozen=True)
@@ -55,7 +56,7 @@ def drive_episode(episode, selector, *, limits=None, allow_data_execution=False,
     """Run one fresh episode; return immediately on a request for information.
 
     ``selector`` is trusted coordinator code, never supplied by a participant.
-    A live selector must enforce the separately forwarded model authorization.
+    A live selector receives authority read from its persisted reservation.
     A returned information request requires the operator, not an automatic retry.
     This entry point deliberately cannot reopen a used selection budget.
     """
@@ -111,14 +112,22 @@ def drive_episode(episode, selector, *, limits=None, allow_data_execution=False,
             output.mkdir(mode=0o700)
             atomic_json(output / "context.json", context)
             # Reservation persists before any selector or permission-preflight call.
+            attempt = {"episode_config": episode.config_id, "selection": number, "context": context,
+                "attempt_path": str(output)}
             atomic_json(output / "reservation.json", {"selection": number,
                 "max_provider_sessions": 2, "model_execution_authorized": allow_model_execution is True,
-                "scope": "one_permission_preflight_and_one_action_session"})
+                "scope": "one_permission_preflight_and_one_action_session",
+                **reservation_binding(configuration, attempt)})
+            model_authority = read_model_authority(output / "reservation.json",
+                configuration=configuration, attempt=attempt, maximum_authority=allow_model_execution)
+            selection_timeout = min(limits.session_timeout_seconds, deadline-time.monotonic())
+            if selection_timeout <= 0:
+                raise TimeoutError("selector_deadline_exhausted_before_dispatch")
             selector_entered = True
             choice = selector.select(_json_copy(context), output,
-                timeout_seconds=min(limits.session_timeout_seconds, deadline-time.monotonic()),
+                timeout_seconds=selection_timeout,
                 memory_mb=limits.memory_mb,
-                allow_model_execution=allow_model_execution)
+                allow_model_execution=model_authority)
             if not isinstance(choice, Selection):
                 raise InvalidSelection("Selector must return a Selection")
             atomic_json(output / "selection.json", {"action": choice.action, "evidence": choice.evidence})

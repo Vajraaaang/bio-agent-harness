@@ -46,12 +46,12 @@ def dispatcher_source(tool_name) -> Path:
     return source
 
 
-def _runtime_identity():
+def _runtime_identity(tool_name=None):
     """Read bounded trusted source files and package versions; no environment variables."""
     root = Path(__file__).resolve().parent.parent
     sources, total_bytes, directories = {}, 0, 0
     # Include lazy imports and package initializers without a hand-maintained
-    # dependency list. Only these two trusted source packages are inspected.
+    # dependency list. Bulk's additional lazy owners are bound explicitly below.
     for package in (root / "devharness_core", root / "devharness_server"):
         for directory, children, filenames in os.walk(package, followlinks=False):
             directories += 1
@@ -67,6 +67,21 @@ def _runtime_identity():
                 digest, size = _stream_digest(path, max_bytes=min(2_000_000, 8_000_000 - total_bytes))
                 sources[path.relative_to(root).as_posix()] = digest
                 total_bytes += size
+    if tool_name == "bulk_condition_contrast":
+        # Closed owner inventory for the bulk wrapper's lazy study imports.
+        # Never enumerate recipes, reference answers, scoring or graders.
+        owners = ("devbench/__init__.py", "devbench/study/__init__.py",
+            "devbench/study/contracts.py", "devbench/study/planning.py",
+            "devbench/study/biology_tools_bulk.py", "devbench/study/biology_tool_io.py",
+            "devbench/study/biology_input_limits.py", "devbench/study/biology_answers.py",
+            "devbench/study/biology.py")
+        for relative in owners:
+            path = root / relative
+            if path.is_symlink() or path.resolve() != path:
+                raise ValueError("Trusted bulk source cannot be a symlink")
+            digest, size = _stream_digest(path, max_bytes=min(2_000_000, 8_000_000 - total_bytes))
+            sources[relative] = digest
+            total_bytes += size
     versions = {}
     for name in _DISTRIBUTIONS:
         try:
@@ -102,7 +117,7 @@ def dispatcher_contract(tool_name) -> MethodContract:
         "outputs": {"result": {"artifact_type": "json", "path": "/outputs/result.json", "required": True}},
         "implementation": {"kind": "dispatcher", "tool_name": tool_name,
                            "source_sha256": _stream_digest(dispatcher_source(tool_name), max_bytes=2_000_000)[0]},
-        "environment": {"runtime": "trusted_dispatcher", "identity_sha256": _runtime_identity()},
+        "environment": {"runtime": "trusted_dispatcher", "identity_sha256": _runtime_identity(tool_name)},
         "execution": {"cpu": 1, "memory_mb": 4096, "timeout_seconds": 300, "pids": 256,
                       "max_output_bytes": 16_000_000, "network": "deny"},
         "validation": {"comparator": "json", "invariants": [], "counts_layer": "X", "qc_metrics": []},

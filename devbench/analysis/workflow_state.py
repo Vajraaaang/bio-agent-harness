@@ -1,4 +1,4 @@
-"""Small, finite, authority-free cursors for the optional serial RNA workflow."""
+"""Small, finite, authority-free cursors for the required RNA workflow."""
 from copy import deepcopy
 import hashlib
 import re
@@ -7,7 +7,10 @@ from typing import TypedDict
 from devharness_core.provenance import canonical_json
 
 MAX_STATE_BYTES = 64_000
-PHASES = {"audit", "question", "generate", "resolve", "design", "review", "declare", "execution_review", "run", "verify", "recommend"}
+SERIAL_ROUTE = ("audit", "question", "discovery", "generate", "candidate_review", "resolve",
+                "implementation", "design", "design_review", "review", "declare", "execution_review",
+                "run", "verify", "recommend", "conclusion_review")
+PHASES = set(SERIAL_ROUTE)
 STATUSES = {"ready", "review_required", "completed", "abstained", "failed", "reconciliation_required", "cancelled"}
 
 
@@ -33,9 +36,15 @@ def digest(value):
 
 
 def planning_binding(plan):
-    return digest({"context": plan["context"], "user_parameter_requirements": plan.get("user_parameter_requirements", []),
+    material = {"context": plan["context"], "user_parameter_requirements": plan.get("user_parameter_requirements", []),
                    "data_classification": plan.get("data_classification"), "limits": plan.get("limits"),
-                   "scientific_anchors": plan.get("scientific_anchors")})
+                   "scientific_anchors": plan.get("scientific_anchors")}
+    if "scientific_contract" in plan:
+        material.update(scientific_contract=plan["scientific_contract"],
+                        scientific_contract_sha256=plan.get("scientific_contract_sha256"))
+    if "rna_design" in plan:
+        material.update(rna_design=plan["rna_design"], rna_design_sha256=plan.get("rna_design_sha256"))
+    return digest(material)
 
 
 def validate_workflow_state(state):

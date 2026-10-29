@@ -320,7 +320,8 @@ def resume_handoff(root, checkpoint_manifest, *, expected_root, response=None, a
     try:
         atomic_json(folder / "resume-runtime.json", observed)
         episode._record("episode.restored", {"handoff_root": expected_root, "generation": state["number"],
-            "clock_scope": "original_wall_deadlines_not_restarted", "model_execution_authorized": False})
+            "clock_scope": "original_wall_deadlines_not_restarted",
+            "model_authority_scope": "not_carried_by_restoration_requires_current_selection_reservation"})
         if abort_reason is not None:
             episode.abort(abort_reason, scientific=abort_scientific)
             return episode

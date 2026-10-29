@@ -926,6 +926,9 @@ dependencies = [
     { name = "cryptography" },
     { name = "h5py" },
     { name = "jsonschema" },
+    { name = "langchain-core" },
+    { name = "langgraph" },
+    { name = "langgraph-checkpoint-sqlite" },
     { name = "mcp" },
     { name = "networkx" },
     { name = "numcodecs" },
@@ -967,6 +970,7 @@ analysis = [
 ]
 dev = [
     { name = "pytest" },
+    { name = "tinycss2" },
 ]
 reporting = [
     { name = "matplotlib" },
@@ -988,8 +992,11 @@ requires-dist = [
     { name = "igraph", marker = "extra == 'analysis'", specifier = ">=0.11,<2" },
     { name = "ipykernel", marker = "extra == 'analysis'", specifier = ">=6,<8" },
     { name = "jsonschema", specifier = ">=4.20,<5" },
+    { name = "langchain-core", specifier = "==1.6.6" },
     { name = "langchain-core", marker = "extra == 'workflow'", specifier = "==1.6.6" },
+    { name = "langgraph", specifier = "==1.2.12" },
     { name = "langgraph", marker = "extra == 'workflow'", specifier = "==1.2.12" },
+    { name = "langgraph-checkpoint-sqlite", specifier = "==3.1.1" },
     { name = "langgraph-checkpoint-sqlite", marker = "extra == 'workflow'", specifier = "==3.1.1" },
     { name = "leidenalg", marker = "extra == 'analysis'", specifier = ">=0.10,<1" },
     { name = "matplotlib", marker = "extra == 'reporting'", specifier = ">=3.8,<4" },
@@ -1014,6 +1021,7 @@ requires-dist = [
     { name = "scrublet", marker = "extra == 'analysis'", specifier = ">=0.2,<1" },
     { name = "scvi-tools", marker = "extra == 'analysis'", specifier = ">=1.3,<2" },
     { name = "statsmodels", specifier = ">=0.14,<0.15" },
+    { name = "tinycss2", marker = "extra == 'dev'", specifier = ">=1.4,<2" },
     { name = "tree-sitter", specifier = "==0.26.0" },
     { name = "tree-sitter-bash", specifier = "==0.25.1" },
     { name = "umap-learn", marker = "extra == 'analysis'", specifier = ">=0.5,<1" },

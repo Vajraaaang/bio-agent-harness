@@ -1,4 +1,5 @@
 """Read-only evidence replay is distinct from workflow continuation."""
+from tests.support.workflow_science_fixtures import RecordingScientificRuntime
 from copy import deepcopy
 import hashlib
 import json
@@ -46,7 +47,7 @@ def replay_actions(planner, ledger, actions):
     # Authority is deliberately absent when reading historical evidence.
     readonly_actions = WorkflowActions(reader_planner, reader, actor="offline-replay",
         selector=actions.selector, investigation_policy=deepcopy(actions.investigation_policy),
-        investigation_evidence=deepcopy(actions.investigation_evidence))
+        investigation_evidence=deepcopy(actions.investigation_evidence), scientific_workflow=RecordingScientificRuntime())
     return readonly_actions, backend
 
 

@@ -45,7 +45,8 @@ def setup(root, selector=None, **options):
     from tests.test_workbench_proposals import fixture
     inputs=root/'inputs';inputs.mkdir()
     source, parameters, declarations=fixture(inputs)
-    excluded={'workflow','prompt','execution_tier','data_sha256','parent_root','model_path','model_sha256'}
+    # Derived integration provenance is not an operator parameter override.
+    excluded={'workflow','prompt','execution_tier','data_sha256','parent_root','model_path','model_sha256','integration_decision'}
     app=WorkbenchService(root/'service',[inputs],parameter_overrides={k:v for k,v in parameters.items() if k not in excluded},
         run_timeout_seconds=180,proposal_selector=selector,**options)
     request={'source':str(source),'expected_sha256':sha256(source),
@@ -53,9 +54,9 @@ def setup(root, selector=None, **options):
     return app,request
 
 
-def wait(app, job):
+def wait(app, job, *, timeout_seconds=60):
     from devbench.analysis.workbench_ui import ACTIVE
-    deadline=time.monotonic()+60
+    deadline=time.monotonic()+timeout_seconds
     while time.monotonic()<deadline:
         record=app.status(job)
         if record['status'] not in ACTIVE:return record
@@ -178,7 +179,7 @@ def test_stopped_request_is_reused_after_service_restart(root):
     app,request=setup(root,selector)
     job=app.register(request)['id'];assert wait(app,job)['status']=='refusal'
     parameters={key:value for key,value in app.parameters.items() if key not in
-        {'workflow','prompt','execution_tier','data_sha256','parent_root','model_path','model_sha256'}}
+        {'workflow','prompt','execution_tier','data_sha256','parent_root','model_path','model_sha256','integration_decision'}}
     app.close()
     from devbench.analysis.workbench_ui import WorkbenchService
     reopened=WorkbenchService(root/'service',[root/'inputs'],parameter_overrides=parameters,

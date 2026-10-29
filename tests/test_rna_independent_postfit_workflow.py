@@ -5,6 +5,7 @@ custom-method interface. It preserves immutable input values and calls the
 registered ToolDispatcher fitter; it never supplies invented numerical results.
 Fixed formula, gene family, projection and budgets are test-author choices.
 """
+from tests.support.workflow_science_fixtures import RecordingScientificRuntime
 from copy import deepcopy
 import csv
 import hashlib
@@ -303,7 +304,7 @@ def _case(root, *, allocation=2, qc_only=False, cancel_after_child=False):
         allow_model_execution=True, allow_data_execution=True, executor=executor,
         investigation_policy=policy, investigation_evidence=evidence,
         investigation_authority=InvestigationExecutionAuthority(check=lambda request: True,
-            data_classification="synthetic", budget_policy="hard_total_tokens"))
+            data_classification="synthetic", budget_policy="hard_total_tokens"), scientific_workflow=RecordingScientificRuntime())
     return {"root": root, "methods": methods, "planner": planner, "plan": plan, "backend": backend,
         "ledger": ledger, "actions": actions, "selector": selector, "executor": executor,
         "analysis": analysis, "inputs": inputs, "input_bytes": {name: path.read_bytes() for name, path in paths.items()}}
@@ -422,7 +423,7 @@ def test_actual_postfit_resume_and_readonly_replay_have_zero_fit_or_model_calls(
     backend = WorkflowFixtureBackend(methods, case["selector"])
     reader = WorkflowActions(ScientificMethodPlanner(methods), ledger, actor="readonly-fixture-replay",
         selector=case["selector"], investigation_policy=case["actions"].investigation_policy,
-        investigation_evidence=case["actions"].investigation_evidence)
+        investigation_evidence=case["actions"].investigation_evidence, scientific_workflow=RecordingScientificRuntime())
     before = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in
               (case["checkpoint"], case["ledger"].path, methods.database) if path.is_file()}
     def denied(*args, **kwargs):

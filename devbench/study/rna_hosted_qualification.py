@@ -17,7 +17,7 @@ import selectors
 import importlib.util
 import base64
 import csv
-from importlib.metadata import distribution
+from importlib.metadata import distribution, PathDistribution
 import subprocess
 import stat
 import sys
@@ -83,6 +83,73 @@ def installed_identity() -> dict:
         runtime_digest=hashlib.sha256(record.read_bytes()).hexdigest(),policy_digest=_sha(BOUND_POLICY),
         live_session_digest=None,authorization_record_digest=None,
         protected_paths=[str(Path(sys.prefix).resolve()),str(package.parent),str(record.parent)])
+
+
+def bounded_installed_identity() -> dict:
+    """Connection-only product identity; not an interpreter or OS attestation.
+
+    Keep the original /1 helper unchanged. This /2 reader hashes the same
+    ordinary wheel resources, with nofollow regular-file and aggregate bounds.
+    Content-identical hardlinked installed assets are permitted.
+    """
+    import io
+    prefix = Path(sys.prefix).resolve()
+    dist = distribution('devharness')
+    package = _absolute(Path(importlib.util.find_spec('devbench.analysis').origin).absolute()).parent
+    # ``dist.files`` itself reads/parses RECORD without our byte bound. This
+    # connection path accepts ordinary filesystem wheel metadata only, locates
+    # its RECORD directly, and bounds it before parsing any inventory rows.
+    if not isinstance(dist,PathDistribution) or not isinstance(dist._path,Path):
+        raise ValueError('Ordinary installed wheel metadata required')
+    record = _absolute(dist._path.absolute() / 'RECORD')
+    total = 0
+    def read_hash(path, cap, *, retain=False):
+        nonlocal total
+        path = _absolute(path)
+        if not path.is_relative_to(prefix):
+            raise ValueError('Installed identity asset outside prefix')
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        raw = bytearray(); hasher = hashlib.sha256()
+        with os.fdopen(descriptor, 'rb') as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_size > cap:
+                raise ValueError('Bounded regular identity asset required')
+            count = 0
+            while True:
+                chunk = stream.read(min(65536, cap + 1 - count))
+                if not chunk:
+                    break
+                count += len(chunk); total += len(chunk)
+                if count > cap or total > 128 * 1024 * 1024:
+                    raise ValueError('Installed identity byte cap exceeded')
+                hasher.update(chunk)
+                if retain: raw.extend(chunk)
+            after = os.fstat(stream.fileno())
+            fields = ('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns')
+            if count != before.st_size or any(getattr(before,k) != getattr(after,k) for k in fields):
+                raise ValueError('Installed identity asset changed')
+        return hasher.digest(), bytes(raw), count
+    record_hash, raw, _ = read_hash(record, 2 * 1024 * 1024, retain=True)
+    rows = list(csv.reader(io.StringIO(raw.decode('utf-8'), newline='')))
+    if len(rows) > 4096:
+        raise ValueError('Bounded installed project RECORD required')
+    for row in rows:
+        if len(row) != 3:
+            raise ValueError('Closed installed project RECORD required')
+        name, expected, size = row
+        if not expected: continue
+        if not expected.startswith('sha256='):
+            raise ValueError('Unsupported runtime RECORD hash')
+        candidate=Path(os.path.abspath(dist.locate_file(name)))
+        actual, _, count = read_hash(candidate, 64 * 1024 * 1024
+            if name.endswith('/assets/source-bundle.zip') else 16 * 1024 * 1024)
+        encoded = base64.urlsafe_b64encode(actual).decode().rstrip('=')
+        if encoded != expected.split('=',1)[1] or size and count != int(size):
+            raise ValueError('Runtime RECORD asset drift')
+    archive_hash, _, _ = read_hash(package / 'assets' / 'source-bundle.zip', 64 * 1024 * 1024)
+    return dict(source_digest=archive_hash.hex(), runtime_digest=record_hash.hex(),
+        policy_digest=_sha(BOUND_POLICY), live_session_digest=None, authorization_record_digest=None,
+        protected_paths=[str(prefix), str(package.parent), str(record.parent)])
 
 
 def prepare_fake_inputs(output:Path, *, sample_matrix:list[dict]|None=None) -> tuple[dict,dict]:
@@ -185,10 +252,16 @@ class FakeExporterChannel:
               'verify':{'command'},'reconcile':{'command','receipt','approval_record'},
               'fault':{'command','kind'}}
         if command not in keys or set(value)!=keys[command]: raise ValueError('Closed IPC request required')
+        decoded=json.loads(self._exchange_bytes(value))
+        if set(decoded)=={'error'}: raise ValueError(decoded['error'])
+        return decoded
+
+    def _exchange_bytes(self,value:dict) -> bytes:
+        """Shared bounded pipe only; each channel validates its own wire schema."""
         raw=_canonical(value)+b'\n'
         if len(raw)>IPC_BYTES: raise ValueError('IPC request byte cap exceeded')
         if self._closed: raise RuntimeError('Exporter closed')
-        deadline=time.monotonic()+_IPC_DEADLINE_SECONDS;response=b'';offset=0
+        deadline=time.monotonic()+getattr(self,'_ipc_deadline_seconds',_IPC_DEADLINE_SECONDS);response=b'';offset=0
         with selectors.DefaultSelector() as selector:
             selector.register(self.process.stdin,selectors.EVENT_WRITE)
             while offset<len(raw):
@@ -219,9 +292,7 @@ class FakeExporterChannel:
                 response+=chunk
                 if len(response)>IPC_BYTES:
                     self.close();raise ValueError('Exporter IPC response cap')
-        decoded=json.loads(response)
-        if set(decoded)=={'error'}: raise ValueError(decoded['error'])
-        return decoded
+        return response
 
     def close(self) -> None:
         if self._closed:return
@@ -520,7 +591,14 @@ def main(argv:list[str]|None=None) -> int:
     parser.add_argument('--manifest');parser.add_argument('--criteria');parser.add_argument('--output')
     parser.add_argument('--allow-upload',action='store_true')
     parser.add_argument('--exporter-root');parser.add_argument('--fixture-root');parser.add_argument('--fixture-request')
-    args=parser.parse_args(argv)
+    parser.add_argument('--hosted-exporter-child',action='store_true')
+    requested_argv=list(argv) if argv is not None else sys.argv[1:]
+    args=parser.parse_args(requested_argv)
+    if args.hosted_exporter_child:
+        if requested_argv!=['--hosted-exporter-child']:
+            raise ValueError('Exclusive hosted exporter child entry required')
+        from devbench.study.rna_hosted_exporter import main as exporter_main
+        return exporter_main([])
     if args.exporter_root:return _fake_exporter(_absolute(args.exporter_root))
     if args.fixture_root:
         value=_read(_absolute(args.fixture_request));_fixture_worker(_absolute(args.fixture_root),value['sample'],value['manifest']);return 0
