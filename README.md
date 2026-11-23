@@ -1,32 +1,44 @@
-# DevHarness · RNA Workbench
+# DevHarness · Companion Research Studio
 
-**A local RNA-seq workbench for agents that propose workflows and researchers who review the evidence.** DevHarness checks whether the inputs support the question, freezes a plan for review, and binds completed outputs to an execution receipt. Companion Studio opens the same research session to inspect plans, figures, code and evidence. DevBench provides a separate harness for evaluating agent behavior.
+[![Public software verification](https://github.com/Vajraaaang/bio-agent-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Vajraaaang/bio-agent-harness/actions/workflows/ci.yml)
+[![Python 3.13+](https://img.shields.io/badge/Python-3.13%2B-3776AB)](pyproject.toml)
+[![MIT license](https://img.shields.io/badge/License-MIT-216F57)](LICENSE)
+[![Platform macOS and Linux](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-44546A)](#run-companion-research-studio)
 
-[Run the synthetic demo](#run-the-synthetic-demo) · [Inspect the architecture](#architecture) · [Configure the Codex plugin](integrations/codex/devharness/README.md) · [Read the evidence](#verification-and-limits)
+DevHarness is a local RNA-seq workbench with a Codex copilot and a browser-based research studio. It checks whether the inputs support the question, freezes a plan for review, and binds completed outputs to execution receipts. DevBench evaluates agent behavior separately.
 
-![Offline RNA Workbench simulation showing a generated cell landscape and interactive figure controls](docs/assets/companion-studio.png)
+**[Launch Interactive Studio Demo](https://vajraaaang.github.io/bio-agent-harness/)** · [Architecture](#architecture) · [Evidence](#verification-and-limits)
 
-*The offline simulation shows 287,463 generated observations. It exercises the Workbench interface and figures without running an analysis.*
+Explore a preloaded single-cell composition investigation through Overview, Findings, Workflows, Figures, Code, and Evidence. The public showcase includes interactive illustrative charts and a receipt inspector. Real fitting runs in the local Workbench under the applicable input, review, and execution controls.
 
-## Run the synthetic demo
+## Operate DevHarness two ways
 
-Use a local macOS or Linux checkout with `uv`, Python 3.13 and a modern browser. From the repository root:
+### Autonomous Copilot in Codex
+
+Configure and install the [DevHarness Codex MCP plugin](integrations/codex/devharness/README.md). In Codex, select the `@devharness` plugin or invoke `$rna-workbench`. Ask it to inspect a staged dataset, formulate an aim, and propose QC and donor-aware models. Execution requires an approved plan tied to an exact session and plan digest, a supported design, and an available runtime. The plugin and Studio can open the same research session.
+
+### Run Companion Research Studio
+
+Use `uv` and Python 3.13 on macOS or Linux. Keep the input directory and mutable workspace separate. From the repository root, with an existing `inputs/` directory:
 
 ```sh
 make install
 repo="$(pwd -P)"
-mkdir -p "$repo/results"
-demo_dir="$(mktemp -d "$repo/results/studio-demo.XXXXXX")"
-mkdir -p "$demo_dir/inputs" "$demo_dir/workspace"
-"$repo/.venv/bin/devbench" workbench \
-  --input-root "$demo_dir/inputs" \
-  --workspace "$demo_dir/workspace" \
-  --offline-only --port 8765
+mkdir -p "$repo/workspace"
+"$repo/.venv/bin/python" -m devbench.platform.cli workbench \
+  --input-root "$repo/inputs" \
+  --workspace "$repo/workspace" \
+  --enable-scientific --offline-only --port 8765
 ```
 
-Open the printed loopback URL with `?simulation=1` appended to its path, for example `http://127.0.0.1:8765/?simulation=1`. Choose **Open simulated project**. Switch projects or batches and inspect, filter or export the generated figures. The browser generates the data locally. The simulation requires no model account, expression data or container.
+Open the printed loopback URL. The scientific route checks for SQLite 3.51.3 or newer, or a documented backport. On macOS, a patched Homebrew installation can supply the library with `DYLD_LIBRARY_PATH="$(brew --prefix sqlite)/lib"`. Follow the [Workbench operating guide](docs/workbench-ui.md) for runtime setup and execution permissions.
 
-For a real local research session, start with the [Workbench operating guide](docs/workbench-ui.md) or the [Codex plugin setup](integrations/codex/devharness/README.md). Accounts, inputs, data execution and scientific review each have their own requirements.
+## Scientific scope and safeguards
+
+- **20-family answerability.** The [registry](src/devbench/core/rna_answerability.py) evaluates whether the measurements and design support a question across 20 research families. The [measurement probes](tests/test_thesis_answerability_matrix.py) cover supported, underspecified, and unsupported cases. Numerical execution depends on the method, input and runtime.
+- **Biological replication.** [Design checks](src/devbench/core/contrast_design.py) validate contrasts and estimability. Donor-aware routes use the donor as the biological unit where the declared design calls for it. Multiple cells from a donor do not create independent donor replicates.
+- **Selection and inference.** [Negative-binomial count splitting](rna_kernels/scrna_nb_countsplit.py) supports selected marker workflows that separate discovery from inference. [Bayesian scCODA](src/devbench/core/scrna_composition_solver.py) estimates donor-level composition relative to a declared reference and reports posterior inclusion probabilities.
+- **Verifiable packages.** [Thesis replay](src/devbench/analysis/thesis_replay.py) checks SHA-256-bound research packages against their retained evidence. Statistical qualification and independent scientific review remain separate.
 
 ## Architecture
 
@@ -57,12 +69,12 @@ The typed MCP interface exposes seven tools over local STDIO. Inspection and pla
 
 | Published checkpoint | Observed result |
 | --- | --- |
-| [Companion Studio source update](RELEASE_READINESS.md) | 93 focused tests and eight local MCP tests passed. The offline browser simulation initialized successfully, and batch filtering changed the displayed count from 287,463 to 94,817 and back. |
-| [Synthetic Workbench simulation](reports/workbench-integrated-simulation-20261029/README.md) | The historical publication snapshot passed 144 focused tests. Browser checks covered six generated projects, point counts, batch filtering and SVG/PNG downloads. |
-| [Plot family gallery](reports/workbench-plot-families-20261029/README.md) | Browser checks exported 48 PNGs across eight descriptive plot families using the Workbench controls. |
-| [Gaussian calibration prototype](reports/selection-calibration/README.md) | Corrected null rejection was 5.045%–5.225% under equal variance. It remained 8.610%–9.065% under unequal variance at a nominal 5% threshold. |
+| [Companion Studio source update](https://github.com/Vajraaaang/bio-agent-harness/blob/05bac3be6a0abf74797588986286facc31b4aea4/RELEASE_READINESS.md) | 93 focused tests and eight local MCP tests passed. The offline browser simulation initialized successfully, and batch filtering changed the displayed count from 287,463 to 94,817 and back. |
+| [Synthetic Workbench simulation](https://github.com/Vajraaaang/bio-agent-harness/blob/05bac3be6a0abf74797588986286facc31b4aea4/reports/workbench-integrated-simulation-20261029/README.md) | The historical publication snapshot passed 144 focused tests. Browser checks covered six generated projects, point counts, batch filtering and SVG/PNG downloads. |
+| [Plot family gallery](https://github.com/Vajraaaang/bio-agent-harness/blob/05bac3be6a0abf74797588986286facc31b4aea4/reports/workbench-plot-families-20261029/README.md) | Browser checks exported 48 PNGs across eight descriptive plot families using the Workbench controls. |
+| [Gaussian calibration prototype](https://github.com/Vajraaaang/bio-agent-harness/blob/05bac3be6a0abf74797588986286facc31b4aea4/reports/selection-calibration/README.md) | Corrected null rejection was 5.045%–5.225% under equal variance. It remained 8.610%–9.065% under unequal variance at a nominal 5% threshold. |
 
-These checkpoints describe the source and conditions in their reports. Synthetic software verification and recorded artifact integrity establish separate properties. Comparative scientific effectiveness, independently qualified deployment and clinical release remain open. See [release readiness](RELEASE_READINESS.md) and the [evaluation design](docs/public-three-condition-study.md).
+These checkpoints describe the source and conditions in their reports. Synthetic software verification and recorded artifact integrity establish separate properties. Comparative scientific effectiveness, independently qualified deployment and clinical release remain open. See [release readiness](https://github.com/Vajraaaang/bio-agent-harness/blob/05bac3be6a0abf74797588986286facc31b4aea4/RELEASE_READINESS.md) and the [evaluation design](docs/public-three-condition-study.md).
 
 ## Related projects
 
