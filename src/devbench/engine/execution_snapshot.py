@@ -65,8 +65,7 @@ _BUILD_FILES = (
     "LICENSE",
     "AGENTS.md",
     "scripts/__init__.py",
-    "scripts/build_colab_notebook.py",
-    "scripts/colab_run.py",
+    "scripts/source_bundle.py",
     "scripts/run_erql_calibration_diagnostic.py",
 )
 _MANIFEST = "snapshot-manifest.json"
@@ -142,7 +141,7 @@ def _installed_build_files(project):
     resource = project / "devbench" / "analysis" / "assets" / "source-bundle.zip"
     if (project / "pyproject.toml").is_file() or not resource.is_file():
         return {}
-    from scripts.build_colab_notebook import _read_installed_resource
+    from scripts.source_bundle import _read_installed_resource
 
     payload = _read_installed_resource(resource, metadata.distribution("devharness"))
     result = {}

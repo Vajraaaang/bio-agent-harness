@@ -44,7 +44,7 @@ def _runtime_identity():
         "rna_design_audit.py", "rna_execution_inputs.py",
         "workflow_entrypoints.py", "workflow_actions.py", "workflow_state.py", "workflow_operations.py",
         "workflow_implementation.py", "workflow_science.py", "workflow_scientific_reviews.py",
-        "workflow_discovery.py", "workflow_candidate_freeze.py", "langgraph_workflow.py", "scientific_workspace.py"))
+        "workflow_discovery.py", "langgraph_workflow.py", "scientific_workspace.py"))
     owners.update(root.parent / name for name in (
         "platform/workflow_entrypoints.py", "platform/method_planner.py", "platform/scientific_workspace.py",
         "platform/workflow_actions.py", "platform/workflow_adaptive_actions.py", "platform/workflow_diagnostic_actions.py",

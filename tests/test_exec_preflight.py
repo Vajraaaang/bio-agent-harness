@@ -441,12 +441,14 @@ def test_trusted_script_rejects_unrestricted_fixture_io(staged, monkeypatch):
 
 @pytest.mark.parametrize("condition", ["optional", "enforced"])
 def test_assisted_probe_preserves_assigned_endpoint_without_retaining_capability(staged, monkeypatch, condition):
+    from devbench.engine.workspace import bounded_unix_socket
     from devbench.study.adapter import StudyCodeActionAdapter
     from devbench.study.permissions import PermissionBoundary
 
     baseline, output = staged
     boundary = PermissionBoundary(workspace=baseline.workspace, private_roots=baseline.boundary.private_roots,
-        protected_paths=baseline.boundary.protected_paths, socket_path=baseline.workspace / "control/tools.sock")
+        protected_paths=baseline.boundary.protected_paths,
+        socket_path=bounded_unix_socket(baseline.workspace / "control/tools.sock"))
     capability = baseline.workspace / "control/capability"
     sentinel = "fixture-capability-must-not-be-retained" * 2
     capability.write_text(sentinel)

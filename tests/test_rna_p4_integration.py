@@ -18,7 +18,7 @@ from tests.test_rna_numerical_equivalence import contract, _pair, _compare, rows
 
 def preparation(tmp_path, monkeypatch):
     """Use a tiny source archive: no full changing repository capture."""
-    from scripts import build_colab_notebook as builder
+    from scripts import source_bundle as builder
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w') as archive:
         archive.writestr('uv.lock', 'synthetic lock\n')

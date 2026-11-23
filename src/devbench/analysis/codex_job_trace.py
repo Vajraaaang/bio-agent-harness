@@ -115,27 +115,6 @@ def job_trace_accounting(campaign, reservations):
     return result
 
 
-def prepare_job_observation(*, observer, workflow_id):
-    """Prepare disabled hosted aliases only; retain every actual source event."""
-    if type(observer) is not LocalTraceObserver:
-        raise TypeError("Actual local job observer required")
-    events = observer.read_events(workflow_id)
-    contexts = observer.read_contexts(workflow_id)
-    from devbench.study import rna_hosted_workflow
-    prepare = getattr(rna_hosted_workflow, "prepare_generation_context_observation", None)
-    dispatches = sum(row["kind"] == "dispatch" for row in events)
-    if prepare is None and dispatches:
-        prepared = dict(blockers=["signed_in_dispatch_profile_not_approved"])
-    else:
-        prepared = (prepare or rna_hosted_workflow.prepare_context_observation)(observer=observer, workflow_id=workflow_id)
-        prepared["blockers"] = []
-    if events != observer.read_events(workflow_id) or contexts != observer.read_contexts(workflow_id):
-        raise ValueError("Job observations changed during disabled preparation")
-    return dict(format="devbench.codex-job-observation-preparation/1", authorize_upload=False,
-        authorize_remote_read=False, source_event_count=len(events), context_count=len(contexts),
-        dispatch_event_count=dispatches, source_events_digest=trace_digest(events), **prepared)
-
-
 def read_codex_job_trace_snapshot(*, backend, campaign_id, workflow_id,
                                   observer_path=None, allow_evidence_read):
     """Read retained job evidence without launching a client or inspecting auth.

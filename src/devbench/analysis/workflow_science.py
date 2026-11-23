@@ -9,9 +9,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import asdict
 import hashlib
-import json
 import os
-from pathlib import Path
 
 from .checkpoints import atomic_json, digest
 from .episode_agent import Selection, selector_configuration
@@ -157,21 +155,6 @@ def verify_scientific_evidence(node, planner, session, evidence, *, plan_snapsho
     """Read-only, authority-free validation of saved material and real services."""
     if node not in _NODES:
         raise ValueError('Unknown scientific workflow node')
-    # A software-backend qualification is a separately typed protocol, never a
-    # substitute biological discovery/reviewer/OCI-validation receipt.
-    if type(evidence) is dict and type(evidence.get('record_ref')) is dict:
-        reference = evidence['record_ref']
-        if set(reference) == set(_REF_KEYS):
-            path = planner.methods.artifact_path(reference['artifact_id'])
-            body = _read(path, _MAX_BYTES)
-            if (hashlib.sha256(body).hexdigest() != reference['sha256']
-                    or len(body) != reference['size_bytes']):
-                raise ValueError('Scientific or protocol evidence bytes changed')
-            record = decode_json(body)
-            if record.get('format') == 'devbench.nonbiological-protocol-check/1':
-                from .workflow_protocol_qualification import verify_protocol_qualification_evidence
-                return verify_protocol_qualification_evidence(node, planner, session, evidence,
-                    plan_snapshot=plan_snapshot)
     record = _load_record(planner, evidence)
     if record['node'] != node or record['session_id'] != session:
         raise ValueError('Scientific runtime node or session differs')

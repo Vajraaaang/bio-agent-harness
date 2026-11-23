@@ -464,11 +464,9 @@ class _WorkbenchHandler:
     def _configuration_routes(self, request: _Request):
         target = request.target
         app = request.app
-        body = request.body
         mutation = request.mutation
         project_id = request.project_id
         project_hub = self._project_hub
-        ui = self._ui
         if not target.query and not mutation and target.path == "/api/config":
             configuration = app.configuration()
             if project_hub is not None:
@@ -478,17 +476,6 @@ class _WorkbenchHandler:
                     "read_only": project_hub.read_only(project_id),
                 }
             return self._json(configuration)
-        if project_hub is not None and getattr(app, "is_legacy_proxy", False):
-            if re.search(r"/(?:artifact|archive|download)(?:/|$)", target.path):
-                raise PermissionError("restricted_audit_entitlement_required")
-            status, content_type, filename, content = app.request(
-                "POST" if mutation else "GET", self.path, body
-            )
-            if content_type.startswith("application/json"):
-                return self._json(
-                    ui.decode_json(content, max_bytes=16 * 1024**2), status
-                )
-            raise PermissionError("restricted_audit_entitlement_required")
         return _UNHANDLED_ROUTE
 
     def _local_analyst_routes(self, request: _Request):

@@ -13,6 +13,8 @@ import tarfile
 
 import pytest
 
+AIRWAY_METHODS = Path(__file__).resolve().parents[1] / "methods" / "airway-2015"
+
 
 def test_retained_figure_validator_exists() -> None:
     assert importlib.util.find_spec("devbench.analysis.rna_retained_figures") is not None
@@ -423,7 +425,7 @@ def _governed_figure_run(tmp_path: Path, *, partial_figures: bool = False):
     from tests.test_rna_publication_metrics import gene_table
 
     case = _with_pdf(_bundle(tmp_path))
-    authored_manifest = Path("/Users/vajraang/Documents/ChatGPT/bio-agent-harness/methods/airway-2015/compiled-v2/workflow-manifest.json")
+    authored_manifest = AIRWAY_METHODS / "compiled-v2" / "workflow-manifest.json"
     workflow_reference = {"path": str(authored_manifest), "sha256": _sha(authored_manifest.read_bytes()),
         "size_bytes": authored_manifest.stat().st_size}
     # Copy the source into this fixture's assigned workspace; no author method
@@ -518,11 +520,10 @@ def test_one_plot_cannot_weaken_the_full_authored_figure_family(tmp_path: Path) 
             artifact_service=service, workspace=tmp_path)
 
 
-def test_expectation_binding_preserves_all_actual_authored_chunk_pins() -> None:
-    root = Path("/Users/vajraang/Documents/ChatGPT/bio-agent-harness/methods/airway-2015")
-    template = root / "figure-expectation-template.json"
-    original = json.loads(template.read_bytes())
-    manifest = Path(original["workflow_manifest_ref"]["path"])
+def test_expectation_binding_preserves_all_actual_authored_chunk_pins(tmp_path: Path) -> None:
+    original, manifest = _relocated_authored_template()
+    template = tmp_path / "figure-expectation-template.json"
+    template.write_text(json.dumps(original))
     first = next(iter(original["expected_plots"].values()))
     record = _api().bind_retained_figure_expectation(template, manifest,
         expected_template_sha256=_sha(template.read_bytes()), expected_workflow_manifest_sha256=_sha(manifest.read_bytes()),
@@ -641,10 +642,20 @@ def test_file_identity_change_during_read_is_rejected(tmp_path: Path, monkeypatc
         _api()._read(path)
 
 
-def _author_binding():
-    template = Path("/Users/vajraang/Documents/ChatGPT/bio-agent-harness/methods/airway-2015/figure-expectation-template.json")
+def _relocated_authored_template():
+    template = AIRWAY_METHODS / "figure-expectation-template.json"
+    manifest = AIRWAY_METHODS / "compiled-v3" / "workflow-manifest.json"
     expectation = json.loads(template.read_bytes())
-    authored = json.loads(Path(expectation["workflow_manifest_ref"]["path"]).read_bytes())
+    body = manifest.read_bytes()
+    reference = expectation["workflow_manifest_ref"]
+    assert reference["sha256"] == _sha(body) and reference["size_bytes"] == len(body)
+    reference["path"] = str(manifest)
+    return expectation, manifest
+
+
+def _author_binding():
+    expectation, manifest = _relocated_authored_template()
+    authored = json.loads(manifest.read_bytes())
     first = next(iter(expectation["expected_plots"].values()))
     return expectation, authored, {"sample_universe_sha256": first["sample_universe_sha256"],
         "gene_universe_sha256": first["gene_universe_sha256"]}

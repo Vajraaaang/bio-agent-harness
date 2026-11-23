@@ -25,9 +25,6 @@ if TYPE_CHECKING:
     from .adaptive_workflow import AdaptiveWorkflow
     from .thesis_joint_bh_release import JointBHRelease
 
-_COLAB_FACTORY_ADMISSION = object()
-
-
 def create_rna_workflow(
     *,
     mode="single_agent",
@@ -38,15 +35,6 @@ def create_rna_workflow(
     adaptive=None,
 ):
     """Construct the explicitly selected controller; construction never dispatches."""
-    qualification = False
-    if type(actions).__module__ == "devbench.analysis.colab_workflow":
-        from devbench.analysis.colab_workflow import ColabQualificationActions
-
-        qualification = type(actions) is ColabQualificationActions
-        if qualification and mode != "single_agent":
-            raise ValueError(
-                "Synthetic Colab qualification requires the single-agent workflow"
-            )
     if mode == "adaptive/1":
         from .langgraph_workflow import AdaptiveRNAWorkflow
 
@@ -61,8 +49,6 @@ def create_rna_workflow(
     workflow = _create_fixed_workflow(
         mode, actions, checkpoint_path, investigation_backend
     )
-    if qualification:
-        workflow._qualification_factory_token = _COLAB_FACTORY_ADMISSION
     if trace_observer is not None:
         from devbench.analysis.rna_trace_receipts import ObservedWorkflow
 

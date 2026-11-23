@@ -1,14 +1,16 @@
-import json
-from pathlib import Path
-
 import pytest
 
 
-def test_plan_is_fresh_balanced_and_preserves_development_parameters(tmp_path):
+def test_plan_is_fresh_balanced_and_preserves_development_parameters():
     from devbench.analysis.heldout import build_holdout_plan
     from devbench.analysis.validation import PROTOCOL
-    path = Path('/Users/vajraang/Documents/ChatGPT/bio-agent-harness/results/scientific-preparation-2026-09-14/proposed-pilot/private/plan.json')
-    prior = json.loads(path.read_text())
+    from devbench.study.biology_planning import default_biology_recipe
+
+    prior = {"recipes": [
+        {**default_biology_recipe(case, num_genes=seed).model_dump(mode="json"),
+         "generation_seed": seed}
+        for seed, case in enumerate(("T01-dense", "T06-aliased"), start=101)
+    ]}
     plan = build_holdout_plan(prior, templates=("T01", "T06"))
     assert len(plan["recipes"]) == 6
     seeds = [r["generation_seed"] for r in plan["recipes"]]

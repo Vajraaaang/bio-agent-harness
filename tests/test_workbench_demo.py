@@ -49,7 +49,7 @@ console.log('287463 actual generated cells, computed summaries, explicit simulat
 
 def test_demo_assets_are_shipped_and_connection_entry_is_explicit():
     from devbench.analysis.workbench_ui import render_page
-    from scripts.build_colab_notebook import allowed_bundle_path
+    from scripts.source_bundle import allowed_bundle_path
 
     page = render_page('simulation-test-nonce')
     assert 'data-workbench-demo' in page

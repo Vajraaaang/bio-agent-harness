@@ -45,26 +45,3 @@ def test_pinned_kernel_does_not_inherit_host_kernel_class(tmp_path, monkeypatch)
     book = nbformat.read(output, as_version=4)
     assert "ipykernel.ipkernel" in book.cells[0].outputs[0].text
     assert (tmp_path/"kernel-startup.log").is_file()
-
-
-def test_colab_analysis_launcher_uses_drive_input_and_locked_source(tmp_path):
-    import nbformat
-    from pathlib import Path
-    from devbench.analysis.notebooks import write_colab_analysis_notebook
-    project = Path(__file__).resolve().parents[1]
-    path = tmp_path/"colab.ipynb"
-    receipt = write_colab_analysis_notebook(path, project,
-        drive_data_path="/content/drive/MyDrive/e11_integrated.h5ad",
-        drive_output_path="/content/drive/MyDrive/DevBench/e11-fixture",
-        expected_data_sha256="a"*64)
-    notebook = nbformat.read(path, as_version=4)
-    code = "\n".join(cell.source for cell in notebook.cells)
-    assert "uv.lock" in receipt["source_bundle"]["files"]
-    assert "'--locked', '--python', '3.12'" in code
-    assert "drive.mount" in code
-    assert "'--expected-data-sha256', EXPECTED_DATA_SHA256" in code
-    assert "'--execution-tier', 'colab'" in code
-    assert "shutil.copy" not in code
-    assert not receipt["runtime_executed"]
-    for cell in notebook.cells:
-        compile(cell.source, str(path), "exec")

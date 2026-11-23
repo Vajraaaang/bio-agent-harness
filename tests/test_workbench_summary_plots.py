@@ -27,7 +27,7 @@ assert.throws(()=>api.summarize(data,'bad'));console.log('ok');
 
 def test_packaged_and_composed_summary_renderer():
     from devbench.analysis.workbench_ui import render_page
-    from scripts.build_colab_notebook import allowed_bundle_path
+    from scripts.source_bundle import allowed_bundle_path
     path='devbench/analysis/assets/workbench-summary-plots.js'
     assert allowed_bundle_path(path)
     assert 'WorkbenchSummaryPlots' in render_page('summary-check')

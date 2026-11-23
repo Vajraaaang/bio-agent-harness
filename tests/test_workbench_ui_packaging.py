@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.build_colab_notebook import (
+from scripts.source_bundle import (
     allowed_bundle_path,
     build_source_bundle,
     extract_source_bundle,

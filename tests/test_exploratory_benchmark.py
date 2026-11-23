@@ -24,7 +24,7 @@ from devbench.engine.workflow_operations import (
     OperationConflict,
 )
 from devbench.platform.adaptive_workflow import AdaptiveWorkflow
-from devbench.study.rna_hosted_fixtures import custom
+from tests.support.workflow_science_fixtures import custom
 from tests.test_exploratory_execution_profile import bound_step, register
 from tests.test_investigation_invalidation import artifact, link, make, step
 

@@ -12,7 +12,17 @@ from devbench.engine.permissions import PermissionBoundary
 
 @pytest.fixture
 def runtime_root(monkeypatch):
-    runs = Path(__file__).resolve().parents[1] / ".runs"
+    checkout = Path(__file__).resolve().parents[1]
+    runs = checkout / ".runs"
+    sample_socket = runs / "s-abcdefgh" / ".runs" / "s" / "0123456789ab" / "s"
+    if (
+        len(os.fsencode(sample_socket)) > workspace.UNIX_SOCKET_PATH_MAX
+        and (checkout / ".git").is_file()
+        and (checkout.parent / ".git").is_dir()
+    ):
+        # A nested worktree can exhaust the socket budget before the lease checks.
+        runs = checkout.parent / ".runs"
+    workspace.protected_path(runs)
     runs.mkdir(mode=0o700, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="s-", dir=runs) as directory:
         root = Path(directory) / ".runs"

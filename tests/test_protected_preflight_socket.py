@@ -30,7 +30,8 @@ def _long_workspace(staged, monkeypatch, *, oversized_root=False):
         private_roots=adapter.boundary.private_roots,
         protected_paths=(control,),
     )
-    root_parent = root / ("r" * 100) if oversized_root else root.parent
+    # Keep the coordinator's lease root out of deeply nested pytest workspaces.
+    root_parent = root / ("r" * 100) if oversized_root else Path(__file__).resolve().parents[1]
     runs = root_parent / ".runs"
     monkeypatch.setenv("DEVBENCH_RUNS_ROOT", str(runs))
     monkeypatch.setattr("socket.socket", socket)

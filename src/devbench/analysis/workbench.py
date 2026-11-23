@@ -219,7 +219,7 @@ for figure in sorted((bundle_root / 'figures').glob('*.png')):
 def prepare_bundle(source, output, parameters, *, project=None, model_path=None, equivalence_contract=None):
     from .checkpoints import atomic_json, sha256
     from .runtime import observe_runtime, verify_data_identity
-    from scripts.build_colab_notebook import default_source_bundle, extract_source_bundle
+    from scripts.source_bundle import default_source_bundle, extract_source_bundle
 
     parameters = _validated_parameters(parameters)
     from .numerical_equivalence import (

@@ -4,7 +4,7 @@ import subprocess
 import shutil
 
 from devbench.analysis import workbench_ui
-from scripts.build_colab_notebook import allowed_bundle_path
+from scripts.source_bundle import allowed_bundle_path
 
 
 def test_composed_page_retains_nonce_and_trusted_modules():

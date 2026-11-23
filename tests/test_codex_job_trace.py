@@ -264,29 +264,6 @@ def test_uncertain_job_lifecycle_is_retained():
     assert result["spans"][0]["extra"]["metadata"]["source_status"] == "uncertain"
 
 
-def test_prepare_hosted_observation_preserves_dispatch_with_disabled_authority(
-    tmp_path,
-):
-    api = helper()
-    observer = LocalTraceObserver(tmp_path / "observer.sqlite", **IDENTITIES)
-    admitted = reservation()
-    reference = api.prepare_job_trace(observer, "workflow", admitted.request, admitted)
-    api.observe_job_launch(
-        api.job_trace_receipt(reference, reservation=admitted, private_root=tmp_path)
-    )
-    before = canonical_bytes(observer.read_events("workflow"))
-    prepared = api.prepare_job_observation(observer=observer, workflow_id="workflow")
-    assert prepared["authorize_upload"] is False
-    assert prepared["authorize_remote_read"] is False
-    assert prepared["blockers"] == []
-    assert prepared["profile"]["format"] == "devbench.rna-context-observation-profile/5"
-    assert prepared["profile"]["dispatch_event_count"] == 1
-    assert prepared["dispatch_event_count"] == 1
-    assert prepared["source_event_count"] == 3
-    assert canonical_bytes(observer.read_events("workflow")) == before
-    assert "synthetic-native-id" not in canonical_bytes(prepared).decode()
-
-
 def test_observer_failure_does_not_change_execution():
     api = helper()
 

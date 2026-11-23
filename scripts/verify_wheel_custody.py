@@ -11,7 +11,7 @@ import venv
 from importlib.metadata import version
 from pathlib import Path
 
-from scripts.build_colab_notebook import (
+from scripts.source_bundle import (
     allowed_bundle_path,
     build_source_bundle,
     checkout_source_paths,
@@ -20,7 +20,6 @@ from scripts.build_source_resource import build_source_resource
 
 REGRESSION = (
     "test_exploratory_benchmark",
-    "test_langsmith_connection_prepare",
     "test_lineage_junctions",
     "test_mounted_scrna",
     "test_p3_donor_trajectory",
@@ -34,15 +33,8 @@ REGRESSION = (
     "test_rna_answerability",
     "test_rna_execution_route_observability",
     "test_rna_execution_route_qualification",
-    "test_rna_hosted_connection",
-    "test_rna_hosted_exporter_isolation",
-    "test_rna_hosted_qualification",
-    "test_rna_hosted_workflow",
-    "test_rna_hosted_workflow_contract",
     "test_rna_mediated_backend",
     "test_rna_mediated_observability",
-    "test_rna_provider_root_wire",
-    "test_rna_publication_verification",
     "test_rna_scientific_trial_v2",
     "test_rna_signedin_trial",
     "test_rna_singlecell_hardening",
@@ -65,19 +57,18 @@ FIXTURES = (
     "test_exploratory_execution_profile",
     "test_extensible_methods",
     "test_method_planner",
+    "test_method_planner_scientific_safeguards",
+    "test_method_sources",
     "test_rna_execution_inputs",
     "test_investigation_invalidation",
     "test_adaptive_derived_artifacts",
     "test_investigation_publication_epochs",
     "test_protected_partition_isolation",
     "test_review_hold_lifecycle",
-    "test_rna_hosted_trace_contract",
-    "test_rna_langsmith_binding",
-    "test_rna_langsmith_live",
-    "test_rna_langsmith_schema",
-    "test_rna_langsmith_verify",
     "test_rna_trace_contract",
+    "test_rna_publication_evidence",
     "test_rna_publication_profiles",
+    "test_rna_publication_sources",
     "test_rna_scientific_trial",
     "test_scientific_authority_migration",
     "test_tier_a_executor",
@@ -173,7 +164,6 @@ SOURCE_ROOTS = (
     "README.md",
     "LICENSE",
     "uv.lock",
-    "requirements-langgraph.lock",
     "AGENTS.md",
 )
 
@@ -187,7 +177,6 @@ import sys
 from devbench.adaptive import models
 from devbench._layout import EVALUATION_PROTOCOL, resolve_analysis_asset
 from devbench.analysis.codex_isolated_boundary import HOST_SENTINEL
-from devbench.analysis.colab_transport import PIN_MANIFEST, PIN_MANIFEST_SHA256
 from devbench.analysis.rna_diagnostic_policy import implementation_sha256
 from devbench.analysis.rna_release_evaluation import (
     PROTOCOL_ID,
@@ -198,9 +187,7 @@ from devbench.analysis.rna_trial_authority import (
     trial_enforcement_source_digest,
     trial_enforcement_runtime_digest,
 )
-from devbench.platform.workbench_compute_demo import ComputeDemo
-from devbench.study.rna_hosted_qualification import bounded_installed_identity
-from scripts.build_colab_notebook import SOURCE_BUNDLE_MAX_FILES, default_source_bundle
+from scripts.source_bundle import SOURCE_BUNDLE_MAX_FILES, default_source_bundle
 
 prefix = Path(sys.prefix).resolve()
 dist = distribution("devharness")
@@ -211,7 +198,6 @@ assert Path(dist.locate_file(record)).resolve().is_relative_to(prefix)
 assert Path(models.__file__).resolve().is_relative_to(prefix)
 source = trial_enforcement_source_digest()
 runtime = trial_enforcement_runtime_digest()
-identity = bounded_installed_identity()
 members = {entry.as_posix(): entry for entry in dist.files}
 for relative_path in sys.argv[2:]:
     entry = members.get(relative_path)
@@ -231,11 +217,9 @@ protocol["protocol_source"] = {
 }
 validate_release_protocol(protocol)
 assert len(implementation_sha256()) == 64
-assert hashlib.sha256(PIN_MANIFEST.read_bytes()).hexdigest() == PIN_MANIFEST_SHA256
 assert Path(HOST_SENTINEL).is_relative_to(prefix)
-ComputeDemo()
 bundle = default_source_bundle()
-assert bundle["sha256"] == identity["source_digest"] == sys.argv[1]
+assert bundle["sha256"] == sys.argv[1]
 assert SOURCE_BUNDLE_MAX_FILES - len(bundle["files"]) >= 40
 print(f"Verified ordinary RECORD source={source} runtime={runtime}", flush=True)
 print(
@@ -405,7 +389,6 @@ def verify(project: Path, *, receipts: Path | None = None) -> None:
             *("tests/" + module + ".py" for module in names),
             "tests/__init__.py",
             "tests/conftest.py",
-            "tests/fixtures/langsmith_run_request_schema.json",
             "tests/thesis_calibration_batch.R",
         ):
             _copy(project, outside, Path(name))
