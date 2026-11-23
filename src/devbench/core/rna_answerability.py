@@ -296,6 +296,7 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             (_EXPRESSION, ("cell_type_reference",)),
             assays=("bulk_rna_seq",),
             align="features",
+            curated_operation="bulk_deconvolution",
         ),
         "transcript_usage": QuestionContract(
             4,

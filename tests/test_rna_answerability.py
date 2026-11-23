@@ -401,6 +401,32 @@ def test_neighborhood_da_admits_embedding_and_preserves_design_gate():
     assert mismatched.reason == "design_axis_incompatible"
 
 
+def test_bulk_deconvolution_admits_matched_reference_without_group_design():
+    request = AnswerabilityRequest(
+        family_id=3,
+        question="bulk_deconvolution",
+        assay="bulk_rna_seq",
+        entry_point="count_matrix",
+    )
+    runtime = RuntimeEvidence(
+        question=request.question,
+        tier="tier_a",
+        operation_id="bulk_deconvolution",
+        runtime_sha256=_RUNTIME,
+    )
+    counts = _measurement("gene_counts")
+    reference = _measurement("cell_type_reference", value="b" * 64)
+    result = assess_answerability(
+        request, measurements=(counts, reference), runtime=runtime
+    )
+    assert (result.status, result.execution_route) == ("ready", "tier_a")
+    mismatched = reference.model_copy(update={"feature_axis_sha256": "c" * 64})
+    refused = assess_answerability(
+        request, measurements=(counts, mismatched), runtime=runtime
+    )
+    assert refused.reason == "measurement_axes_incompatible"
+
+
 def test_raw_read_archive_download_is_refused_even_with_local_metadata():
     request = _request(
         5,
