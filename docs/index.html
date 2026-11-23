@@ -1,42 +1,609 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
-<title>DevHarness · Evidence review</title>
-<style>
-:root{color-scheme:light;--ink:#1c3339;--muted:#53676b;--paper:#f4f6f3;--line:#d5ded8;--teal:#087775;--wash:#e6f0eb;--rust:#8e412b}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--paper);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-a{color:var(--teal);text-underline-offset:4px}a:hover{text-decoration-thickness:2px}a:focus-visible,button:focus-visible,select:focus-visible{outline:3px solid #a94a20;outline-offset:4px}
-.wrap{max-width:1180px;margin:auto;padding:0 32px}header{border-bottom:1px solid var(--line);background:#fff}header .wrap{display:flex;justify-content:space-between;align-items:center;gap:24px;min-height:88px}.brand{font-size:20px;letter-spacing:-.5px;font-weight:700;text-decoration:none;color:var(--ink)}.brand small{font-size:11px;font-weight:600;letter-spacing:1.4px;display:block;color:var(--muted);text-transform:uppercase}
-nav{display:flex;gap:26px;font-size:14px}nav a{color:var(--ink);text-decoration:none}.hero{padding:68px 0 38px}.eyebrow{font-size:12px;letter-spacing:1.8px;text-transform:uppercase;color:var(--teal);font-weight:700}.hero h1{font:500 clamp(36px,5vw,64px)/1.08 Georgia,serif;letter-spacing:-1.5px;max-width:880px;margin:18px 0 24px}.lede{font-size:19px;color:var(--muted);max-width:760px}.hold{border-left:4px solid var(--rust);background:#fff6ee;padding:18px 22px;margin-top:28px;max-width:950px;font-size:15px}.hold strong{color:var(--rust)}
-section{padding:42px 0;border-top:1px solid var(--line);scroll-margin-top:20px}h2{font:500 32px/1.25 Georgia,serif;letter-spacing:-.5px;margin:0 0 14px}h3{font-size:17px;margin:0 0 8px}p{margin:10px 0 16px}.section-intro{color:var(--muted);max-width:800px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);background:white;margin:28px 0}.metric{padding:22px 26px}.metric+.metric{border-left:1px solid var(--line)}.metric b{display:block;font:500 37px/1.2 Georgia,serif}.metric span{color:var(--muted);font-size:14px}.metric small{display:block;font-size:12px;color:var(--muted);margin-top:7px}
-.figure{background:#fff;border:1px solid var(--line);padding:22px;margin:24px 0}.figure img{width:100%;height:auto;display:block}.figure figcaption{font-size:13px;color:var(--muted);padding:10px 6px 0}.toolbar{display:flex;gap:16px;align-items:end;flex-wrap:wrap;margin:22px 0 12px}label{display:block;font-size:13px;font-weight:600}select{display:block;margin-top:6px;padding:10px 38px 10px 12px;border:1px solid #96aba3;background:#fff;border-radius:3px;color:var(--ink);font:inherit;min-width:150px}.table-wrap{overflow-x:auto;border:1px solid var(--line);background:white}table{border-collapse:collapse;width:100%;font-size:14px}caption{padding:16px;text-align:left;font-weight:600}th,td{text-align:left;padding:12px 16px;border-top:1px solid var(--line);white-space:nowrap}th{font-size:12px;background:var(--wash);text-transform:uppercase;letter-spacing:.5px}.number{font-variant-numeric:tabular-nums}.table-note{font-size:13px;color:var(--muted)}.columns{display:grid;grid-template-columns:1fr 1fr;gap:36px}.panel{background:white;border:1px solid var(--line);padding:26px}.panel ul{padding-left:20px}.tag{display:inline-block;font-size:11px;letter-spacing:1px;text-transform:uppercase;font-weight:700;background:var(--wash);padding:5px 9px;margin-bottom:14px}.tag.rust{color:var(--rust);background:#fff0e7}.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:26px}.flow div{border-top:3px solid var(--teal);padding:18px;background:white}.flow b{display:block;margin-bottom:8px}.flow p{font-size:14px;color:var(--muted);margin:0}.resources{display:flex;flex-wrap:wrap;gap:12px 26px;font-size:14px;margin:20px 0}.muted{color:var(--muted)}footer{background:#203c40;color:#e2eae7;margin-top:32px;padding:30px 0;font-size:13px}footer a{color:#bce3d8}.skip{position:absolute;left:16px;top:-100px;background:white;padding:12px;z-index:2}.skip:focus{top:10px}
-@media(max-width:700px){.wrap{padding:0 20px}header .wrap{align-items:flex-start;flex-direction:column;padding-top:20px;padding-bottom:18px;gap:14px}nav{gap:20px}.hero{padding-top:38px}.hero h1{letter-spacing:-.8px}.lede{font-size:17px}.metrics,.columns,.flow{grid-template-columns:1fr}.metric+.metric{border-left:0;border-top:1px solid var(--line)}.metric{padding:18px 22px}.figure{padding:7px;margin-left:-8px;margin-right:-8px}.columns{gap:18px}section{padding:32px 0}.hold{padding:16px}.flow{gap:9px}}
-@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{nav,.toolbar{display:none}body{background:white}.wrap{max-width:none}.hero{padding-top:20px}section{break-inside:avoid}a{color:inherit}.figure{padding:0;border:0}}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explore a single-cell investigation in the public Companion Research Studio demo.">
+  <title>Companion Research Studio · DevHarness</title>
+  <script>
+    try {
+      const theme = localStorage.getItem("devharness-studio-theme");
+      if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+    } catch {}
+  </script>
+  <style>
+    /* Surface and motion tokens adapted from the approved Studio prototype. */
+    :root {
+      color-scheme: light dark;
+      --s-canvas: light-dark(#f4f5f7, #0b0c0f);
+      --s-rail: light-dark(#fafafa, #101216);
+      --s-surface: light-dark(#ffffff, #15181e);
+      --s-surface-2: light-dark(#f7f8fa, #1b1f27);
+      --s-glass: light-dark(rgba(255, 255, 255, 0.78), rgba(17, 20, 26, 0.76));
+      --s-ink: light-dark(#111318, #f2f4f8);
+      --s-body: light-dark(#323842, #c8cfd9);
+      --s-muted: light-dark(#646d7a, #8b95a5);
+      --s-hairline: light-dark(rgba(17, 24, 39, 0.08), rgba(255, 255, 255, 0.08));
+      --s-hairline-strong: light-dark(rgba(17, 24, 39, 0.14), rgba(255, 255, 255, 0.15));
+      --s-accent: light-dark(#14171f, #f2f4f8);
+      --s-accent-ink: light-dark(#ffffff, #101216);
+      --s-teal: light-dark(#0f766e, #2dd4bf);
+      --s-teal-soft: light-dark(rgba(15, 118, 110, 0.10), rgba(45, 212, 191, 0.14));
+      --s-ok: light-dark(#15803d, #4ade80);
+      --s-ok-soft: light-dark(rgba(21, 128, 61, 0.10), rgba(74, 222, 128, 0.14));
+      --s-warn: light-dark(#b45309, #fbbf24);
+      --s-warn-soft: light-dark(rgba(180, 83, 9, 0.11), rgba(251, 191, 36, 0.14));
+      --s-err: light-dark(#b91c1c, #f87171);
+      --s-err-soft: light-dark(rgba(185, 28, 28, 0.10), rgba(248, 113, 113, 0.15));
+      --s-shadow-sm: light-dark(
+        0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.03),
+        0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 20px rgba(0, 0, 0, 0.22)
+      );
+      --s-shadow-md: light-dark(
+        0 4px 16px rgba(15, 23, 42, 0.07), 0 1px 3px rgba(15, 23, 42, 0.04),
+        0 10px 30px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3)
+      );
+      --s-shadow-lg: light-dark(
+        0 20px 50px rgba(15, 23, 42, 0.16), 0 4px 12px rgba(15, 23, 42, 0.06),
+        0 24px 60px rgba(0, 0, 0, 0.65), 0 4px 14px rgba(0, 0, 0, 0.4)
+      );
+      --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+      --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
+
+    }
+    :root[data-theme="light"] { color-scheme: light; }
+    :root[data-theme="dark"] { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; background: var(--s-canvas); color: var(--s-body); }
+    body, button, select { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    h1, h2, h3, strong { color: var(--s-ink); }
+    h1, h2, h3, p, figure { margin: 0; }
+    h1 { font-size: clamp(1.55rem, 3.3vw, 2.3rem); line-height: 1.15; letter-spacing: -0.036em; }
+    h2 { font-size: 1.12rem; line-height: 1.28; letter-spacing: -.012em; }
+    h3 { font-size: 1rem; }
+    a { color: var(--s-teal); text-underline-offset: .18em; }
+    :focus-visible { outline: 2px solid var(--s-teal); outline-offset: 3px; }
+    .skip-link { position: fixed; z-index: 80; top: .7rem; left: .7rem; padding: .5rem .7rem; color: var(--s-ink); background: var(--s-surface); transform: translateY(-180%); }
+    .skip-link:focus { transform: none; }
+    .studio-app { display: grid; grid-template-columns: 246px minmax(0, 1fr); min-height: 100vh; }
+    .studio-rail { display: flex; flex-direction: column; gap: 20px; position: sticky; top: 0; height: 100dvh; overflow-y: auto; padding: 24px 16px 18px; background: var(--s-rail); border-right: 1px solid var(--s-hairline); }
+    .studio-rail > div, .studio-rail-footer { display: grid; gap: 7px; }
+    .studio-rail-footer { margin-top: auto; }
+    .brand { color: var(--s-ink); font-size: 1rem; letter-spacing: -.02em; }
+    .eyebrow { color: var(--s-muted); font-size: .68rem; font-weight: 650; letter-spacing: .13em; text-transform: uppercase; }
+    .project { padding: 13px; }
+    .project small, .muted { color: var(--s-muted); }
+    .project small { display: block; margin-top: 4px; }
+    .studio-main { min-width: 0; }
+    .studio-header { position: sticky; z-index: 2; top: 0; background: var(--s-glass); border-bottom: 1px solid var(--s-hairline); backdrop-filter: blur(16px) saturate(140%); }
+    .header-wrap, .studio-stage { max-width: 1250px; margin-inline: auto; padding-inline: clamp(16px, 4vw, 48px); }
+    .header-wrap { padding-top: clamp(16px, 3vw, 28px); }
+    .header-info { display: grid; gap: 7px; }
+    .row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .setting { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--s-muted); font-size: .82rem; }
+    .setting select { border: 1px solid var(--s-hairline-strong); border-radius: 8px; padding: 4px 7px; background: var(--s-surface); color: var(--s-ink); font-size: .82rem; }
+    .mono-chip { display: inline-block; padding: 2px 8px; border-radius: 7px; background: var(--s-surface-2); border: 1px solid var(--s-hairline); color: var(--s-ink); font: .78rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    /* Cards & Surface Hierarchy */
+    .s-card {
+      background: var(--s-surface);
+      border: 1px solid var(--s-hairline);
+      border-radius: 14px;
+      box-shadow: var(--s-shadow-sm);
+    }
+    .s-card-interactive {
+      transition: transform 220ms var(--ease-spring), box-shadow 220ms var(--ease-spring), border-color 180ms ease;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .s-card-interactive:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--s-shadow-md);
+        border-color: var(--s-hairline-strong);
+      }
+      .s-card-interactive:active {
+        transform: translateY(0) scale(0.992);
+      }
+    }
+
+    /* Tactile Buttons */
+    .s-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 12px;
+      border-radius: 9px;
+      font-size: 12.5px;
+      font-weight: 550;
+      border: 1px solid var(--s-hairline-strong);
+      background: var(--s-surface);
+      color: var(--s-ink);
+      cursor: pointer;
+      transition: background 150ms ease, border-color 150ms ease, transform 150ms var(--ease-spring), box-shadow 150ms ease;
+    }
+    .s-btn:hover:not(:disabled) {
+      background: var(--s-surface-2);
+      border-color: var(--s-muted);
+    }
+    .s-btn:active:not(:disabled) {
+      transform: scale(0.975);
+    }
+    .s-btn-primary {
+      background: var(--s-accent);
+      color: var(--s-accent-ink);
+      border-color: transparent;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    }
+    .s-btn-primary:hover:not(:disabled) {
+      opacity: 0.92;
+      background: var(--s-accent);
+    }
+    .s-btn:focus-visible,
+    .s-tab:focus-visible,
+    .s-session-item:focus-visible,
+    summary:focus-visible {
+      outline: 2px solid var(--s-teal);
+      outline-offset: 2px;
+    }
+
+    /* Refined Status Pills with Micro Glowing Dot */
+    .s-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 550;
+      letter-spacing: 0.01em;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .s-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      flex: none;
+      background: currentColor;
+    }
+    .s-pill-ok { background: var(--s-ok-soft); color: var(--s-ok); }
+    .s-pill-warn { background: var(--s-warn-soft); color: var(--s-warn); }
+    .s-pill-err { background: var(--s-err-soft); color: var(--s-err); }
+    .s-pill-teal { background: var(--s-teal-soft); color: var(--s-teal); }
+    .s-pill-neutral { background: var(--s-surface-2); color: var(--s-muted); border-color: var(--s-hairline); }
+
+    .s-tablist { display: flex; position: relative; gap: 4px; margin-top: 14px; overflow-x: auto; padding: 4px 4px 0; scrollbar-width: thin; }
+    .s-tab { flex: none; padding: 9px 13px 12px; border: none; border-radius: 8px 8px 0 0; color: var(--s-muted); background: transparent; cursor: pointer; font-size: .88rem; white-space: nowrap; }
+    .s-tab:hover { background: var(--s-surface-2); color: var(--s-ink); }
+    .s-tab[aria-selected="true"] { color: var(--s-ink); font-weight: 650; }
+    .s-tab:focus-visible { outline-offset: -2px; }
+    .tab-indicator { position: absolute; left: 0; bottom: 0; width: var(--tab-width, 0px); height: 3px; background: var(--s-ink); border-radius: 3px 3px 0 0; transform: translateX(var(--tab-start, 0px)); pointer-events: none; transition: width 240ms var(--ease-spring), transform 240ms var(--ease-spring); }
+    .studio-stage { padding-block: 24px 48px; scroll-margin-top: 166px; }
+    .studio-stage > section { display: grid; gap: 16px; }
+    .panel-card { padding: clamp(15px, 2.5vw, 22px); display: grid; gap: 10px; min-width: 0; }
+    .panel-card + .panel-card { margin-top: 1px; }
+    .panel-intro { display: grid; gap: 5px; }
+    .panel-intro p, .note { color: var(--s-muted); }
+    .metric-grid, .figure-grid { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .figure-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+    .metric-grid article { align-content: start; min-height: 108px; }
+    .metric { font: 680 clamp(1.45rem, 3.3vw, 2.2rem)/1.14 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.045em; color: var(--s-ink); }
+    .metric-grid h3 { color: var(--s-muted); font-size: .83rem; }
+    .table-wrapper { overflow: auto; border: 1px solid var(--s-hairline); border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    caption { padding: 8px 12px; text-align: left; color: var(--s-muted); }
+    th, td { padding: 9px 12px; white-space: nowrap; text-align: left; }
+    thead th { background: var(--s-surface-2); color: var(--s-muted); }
+    tbody th, td { border-top: 1px solid var(--s-hairline); }
+    .chart { width: 100%; height: auto; display: block; color: var(--s-muted); }
+    .chart text { fill: currentColor; font-size: 12px; }
+    .chart-gridline { stroke: var(--s-hairline-strong); stroke-width: 1px; }
+    .chart-mark { cursor: crosshair; outline: none; }
+    .chart-mark:focus-visible, .chart-mark:hover { stroke: var(--s-ink); stroke-width: 2px; }
+    .chart-tooltip { position: fixed; z-index: 4; pointer-events: none; max-width: min(290px, calc(100vw - 24px)); padding: 8px 11px; border-radius: 9px; font-size: .78rem; background: var(--s-ink); color: var(--s-accent-ink); box-shadow: var(--s-shadow-md); }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 0; padding: 0; color: var(--s-muted); list-style: none; font-size: .78rem; }
+    .legend li { display: flex; gap: 6px; align-items: center; }
+    .legend .swatch { width: 11px; height: 11px; border-radius: 3px; }
+    .workflow-steps { display: grid; gap: 8px; list-style: decimal; padding-left: 32px; margin: 0; }
+    .workflow-steps li { padding: 9px 13px; border: 1px solid var(--s-hairline); border-radius: 9px; background: var(--s-surface-2); }
+    .workflow-steps strong { margin-right: 8px; }
+    pre { margin: 0; padding: 14px; border-radius: 10px; border: 1px solid var(--s-hairline); background: var(--s-surface-2); color: var(--s-ink); overflow-x: auto; font-size: .82rem; }
+    .s-drawer { inset: auto 0 0; position: fixed; width: min(670px, 100%); max-width: calc(100% - 16px); max-height: 85dvh; margin: auto auto 0; padding: 0; border: 1px solid var(--s-hairline-strong); border-radius: 17px 17px 0 0; color: var(--s-body); background: var(--s-surface); box-shadow: var(--s-shadow-lg); opacity: 0; transform: translateY(38px); transition: opacity 230ms var(--ease-spring), transform 270ms var(--ease-spring), display 270ms allow-discrete, overlay 270ms allow-discrete; }
+    .s-drawer[open] { opacity: 1; transform: none; }
+    @starting-style { .s-drawer[open] { opacity: 0; transform: translateY(38px); } }
+    .s-drawer::backdrop { background: light-dark(rgba(15, 23, 42, 0.28), rgba(0, 0, 0, 0.56)); backdrop-filter: blur(4px); }
+    .drawer-body { padding: clamp(15px, 4vw, 26px); display: grid; gap: 11px; }
+    .drawer-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+    @media (prefers-reduced-motion: no-preference) {
+      .studio-stage > section:not([hidden]) > * { animation: rise 240ms var(--ease-spring) both; }
+      .studio-stage > section:not([hidden]) > :nth-child(2) { animation-delay: 25ms; }
+      .studio-stage > section:not([hidden]) > :nth-child(3) { animation-delay: 50ms; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+    @media (max-width: 980px) { .figure-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 720px) {
+      .studio-app { grid-template-columns: minmax(0, 1fr); }
+      .studio-rail { position: static; height: auto; display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; align-items: center; padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--s-hairline); }
+      .studio-rail .project { display: none; }
+      .studio-rail-footer { margin: 0; }
+      .studio-rail-footer > a { font-size: .78rem; text-align: right; }
+      .metric-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 142px), 1fr)); }
+    }
+  </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to evidence</a>
-<header><div class="wrap"><a class="brand" href="../README.md">DevHarness<small>Research software · Evidence review</small></a><nav aria-label="Page navigation"><a href="#evidence">Results</a><a href="#controls">Controls</a><a href="#limits">Limits</a></nav></div></header>
-<main id="main" class="wrap">
-<div class="hero"><div class="eyebrow">Transcriptomics / methods / reproducibility</div><h1>Evidence you can inspect.<br>Limits you can see.</h1><p class="lede">A research platform for temporal transcriptomics, controlled numerical analysis and executable agent benchmarks. Each result belongs to a specified method and environment.</p><div class="hold"><strong>Clinical release is held.</strong> Local tests and hashed records do not establish assay validity, clinical performance, authenticated human approval or GxP / 21 CFR Part 11 compliance.</div></div>
-<section id="evidence"><div class="eyebrow">01 / Preserved Gaussian prototype</div><h2>Selection matters. So do the assumptions.</h2><p class="section-intro">The original prototype compared selected-model F tests with a Monte Carlo method that repeats the complete spline-selection rule. Equal-variance results approached nominal rejection; unequal-variance results remained adverse.</p>
-<div class="metrics"><div class="metric"><b>240,000</b><span>synthetic evaluation vectors</span><small>Reused across AIC, BIC and GCV</small></div><div class="metric"><b>5.045–5.225%</b><span>corrected rejection · equal variance</span><small>Nominal threshold: 5%</small></div><div class="metric"><b>8.610–9.065%</b><span>corrected rejection · unequal variance</span><small>Assumption violation remains unresolved</small></div></div>
-<figure class="figure"><img src="../reports/selection-calibration/null-calibration.svg" width="1800" height="1008" alt="Across n=24,48,96 and AIC,BIC,GCV, Monte Carlo rejection is near 5% with equal variance and near 9% under unequal variance. Conditional F rejection is higher in both settings."><figcaption>Pointwise 95% evaluation intervals conditional on each shared reference pool. The unequal-variance stress case varies error SD from 0.5 to 4 across time. These are synthetic findings, not clinical failure-rate estimates.</figcaption></figure>
-<div class="toolbar"><div><label for="scenario">Scenario</label><select id="scenario"><option value="homoskedastic_null">Equal-variance null</option><option value="heteroskedastic_null">Unequal-variance null</option><option value="linear_signal">Linear signal</option><option value="oscillatory_signal">Oscillatory signal</option></select></div><div><label for="criterion">Criterion</label><select id="criterion"><option value="all">All criteria</option><option value="aic">AIC</option><option value="bic">BIC</option><option value="gcv">GCV</option></select></div></div>
-<div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable study results"><table><caption id="table-caption">Saved prototype results</caption><thead><tr><th scope="col">Observations</th><th scope="col">Criterion</th><th scope="col">Conditional F</th><th scope="col">Selection MC</th><th scope="col">MC 95% interval</th><th scope="col">Evaluations</th></tr></thead><tbody id="result-rows"></tbody></table></div><p class="table-note" id="result-count" aria-live="polite"></p><noscript><p>Interactive filters require JavaScript. All values remain available in the <a href="../reports/selection-calibration/results.csv">complete CSV</a>.</p></noscript>
-<div class="resources"><a href="../reports/selection-calibration/README.md">Study interpretation</a><a href="../reports/selection-calibration/results.csv">Complete CSV</a><a href="../reports/selection-calibration/protocol.json">Frozen protocol</a><a href="../reports/selection-calibration/verify.py">Standalone verifier</a><a href="../reports/selection-calibration/SHA256SUMS">Checksum inventory</a></div>
-<p class="table-note">This snapshot preserves the earlier sample-major prototype. The packaged 0.4.12 mode uses draw-major simulation and a separately reviewed numerical kernel. Its implementation verification must be read separately; these figures are not relabelled as new-package outcomes.</p></section>
-<section id="controls"><div class="eyebrow">02 / Verified software checkpoint</div><h2>Verify the method and the record.</h2><div class="columns"><article class="panel"><span class="tag">Local 0.4.17 verification</span><h3>Tests, then installed interfaces</h3><p><strong>2,014 tests passed; two platform-specific skips.</strong> A separate noneditable installed-wheel check passed 126 tests, with import origins and member hashes verified. These totals include software fixtures, not live model participants.</p><p>The primary script runner now captures original inputs and failure records in the execution DAG. Participant traces remain untrusted, and clinical release stays held.</p><a href="../reports/code-action-audit/README.md">Read the current verification report</a></article><article class="panel"><span class="tag">Controlled numerical workflow</span><h3>Prespecified analysis with verifiable records</h3><p>The separate 0.4.17 Colab run passed 1,542 selected tests with 1 platform skip. Four Gaussian/count analyses completed; repeated results, R references and all four downloaded histories verified. Its eight signatures use fixture keys.</p><p>Count-reference comparison shares fitted dispersion and offsets. It does not independently qualify empirical-Bayes estimation or clinical operators.</p><a href="controlled-execution.md">Read the execution contract</a></article></div>
-<div class="flow" aria-label="Controlled workflow"><div><b>1. Specify</b><p>Bind the design, units, contrast, hypothesis family and input identities.</p></div><div><b>2. Execute</b><p>Consume preserved inputs in a bounded, versioned numerical environment.</p></div><div><b>3. Verify</b><p>Check saved roots, signatures, semantic contracts and numerical repeats.</p></div><div><b>4. Review</b><p>Retain failures and apply independent quality and intended-use assessment.</p></div></div></section>
-<section id="limits"><div class="eyebrow">03 / Qualification remains open</div><h2>Successful checks have a defined scope.</h2><div class="columns"><article class="panel"><span class="tag rust">Statistical limits</span><h3>Adverse findings remain visible</h3><ul><li>Unequal variances invalidate the current Gaussian calibration assumptions.</li><li>Native count interval undercoverage has been observed.</li><li>BH/BY calculations do not repair invalid marginal tests.</li><li>Selection-adjusted endpoint intervals and longitudinal inference remain unqualified.</li></ul><a href="requirements-verification.md">Requirements and evidence map</a></article><article class="panel"><span class="tag rust">Clinical and operational limits</span><h3>Code alone cannot close these gates</h3><ul><li>Approved assay and clinical context of use</li><li>Independent analytical and clinical validation</li><li>Administered human identity and quality approval</li><li>Qualified deployment, recovery and protected retention</li></ul><a href="clinical-production-goal.md">Open qualification requirements</a></article></div><p class="section-intro">A built notebook is not an executed Colab run. Protocol activity is not a passing agent benchmark. Hashes detect changes relative to a retained anchor; they do not independently authenticate the operator or prove event completeness.</p><div class="resources"><a href="../notebooks/controlled_verification.ipynb">Controlled Colab notebook</a><a href="../notebooks/colab_runner.ipynb">Agent Colab notebook</a><a href="../README.md">Setup and project overview</a></div></section>
-</main><footer><div class="wrap">DevHarness / DevBench · Local research candidate · No clinical certification or hosted-CI result is asserted.<br><a href="../NOTICE.md">Dataset and reference terms</a> · <a href="../LICENSE">Code license</a></div></footer>
-<script>
-"use strict";
-const rows=[{"n": 24, "scenario": "homoskedastic_null", "criterion": "aic", "conditional": {"rejected": 2030, "replicates": 20000, "rate": 0.1015, "exact_binomial_interval_95": [0.09734785484859367, 0.10576838627186881]}, "selection_mc": {"rejected": 1016, "replicates": 20000, "rate": 0.0508, "exact_binomial_interval_95": [0.047797188146483406, 0.05393422560874102]}, "paired_raw_only": 1014, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 24, "scenario": "homoskedastic_null", "criterion": "bic", "conditional": {"rejected": 1993, "replicates": 20000, "rate": 0.09965, "exact_binomial_interval_95": [0.09553217227943671, 0.10388461596303718]}, "selection_mc": {"rejected": 1011, "replicates": 20000, "rate": 0.05055, "exact_binomial_interval_95": [0.04755432239834591, 0.05367716777854268]}, "paired_raw_only": 982, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 24, "scenario": "homoskedastic_null", "criterion": "gcv", "conditional": {"rejected": 2047, "replicates": 20000, "rate": 0.10235, "exact_binomial_interval_95": [0.09818223238650582, 0.10663375744818]}, "selection_mc": {"rejected": 1015, "replicates": 20000, "rate": 0.05075, "exact_binomial_interval_95": [0.04774861335590538, 0.05388281568138255]}, "paired_raw_only": 1032, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 24, "scenario": "heteroskedastic_null", "criterion": "aic", "conditional": {"rejected": 2896, "replicates": 20000, "rate": 0.1448, "exact_binomial_interval_95": [0.1399499026621862, 0.14975359313157194]}, "selection_mc": {"rejected": 1813, "replicates": 20000, "rate": 0.09065, "exact_binomial_interval_95": [0.0867056304115236, 0.0947138239519938]}, "paired_raw_only": 1083, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 24, "scenario": "heteroskedastic_null", "criterion": "bic", "conditional": {"rejected": 2862, "replicates": 20000, "rate": 0.1431, "exact_binomial_interval_95": [0.13827404507917412, 0.1480299494894217]}, "selection_mc": {"rejected": 1801, "replicates": 20000, "rate": 0.09005, "exact_binomial_interval_95": [0.08611759934773593, 0.09410203304660879]}, "paired_raw_only": 1061, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 24, "scenario": "heteroskedastic_null", "criterion": "gcv", "conditional": {"rejected": 2915, "replicates": 20000, "rate": 0.14575, "exact_binomial_interval_95": [0.1408865116109572, 0.15071670549863705]}, "selection_mc": {"rejected": 1806, "replicates": 20000, "rate": 0.0903, "exact_binomial_interval_95": [0.08636260585555641, 0.0943569523545075]}, "paired_raw_only": 1109, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 24, "scenario": "linear_signal", "criterion": "aic", "conditional": {"rejected": 11356, "replicates": 20000, "rate": 0.5678, "exact_binomial_interval_95": [0.5609000408386312, 0.5746802425282038]}, "selection_mc": {"rejected": 8462, "replicates": 20000, "rate": 0.4231, "exact_binomial_interval_95": [0.41623952252383134, 0.42998284073065846]}, "paired_raw_only": 2894, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 24, "scenario": "linear_signal", "criterion": "bic", "conditional": {"rejected": 11314, "replicates": 20000, "rate": 0.5657, "exact_binomial_interval_95": [0.5587964262215939, 0.5725844678896524]}, "selection_mc": {"rejected": 8478, "replicates": 20000, "rate": 0.4239, "exact_binomial_interval_95": [0.41703768984603207, 0.43078444073417427]}, "paired_raw_only": 2836, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 24, "scenario": "linear_signal", "criterion": "gcv", "conditional": {"rejected": 11416, "replicates": 20000, "rate": 0.5708, "exact_binomial_interval_95": [0.5639054226299509, 0.5776739882358284]}, "selection_mc": {"rejected": 8482, "replicates": 20000, "rate": 0.4241, "exact_binomial_interval_95": [0.41723723454780703, 0.43098483786396263]}, "paired_raw_only": 2934, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 24, "scenario": "oscillatory_signal", "criterion": "aic", "conditional": {"rejected": 9660, "replicates": 20000, "rate": 0.483, "exact_binomial_interval_95": [0.4760523815062468, 0.48995256198717624]}, "selection_mc": {"rejected": 6812, "replicates": 20000, "rate": 0.3406, "exact_binomial_interval_95": [0.3340306084914337, 0.34721575601184224]}, "paired_raw_only": 2848, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 24, "scenario": "oscillatory_signal", "criterion": "bic", "conditional": {"rejected": 9603, "replicates": 20000, "rate": 0.48015, "exact_binomial_interval_95": [0.47320425221348567, 0.48710152004783686]}, "selection_mc": {"rejected": 6809, "replicates": 20000, "rate": 0.34045, "exact_binomial_interval_95": [0.3338813298181943, 0.3470650783401617]}, "paired_raw_only": 2794, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 24, "scenario": "oscillatory_signal", "criterion": "gcv", "conditional": {"rejected": 9694, "replicates": 20000, "rate": 0.4847, "exact_binomial_interval_95": [0.47775137302775444, 0.49165307611400516]}, "selection_mc": {"rejected": 6803, "replicates": 20000, "rate": 0.34015, "exact_binomial_interval_95": [0.33358277466975234, 0.3467637207989958]}, "paired_raw_only": 2891, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "homoskedastic_null", "criterion": "aic", "conditional": {"rejected": 1914, "replicates": 20000, "rate": 0.0957, "exact_binomial_interval_95": [0.0916569358574885, 0.09986102156241126]}, "selection_mc": {"rejected": 1029, "replicates": 20000, "rate": 0.05145, "exact_binomial_interval_95": [0.04842873446553233, 0.054602480724629386]}, "paired_raw_only": 885, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "homoskedastic_null", "criterion": "bic", "conditional": {"rejected": 1661, "replicates": 20000, "rate": 0.08305, "exact_binomial_interval_95": [0.07926129858240001, 0.08696041394388418]}, "selection_mc": {"rejected": 1009, "replicates": 20000, "rate": 0.05045, "exact_binomial_interval_95": [0.04745718185855454, 0.05357433889498136]}, "paired_raw_only": 652, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "homoskedastic_null", "criterion": "gcv", "conditional": {"rejected": 1898, "replicates": 20000, "rate": 0.0949, "exact_binomial_interval_95": [0.09087233272841964, 0.0990458616618587]}, "selection_mc": {"rejected": 1031, "replicates": 20000, "rate": 0.05155, "exact_binomial_interval_95": [0.04852590755234827, 0.054705277105901666]}, "paired_raw_only": 867, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "heteroskedastic_null", "criterion": "aic", "conditional": {"rejected": 2694, "replicates": 20000, "rate": 0.1347, "exact_binomial_interval_95": [0.12999682926679668, 0.13950963138096684]}, "selection_mc": {"rejected": 1752, "replicates": 20000, "rate": 0.0876, "exact_binomial_interval_95": [0.08371702962908874, 0.09160333014205546]}, "paired_raw_only": 942, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "heteroskedastic_null", "criterion": "bic", "conditional": {"rejected": 2429, "replicates": 20000, "rate": 0.12145, "exact_binomial_interval_95": [0.11695321066608395, 0.126057145963198]}, "selection_mc": {"rejected": 1722, "replicates": 20000, "rate": 0.0861, "exact_binomial_interval_95": [0.08224774519010093, 0.09007306025920503]}, "paired_raw_only": 707, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "heteroskedastic_null", "criterion": "gcv", "conditional": {"rejected": 2689, "replicates": 20000, "rate": 0.13445, "exact_binomial_interval_95": [0.12975057538715706, 0.1392559586976805]}, "selection_mc": {"rejected": 1751, "replicates": 20000, "rate": 0.08755, "exact_binomial_interval_95": [0.08366804787753666, 0.09155232674522044]}, "paired_raw_only": 938, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "linear_signal", "criterion": "aic", "conditional": {"rejected": 17578, "replicates": 20000, "rate": 0.8789, "exact_binomial_interval_95": [0.8742984290406687, 0.8833911113023662]}, "selection_mc": {"rejected": 16025, "replicates": 20000, "rate": 0.80125, "exact_binomial_interval_95": [0.7956508027399064, 0.8067614907738109]}, "paired_raw_only": 1553, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "linear_signal", "criterion": "bic", "conditional": {"rejected": 17380, "replicates": 20000, "rate": 0.869, "exact_binomial_interval_95": [0.864245286792468, 0.8736471654252576]}, "selection_mc": {"rejected": 16098, "replicates": 20000, "rate": 0.8049, "exact_binomial_interval_95": [0.7993388166977354, 0.810372410450872]}, "paired_raw_only": 1282, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "linear_signal", "criterion": "gcv", "conditional": {"rejected": 17567, "replicates": 20000, "rate": 0.87835, "exact_binomial_interval_95": [0.8737396737878914, 0.8828500284528971]}, "selection_mc": {"rejected": 16033, "replicates": 20000, "rate": 0.80165, "exact_binomial_interval_95": [0.7960549329515538, 0.807157243710406]}, "paired_raw_only": 1534, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "oscillatory_signal", "criterion": "aic", "conditional": {"rejected": 16553, "replicates": 20000, "rate": 0.82765, "exact_binomial_interval_95": [0.8223431382045316, 0.8328614371353681]}, "selection_mc": {"rejected": 14740, "replicates": 20000, "rate": 0.737, "exact_binomial_interval_95": [0.7308392206007013, 0.743091817103074]}, "paired_raw_only": 1813, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "oscillatory_signal", "criterion": "bic", "conditional": {"rejected": 16197, "replicates": 20000, "rate": 0.80985, "exact_binomial_interval_95": [0.8043415577039819, 0.8152682229330679]}, "selection_mc": {"rejected": 14746, "replicates": 20000, "rate": 0.7373, "exact_binomial_interval_95": [0.7311414165708423, 0.7433895337023633]}, "paired_raw_only": 1451, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 48, "scenario": "oscillatory_signal", "criterion": "gcv", "conditional": {"rejected": 16537, "replicates": 20000, "rate": 0.82685, "exact_binomial_interval_95": [0.8215336587937401, 0.8320711506294484]}, "selection_mc": {"rejected": 14746, "replicates": 20000, "rate": 0.7373, "exact_binomial_interval_95": [0.7311414165708423, 0.7433895337023633]}, "paired_raw_only": 1791, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "homoskedastic_null", "criterion": "aic", "conditional": {"rejected": 1993, "replicates": 20000, "rate": 0.09965, "exact_binomial_interval_95": [0.09553217227943671, 0.10388461596303718]}, "selection_mc": {"rejected": 1045, "replicates": 20000, "rate": 0.05225, "exact_binomial_interval_95": [0.04920620842004444, 0.055424762635629975]}, "paired_raw_only": 948, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "homoskedastic_null", "criterion": "bic", "conditional": {"rejected": 1542, "replicates": 20000, "rate": 0.0771, "exact_binomial_interval_95": [0.07343976957366455, 0.08088371620145687]}, "selection_mc": {"rejected": 1032, "replicates": 20000, "rate": 0.0516, "exact_binomial_interval_95": [0.04857449529831458, 0.05475667409561417]}, "paired_raw_only": 510, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "homoskedastic_null", "criterion": "gcv", "conditional": {"rejected": 1988, "replicates": 20000, "rate": 0.0994, "exact_binomial_interval_95": [0.09528684337537581, 0.10363001882467428]}, "selection_mc": {"rejected": 1044, "replicates": 20000, "rate": 0.0522, "exact_binomial_interval_95": [0.04915761035596223, 0.05537337595011096]}, "paired_raw_only": 944, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "heteroskedastic_null", "criterion": "aic", "conditional": {"rejected": 2770, "replicates": 20000, "rate": 0.1385, "exact_binomial_interval_95": [0.1337405509167431, 0.1433647937935879]}, "selection_mc": {"rejected": 1744, "replicates": 20000, "rate": 0.0872, "exact_binomial_interval_95": [0.08332518637561011, 0.09119529221670315]}, "paired_raw_only": 1026, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "heteroskedastic_null", "criterion": "bic", "conditional": {"rejected": 2273, "replicates": 20000, "rate": 0.11365, "exact_binomial_interval_95": [0.1092827250202468, 0.11812992926926373]}, "selection_mc": {"rejected": 1752, "replicates": 20000, "rate": 0.0876, "exact_binomial_interval_95": [0.08371702962908874, 0.09160333014205546]}, "paired_raw_only": 521, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "heteroskedastic_null", "criterion": "gcv", "conditional": {"rejected": 2762, "replicates": 20000, "rate": 0.1381, "exact_binomial_interval_95": [0.13334641704950606, 0.14295904510146573]}, "selection_mc": {"rejected": 1744, "replicates": 20000, "rate": 0.0872, "exact_binomial_interval_95": [0.08332518637561011, 0.09119529221670315]}, "paired_raw_only": 1018, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "linear_signal", "criterion": "aic", "conditional": {"rejected": 19897, "replicates": 20000, "rate": 0.99485, "exact_binomial_interval_95": [0.9937575525989899, 0.9957945159616607]}, "selection_mc": {"rejected": 19788, "replicates": 20000, "rate": 0.9894, "exact_binomial_interval_95": [0.9878822885981114, 0.990772797283173]}, "paired_raw_only": 109, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "linear_signal", "criterion": "bic", "conditional": {"rejected": 19880, "replicates": 20000, "rate": 0.994, "exact_binomial_interval_95": [0.9928296885841522, 0.9950229730640355]}, "selection_mc": {"rejected": 19816, "replicates": 20000, "rate": 0.9908, "exact_binomial_interval_95": [0.989377984350331, 0.9920764511765703]}, "paired_raw_only": 64, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "linear_signal", "criterion": "gcv", "conditional": {"rejected": 19897, "replicates": 20000, "rate": 0.99485, "exact_binomial_interval_95": [0.9937575525989899, 0.9957945159616607]}, "selection_mc": {"rejected": 19788, "replicates": 20000, "rate": 0.9894, "exact_binomial_interval_95": [0.9878822885981114, 0.990772797283173]}, "paired_raw_only": 109, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "oscillatory_signal", "criterion": "aic", "conditional": {"rejected": 19810, "replicates": 20000, "rate": 0.9905, "exact_binomial_interval_95": [0.9890568797512499, 0.9917976995857318]}, "selection_mc": {"rejected": 19584, "replicates": 20000, "rate": 0.9792, "exact_binomial_interval_95": [0.9771260201323172, 0.9811329850254228]}, "paired_raw_only": 226, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "oscillatory_signal", "criterion": "bic", "conditional": {"rejected": 19744, "replicates": 20000, "rate": 0.9872, "exact_binomial_interval_95": [0.9855442572373406, 0.9887117673665845]}, "selection_mc": {"rejected": 19615, "replicates": 20000, "rate": 0.98075, "exact_binomial_interval_95": [0.9787493267729427, 0.9826091334746235]}, "paired_raw_only": 129, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}, {"n": 96, "scenario": "oscillatory_signal", "criterion": "gcv", "conditional": {"rejected": 19807, "replicates": 20000, "rate": 0.99035, "exact_binomial_interval_95": [0.9888964557623453, 0.9916581944958937]}, "selection_mc": {"rejected": 19584, "replicates": 20000, "rate": 0.9792, "exact_binomial_interval_95": [0.9771260201323172, 0.9811329850254228]}, "paired_raw_only": 223, "paired_mc_only": 0, "calibration_pool_shared": true, "binomial_interval_scope": "Evaluation uncertainty conditional on this fixed simulated reference pool; not total Monte Carlo uncertainty"}];
-const scenario=document.getElementById("scenario"),criterion=document.getElementById("criterion");
-const percent=value=>(100*value).toFixed(3)+"%";
-function render(){const selected=rows.filter(row=>row.scenario===scenario.value&&(criterion.value==="all"||row.criterion===criterion.value));const body=document.getElementById("result-rows");body.replaceChildren();for(const row of selected){const tr=document.createElement("tr");const cells=[row.n,row.criterion.toUpperCase(),percent(row.conditional.rate),percent(row.selection_mc.rate),row.selection_mc.exact_binomial_interval_95.map(percent).join(" – "),row.selection_mc.replicates.toLocaleString()];for(const value of cells){const td=document.createElement("td");td.className="number";td.textContent=value;tr.append(td)}body.append(tr)}document.getElementById("table-caption").textContent=scenario.selectedOptions[0].textContent+" · saved prototype results";document.getElementById("result-count").textContent=selected.length+" rows shown. Signal scenarios report rejection frequency, not null error rates. All 36 rows are retained in the CSV."}
-scenario.addEventListener("change",render);criterion.addEventListener("change",render);render();
-</script></body></html>
+  <a class="skip-link" href="#main">Skip to investigation</a>
+  <div class="studio-app">
+    <aside class="studio-rail" aria-label="Studio and project">
+      <div>
+        <strong class="brand">DevHarness</strong>
+        <span class="eyebrow">Companion Research Studio</span>
+      </div>
+      <div class="s-card project">
+        <span class="eyebrow">Demo investigation</span>
+        <strong>Single-cell composition</strong>
+        <small><span class="mono-chip">cells_demo.h5ad</span></small>
+      </div>
+      <div class="studio-rail-footer">
+        <label class="setting" for="theme-select">Theme
+          <select id="theme-select">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+        <a href="https://github.com/Vajraaaang/bio-agent-harness">View source on GitHub</a>
+      </div>
+    </aside>
+
+    <main class="studio-main" id="main" tabindex="-1">
+      <header class="studio-header">
+        <div class="header-wrap">
+          <div class="header-info">
+            <div class="row">
+              <span class="s-pill s-pill-teal"><span class="s-dot" aria-hidden="true"></span>Public demo</span>
+              <span class="mono-chip">cells_demo.h5ad</span>
+            </div>
+            <h1>State A composition in treated donors</h1>
+          </div>
+          <nav class="s-tablist" role="tablist" aria-label="Investigation views" id="tablist">
+            <span class="tab-indicator" aria-hidden="true"></span>
+            <button id="tab-overview" class="s-tab" type="button" role="tab" aria-controls="overview" aria-selected="true">Overview</button>
+            <button id="tab-findings" class="s-tab" type="button" role="tab" aria-controls="findings" aria-selected="false" tabindex="-1">Findings</button>
+            <button id="tab-workflows" class="s-tab" type="button" role="tab" aria-controls="workflows" aria-selected="false" tabindex="-1">Workflows</button>
+            <button id="tab-figures" class="s-tab" type="button" role="tab" aria-controls="figures" aria-selected="false" tabindex="-1">Figures</button>
+            <button id="tab-code" class="s-tab" type="button" role="tab" aria-controls="code" aria-selected="false" tabindex="-1">Code</button>
+            <button id="tab-evidence" class="s-tab" type="button" role="tab" aria-controls="evidence" aria-selected="false" tabindex="-1">Evidence</button>
+          </nav>
+        </div>
+      </header>
+
+      <div class="studio-stage">
+        <section id="overview" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
+          <div class="panel-intro">
+            <h2>Investigation overview</h2>
+            <p>A public walkthrough of a single-cell composition investigation. The values below come from the supplied demo summary. This page contains no underlying expression data.</p>
+          </div>
+          <div class="metric-grid">
+            <article class="s-card s-card-interactive panel-card"><h3>State A log-fold change</h3><strong class="metric">+1.636</strong></article>
+            <article class="s-card s-card-interactive panel-card"><h3>Relative ratio change</h3><strong class="metric">5.14×</strong></article>
+            <article class="s-card s-card-interactive panel-card"><h3>Posterior inclusion probability</h3><strong class="metric">1.000</strong></article>
+          </div>
+          <article class="s-card s-card-interactive panel-card">
+            <h2>Research question</h2>
+            <p>What change in state A abundance does the donor-level model report for treated versus control donors, relative to the model’s reference cell state?</p>
+            <p class="note">Cells are measured observations. Donors are the independent biological units.</p>
+          </article>
+        </section>
+
+        <section id="findings" role="tabpanel" aria-labelledby="tab-findings" tabindex="0" hidden>
+          <div class="panel-intro">
+            <h2>Findings</h2>
+            <p>The supplied scCODA summary reports a higher state A ratio relative to the reference in treated donors.</p>
+          </div>
+          <article class="s-card s-card-interactive panel-card">
+            <h2>Reported composition effect</h2>
+            <div class="table-wrapper">
+              <table>
+                <caption>Reported values for the demo contrast</caption>
+                <thead><tr><th scope="col">Cell state</th><th scope="col">Contrast</th><th scope="col">Log-fold change</th><th scope="col">Ratio change</th><th scope="col">PIP</th></tr></thead>
+                <tbody><tr><th scope="row">State A</th><td>Treated vs control</td><td>+1.636</td><td>5.14×</td><td>1.000</td></tr></tbody>
+              </table>
+            </div>
+            <p class="note">The reported ratio is reference-dependent. PIP is the posterior inclusion probability under the specified model and prior. Absolute cell abundance and causal effects remain unresolved.</p>
+          </article>
+        </section>
+
+        <section id="workflows" role="tabpanel" aria-labelledby="tab-workflows" tabindex="0" hidden>
+          <div class="panel-intro">
+            <h2>Workflow and checkpoints</h2>
+            <p>These stages describe how the local Workbench separates data checks, analysis decisions, and evidence review.</p>
+          </div>
+          <article class="s-card s-card-interactive panel-card">
+            <h2>Donor-aware composition</h2>
+            <ol class="workflow-steps">
+              <li><strong>Intake</strong> Identify count measurements, donor labels, and treatment groups.</li>
+              <li><strong>Quality control</strong> Review capture-level cell counts, filtering, and doublet flags.</li>
+              <li><strong>Plan review</strong> Record the contrast and reference, then check whether the donor design supports the comparison.</li>
+              <li><strong>Model fit</strong> Use donor-by-state counts to estimate composition changes relative to the reference.</li>
+              <li><strong>Evidence review</strong> Inspect diagnostics and retain outcomes, retries, and unresolved assumptions.</li>
+            </ol>
+            <div><button class="s-btn" type="button" data-receipt="workflow">Inspect workflow receipt example</button></div>
+          </article>
+        </section>
+
+        <section id="figures" role="tabpanel" aria-labelledby="tab-figures" tabindex="0" hidden>
+          <div class="panel-intro">
+            <h2>Interactive figures</h2>
+            <p>Hover or focus a mark to see its value. Both figures use illustrative data.</p>
+          </div>
+          <div class="figure-grid">
+            <figure class="s-card s-card-interactive panel-card">
+              <figcaption><h2>scCODA composition view</h2><p class="note">Illustrative fractions by condition. The reported model effect is in Findings.</p></figcaption>
+              <svg class="chart" id="composition-chart" viewBox="0 0 420 196" role="group" aria-labelledby="composition-title">
+                <title id="composition-title">Illustrative stacked fractions for control and treated donors</title>
+              </svg>
+              <ul class="legend" id="composition-legend" aria-label="Cell states"></ul>
+            </figure>
+            <figure class="s-card s-card-interactive panel-card">
+              <figcaption><h2>Volcano plot</h2><p class="note">Illustrative differential-expression data from a separate example. Values are generated for this demo.</p></figcaption>
+              <svg class="chart" id="volcano-chart" viewBox="0 0 420 255" role="group" aria-labelledby="volcano-title">
+                <title id="volcano-title">Illustrative gene effects and adjusted p-values</title>
+              </svg>
+            </figure>
+          </div>
+        </section>
+
+        <section id="code" role="tabpanel" aria-labelledby="tab-code" tabindex="0" hidden>
+          <div class="panel-intro">
+            <h2>Analysis configuration</h2>
+            <p>Example of the inputs recorded when reviewing a donor-aware composition plan.</p>
+          </div>
+          <article class="s-card s-card-interactive panel-card">
+            <h2>Illustrative plan</h2>
+            <pre><code>{
+  "dataset": "cells_demo.h5ad",
+  "analysis": "scCODA composition",
+  "experimental_unit": "donor",
+  "contrast": "treated vs control",
+  "reference": "reference cell state",
+  "scope": "public demo"
+}</code></pre>
+            <p class="note">A reproducible fit also requires the reviewed inputs, model parameters, and execution environment.</p>
+          </article>
+        </section>
+
+        <section id="evidence" role="tabpanel" aria-labelledby="tab-evidence" tabindex="0" hidden>
+          <div class="panel-intro">
+            <h2>Research evidence</h2>
+            <p>The installed Workbench records identities for plans, input files, and outputs. The cards here show the types of evidence a reader can inspect.</p>
+          </div>
+          <article class="s-card s-card-interactive panel-card">
+            <h2>Receipt examples</h2>
+            <div class="row">
+              <button class="s-btn" type="button" data-receipt="model">Inspect scCODA receipt example</button>
+              <button class="s-btn" type="button" data-receipt="package">Inspect package manifest example</button>
+            </div>
+            <p class="note">Checking a package against an independently retained SHA-256 root can detect changes. This preview does not include an authenticated receipt or the original research package.</p>
+          </article>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="tooltip" class="chart-tooltip" aria-hidden="true" hidden></div>
+
+  <dialog id="receipt-drawer" class="s-drawer" aria-labelledby="drawer-title" aria-describedby="drawer-description">
+    <div class="drawer-body">
+      <div class="drawer-heading">
+        <span class="eyebrow">Illustrative receipt</span>
+        <form method="dialog"><button class="s-btn" type="submit" autofocus>Close</button></form>
+      </div>
+      <h2 id="drawer-title">Receipt details</h2>
+      <p id="drawer-description"></p>
+      <p class="note" id="drawer-fields"></p>
+    </div>
+  </dialog>
+  <script>
+    "use strict";
+
+    const tabList = document.getElementById("tablist");
+    const tabs = Array.from(tabList.querySelectorAll('[role="tab"]'));
+    const panels = tabs.map(tab => document.getElementById(tab.getAttribute("aria-controls")));
+    const tooltip = document.getElementById("tooltip");
+
+    function placeIndicator() {
+      const tab = tabs.find(item => item.getAttribute("aria-selected") === "true");
+      tabList.style.setProperty("--tab-start", tab.offsetLeft + "px");
+      tabList.style.setProperty("--tab-width", tab.offsetWidth + "px");
+    }
+
+    function selectTab(activeTab, moveFocus = false) {
+      tabs.forEach((tab, index) => {
+        const active = tab === activeTab;
+        tab.setAttribute("aria-selected", String(active));
+        tab.tabIndex = active ? 0 : -1;
+        panels[index].hidden = !active;
+      });
+      tooltip.hidden = true;
+      placeIndicator();
+      if (moveFocus) activeTab.focus();
+    }
+
+    tabList.addEventListener("click", event => {
+      const tab = event.target.closest('[role="tab"]');
+      if (tab) selectTab(tab);
+    });
+
+    tabList.addEventListener("keydown", event => {
+      const current = tabs.indexOf(event.target);
+      if (current === -1) return;
+      let next;
+      switch (event.key) {
+        case "ArrowLeft": next = (current + tabs.length - 1) % tabs.length; break;
+        case "ArrowRight": next = (current + 1) % tabs.length; break;
+        case "Home": next = 0; break;
+        case "End": next = tabs.length - 1; break;
+        default: return;
+      }
+      event.preventDefault();
+      selectTab(tabs[next], true);
+    });
+
+    placeIndicator();
+    if (typeof ResizeObserver === "function") new ResizeObserver(placeIndicator).observe(tabList);
+    window.addEventListener("resize", placeIndicator);
+
+    const themeSelect = document.getElementById("theme-select");
+    themeSelect.value = document.documentElement.dataset.theme || "system";
+    themeSelect.addEventListener("change", () => {
+      const theme = themeSelect.value;
+      if (theme === "system") delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = theme;
+      try {
+        if (theme === "system") localStorage.removeItem("devharness-studio-theme");
+        else localStorage.setItem("devharness-studio-theme", theme);
+      } catch {}
+    });
+
+    const receiptDrawer = document.getElementById("receipt-drawer");
+    const receiptExamples = {
+      workflow: {
+        title: "Workflow receipt",
+        description: "The local workflow preserves the admitted plan, runtime result, and diagnostics for each attempted step.",
+        fields: "Example fields · plan identity, stage, outcome, diagnostic summary"
+      },
+      model: {
+        title: "scCODA execution receipt",
+        description: "A model receipt links a fitted result to its approved contrast, donor-level inputs, and execution environment.",
+        fields: "Example fields · input hash, plan hash, engine identity, output hash"
+      },
+      package: {
+        title: "Research package manifest",
+        description: "A package manifest lists member digests. An independently retained root gives a reader a reference for checking integrity.",
+        fields: "Example fields · manifest version, member hashes, execution root"
+      }
+    };
+
+    document.querySelectorAll("[data-receipt]").forEach(button => {
+      button.addEventListener("click", () => {
+        const example = receiptExamples[button.dataset.receipt];
+        document.getElementById("drawer-title").textContent = example.title;
+        document.getElementById("drawer-description").textContent = example.description;
+        document.getElementById("drawer-fields").textContent = example.fields;
+        receiptDrawer.showModal();
+      });
+    });
+
+    // The plots illustrate different views. Neither array contains retained run data.
+    const composition = [
+      { label: "Control", fractions: [18, 23, 48, 11] },
+      { label: "Treated", fractions: [42, 19, 25, 14] }
+    ];
+    const cellStates = [
+      { label: "State A", color: "#0f766e" },
+      { label: "State B", color: "#5975a6" },
+      { label: "Reference", color: "#697586" },
+      { label: "Other", color: "#b88749" }
+    ];
+    const volcanoPoints = [
+      [-2.65, 4.6], [-2.31, 3.8], [-2.03, 2.4], [-1.74, 3.1], [-1.52, 1.6],
+      [-1.25, 1.1], [-1.12, 2.0], [-0.98, 0.6], [-0.75, 1.4], [-0.54, 0.8],
+      [-0.40, 1.1], [-0.18, 0.6], [0.07, 0.3], [0.30, 1.0], [0.45, 0.5],
+      [0.65, 1.25], [0.91, 0.9], [1.07, 1.9], [1.24, 1.4], [1.5, 2.6],
+      [1.72, 3.0], [1.97, 4.4], [2.23, 3.7], [2.47, 5.0], [2.73, 5.6]
+    ];
+
+    function svgElement(parent, name, attributes, content) {
+      const node = document.createElementNS("http://www.w3.org/2000/svg", name);
+      for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
+      if (content !== undefined) node.textContent = content;
+      parent.append(node);
+      return node;
+    }
+
+    function showTooltip(mark, position) {
+      tooltip.textContent = mark.getAttribute("aria-label");
+      tooltip.hidden = false;
+      const bounds = mark.getBoundingClientRect();
+      const x = position ? position.clientX : bounds.left + bounds.width / 2;
+      const y = position ? position.clientY : bounds.top;
+      tooltip.style.left = Math.max(8, Math.min(x + 12, window.innerWidth - tooltip.offsetWidth - 8)) + "px";
+      tooltip.style.top = Math.max(8, Math.min(y + 12, window.innerHeight - tooltip.offsetHeight - 8)) + "px";
+    }
+
+    function chartMark(chart, tag, attributes, label) {
+      const mark = svgElement(chart, tag, { ...attributes, class: "chart-mark", tabindex: "0", role: "img", "aria-label": label });
+      mark.addEventListener("pointerenter", event => showTooltip(mark, event));
+      mark.addEventListener("pointermove", event => showTooltip(mark, event));
+      mark.addEventListener("pointerleave", () => { if (document.activeElement !== mark) tooltip.hidden = true; });
+      mark.addEventListener("focus", () => showTooltip(mark));
+      mark.addEventListener("blur", () => { tooltip.hidden = true; });
+      mark.addEventListener("click", () => { mark.focus(); showTooltip(mark); });
+      return mark;
+    }
+
+    function drawComposition() {
+      const chart = document.getElementById("composition-chart");
+      const legend = document.getElementById("composition-legend");
+      const barStart = 69;
+      const barWidth = 324;
+      for (const tick of [0, 25, 50, 75, 100]) {
+        const x = barStart + tick * barWidth / 100;
+        svgElement(chart, "line", { x1: x, x2: x, y1: 31, y2: 143, class: "chart-gridline" });
+        svgElement(chart, "text", { x, y: 167, "text-anchor": "middle" }, tick + "%");
+      }
+      composition.forEach(({ label, fractions }, row) => {
+        const y = 48 + row * 53;
+        let x = barStart;
+        svgElement(chart, "text", { x: 0, y: y + 17 }, label);
+        fractions.forEach((fraction, index) => {
+          const cellState = cellStates[index];
+          const width = fraction * barWidth / 100;
+          chartMark(chart, "rect", { x, y, width, height: 27, fill: cellState.color }, label + " · " + cellState.label + " · " + fraction + "%");
+          x += width;
+        });
+      });
+      cellStates.forEach(({ label, color }) => {
+        const item = document.createElement("li");
+        const swatch = document.createElement("span");
+        swatch.className = "swatch";
+        swatch.style.background = color;
+        swatch.setAttribute("aria-hidden", "true");
+        item.append(swatch, label);
+        legend.append(item);
+      });
+    }
+
+    function drawVolcano() {
+      const chart = document.getElementById("volcano-chart");
+      const xPosition = value => 51 + (value + 3) * 57;
+      const yPosition = value => 203 - value * 29;
+      for (const tick of [0, 2, 4, 6]) {
+        const y = yPosition(tick);
+        svgElement(chart, "line", { x1: 51, x2: 393, y1: y, y2: y, class: "chart-gridline" });
+        svgElement(chart, "text", { x: 36, y: y + 4, "text-anchor": "end" }, tick);
+      }
+      for (const tick of [-3, -2, -1, 0, 1, 2, 3]) {
+        const x = xPosition(tick);
+        svgElement(chart, "text", { x, y: 220, "text-anchor": "middle" }, tick);
+      }
+      svgElement(chart, "line", { x1: xPosition(0), x2: xPosition(0), y1: 29, y2: 203, class: "chart-gridline", "stroke-dasharray": "3 3" });
+      svgElement(chart, "text", { x: 222, y: 246, "text-anchor": "middle" }, "log₂ fold change");
+      svgElement(chart, "text", { x: 14, y: 116, "text-anchor": "middle", transform: "rotate(-90 14 116)" }, "−log₁₀ adjusted p-value");
+      volcanoPoints.forEach(([effect, score], index) => {
+        const gene = "Demo gene " + (index + 1);
+        const color = score >= 2 && Math.abs(effect) >= 1 ? (effect < 0 ? "#5975a6" : "#0f766e") : "#697586";
+        chartMark(chart, "circle", {
+          cx: xPosition(effect), cy: yPosition(score), r: 5, fill: color
+        }, gene + " · log₂ fold change " + effect.toFixed(2) + " · adjusted p-value " + (10 ** -score).toPrecision(2));
+      });
+    }
+
+    window.addEventListener("scroll", () => { tooltip.hidden = true; }, { passive: true });
+    document.addEventListener("keydown", event => { if (event.key === "Escape") tooltip.hidden = true; });
+    drawComposition();
+    drawVolcano();
+  </script>
+</body>
+</html>
