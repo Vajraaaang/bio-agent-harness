@@ -389,6 +389,7 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             (_EXPRESSION, ("perturbation_assignments",), ("control_assignments",)),
             align="observations",
             min_units_per_group=2,
+            curated_operation="perturbation_response",
         ),
         "allele_specific_expression": QuestionContract(
             12,

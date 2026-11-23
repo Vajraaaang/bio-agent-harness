@@ -142,6 +142,7 @@ _PROBES = (
         ("gene_counts", "perturbation_assignments", "control_assignments"),
         "control_assignments",
         (("control_assignments",),),
+        "perturbation_response",
     ),
     _Probe(
         12,
