@@ -106,7 +106,11 @@ production callers are responsible for the integrity of their clock and registry
 """
     # Native and Python plans have distinct versioned semantics. Never accept
     # an arbitrary object merely because it has matching signature attributes.
-    if isinstance(plan, NativeAnalysisPlan) or (type(plan) is dict and
+    from .erql_contracts import ERQLPlan, parse_erql_plan
+
+    if isinstance(plan, ERQLPlan):
+        analysis_plan = parse_erql_plan(plan)
+    elif isinstance(plan, NativeAnalysisPlan) or (type(plan) is dict and
             plan.get("schema_version") in NATIVE_PLAN_MODELS):
         analysis_plan = parse_native_plan_bytes(plan.canonical_bytes() if isinstance(plan, NativeAnalysisPlan) else canonical_json_bytes(plan))
     else:

@@ -13,7 +13,7 @@ import shutil
 import subprocess
 
 from devbench.adapters import CodeActionAdapter
-from devbench.runner import CodeActionRunner
+from devbench.evaluation.runner import CodeActionRunner
 from devbench.tasks import curated_tasks
 from devbench_engine.runner import EvalRunner
 from devharness_core.provenance import hash_artifact

@@ -216,18 +216,31 @@ def test_cli_nonzero_exit_reports_failure_even_with_artifact(tmp_path):
     assert adapter.metadata["returncode"] == 7
 
 
-def test_cli_timeout_terminates_descendants(tmp_path):
+def test_cli_timeout_terminates_descendants(tmp_path, monkeypatch):
     executable, work = _fake_cli(tmp_path, """
 child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-(work / "child.pid").write_text(str(child.pid))
+pid_file = work / "child.pid.tmp"
+pid_file.write_text(str(child.pid))
+pid_file.rename(work / "child.pid")
 time.sleep(60)
 """)
-    adapter = _adapters().CodexCLIAdapter(executable=executable, timeout_sec=0.5)
-    started = time.monotonic()
+    adapters = _adapters()
+    pid_file = work / "child.pid"
+    setup_deadline = time.monotonic() + 15
+
+    def monotonic():
+        # Start the timeout only after the fixture has published the child's PID.
+        return 1.0 if pid_file.exists() else 0.0
+
+    def poll(delay):
+        assert time.monotonic() < setup_deadline, "fake CLI did not start its child"
+        time.sleep(delay)
+
+    monkeypatch.setattr(adapters, "time", types.SimpleNamespace(monotonic=monotonic, sleep=poll))
+    adapter = adapters.CodexCLIAdapter(executable=executable, timeout_sec=0.5)
     with pytest.raises(HarnessResourceInterrupt, match="timed out"):
         adapter.execute("analyze", work)
-    assert time.monotonic() - started < 5
-    pid = int((work / "child.pid").read_text())
+    pid = int(pid_file.read_text())
     assert not psutil.pid_exists(pid) or psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
 
 

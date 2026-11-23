@@ -6,8 +6,6 @@ qualified review nor biological agreement. No custom numeric executor is used.
 from copy import deepcopy
 import hashlib
 import json
-from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -31,11 +29,8 @@ ACTOR = "hand-authored-engineering-fixture"
 
 
 @pytest.fixture
-def proof_workspace():
-    root = Path(__file__).resolve().parents[1] / "reports" / "local-rna-analyst-2026-10-28" / "increment-02"
-    root.mkdir(parents=True, exist_ok=True)
-    # Retain successes and failures; do not replace protected storage with TMPDIR.
-    return Path(tempfile.mkdtemp(prefix="proof-declared-bulk-", dir=root))
+def proof_workspace(workspace_tmp_path):
+    return workspace_tmp_path
 
 
 def _inputs(root, *, continuous, all_failed=False):

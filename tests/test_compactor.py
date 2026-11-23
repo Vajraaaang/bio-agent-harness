@@ -49,6 +49,20 @@ def test_out_of_core_matches_dataframe_and_aligns_samples(tmp_path):
     assert first.selected_genes == second.selected_genes
 
 
+def test_count_hvg_selection_ignores_multiplicative_library_depth():
+    counts, metadata = dataset()
+    marker = np.tile([5, 20, 70], 4)
+    depth = 2 ** np.arange(len(marker))
+    composition = np.vstack([np.full(len(marker), 500), marker, 100 - marker])
+    base = pd.DataFrame(composition, index=["depth_only", "marker", "complement"], columns=counts.columns)
+    scaled = base * depth
+    first = TemporalStateCompactor(base, metadata, "embryonic_age", top_n=2)
+    second = TemporalStateCompactor(scaled, metadata, "embryonic_age", top_n=2, data_type="counts")
+    assert first.selected_genes == second.selected_genes
+    assert set(second.selected_genes) == {"marker", "complement"}
+    np.testing.assert_allclose(first.embedding, second.embedding)
+
+
 def test_single_stage_zero_matrix_has_finite_summary():
     counts = pd.DataFrame([[0, 0]], index=["zero"], columns=["a", "b"])
     metadata = pd.DataFrame({"embryonic_age": ["E8.5", "E8.5"]}, index=["a", "b"])

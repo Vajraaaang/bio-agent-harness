@@ -126,11 +126,13 @@ def test_multi_submit_requests_planning_to_review_without_model_or_execution_gra
     run_js(MULTI+r"""
 const f=await multiFixture();f.controller.setSources([source,second]);f.options.questionInput.value='Prepare a comparison plan';await f.controller.submit();
 let request=f.calls.find(call=>call.path==='/api/investigations'&&call.body);
-assert.deepEqual(request.body.scientific_context,{auto_advance:true});
-assert.ok(!('allow_model_execution' in request.body.scientific_context));assert.ok(!('allow_data_execution' in request.body));
-assert.ok(!('auto_synthesis' in request.body.scientific_context));
+assert.equal(request.body.scientific_context,undefined);
+assert.ok(!('allow_model_execution' in request.body));assert.ok(!('allow_data_execution' in request.body));
+assert.ok(!('auto_synthesis' in request.body));
 const explicit=await multiFixture();explicit.options.scientificContextProvider=()=>({auto_advance:false});explicit.controller.setSources([source,second]);explicit.options.questionInput.value='Keep manual planning';await explicit.controller.submit();
 request=explicit.calls.find(call=>call.path==='/api/investigations'&&call.body);assert.deepEqual(request.body.scientific_context,{auto_advance:false});
+explicit.controller.newThread();explicit.options.scientificContextProvider=()=>({auto_advance:true,allow_model_execution:false,data_classification:'synthetic'});explicit.options.questionInput.value='Use my explicit planning preference';await explicit.controller.submit();
+request=explicit.calls.find(call=>call.body?.question==='Use my explicit planning preference');assert.deepEqual(request.body.scientific_context,{auto_advance:true,allow_model_execution:false,data_classification:'synthetic'});
 """)
 
 
@@ -182,7 +184,7 @@ const sources=[{source:a,filename:'cells.h5ad',observed:{file_type:'h5ad',cells:
 const investigation={id:'i',revision:1,status:'awaiting_information',source:a,sources:[a,b],source_profiles:sources,profile:{filename:'2 datasets',observed:{file_type:'input_set',sources},unknowns:['Cross-file correspondence is not yet declared.']},turns:[]};
 const before=JSON.stringify(investigation),container=new Node('div');api.renderInvestigation(container,{investigation,config:{}});const nodes=walk(container);
 assert.ok(nodes.some(node=>node.textContent==='2 attached datasets · inspected separately'));
-assert.ok(nodes.some(node=>node.textContent==='80 cells × 60 genes'));assert.ok(nodes.some(node=>node.textContent==='Csv file'));
+assert.ok(nodes.some(node=>node.textContent==='80 observations × 60 features'));assert.ok(nodes.some(node=>node.textContent==='Csv file'));
 assert.equal(nodes.filter(node=>node.className==='wc-source-audit').length,2);assert.equal(JSON.stringify(investigation),before);
 assert.equal(investigation.profile.observed.cells,undefined);assert.equal(investigation.profile.observed.genes,undefined);
 """)

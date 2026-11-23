@@ -3,7 +3,6 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -48,10 +47,8 @@ def protocol():
 
 
 @pytest.fixture
-def storage():
-    base = Path(__file__).resolve().parents[1] / "reports/rna-investigation-evaluation/workspaces"
-    base.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix="fixture-", dir=base))
+def storage(workspace_tmp_path):
+    return workspace_tmp_path
 
 
 def cases(storage):
@@ -107,7 +104,9 @@ def test_counterbalanced_order_preserves_identical_case_replicates_and_budget_le
     data, spec = cases(storage), protocol()
     spec["replicates"] = 2
     spec["storage_limits"]["aggregate_json_bytes"] = 64000000
-    second = copy.deepcopy(spec["budgets"][0]); second["level"] = "large"; second["soft_token_target"] *= 2
+    second = copy.deepcopy(spec["budgets"][0])
+    second["level"] = "large"
+    second["soft_token_target"] *= 2
     spec["budgets"].append(second)
     first = api().counterbalanced_schedule(spec, data)
     assert first == api().counterbalanced_schedule(spec, list(reversed(data)))
@@ -169,7 +168,8 @@ def test_missing_usage_stops_further_dispatch_and_is_not_zero(storage):
 
 
 def test_native_strict_cap_blocks_before_any_participant_call(storage):
-    spec = protocol(); spec["scope"] = "native_research"
+    spec = protocol()
+    spec["scope"] = "native_research"
     spec["model"]["backbone"] = "current-authorized-backbone"
     spec["budgets"][0].update(kind="hard_total_tokens", max_total_tokens=8000, soft_token_target=None)
     called = []
@@ -223,7 +223,8 @@ def test_attempt_drift_cannot_be_scored(storage):
     prepared = prepare(storage)
     receipt = api().run_offline_campaign(prepared, api().OfflineParticipant())
     path = Path(api().verified_attempts(prepared, receipt)[0]["attempt_path"])
-    path.chmod(0o600); path.write_text("{}")
+    path.chmod(0o600)
+    path.write_text("{}")
     with pytest.raises(ValueError, match="changed|integrity|hash"):
         api().evaluate_campaign(prepared, receipt)
 
@@ -322,7 +323,8 @@ def test_malformed_answer_is_a_scored_failure_not_a_missing_denominator(storage)
 
 
 def test_adoption_gate_checks_predeclared_benefit_risk_cost_and_precision():
-    spec = protocol(); spec["scope"] = "native_research"
+    spec = protocol()
+    spec["scope"] = "native_research"
     effects = [{"arm": "conditional_1", "budget_level": "small", "stage": "pre_fit_methods", "paired_cases": 8,
                 "independent_families": 8, "effect": .1, "interval": [.06, .14]}]
     attempts = [{"arm": arm, "split": "locked_test", "stage": "pre_fit_methods", "stratum": "balanced", "budget_level": "small",
@@ -402,7 +404,8 @@ def test_generator_mechanism_omission_cannot_bypass_split_grouping(storage):
 
 
 def test_serialized_native_capability_flags_cannot_authorize_setup(storage):
-    spec = protocol(); spec["scope"] = "native_research"
+    spec = protocol()
+    spec["scope"] = "native_research"
     calls = []
     with pytest.raises(PermissionError, match="audited.*backend|native.*authority|serialized"):
         api().prepare_campaign(storage / "campaign", protocol=spec, cases=cases(storage),
@@ -415,7 +418,8 @@ def test_serialized_native_capability_flags_cannot_authorize_setup(storage):
 def test_current_audited_native_authority_blocks_before_factory_or_output(storage):
     from tests.test_rna_investigation_backend import native_backend
     backend = native_backend(storage / "native")
-    spec = protocol(); spec["scope"] = "native_research"
+    spec = protocol()
+    spec["scope"] = "native_research"
     calls = []
     with pytest.raises(PermissionError, match="blocked_backend_capability"):
         api().prepare_campaign(storage / "campaign", protocol=spec, cases=cases(storage),
@@ -451,7 +455,8 @@ def test_scoring_ignores_mutated_in_memory_policy_and_keeps_disk_freeze(storage)
 
 def test_postfit_facts_are_derived_from_verified_matching_episode_outputs(storage):
     from tests.test_analysis_episodes import create, run_contrast
-    source = storage / "postfit-source"; source.mkdir()
+    source = storage / "postfit-source"
+    source.mkdir()
     prior, _ = create(source)
     run_contrast(prior)
     prior.step({"kind": "finish"})
@@ -613,7 +618,8 @@ def test_integer_accounting_totals_retain_components_but_reject_unsupported_sum(
 
 @pytest.mark.parametrize("cost", [1e308, 10 ** 308, 10 ** 400, None, []])
 def test_standalone_adoption_defers_unsupported_currency_totals(cost):
-    spec = protocol(); spec["scope"] = "native_research"
+    spec = protocol()
+    spec["scope"] = "native_research"
     effects = [{"arm": "conditional_1", "budget_level": "small", "stage": "pre_fit_methods", "paired_cases": 8,
                 "independent_families": 8, "effect": .1, "interval": [.06, .14]}]
     attempts = [{"arm": arm, "split": "locked_test", "stage": "pre_fit_methods", "stratum": "balanced", "budget_level": "small",
@@ -650,7 +656,8 @@ def test_postseal_scoring_preserves_exact_unbounded_token_counts(storage):
 
 @pytest.mark.parametrize(("delta", "exceeded"), [(-1, False), (0, False), (1, True)])
 def test_adoption_compares_exact_integer_token_ratio_boundary(delta, exceeded):
-    spec = protocol(); spec["scope"] = "native_research"
+    spec = protocol()
+    spec["scope"] = "native_research"
     numerator, denominator = spec["decision_rule"]["max_token_ratio"].as_integer_ratio()
     baseline, candidate = denominator * 10 ** 400, numerator * 10 ** 400 + delta
     effects = [{"arm": "conditional_1", "budget_level": "small", "stage": "pre_fit_methods", "paired_cases": 8,
@@ -666,7 +673,8 @@ def test_adoption_compares_exact_integer_token_ratio_boundary(delta, exceeded):
 
 @pytest.mark.parametrize("ratio", [None, [], True, "1.1", -1, 10 ** 400])
 def test_adoption_defers_an_unsupported_token_ratio(ratio):
-    spec = protocol(); spec["scope"] = "native_research"
+    spec = protocol()
+    spec["scope"] = "native_research"
     spec["decision_rule"]["max_token_ratio"] = ratio
     effects = [{"arm": "conditional_1", "budget_level": "small", "stage": "pre_fit_methods", "paired_cases": 8,
                 "independent_families": 8, "effect": .1, "interval": [.06, .14]}]
@@ -772,6 +780,7 @@ def test_readonly_replay_rechecks_the_preserved_protected_reference(storage):
     result = api().evaluate_campaign(prepared, receipt)
     first = next(iter(prepared.manifest["plans"].values()))
     reference = Path(first["plan_path"]).parent / "reference.json"
-    reference.chmod(0o600); reference.write_text("{}")
+    reference.chmod(0o600)
+    reference.write_text("{}")
     with pytest.raises(ValueError, match="reference.*changed|changed.*reference"):
         api().replay_campaign_scores(prepared.root, result["score_seal_sha256"])

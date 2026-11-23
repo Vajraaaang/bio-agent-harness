@@ -268,8 +268,14 @@ version_check <- function(engine) {
   for (name in c(selected, "limma", "BiocParallel", "jsonlite")) {
     state$versions[[name]] <- if (requireNamespace(name, quietly = TRUE)) as.character(packageVersion(name)) else NULL
   }
+  expected <- unname(EXPECTED[selected])
+  kernel_pin <- Sys.getenv("DEVBENCH_NATIVE_EDGE_R", unset = "")
+  if (nzchar(kernel_pin)) {
+    require_that(identical(kernel_pin, "4.10.7"), "native_version_mismatch")
+    if (identical(selected, "edgeR")) expected <- kernel_pin
+  }
   require_that(identical(as.character(getRversion()), unname(EXPECTED["R"])) &&
-               identical(state$versions[[selected]], unname(EXPECTED[selected])), "native_version_mismatch")
+               identical(state$versions[[selected]], expected), "native_version_mismatch")
 }
 fit_flag <- function(fit, i, n) {
   failed <- at_gene(fit$failed, i, n)

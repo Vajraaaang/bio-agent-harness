@@ -5,6 +5,7 @@ from functools import wraps
 import fcntl
 import hashlib
 import inspect
+import sys
 import json
 import math
 import os
@@ -119,33 +120,42 @@ def sdk_call(function):
                 result = function(*args, **kwargs)
                 record.update(succeeded=True, result_summary=_summary(result))
                 return result
-            except BaseException as error:
-                record.update(succeeded=False, error=f"{type(error).__name__}: {error}"[:1500])
-                raise
             finally:
-                record["elapsed_sec"] = time.monotonic() - started
-                record["tool_events"] = [_event_summary(event) for event in events]
-                encoded = json.dumps(record, ensure_ascii=False, allow_nan=False, default=str).encode()
-                if len(encoded) >= TRACE_ENTRY_BYTES:
-                    record.pop("arguments_summary", None)
-                    record.pop("result_summary", None)
-                    for event in record["tool_events"]:
-                        event.pop("result_summary", None)
-                    record["summary_truncated"] = True
-                    encoded = json.dumps(record, ensure_ascii=False, allow_nan=False, default=str).encode()
-                if len(encoded) >= TRACE_ENTRY_BYTES:
-                    record["tool_events"] = [{"tool_name": event["tool_name"], "succeeded": event["succeeded"]}
-                                             for event in record["tool_events"]]
-                    encoded = json.dumps(record, ensure_ascii=False, allow_nan=False, default=str).encode()
-                payload = encoded + b"\n"
-                while payload:
-                    written = os.write(descriptor, payload)
-                    if written <= 0:
-                        raise OSError("Unable to append SDK trace")
-                    payload = payload[written:]
-                os.fsync(descriptor)
+                primary = sys.exc_info()[1]
+                if primary is not None:
+                    record.update(succeeded=False, error=f"{type(primary).__name__}: {primary}"[:1500])
+                try:
+                    _append_trace(descriptor, record, events, started)
+                except (OSError, TypeError, ValueError) as trace_error:
+                    if primary is None:
+                        raise
+                    primary.add_note(f"SDK trace write failed: {type(trace_error).__name__}")
 
     return wrapped
+
+
+def _append_trace(descriptor, record, events, started):
+    record["elapsed_sec"] = time.monotonic() - started
+    record["tool_events"] = [_event_summary(event) for event in events]
+    encoded = json.dumps(record, ensure_ascii=False, allow_nan=False, default=str).encode()
+    if len(encoded) >= TRACE_ENTRY_BYTES:
+        record.pop("arguments_summary", None)
+        record.pop("result_summary", None)
+        for event in record["tool_events"]:
+            event.pop("result_summary", None)
+        record["summary_truncated"] = True
+        encoded = json.dumps(record, ensure_ascii=False, allow_nan=False, default=str).encode()
+    if len(encoded) >= TRACE_ENTRY_BYTES:
+        record["tool_events"] = [{"tool_name": event["tool_name"], "succeeded": event["succeeded"]}
+                                 for event in record["tool_events"]]
+        encoded = json.dumps(record, ensure_ascii=False, allow_nan=False, default=str).encode()
+    payload = encoded + b"\n"
+    while payload:
+        written = os.write(descriptor, payload)
+        if written <= 0:
+            raise OSError("Unable to append SDK trace")
+        payload = payload[written:]
+    os.fsync(descriptor)
 
 
 def execute(tool_name, **arguments):

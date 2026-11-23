@@ -1,0 +1,2706 @@
+"""Local question/proposal interface for the existing reviewed scRNA workbench.
+
+Reuses the existing, explicitly authorized proposal selector. No input upload,
+arbitrary command endpoint or additional scientific engine is provided.
+"""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import math
+import mimetypes
+import os
+import re
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
+from http.server import (
+    BaseHTTPRequestHandler as BaseHTTPRequestHandler,
+)
+from http.server import (
+    ThreadingHTTPServer as ThreadingHTTPServer,
+)
+from pathlib import Path
+
+from devbench.analysis.checkpoints import atomic_json, digest, sha256
+from devbench.analysis.scientific_publication import (
+    public_metadata,
+    safe_diagnostic,
+    workspace_guard,
+)
+
+from .workbench_ui_projection import (
+    ACTIVE as ACTIVE,
+)
+from .workbench_ui_projection import (
+    _job_source_hashes as _job_source_hashes,
+)
+from .workbench_ui_projection import (
+    _planning_result_view as _planning_result_view,
+)
+from .workbench_ui_projection import (
+    _public_event as _public_event,
+)
+from .workbench_ui_projection import (
+    _public_events as _public_events,
+)
+from .workbench_ui_projection import (
+    _public_investigation as _public_investigation,
+)
+from .workbench_ui_projection import (
+    _publication_guard as _publication_guard,
+)
+from .workbench_ui_projection import (
+    _publication_hashes as _publication_hashes,
+)
+from .workbench_ui_projection import (
+    _publication_status as _publication_status,
+)
+from .workbench_ui_projection import (
+    _require_job_publication as _require_job_publication,
+)
+
+ASSET = (
+    Path(__file__).resolve().parents[1] / "analysis" / "assets" / "workbench-ui.html"
+)
+MAX_BODY = 65536
+CONFIRMATIONS = {
+    "question_and_scope",
+    "input_provenance",
+    "capture_units",
+    "settings_and_limits",
+    "interpretation_limits",
+}
+RESOURCE_CAPS = {
+    "memory_mb",
+    "stage_timeout_seconds",
+    "scvi_timeout_seconds",
+    "max_block_bytes",
+    "max_batch_bytes",
+    "max_selected_bytes",
+    "block_rows",
+}
+WORKSPACE_VIEWS = {
+    "overview",
+    "data",
+    "analyses",
+    "runs",
+    "library",
+    "files",
+    "search",
+    "register",
+    "review",
+    "execute",
+    "results",
+    "scientific",
+    "thesis",
+}
+WORKSPACE_TABS = {
+    "analyst",
+    "code",
+    "execution",
+    "messages",
+    "provenance",
+    "environment",
+    "review",
+    "display",
+}
+DOWNLOADS = {
+    "report.json",
+    "summary.md",
+    "citations.json",
+    "measurements.json",
+    "parameters.json",
+    "reviewer-report.json",
+    "notebook.html",
+    "notebook.ipynb",
+    "html-export.json",
+}
+
+
+def render_page(nonce):
+    """Compose only shipped presentation assets inside the existing nonce policy."""
+    scripts = (
+        "workbench-studio.js",
+        "workbench-context.js",
+        "workbench-lineage.js",
+        "workbench-qc.js",
+        "workbench-thesis-studio.js",
+        "scientific-palettes.js",
+        "workbench-conversation.js",
+        "scientific-figure.js",
+        "bulk-scientific-figure.js",
+        "scientific-plot-panels.js",
+        "scientific-plot-workbench.js",
+        "workbench-investigations.js",
+        "workbench-artifacts.js",
+        "workbench-projects.js",
+        "workbench-synthetic.js",
+        "workbench-summary-plots.js",
+        "workbench-demo.js",
+        "workbench-research.js",
+    )
+    styles = (
+        "workbench-theme.css",
+        "workbench-synthetic.css",
+        "workbench-demo.css",
+        "bulk-scientific-figure.css",
+        "workbench-studio.css",
+    )
+    modules = "\n".join(
+        (ASSET.parent / name).read_text(encoding="utf-8") for name in scripts
+    )
+    theme = "\n".join(
+        (ASSET.parent / name).read_text(encoding="utf-8") for name in styles
+    )
+    return (ASSET.read_text(encoding="utf-8")
+        .replace("/*__WORKBENCH_MODULES__*/", modules)
+        .replace("/*__WORKBENCH_THEME__*/", theme)
+        .replace("__NONCE__", nonce))
+
+
+def decode_json(body, *, max_bytes=MAX_BODY):
+    if not isinstance(body, bytes) or len(body) > max_bytes:
+        raise ValueError("JSON size exceeds the permitted bound")
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError("Duplicate JSON key")
+            result[key] = value
+        return result
+    def invalid(_):
+        raise ValueError("JSON numbers must be finite")
+    try:
+        value = json.loads(
+            body.decode("utf-8"), object_pairs_hook=pairs, parse_constant=invalid
+        )
+        json.dumps(value, allow_nan=False)
+    except (UnicodeError, json.JSONDecodeError, RecursionError, OverflowError) as error:
+        raise ValueError("Invalid finite JSON") from error
+    if not isinstance(value, dict):
+        raise ValueError("Use a JSON object")
+    _validate_json_structure(value)
+    return value
+
+
+def _validate_json_structure(value):
+    pending, count = [(value, 0)], 0
+    while pending:
+        item, depth = pending.pop()
+        count += 1
+        if depth > 16 or count > 20000:
+            raise ValueError("JSON depth or item count exceeds the bound")
+        if isinstance(item, dict):
+            pending.extend((child, depth + 1) for child in item.values())
+        elif isinstance(item, list):
+            pending.extend((child, depth + 1) for child in item)
+
+
+def _canonical(value, *, exists=False):
+    if not isinstance(value, (str, Path)):
+        raise ValueError("Use an absolute canonical path")
+    path = Path(value)
+    if (
+        not path.is_absolute()
+        or ".." in path.parts
+        or path != path.resolve(strict=exists)
+    ):
+        raise ValueError("Use an absolute canonical path without symlinks or traversal")
+    return path
+
+
+def _read(path, maximum=1024 * 1024):
+    path = _canonical(path, exists=True)
+    if not stat.S_ISREG(path.stat().st_mode):
+        raise ValueError("Read only regular retained records")
+    with path.open("rb") as handle:
+        return decode_json(handle.read(maximum + 1), max_bytes=maximum)
+
+
+def _copy(value):
+    return json.loads(json.dumps(value, allow_nan=False))
+
+
+def _validate_ui_state(value, *, scientific=False):
+    """Only location and an unsubmitted draft; never execution settings."""
+    limits = {
+        "selected_job": 32,
+        "selected_revision": 32,
+        "parent_root": 64,
+        "figure": 150,
+        "search": 500,
+        "question_draft": 8000,
+    }
+    choices = {
+        "view": WORKSPACE_VIEWS,
+        "tab": WORKSPACE_TABS,
+        "zoom": {"fit", "native"},
+        "run_filter": {"all", "active", "attention", "analysis", "presentation"},
+    }
+    flags = {"inspector_open", "evidence_open"}
+    refs = (
+        {"dataset_ref": "dataset", "analysis_ref": "analysis", "result_ref": "result"}
+        if scientific
+        else {}
+    )
+    if scientific:
+        limits.update(study_id=32, scientific_run_id=32, planner_session_id=32)
+    if not isinstance(value, dict) or set(value) - (
+        limits.keys() | choices.keys() | flags | refs.keys() | {"draft_sources"}
+    ):
+        raise ValueError("Use only the declared workspace UI fields")
+    for key, item in value.items():
+        if key == "draft_sources":
+            valid = (
+                isinstance(item, list)
+                and len(item) <= 8
+                and all(
+                    isinstance(source, str)
+                    and len(source) <= 4096
+                    and "\x00" not in source
+                    and Path(source).is_absolute()
+                    and ".." not in Path(source).parts
+                    for source in item
+                )
+                and len(item) == len(set(item))
+            )
+        elif key in refs:
+            valid = item is None or (
+                isinstance(item, dict)
+                and set(item) == {"object_type", "object_id", "version_id"}
+                and item["object_type"] == refs[key]
+                and isinstance(item["object_id"], str)
+                and re.fullmatch(r"[0-9a-f]{32}", item["object_id"]) is not None
+                and isinstance(item["version_id"], str)
+                and re.fullmatch(r"[0-9a-f]{64}", item["version_id"]) is not None
+            )
+        elif key in flags:
+            valid = type(item) is bool
+        elif key in choices:
+            valid = isinstance(item, str) and item in choices[key]
+        else:
+            valid = (
+                isinstance(item, str)
+                and len(item) <= limits[key]
+                and "\x00" not in item
+            )
+            if (
+                valid
+                and item
+                and key
+                in {
+                    "selected_job",
+                    "selected_revision",
+                    "parent_root",
+                    "study_id",
+                    "scientific_run_id",
+                    "planner_session_id",
+                }
+            ):
+                valid = (
+                    re.fullmatch(r"[0-9a-f]{" + str(limits[key]) + "}", item)
+                    is not None
+                )
+        if not valid:
+            raise ValueError("Invalid workspace UI field: " + key)
+    return _copy(value)
+
+
+class WorkspaceSchemaError(ValueError):
+    """An unknown schema must not be downgraded through backup recovery."""
+
+
+def _migrate_workspace_state(value):
+    """Validate known envelopes; preserve identity and view state when upgrading v1."""
+    if not isinstance(value, dict):
+        raise ValueError("Invalid retained workspace metadata")
+    if not isinstance(value.get("format"), str) or value["format"] not in {
+        "devbench.workspace/1",
+        "devbench.workspace/2",
+        "devbench.workspace/3",
+    }:
+        if isinstance(value.get("format"), str) and re.fullmatch(
+            r"devbench\.workspace/[0-9]+", value["format"]
+        ):
+            raise WorkspaceSchemaError(
+                "Unsupported workspace metadata schema; use its compatible service "
+                "version"
+            )
+        raise ValueError("Invalid retained workspace metadata envelope")
+    legacy = value["format"] == "devbench.workspace/1"
+    keys = {"format", "revision", "project", "ui"} | (
+        set() if legacy else {"schema_version"}
+    )
+    if not legacy:
+        if type(value.get("schema_version")) is not int:
+            raise ValueError("Workspace schema_version must be an integer")
+        if value["schema_version"] != int(value["format"].rsplit("/", 1)[1]):
+            raise WorkspaceSchemaError("Unsupported workspace metadata schema version")
+    project = value.get("project")
+    if (
+        set(value) != keys
+        or type(value.get("revision")) is not int
+        or not 0 <= value["revision"] <= 2**53 - 1
+        or not isinstance(project, dict)
+        or set(project) != {"id", "name", "scope"}
+        or not isinstance(project["id"], str)
+        or not re.fullmatch(r"[0-9a-f]{32}", project["id"])
+        or project["scope"] != "single_user_local"
+        or not isinstance(project["name"], str)
+        or not 1 <= len(project["name"].strip()) <= 120
+        or "\x00" in project["name"]
+    ):
+        raise ValueError("Invalid retained workspace metadata")
+    _validate_ui_state(
+        value.get("ui"), scientific=value["format"] == "devbench.workspace/3"
+    )
+    result = _copy(value)
+    if legacy:
+        result.update(format="devbench.workspace/2", schema_version=2)
+    return result
+
+
+def _assert_workspace_settings(retained, configuration, offline_only):
+    if offline_only:
+        retained = {
+            key: value for key, value in retained.items()
+            if key not in {"proposal_selector", "model_data_scope"}
+        }
+    if retained != configuration:
+        raise ValueError(
+            "Existing workspace has different frozen settings; use a fresh workspace"
+        )
+
+
+class WorkbenchService:
+    """One sequential writer; native APIs retain scientific and execution control."""
+
+    def __init__(
+        self,
+        workspace,
+        input_roots,
+        *,
+        parameter_overrides=None,
+        run_timeout_seconds=3600,
+        allow_data_execution=False,
+        proposal_selector=None,
+        codex_model=None,
+        agent_workspaces=None,
+        allow_model_execution=False,
+        model_data_scope="local_only",
+        restore_view_state_backup=False,
+        enable_scientific=False,
+        scientific_workspace=None,
+        method_selector=None,
+        method_executor=None,
+        scientific_workflow=None,
+        scientific_workflow_config=None,
+        allow_discovery_network=False,
+        allow_review_model_execution=False,
+        allow_implementation_model_execution=False,
+        restore_scientific_backup=None,
+        shared_executor=None,
+        local_analyst_spec=None,
+        singlecell_trial_binding=None,
+        synthetic_erql_capsule=None,
+        evidence_delivery=None,
+        mounted_image_id=None,
+        interactive_adaptive=False,
+        offline_only=False,
+        actor_denied_roots=(),
+        input_import_root=None,
+    ):
+        from devbench.analysis.workbench import default_parameters
+        from devbench.study.permissions import require_protected_storage
+
+        if shared_executor is not None and (
+            not isinstance(shared_executor, ThreadPoolExecutor)
+            or shared_executor._max_workers != 1
+        ):
+            raise ValueError(
+                "A shared workbench executor must preserve the single-worker ceiling"
+            )
+        self._owns_executor = shared_executor is None
+        self.workspace = _canonical(workspace)
+        if evidence_delivery is not None:
+            from devbench.analysis.evidence_access import EvidenceDelivery
+            if type(evidence_delivery) is not EvidenceDelivery:
+                raise ValueError(
+                    "Workbench evidence delivery must be coordinator-owned"
+                )
+        self.evidence_delivery = evidence_delivery
+        self.offline_only = offline_only is True
+        proposal_selector, codex_model, method_selector = (
+            (None, None, None) if self.offline_only
+            else (proposal_selector, codex_model, method_selector)
+        )
+        allow_model_execution = allow_model_execution and not self.offline_only
+        allow_discovery_network = allow_discovery_network and not self.offline_only
+        allow_review_model_execution = (
+            allow_review_model_execution and not self.offline_only
+        )
+        allow_implementation_model_execution = (
+            allow_implementation_model_execution and not self.offline_only
+        )
+        trial_request = self._scientific_startup_request(
+            enable_scientific=enable_scientific,
+            scientific_workflow=scientific_workflow,
+            scientific_workflow_config=scientific_workflow_config,
+            restore_scientific_backup=restore_scientific_backup,
+            singlecell_trial_binding=singlecell_trial_binding,
+            allow_discovery_network=allow_discovery_network,
+            allow_review_model_execution=allow_review_model_execution,
+            allow_implementation_model_execution=allow_implementation_model_execution,
+        )
+        require_protected_storage(self.workspace)
+        self._configure_input_roots(
+            input_roots, synthetic_erql_capsule=synthetic_erql_capsule,
+            enable_scientific=enable_scientific,
+        )
+        self.input_import_root = (
+            None if input_import_root is None
+            else _canonical(input_import_root, exists=True)
+        )
+        if self.input_import_root not in (None, *self.input_roots):
+            raise ValueError("The import directory must be a configured input root")
+        defaults = default_parameters(data_sha256="0" * 64)
+        overrides = _copy(parameter_overrides or {})
+        if not isinstance(overrides, dict) or set(overrides) - (
+            set(defaults)
+            - {
+                "workflow",
+                "prompt",
+                "execution_tier",
+                "data_sha256",
+                "parent_root",
+                "model_path",
+                "model_sha256",
+            }
+        ):
+            raise ValueError(
+                "Use existing scientific settings; input, source, model and tier "
+                "bindings are not profile overrides"
+            )
+        self.parameters = default_parameters(data_sha256="0" * 64, **overrides)
+        if any(self.parameters[key] > defaults[key] for key in RESOURCE_CAPS):
+            raise ValueError("A UI profile cannot widen an existing resource ceiling")
+        if type(run_timeout_seconds) is not int or not 1 <= run_timeout_seconds <= 3600:
+            raise ValueError(
+                "Run deadline must be within the existing 3600-second ceiling"
+            )
+        self.run_timeout_seconds = run_timeout_seconds
+        self.allow_data_execution = allow_data_execution is True
+        self.mounted_image_id = mounted_image_id
+        self.interactive_adaptive = interactive_adaptive is True
+        self.runtime_identity = self._runtime_identity()
+        self._configure_proposal_selector(
+            require_protected_storage=require_protected_storage,
+            proposal_selector=proposal_selector,
+            codex_model=codex_model,
+            agent_workspaces=agent_workspaces,
+            allow_model_execution=allow_model_execution,
+            model_data_scope=model_data_scope,
+            actor_denied_roots=actor_denied_roots,
+        )
+        self.local_analyst = None
+        if local_analyst_spec is not None:
+            from devbench.analysis.workbench_episodes import WorkbenchEpisodeBridge
+            self.local_analyst = WorkbenchEpisodeBridge(self, local_analyst_spec)
+        self._lock = threading.RLock()
+        self._workspace_lock = None
+        self._executor = None
+        self._jobs = {}
+        self._cancellations = {}
+        self._futures = {}
+        self._adaptive_bindings = {}
+        self._adaptive_operations = set()
+        self._workspace_notice = None
+        self._workspace_metadata_fault = False
+        configuration, marker = self._prepare_local_workspace(
+            run_timeout_seconds, trial_request, model_data_scope
+        )
+        try:
+            self._load_locked_workspace(
+                marker, configuration, restore_view_state_backup, trial_request
+            )
+            self._executor = shared_executor or ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="reviewed-scrna"
+            )
+            self._initialize_scientific_workspace(
+                enable_scientific=enable_scientific,
+                scientific_workspace=scientific_workspace,
+                method_selector=method_selector,
+                method_executor=method_executor,
+                scientific_workflow=scientific_workflow,
+                scientific_workflow_config=scientific_workflow_config,
+                codex_model=codex_model,
+                restore_scientific_backup=restore_scientific_backup,
+                allow_discovery_network=allow_discovery_network,
+                allow_review_model_execution=allow_review_model_execution,
+                allow_implementation_model_execution=allow_implementation_model_execution,
+            )
+            from devbench.analysis.workbench_inputs import InputDiscovery
+
+            from .workbench_investigations import InvestigationService
+            self.inputs = InputDiscovery(self.input_roots,
+                timeout_seconds=min(20, self.parameters["stage_timeout_seconds"]),
+                memory_mb=min(512, self.parameters["memory_mb"]))
+            from devbench.analysis.workbench_agentic import (
+                InvestigationEpisodeController,
+            )
+            self.agentic_episodes = InvestigationEpisodeController(self)
+            self.investigations = InvestigationService(self, self.inputs)
+        except BaseException:
+            self._release_lock()
+            raise
+
+    def _scientific_startup_request(
+        self,
+        *,
+        enable_scientific,
+        scientific_workflow,
+        scientific_workflow_config,
+        restore_scientific_backup,
+        singlecell_trial_binding,
+        allow_discovery_network,
+        allow_review_model_execution,
+        allow_implementation_model_execution,
+    ):
+        if (
+            allow_discovery_network
+            or allow_review_model_execution
+            or allow_implementation_model_execution
+        ) and scientific_workflow_config is None:
+            raise ValueError(
+                "Scientific execution grants require an explicit scientific workflow "
+                "configuration"
+            )
+        if scientific_workflow_config is not None and (
+            not enable_scientific or scientific_workflow is not None
+        ):
+            raise ValueError(
+                "Scientific workflow configuration requires scientific mode and a "
+                "single explicit runtime source"
+            )
+        if restore_scientific_backup is not None and not enable_scientific:
+            raise ValueError(
+                "Explicit scientific recovery requires the scientific workspace to be "
+                "enabled"
+            )
+        self.singlecell_trial_binding = None
+        trial_request = None
+        if singlecell_trial_binding is not None:
+            if not enable_scientific:
+                raise ValueError(
+                    "A single-cell trial request requires the scientific workspace to "
+                    "be enabled"
+                )
+            from .workbench_singlecell import validate_singlecell_trial_request
+
+            trial_request = validate_singlecell_trial_request(singlecell_trial_binding)
+        return trial_request
+
+    def _configure_input_roots(
+        self, input_roots, *, synthetic_erql_capsule, enable_scientific
+    ):
+        self.input_roots = tuple(_canonical(path, exists=True) for path in input_roots)
+        if not self.input_roots or any(
+            not path.is_dir() or path == Path("/") for path in self.input_roots
+        ):
+            raise ValueError("Configure explicit existing input directories")
+        if any(
+            self.workspace.is_relative_to(path) or path.is_relative_to(self.workspace)
+            for path in self.input_roots
+        ):
+            raise ValueError(
+                "Input roots and the dedicated output workspace must be disjoint"
+            )
+        self.erql_capsule = None
+        self._erql_future = None
+        if synthetic_erql_capsule is not None:
+            from .workflow_entrypoints import SyntheticERQLCapsule
+
+            if not enable_scientific:
+                raise ValueError("Synthetic ERQL requires the scientific workspace")
+            capsule = SyntheticERQLCapsule(synthetic_erql_capsule)
+            if any(
+                capsule.directory.is_relative_to(path)
+                or path.is_relative_to(capsule.directory)
+                for path in (self.workspace, *self.input_roots)
+            ):
+                raise ValueError(
+                    "The ERQL capsule must be disjoint from workspace and discovery "
+                    "roots"
+                )
+            self.erql_capsule = capsule
+
+    def _configure_proposal_selector(
+        self,
+        *,
+        require_protected_storage,
+        proposal_selector,
+        codex_model,
+        agent_workspaces,
+        allow_model_execution,
+        model_data_scope,
+        actor_denied_roots,
+    ):
+        self.allow_model_execution = allow_model_execution is True
+        self.model_data_scope = model_data_scope
+        if model_data_scope not in {"local_only", "synthetic", "public"}:
+            raise ValueError("Use an explicit supported model context scope")
+        if proposal_selector is not None and codex_model is not None:
+            raise ValueError("Choose one proposal selector")
+        if codex_model is not None:
+            from devbench.analysis.episode_codex import CodexActionSelector
+
+            if agent_workspaces is None:
+                raise ValueError(
+                    "Codex selection requires an explicit protected actor workspace "
+                    "parent"
+                )
+            actors = _canonical(agent_workspaces)
+            require_protected_storage(actors)
+            if (
+                actors.is_relative_to(self.workspace)
+                or self.workspace.is_relative_to(actors)
+                or any(
+                    actors.is_relative_to(p) or p.is_relative_to(actors)
+                    for p in self.input_roots
+                )
+            ):
+                raise ValueError(
+                    "Actor workspace, inputs and private service state must be disjoint"
+                )
+            proposal_selector = CodexActionSelector(
+                requested_model=codex_model,
+                workspace_parent=actors,
+                private_root=self.workspace,
+                memory_mb=min(2048, self.parameters["memory_mb"]),
+                denied_roots=actor_denied_roots,
+            )
+        from devbench.analysis.episode_agent import selector_configuration
+
+        self.proposal_selector = proposal_selector
+        self.selector_config = (
+            selector_configuration(proposal_selector)
+            if proposal_selector is not None
+            else None
+        )
+        if self.selector_config and self.selector_config.get("backend") not in {
+            "codex-cli",
+            "recorded_planning_answer",
+        }:
+            raise ValueError(
+                "Use the registered Codex or explicit recorded-answer proposal selector"
+            )
+        if self.allow_model_execution and (
+            not self.selector_config
+            or self.selector_config["backend"] != "codex-cli"
+            or model_data_scope not in {"synthetic", "public"}
+        ):
+            raise ValueError(
+                "Model permission requires the Codex selector and synthetic/public "
+                "context scope"
+            )
+
+    def _prepare_local_workspace(
+        self, run_timeout_seconds, trial_request, model_data_scope
+    ):
+        configuration = {
+            "format": "devbench.workbench-ui/1",
+            "input_roots": [str(p) for p in self.input_roots],
+            "parameters": self.parameters,
+            "run_timeout_seconds": run_timeout_seconds,
+        }
+        if self.selector_config is not None:
+            configuration.update(
+                proposal_selector=self.selector_config,
+                model_data_scope=model_data_scope,
+            )
+        if self.local_analyst is not None:
+            configuration["local_analyst_binding"] = self.local_analyst.binding
+        if trial_request is not None:
+            configuration["singlecell_trial_request_sha256"] = digest(trial_request)
+        marker = self.workspace / "service.json"
+        if self.workspace.exists():
+            if not self.workspace.is_dir() or (
+                any(
+                    path.name not in {
+                        "methods", "plugin-jobs.sqlite3", "plugin-jobs.sqlite3-wal",
+                        "plugin-jobs.sqlite3-shm", "studio-server.json",
+                        ".service.lock", "runs",
+                    } or path.is_symlink()
+                    for path in self.workspace.iterdir()
+                )
+                and not marker.is_file()
+            ):
+                raise ValueError(
+                    "Use a dedicated empty workspace or this service's existing "
+                    "workspace"
+                )
+        self.workspace.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.workspace.chmod(0o700)
+        self._acquire_lock()
+        return configuration, marker
+
+    def _load_locked_workspace(
+        self, marker, configuration, restore_view_state_backup, trial_request
+    ):
+        fresh_workspace = not marker.exists()
+        from devbench.analysis.scientific_publication import (
+            publication_service_settings,
+        )
+
+        if fresh_workspace:
+            atomic_json(marker, configuration)
+        else:
+            retained = publication_service_settings(_read(marker))
+            _assert_workspace_settings(retained, configuration, self.offline_only)
+        self._workspace_state = self._load_workspace_state(
+            restore_view_state_backup, fresh_workspace=fresh_workspace
+        )
+        if trial_request is not None:
+            from .workbench_singlecell import bind_singlecell_trial
+
+            self.singlecell_trial_binding = bind_singlecell_trial(
+                trial_request,
+                project_id=self._workspace_state["project"]["id"],
+                input_roots=self.input_roots,
+            )
+        self._path("jobs").mkdir(exist_ok=True, mode=0o700)
+        for path in sorted(self._path("jobs").iterdir()):
+            if len(self._jobs) >= 100 or not re.fullmatch(r"[0-9a-f]{32}", path.name):
+                raise ValueError(
+                    "Invalid or excessive job directories in service workspace"
+                )
+            record = _read(self._path("jobs", path.name, "state.json"))
+            if record.get("id") != path.name:
+                raise ValueError("Job state identity mismatch")
+            self._jobs[path.name] = record
+            if record.get("cache_validation_pending"):
+                self._update(
+                    path.name,
+                    cache_validation_pending=False,
+                    cache_worker_liveness="unknown",
+                )
+            if record["status"] in ACTIVE or record.get("operation_pending"):
+                self._update(
+                    path.name,
+                    status="recovery_required",
+                    worker_liveness="unknown",
+                    interrupted_status=record["status"],
+                    operation_pending=False,
+                    error={
+                        "type": "ServiceRestart",
+                        "message": "Prior attempt has no completed service "
+                        "record. Native evidence is retained; inspect and "
+                        "recover it before further execution. Worker liveness "
+                        "is unknown.",
+                    },
+                )
+
+    def _initialize_scientific_workspace(
+        self,
+        *,
+        enable_scientific,
+        scientific_workspace,
+        method_selector,
+        method_executor,
+        scientific_workflow,
+        scientific_workflow_config,
+        codex_model,
+        restore_scientific_backup,
+        allow_discovery_network,
+        allow_review_model_execution,
+        allow_implementation_model_execution,
+    ):
+        self.scientific = None
+        if enable_scientific:
+            import sqlite3
+
+            from devbench.engine.scientific_authority import require_patched_wal
+            from devbench.engine.workflow_operations import OperationConflict
+
+            from .scientific_workspace import ScientificWorkspace
+
+            try:
+                require_patched_wal()
+            except OperationConflict as error:
+                version = ".".join(map(str, sqlite3.sqlite_version_info))
+                raise RuntimeError(
+                    f"Loaded SQLite {version}. {error}. On macOS, set "
+                    "DYLD_LIBRARY_PATH=/opt/homebrew/opt/sqlite/lib before "
+                    "launching with the locked Python environment."
+                ) from error
+            selected_methods = scientific_workspace or self._path("methods")
+            selected_selector = method_selector or (
+                self.proposal_selector if codex_model is not None else None
+            )
+            if (
+                self.singlecell_trial_binding is not None
+                and selected_selector is not None
+                and scientific_workflow is None
+                and scientific_workflow_config is None
+            ):
+                from .workbench_singlecell import make_singlecell_scientific_runtime
+
+                scientific_workflow = make_singlecell_scientific_runtime(
+                    self.singlecell_trial_binding,
+                    methods_root=_canonical(selected_methods),
+                    selector=selected_selector,
+                    allow_model_execution=self.allow_model_execution,
+                )
+            if scientific_workflow_config is not None:
+                from devbench.analysis.workflow_science import (
+                    load_scientific_workflow_config,
+                )
+
+                scientific_workflow = load_scientific_workflow_config(
+                    scientific_workflow_config,
+                    methods_root=_canonical(selected_methods),
+                    selector=selected_selector,
+                    allow_network=allow_discovery_network,
+                    allow_review_model_execution=allow_review_model_execution,
+                    allow_implementation_model_execution=allow_implementation_model_execution,
+                )
+            self.scientific = ScientificWorkspace(
+                self,
+                selected_methods,
+                selector=selected_selector,
+                executor=method_executor,
+                restore_backup=restore_scientific_backup,
+                scientific_workflow=scientific_workflow,
+            )
+
+    def bind_adaptive_workflow(self, binding):
+        """Attach current coordinator capabilities to an exact project lineage."""
+        from .workbench_adaptive import register_binding
+
+        register_binding(self, binding)
+
+    def _sync_workspace_directory(self):
+        descriptor = os.open(self.workspace, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def _write_workspace_state(self, value, *, previous=None):
+        # Reuse the existing fsynced temp-write/replace. Only UI metadata adds
+        # a previous valid snapshot and directory fsync; scientific writers stay
+        # unchanged.
+        if previous is not None:
+            atomic_json(self._path("workspace.previous.json"), previous)
+            self._sync_workspace_directory()
+        atomic_json(self._path("workspace.json"), value)
+        self._sync_workspace_directory()
+
+    def _load_workspace_state(self, restore_backup, *, fresh_workspace=False):
+        if type(restore_backup) is not bool:
+            raise ValueError("View-state recovery requires an explicit boolean")
+        primary, backup = (
+            self._path("workspace.json"),
+            self._path("workspace.previous.json"),
+        )
+        for path in (primary, backup):
+            if path.exists() and not stat.S_ISREG(path.stat().st_mode):
+                raise ValueError("Workspace metadata and backups must be regular files")
+        if not primary.exists() and not backup.exists():
+            return self._initialize_workspace_state(restore_backup, fresh_workspace)
+        try:
+            original = _read(primary)
+            value = _migrate_workspace_state(original)
+        except WorkspaceSchemaError:
+            raise
+        except (ValueError, FileNotFoundError) as error:
+            if not restore_backup:
+                raise ValueError(
+                    "Workspace view state is missing or invalid. Preserve it; restart "
+                    "with --restore-view-state-backup only to restore the previous "
+                    "saved location and draft."
+                ) from error
+            return self._recover_workspace_state(primary, backup)
+        if restore_backup:
+            raise ValueError(
+                "Current view state is valid; refusing to roll it back from backup"
+            )
+        if value != original:
+            self._write_workspace_state(value, previous=original)
+        return value
+
+    def _initialize_workspace_state(self, restore_backup, fresh_workspace):
+        if not fresh_workspace:
+            raise ValueError(
+                "Workspace metadata and its backup are missing. Preserve this "
+                "existing workspace and recover a retained metadata snapshot; its "
+                "project identity will not be reset."
+            )
+        if restore_backup:
+            raise ValueError("No retained view-state backup is available")
+        value = {
+            "format": "devbench.workspace/2",
+            "schema_version": 2,
+            "revision": 0,
+            "project": {
+                "id": uuid.uuid4().hex,
+                "name": "RNA research",
+                "scope": "single_user_local",
+            },
+            "ui": {"view": "overview", "tab": "analyst", "zoom": "fit"},
+        }
+        self._write_workspace_state(value, previous=value)
+        return value
+
+    def _recover_workspace_state(self, primary, backup):
+        # Validate the backup before preserving the invalid primary or writing
+        # anything.
+        value = _migrate_workspace_state(_read(backup))
+        recovered_revision = value["revision"]
+        value["revision"] += 1
+        _migrate_workspace_state(value)
+        if primary.exists():
+            primary.replace(
+                self._path("workspace.invalid-" + uuid.uuid4().hex + ".json")
+            )
+            self._sync_workspace_directory()
+        self._write_workspace_state(value)
+        self._workspace_notice = (
+            f"Recovered the saved location and question draft from backup "
+            f"revision {recovered_revision}. Review this restored selection; "
+            "no scientific records or execution permissions were restored "
+            "or changed."
+        )
+        return value
+
+    def _acquire_lock(self):
+        path = self._path(".service.lock")
+        descriptor = os.open(
+            path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600
+        )
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise ValueError("Workspace lock must be a regular file")
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise RuntimeError(
+                    "Workspace is already owned by another service"
+                ) from error
+            self._workspace_lock = descriptor
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    def _release_lock(self):
+        with self._lock:
+            if self._workspace_lock is not None:
+                fcntl.flock(self._workspace_lock, fcntl.LOCK_UN)
+                os.close(self._workspace_lock)
+                self._workspace_lock = None
+
+    def _path(self, *parts):
+        path = _canonical(self.workspace.joinpath(*parts))
+        if not path.is_relative_to(self.workspace):
+            raise ValueError("Output escaped the dedicated workspace")
+        return path
+
+    def _job(self, job):
+        if not isinstance(job, str) or not re.fullmatch(r"[0-9a-f]{32}", job):
+            raise ValueError("Invalid job identifier")
+        if job not in self._jobs:
+            raise KeyError("Unknown job")
+        self._path("jobs", job)
+        return self._jobs[job]
+
+    def _input(self, value):
+        source = _canonical(value, exists=True)
+        if not any(source.is_relative_to(root) for root in self.input_roots):
+            raise ValueError("Input is outside the configured roots")
+        if source.suffix.lower() != ".h5ad" or not stat.S_ISREG(source.stat().st_mode):
+            raise ValueError("Register an existing regular H5AD file")
+        return source
+
+    @staticmethod
+    def _runtime_identity():
+        from devbench.analysis.runtime import observe_runtime
+        from devbench.analysis.workbench_proposals import _source_identity
+
+        runtime = observe_runtime("local_supervised", detect_gpu=False)["runtime"]
+        return {
+            "source_sha256": _source_identity(),
+            "python": runtime["python"],
+            "packages": runtime["packages"],
+        }
+
+    def _require_current_runtime(self):
+        if self._runtime_identity() != self.runtime_identity:
+            raise RuntimeError(
+                "Service source/runtime changed; restart before submitting or "
+                "resuming an operation"
+            )
+
+    def _manifest(self, job, kind, receipt):
+        path = _canonical(receipt["manifest_path"], exists=True)
+        directory = (
+            "planning/proposal"
+            if kind == "proposal" and self._job(job).get("proposal_mode") == "agent"
+            else kind
+        )
+        if not path.is_relative_to(self._path("jobs", job, directory)):
+            raise ValueError("Evidence path escaped the job's protected records")
+        return path
+
+    def _update(self, job, **fields):
+        with self._lock:
+            record = self._job(job)
+            if fields.get("status",record.get("status")) != record.get("status"):
+                history = record.setdefault("state_history", [])
+                if len(history) >= 200:
+                    raise RuntimeError(
+                        "Job transition limit reached; preserve this attempt and use "
+                        "a reviewed revision"
+                    )
+                history.append(
+                    {
+                        "from": record.get("status"),
+                        "to": fields["status"],
+                        "at": datetime.now(UTC).isoformat(),
+                    }
+                )
+            record.update(fields, updated_at=datetime.now(UTC).isoformat())
+            atomic_json(self._path("jobs", job, "state.json"), record)
+
+    def configuration(self):
+        mode = (
+            (
+                "codex"
+                if self.selector_config["backend"] == "codex-cli"
+                else "recorded_fixture"
+            )
+            if self.selector_config
+            else "disabled"
+        )
+        available = self.proposal_selector is not None and (
+            mode != "codex" or self.allow_model_execution
+        )
+        public_selector = self.selector_config.copy() if self.selector_config else None
+        if public_selector is not None:
+            public_selector.pop("denied_roots", None)
+        scientific = (
+            self.scientific.configuration() if self.scientific else {"enabled": False}
+        )
+        adaptive_interactive = self.interactive_adaptive and scientific["enabled"]
+        return _copy(
+            {
+                "input_roots": [str(p) for p in self.input_roots],
+                "input_import": self.input_import_root is not None,
+                "parameters": {
+                    key: value
+                    for key, value in self.parameters.items()
+                    if key != "data_sha256"
+                },
+                "run_timeout_seconds": self.run_timeout_seconds,
+                "execution_allowed": self.allow_data_execution,
+                "offline_only": self.offline_only,
+                "model_access": mode == "codex" and available,
+                "plan_author": "operator_created_recorded_plan",
+                "proposal_selection": {
+                    "mode": mode,
+                    "available": available,
+                    "configuration": public_selector,
+                    "model_data_scope": self.model_data_scope,
+                    "label": {
+                        "disabled": "Agent proposal selection is disabled",
+                        "codex": "Codex agent proposals",
+                        "recorded_fixture": "Recorded offline proposal fixture; no "
+                            "live model",
+                    }[mode],
+                },
+                "support": "scRNA UMI counts; QC, integration, clustering and "
+                    "available annotation",
+                "scope": "Research use; operator declarations are not independent "
+                    "experimental verification",
+                "investigations": {
+                    "enabled": True,
+                    "format": "devbench.investigation/1",
+                    "analyst_profile": "analyst_v1",
+                    "descriptive_retrieval": True,
+                    "auto_advance": adaptive_interactive
+                    or scientific.get("scientific_workflow_configured") is True,
+                    **({"adaptive_interactive": True} if adaptive_interactive else {}),
+                },
+                "scientific": {**scientific, "adaptive_workflows": True}
+                if scientific["enabled"] else scientific,
+                "erql_capsule": {
+                    "enabled": self.erql_capsule is not None,
+                    "scope": "synthetic_verification",
+                },
+                "singlecell_trial": {
+                    "enabled": self.singlecell_trial_binding is not None,
+                    "scope": "source_question_project_bound_facts_only",
+                    **{
+                        key: self.singlecell_trial_binding[key]
+                        for key in (
+                            "source",
+                            "source_sha256",
+                            "question",
+                            "question_sha256",
+                            "project_id",
+                            "request_sha256",
+                        )
+                        if self.singlecell_trial_binding is not None
+                        and key in self.singlecell_trial_binding
+                    },
+                },
+                "local_analyst": self.local_analyst.configuration()
+                if self.local_analyst
+                else {"enabled": False},
+            }
+        )
+
+    def erql_capsule_status(self):
+        if self.erql_capsule is None:
+            raise KeyError("No signed synthetic ERQL capsule is configured")
+        with self._lock:
+            if self._erql_future is not None and not self._erql_future.done():
+                return {
+                    "status": "running",
+                    "scope": "synthetic_verification",
+                    "publication_eligible": False,
+                }
+            output = self._path("synthetic-erql", self.erql_capsule.plan.sha256())
+            state = self.erql_capsule.status(
+                output,
+                guard=workspace_guard(self.scientific.root),
+                delivery=self.evidence_delivery,
+            )
+            if (
+                self._erql_future is not None
+                and self._erql_future.exception() is not None
+            ):
+                return {
+                    **state,
+                    "status": "recovery_required",
+                    "failure": type(self._erql_future.exception()).__name__,
+                }
+            return state
+
+    def erql_publication_export(self, format):
+        if self.erql_capsule is None:
+            raise KeyError("erql_publication_unavailable")
+        output = self._path("synthetic-erql", self.erql_capsule.plan.sha256())
+        return self.erql_capsule.publication_export(
+            output,
+            format,
+            guard=workspace_guard(self.scientific.root),
+            delivery=self.evidence_delivery,
+        )
+
+    def run_erql_capsule(self, body):
+        if body != {}:
+            raise ValueError("Synthetic ERQL runs only the operator-configured capsule")
+        with self._lock:
+            state = self.erql_capsule_status()
+            if state["status"] != "ready":
+                return state
+            self._require_current_runtime()
+            capsule = self.erql_capsule
+            capsule.authorize(allow_data_execution=self.allow_data_execution)
+            output = self._path("synthetic-erql", capsule.plan.sha256())
+            self._erql_future = self._executor.submit(
+                capsule.run, output, allow_data_execution=self.allow_data_execution
+            )
+            return {**state, "status": "running"}
+
+    def jobs(self):
+        with self._lock:
+            summaries = []
+            for job in reversed(self._jobs):
+                row = self.status(job)
+                summary = {
+                    key: row.get(key)
+                    for key in (
+                        "id",
+                        "question",
+                        "status",
+                        "updated_at",
+                        "parent_job",
+                        "figure_id",
+                        "worker_liveness",
+                        "interrupted_status",
+                        "cancellable",
+                        "resumable",
+                    )
+                }
+                summary["operation_kind"] = row.get("operation_kind", "analysis")
+                prior = next(
+                    (
+                        item.get("from")
+                        for item in reversed(row.get("state_history", []))
+                        if item.get("to") == "cancel_requested"
+                    ),
+                    None,
+                )
+                interrupted = (
+                    row.get("interrupted_status")
+                    if row["status"] == "recovery_required"
+                    else row["status"]
+                )
+                summary["pending_execution"] = (
+                    interrupted in {"preparing", "running"}
+                    or interrupted == "cancel_requested"
+                    and prior in {"preparing", "running"}
+                    or summary["operation_kind"] == "presentation"
+                    and interrupted
+                    in {"queued", "preparing", "running", "cancel_requested"}
+                )
+                summary["execution_history"] = [
+                    {
+                        key: item[key]
+                        for key in ("attempt", "status", "elapsed_sec")
+                        if key in item
+                    }
+                    for item in row.get("execution_history", [])
+                ]
+                source = (row.get("proposal") or {}).get("external_input") or {}
+                summary["input"] = {
+                    key: source[key]
+                    for key in ("path", "sha256", "size_bytes")
+                    if key in source
+                }
+                if not summary["input"] and row.get("source"):
+                    summary["input"] = {"path": row["source"]}
+                summary["proposal_root"] = (row.get("proposal_receipt") or {}).get(
+                    "root_hash"
+                )
+                summary["review_decision"] = (row.get("review") or {}).get("decision")
+                summary["bundle_root"] = (row.get("execution") or {}).get("bundle_root")
+                summaries.append(summary)
+            return summaries
+
+    def workspace_state(self, changes=None):
+        """Local project metadata, deliberately outside immutable scientific bundles."""
+        with self._lock:
+            if self._workspace_metadata_fault:
+                raise RuntimeError(
+                    "Workspace metadata is unreadable after an interrupted save; "
+                    "preserve it and recover view state before saving again"
+                )
+            if changes is None:
+                result = _copy(self._workspace_state)
+                if self._workspace_notice:
+                    result["recovery_notice"] = self._workspace_notice
+                return result
+            updated = self._workspace_update(changes)
+            try:
+                self._write_workspace_state(updated, previous=self._workspace_state)
+            except OSError as error:
+                # Replacement may already have happened. Never continue accepting
+                # writes against a stale in-memory revision after a durability error.
+                try:
+                    self._workspace_state = _migrate_workspace_state(
+                        _read(self._path("workspace.json"))
+                    )
+                except (ValueError, OSError):
+                    self._workspace_metadata_fault = True
+                raise RuntimeError(
+                    "Workspace save was interrupted and may already be stored. "
+                    "Reconnect to verify the retained revision; keep your local draft."
+                ) from error
+            self._workspace_state = updated
+            return self.workspace_state()
+
+    def _workspace_update(self, changes):
+        if (
+            not isinstance(changes, dict)
+            or set(changes) - {"expected_revision", "name", "ui"}
+            or type(changes.get("expected_revision")) is not int
+        ):
+            raise ValueError("Use the declared workspace fields and expected revision")
+        if changes["expected_revision"] != self._workspace_state["revision"]:
+            raise RuntimeError(
+                "Workspace changed in another window. Reconnect before saving; "
+                "your local draft is still visible."
+            )
+        updated = _copy(self._workspace_state)
+        if "name" in changes:
+            name = changes["name"]
+            if (
+                not isinstance(name, str)
+                or not 1 <= len(name.strip()) <= 120
+                or "\x00" in name
+            ):
+                raise ValueError("Use a project name of 1 to 120 characters")
+            updated["project"]["name"] = name.strip()
+        if "ui" in changes:
+            ui = _validate_ui_state(
+                changes["ui"], scientific=updated["schema_version"] == 3
+            )
+            if any(
+                not any(Path(source).is_relative_to(root) for root in self.input_roots)
+                for source in ui.get("draft_sources", [])
+            ):
+                raise PermissionError(
+                    "Draft data must belong to this project's configured input folders"
+                )
+            updated["ui"].update(ui)
+        updated["revision"] += 1
+        _migrate_workspace_state(updated)
+        return updated
+
+    def upgrade_scientific_view(self):
+        """Upgrade the compatible view without changing scientific records or grants."""
+        with self._lock:
+            if self._workspace_state["schema_version"] == 3:
+                return
+            updated = _copy(self._workspace_state)
+            updated.update(format="devbench.workspace/3", schema_version=3)
+            _migrate_workspace_state(updated)
+            try:
+                self._write_workspace_state(updated, previous=self._workspace_state)
+            except OSError as error:
+                try:
+                    self._workspace_state = _migrate_workspace_state(
+                        _read(self._path("workspace.json"))
+                    )
+                except (ValueError, OSError):
+                    self._workspace_metadata_fault = True
+                raise RuntimeError(
+                    "Scientific view upgrade was interrupted; reconnect to verify the "
+                    "retained schema and revision"
+                ) from error
+            self._workspace_state = updated
+
+    def status(self, job):
+        record = self._status(job)
+        record.pop("synthesis", None)
+        return _publication_status(self, record)
+
+    def _status(self, job):
+        with self._lock:
+            record = _copy(self._job(job))
+            if record.get("cache_worker_liveness") == "unknown":
+                record["retained_outcome"] = record["status"]
+                record["status"] = "recovery_required"
+            if record.get("operation_pending") and record["status"] not in ACTIVE:
+                record["status"] = "finalizing"
+            record["cancellable"] = record["status"] in (
+                ACTIVE - {"cancel_requested"}
+            ) | {"approved", "awaiting_operator_review", "awaiting_information"}
+            if record["status"] == "finalizing":
+                record["cancellable"] = False
+            record["remaining_execution_seconds"] = self._remaining(record)
+            record["resumable"] = self._can_resume(record)
+            return record
+
+    def _remaining(self, record):
+        elapsed = 0.0
+        for attempt in record.get("execution_history", []):
+            value = attempt.get("elapsed_sec")
+            if type(value) not in (int,float) or not math.isfinite(value) or value < 0:
+                raise ValueError("Retained execution budget accounting is invalid")
+            elapsed += value
+        return max(0.0,self.run_timeout_seconds-elapsed)
+
+    def _can_resume(self, record):
+        if record.get("operation_kind") == "presentation":
+            return False
+        bundle = self._path("jobs", record["id"], "bundle")
+        return (
+            self.allow_data_execution
+            and record["status"] == "cancelled"
+            and not record.get("operation_pending")
+            and record.get("cache_worker_liveness") != "unknown"
+            and record.get("worker_liveness") == "stopped"
+            and self._remaining(record) > 0
+            and bool(record.get("execution_history"))
+            and (bundle / "review-binding.json").is_file()
+            and not (bundle / "receipts.json").exists()
+            and not (bundle / ".reviewed-execution.json").exists()
+        )
+
+    def _require_known_workers(self):
+        self._require_current_runtime()
+        if any(
+            (
+                record["status"] == "recovery_required"
+                and record.get("worker_liveness") == "unknown"
+            )
+            or record.get("cache_worker_liveness") == "unknown"
+            for record in self._jobs.values()
+        ):
+            raise RuntimeError(
+                "Reconcile unknown worker liveness before launching further operations"
+            )
+
+    def _submit(self, job, function):
+        self._cancellations[job] = threading.Event()
+        self._update(job,operation_pending=True)
+        self._futures[job] = self._executor.submit(self._task,job,function)
+
+    def _task(self, job, function):
+        from devharness_core.watchdog import WorkerCancelled, cancel_workers_on
+        event = self._cancellations[job]
+        control = {"workers": []}
+        try:
+            with cancel_workers_on(event) as control:
+                if event.is_set():
+                    raise WorkerCancelled("Operation cancelled before dispatch")
+                self._require_current_runtime()
+                function()
+        except BaseException as error:
+            self._update(
+                job,
+                status="cancelled"
+                if isinstance(error, WorkerCancelled)
+                else "interrupted_service"
+                if isinstance(error, (KeyboardInterrupt, SystemExit))
+                else "operation_failed",
+                error={"type": type(error).__name__, "message": safe_diagnostic(error)},
+                completed_analysis=False,
+            )
+        finally:
+            stopped = all(
+                worker["cleanup"].get("verified_stopped") is True
+                for worker in control["workers"]
+            )
+            with self._lock:
+                record = self._job(job)
+                fields = {
+                    "worker_liveness": "stopped" if stopped else "unknown",
+                    "worker_control": control,
+                    "operation_pending": False,
+                }
+                if not stopped:
+                    fields.update(status="recovery_required", completed_analysis=False)
+                elif event.is_set() and not (
+                    record["status"].startswith("completed_review_")
+                    or record["status"] == "completed_presentation"
+                ):
+                    fields.update(status="cancelled", completed_analysis=False)
+                elif event.is_set():
+                    fields["cancellation_resolution"] = "completed_before_stop"
+                self._update(job, **fields)
+
+    def register(self, request, *, investigation_id=None, input_parameters=None):
+        from devbench.analysis.workbench_proposals import _configuration
+
+        mode = self._validate_registration(request)
+        if input_parameters is not None and (
+            not isinstance(input_parameters, dict)
+            or input_parameters.keys() - {"batch_key", "capture_key", "counts_layer"}
+        ):
+            raise ValueError("Use only the trusted per-job expression input settings")
+        if (
+            mode == "agent"
+            and not self.configuration()["proposal_selection"]["available"]
+        ):
+            raise PermissionError(
+                "Agent proposal selector is unavailable or model permission is disabled"
+            )
+        self._require_current_runtime()
+        if mode == "agent":
+            from devbench.analysis.episode_agent import selector_configuration
+            if selector_configuration(self.proposal_selector) != self.selector_config:
+                raise ValueError(
+                    "Proposal selector configuration changed; use a fresh reviewed "
+                    "service configuration"
+                )
+        source = self._input(request["source"])
+        params = {
+            **self.parameters,
+            **(input_parameters or {}),
+            "data_sha256": request["expected_sha256"],
+        }
+        config, _ = _configuration(
+            request["question"],
+            params,
+            request["declarations"],
+            self.run_timeout_seconds,
+        )
+        request_identity = digest(
+            {
+                "source": str(source),
+                "configuration": config,
+                "proposal_mode": mode,
+                "runtime_identity": self.runtime_identity,
+                "selector": self.selector_config if mode == "agent" else None,
+            }
+        )
+        if investigation_id is not None:
+            if (
+                not isinstance(investigation_id, str)
+                or re.fullmatch(r"[0-9a-f]{32}", investigation_id) is None
+            ):
+                raise ValueError(
+                    "Use an exact investigation identity for the internal request scope"
+                )
+            request_identity = digest(
+                {
+                    "request_identity": request_identity,
+                    "investigation_id": investigation_id,
+                }
+            )
+        with self._lock:
+            self._require_known_workers()
+            prior = next(
+                (
+                    row
+                    for row in self._jobs.values()
+                    if row.get("request_identity") == request_identity
+                ),
+                None,
+            )
+            if prior is None:
+                return self._register_new(source,params,config,mode,request_identity)
+            if prior.get("operation_pending"):
+                # The existing operation owns input verification. Deduplicate
+                # in-flight requests without starting a second reader or job.
+                return {
+                    "id": prior["id"],
+                    "status": self.status(prior["id"])["status"],
+                    "cached": True,
+                }
+            if any(row.get("operation_pending") for row in self._jobs.values()):
+                raise RuntimeError(
+                    "Cached input verification waits for the active operation; "
+                    "inspect retained status meanwhile"
+                )
+            future = self._executor.submit(
+                self._verify_cached_input, prior["id"], source, params["data_sha256"]
+            )
+        # Never hold the state lock while waiting on the single writer.
+        future.result(
+            timeout=min(
+                self.parameters["stage_timeout_seconds"], self.run_timeout_seconds
+            )
+            + 10
+        )
+        return {
+            "id": prior["id"],
+            "status": self.status(prior["id"])["status"],
+            "cached": True,
+        }
+
+    @staticmethod
+    def _validate_registration(request):
+        if (
+            not isinstance(request, dict)
+            or set(request)
+            - {"source", "expected_sha256", "question", "declarations", "proposal_mode"}
+            or not {"source", "expected_sha256", "question", "declarations"}
+            <= request.keys()
+        ):
+            raise ValueError(
+                "Registration fields are source, expected_sha256, question and "
+                "declarations"
+            )
+        mode = request.get("proposal_mode", "operator")
+        if mode not in {"operator", "agent"}:
+            raise ValueError("Use operator or agent proposal mode")
+        return mode
+
+    def _verify_cached_input(self, job, source, expected):
+        from devbench.analysis.runtime import verify_data_identity
+        from devharness_core.watchdog import cancel_workers_on, run_sandboxed
+        with self._lock:
+            self._require_known_workers()
+            self._update(job,cache_validation_pending=True)
+        control = {"workers":[]}
+        try:
+            with cancel_workers_on(threading.Event()) as control:
+                run_sandboxed(verify_data_identity,(self._input(source),expected),
+                    timeout_sec=min(self.parameters["stage_timeout_seconds"],self.run_timeout_seconds),
+                    max_mem_mb=self.parameters["memory_mb"],growth_window_seconds=self.parameters.get("growth_window_seconds",0))
+        finally:
+            stopped = all(
+                row["cleanup"].get("verified_stopped") is True
+                for row in control["workers"]
+            )
+            self._update(
+                job,
+                cache_validation_pending=False,
+                cache_worker_control=control,
+                cache_worker_liveness="stopped" if stopped else "unknown",
+            )
+        if not stopped:
+            raise RuntimeError("Cached-input worker liveness needs reconciliation")
+
+    def _register_new(self, source, params, config, mode, request_identity):
+        # Called while the owning controller holds its state lock.
+        if len(self._jobs) >= 100:
+            raise ValueError("Workspace job limit reached; use a fresh workspace")
+        self._require_known_workers()
+        job = uuid.uuid4().hex
+        self._path("jobs", job).mkdir(mode=0o700)
+        self._jobs[job] = {
+            "id": job,
+            "question": config["question"],
+            "source": str(source),
+            "status": "queued",
+            "proposal_mode": mode,
+            "request_identity": request_identity,
+            "runtime_identity": _copy(self.runtime_identity),
+            "plan_author": (
+                "codex_agent"
+                if self.selector_config["backend"] == "codex-cli"
+                else "recorded_fixture"
+            )
+            if mode == "agent"
+            else "operator_created_recorded_plan",
+            "model_sessions_attempted": 0,
+            "scientific_review": "not_performed_by_this_service",
+            "completed_analysis": False,
+        }
+        self._update(job)
+        def prepare():
+            from devbench.analysis.workbench_proposals import prepare_workbench_proposal
+            self._update(job, status="inspecting")
+            # Recheck containment immediately before opening the external input.
+            self._input(source)
+            if mode == "agent":
+                from devbench.analysis.episode_planning import propose_analysis
+                self._update(job, status="planning")
+                result = propose_analysis(
+                    self._path("jobs", job, "planning"),
+                    question=config["question"],
+                    dataset={
+                        "transport": "backed_workbench",
+                        "source": str(source),
+                        "parameters": params,
+                        "declarations": config["declarations"],
+                        "run_timeout_seconds": self.run_timeout_seconds,
+                    },
+                    selector=self.proposal_selector,
+                    allow_data_read=True,
+                    allow_model_execution=self.allow_model_execution,
+                    model_data_scope=self.model_data_scope,
+                )
+                self._update(
+                    job,
+                    planning_result=result,
+                    model_sessions_attempted=result.get("model_sessions_attempted"),
+                    tokens=result.get("tokens"),
+                    cost_usd=result.get("cost_usd"),
+                    actual_model=result.get("actual_model"),
+                )
+                if result["status"] != "proposal_ready_for_review":
+                    self._update(job, status=result["status"])
+                    return
+                receipt = result["proposal_receipt"]
+                proposal = _read(
+                    self._path("jobs", job, "planning", "proposal", "proposal.json")
+                )
+            else:
+                receipt = prepare_workbench_proposal(
+                    self._path("jobs", job, "proposal"),
+                    question=config["question"],
+                    source=source,
+                    parameters=params,
+                    declarations=config["declarations"],
+                    run_timeout_seconds=self.run_timeout_seconds,
+                    allow_data_read=True,
+                )
+                proposal = _read(self._path("jobs", job, "proposal", "proposal.json"))
+            self._update(
+                job,
+                status=proposal["status"],
+                proposal_receipt=receipt,
+                proposal=proposal,
+            )
+
+        self._submit(job, prepare)
+        return {"id": job, "status": "queued", "cached":False}
+
+    def review(self, job, request):
+        from devbench.analysis.episode_proposals import _review_decision
+
+        if not isinstance(request, dict) or set(request) != {
+            "reviewer",
+            "decision",
+            "rationale",
+            "confirmations",
+        }:
+            raise ValueError(
+                "Review fields are reviewer, decision, rationale and confirmations"
+            )
+        _review_decision(
+            request["decision"],
+            request["reviewer"],
+            request["rationale"],
+            request["confirmations"],
+            required_confirmations=CONFIRMATIONS,
+        )
+        request = _copy(request)
+        with self._lock:
+            record = self._job(job)
+            self._require_known_workers()
+            if (
+                record["status"]
+                not in {"awaiting_operator_review", "needs_information"}
+                or "review_receipt" in record
+                or not record.get("proposal_receipt")
+                or record.get("operation_pending")
+            ):
+                raise RuntimeError(
+                    "This plan is not awaiting a first operator review; create a "
+                    "fresh plan for revisions"
+                )
+            receipt = record["proposal_receipt"]
+            self._update(job, status="recording_review")
+            def review():
+                from devbench.analysis.workbench_proposals import (
+                    record_workbench_review,
+                )
+                self._input(record["source"])
+                result = record_workbench_review(
+                    self._path("jobs", job, "review"),
+                    self._manifest(job, "proposal", receipt),
+                    expected_root=receipt["root_hash"],
+                    **request,
+                    allow_review=True,
+                )
+                self._update(
+                    job,
+                    review_receipt=result,
+                    review=request,
+                    status={
+                        "approve": "approved",
+                        "reject": "rejected",
+                        "needs_information": "needs_information",
+                    }[request["decision"]],
+                )
+
+            self._submit(job, review)
+            return {"id": job, "status": "recording_review"}
+
+    def run(self, job):
+        if not self.allow_data_execution:
+            raise PermissionError(
+                "Analysis requires explicit server startup --allow-data-execution "
+                "permission"
+            )
+        with self._lock:
+            record = self._job(job)
+            self._require_known_workers()
+            if record["status"] != "approved" or record.get("operation_pending"):
+                raise RuntimeError(
+                    "Execution requires an approved frozen plan and a fresh attempt"
+                )
+            return self._execute(job, resume=False)
+
+    def _execute(self, job, *, resume):
+        with self._lock:
+            record = self._job(job)
+            proposal, review = record["proposal_receipt"], record["review_receipt"]
+            remaining = self._remaining(record)
+            if remaining <= 0:
+                raise RuntimeError("Reviewed execution budget exhausted")
+            attempt_number = len(record.get("execution_history", [])) + 1
+            self._update(job, status="preparing")
+            def execute():
+                from devbench.analysis.workbench_proposals import (
+                    execute_reviewed_workbench,
+                    prepare_reviewed_workbench,
+                )
+                from devharness_core.watchdog import worker_limits
+                self._input(record["source"])
+                bundle = self._path("jobs", job, "bundle")
+                output = self._path(
+                    "jobs",
+                    job,
+                    "execution"
+                    if attempt_number == 1
+                    else f"execution-{attempt_number:04d}",
+                )
+                start, result = time.monotonic(), None
+                try:
+                    with worker_limits(
+                        deadline=start + remaining,
+                        max_mem_mb=self.parameters["memory_mb"],
+                        scratch_dir=self._path("jobs", job),
+                        growth_window_seconds=self.parameters.get(
+                            "growth_window_seconds", 0
+                        ),
+                    ):
+                        if not resume:
+                            prepare_reviewed_workbench(
+                                bundle,
+                                self._manifest(job, "proposal", proposal),
+                                self._manifest(job, "review", review),
+                                expected_proposal_root=proposal["root_hash"],
+                                expected_review_root=review["root_hash"],
+                                allow_data_execution=True,
+                            )
+                        self._validate_bundle_input(job, bundle)
+                        self._update(job, status="running")
+                        result = execute_reviewed_workbench(
+                            bundle, output, allow_data_execution=True
+                        )
+                        self._update(
+                            job,
+                            status=result["status"],
+                            execution=result,
+                            completed_analysis=result["status"]
+                            in {"completed_review_passed", "completed_review_failed"},
+                        )
+                finally:
+                    history = [
+                        *self._job(job).get("execution_history", []),
+                        {
+                            "attempt": attempt_number,
+                            "path": str(output),
+                            "budget_seconds": remaining,
+                            "elapsed_sec": time.monotonic() - start,
+                            "status": result["status"]
+                            if result
+                            else "interrupted_preparation",
+                            "receipt": result.get("receipt") if result else None,
+                        },
+                    ]
+                    self._update(job, execution_history=history)
+            self._submit(job, execute)
+            return {"id": job, "status": "preparing"}
+
+    def cancel(self, job):
+        with self._lock:
+            if not self.status(job)["cancellable"]:
+                raise RuntimeError("This job has no cancellable operation")
+            event = self._cancellations.setdefault(job, threading.Event())
+            event.set()
+            future = self._futures.get(job)
+            if future is None or future.cancel() or future.done():
+                self._update(job,status="cancelled",worker_liveness="stopped",completed_analysis=False,operation_pending=False)
+            else:
+                self._update(job,status="cancel_requested")
+            return {"id":job,"status":self._job(job)["status"]}
+
+    def resume(self, job):
+        if not self.allow_data_execution:
+            raise PermissionError(
+                "Resume requires explicit server data-execution permission"
+            )
+        with self._lock:
+            self._require_known_workers()
+            record = self._job(job)
+            if not self._can_resume(record):
+                raise RuntimeError(
+                    "Resume requires a controlled stopped attempt, verified review "
+                    "binding and remaining budget"
+                )
+            from devbench.analysis.workbench import _frozen_configuration
+            from devbench.analysis.workbench_proposals import (
+                _approved,
+                verify_workbench_review,
+            )
+            proposal, review = record["proposal_receipt"], record["review_receipt"]
+            self._input(record["source"])
+            _approved(
+                self._manifest(job, "proposal", proposal),
+                self._manifest(job, "review", review),
+                proposal["root_hash"],
+                review["root_hash"],
+            )
+            parameters, _ = _frozen_configuration(self._path("jobs", job, "bundle"))
+            self._validate_bundle_input(job, self._path("jobs", job, "bundle"))
+            binding = verify_workbench_review(
+                self._path("jobs", job, "bundle"), parameters
+            )
+            if (
+                binding["proposal_root"] != proposal["root_hash"]
+                or binding["review_root"] != review["root_hash"]
+            ):
+                raise ValueError(
+                    "Recovered bundle does not match this job's approved proposal"
+                )
+            return self._execute(job, resume=True)
+
+    def _validate_bundle_input(self, job, bundle):
+        binding = _read(bundle/"bindings.json")
+        if set(binding) != {"data"}:
+            raise ValueError("Unexpected bundle input binding")
+        actual = self._input(binding["data"])
+        approved = self._input(self._job(job)["source"])
+        if actual != approved:
+            raise ValueError("Bundle data binding differs from the approved source")
+
+    def _verified(self, job):
+        from devbench.analysis.bundles import verify_bundle
+        record = self._status(job)
+        _require_job_publication(self, record)
+        if record["status"] not in {
+            "completed_review_passed",
+            "completed_review_failed",
+        }:
+            raise RuntimeError(
+                "Verified complete results are unavailable; inspect retained "
+                "status/failure evidence"
+            )
+        bundle = self._path("jobs", job, "bundle")
+        verification = verify_bundle(bundle, record["execution"]["bundle_root"])
+        return record, bundle, verification
+
+    def figures(self, job, *, public=False):
+        from devbench.analysis.figure_artifacts import load_figure
+        from devbench.analysis.figure_catalog import figure_catalog
+        record, bundle, _ = self._verified(job)
+        manifest = bundle / "figures/manifest.json"
+        figures = []
+        if manifest.is_file():
+            for entry in _read(manifest)["figures"]:
+                if public:
+                    from devbench.analysis.figure_revisions import check_public_figure
+                    try:
+                        check_public_figure(
+                            bundle,
+                            entry["figure_id"],
+                            guard=workspace_guard(self.workspace),
+                        )
+                    except PermissionError:
+                        continue
+                figure, payload = load_figure(bundle, entry["figure_id"])
+                figures.append(
+                    {
+                        **figure,
+                        "labels": [
+                            label
+                            for panel in payload["panels"]
+                            for label in panel["labels"]
+                        ],
+                    }
+                )
+        with self._lock:
+            revisions = [
+                self.status(row["id"])
+                for row in self._jobs.values()
+                if row.get("operation_kind") == "presentation"
+                and row.get("parent_job") == job
+            ]
+        return {
+            "parent_root": record["execution"]["bundle_root"],
+            "parent_status": record["status"],
+            "figures": figures,
+            "revisions": revisions,
+            "catalog": figure_catalog(
+                available_families={row["family"] for row in figures}
+            ),
+            "reason": None
+            if figures
+            else "presentation_revision_unavailable: legacy figure semantics are "
+                "absent",
+        }
+
+    def revise_figure(self, job, request, *, public=False):
+        from devbench.analysis.bundles import pack_bundle
+        from devbench.analysis.figure_revisions import (
+            execute_figure_revision,
+            prepare_figure_revision,
+            revision_request,
+        )
+        from devharness_core.watchdog import _raise_if_cancelled, worker_limits
+
+        if not isinstance(request, dict) or set(request) != {
+            "figure_id",
+            "expected_parent_root",
+            "display_options",
+            "author_label",
+        }:
+            raise ValueError("Use only the declared presentation request fields")
+        with self._lock:
+            self._require_known_workers()
+            parent, bundle, _ = self._verified(job)
+            if public:
+                from devbench.analysis.figure_revisions import check_public_figure
+
+                check_public_figure(
+                    bundle, request["figure_id"], guard=workspace_guard(self.workspace)
+                )
+            if request["expected_parent_root"] != parent["execution"]["bundle_root"]:
+                raise ValueError("presentation_parent_root_mismatch")
+            normalized = revision_request(
+                bundle,
+                request["expected_parent_root"],
+                request["figure_id"],
+                request["display_options"],
+                author_label=request["author_label"],
+            )
+            for prior in self._jobs.values():
+                if (
+                    prior.get("operation_kind") == "presentation"
+                    and prior.get("parent_job") == job
+                    and prior.get("request_identity") == normalized["request_identity"]
+                ):
+                    return {
+                        "id": prior["id"],
+                        "status": self.status(prior["id"])["status"],
+                        "cached": True,
+                    }
+            if len(self._jobs) >= 100:
+                raise ValueError("Workspace job limit reached; use a fresh workspace")
+            child = uuid.uuid4().hex
+            self._path("jobs", child).mkdir(mode=0o700)
+            self._jobs[child] = {
+                "id": child,
+                "question": "Presentation: " + normalized["figure_id"],
+                "operation_kind": "presentation",
+                "parent_job": job,
+                "parent_root": normalized["parent_bundle_root"],
+                "parent_status": parent["status"],
+                "figure_id": normalized["figure_id"],
+                "request_identity": normalized["request_identity"],
+                "request": _copy(request),
+                "runtime_identity": _copy(self.runtime_identity),
+                "status": "queued",
+                "completed_analysis": False,
+                "model_sessions_attempted": 0,
+                "scientific_review": "inherited_parent_context_not_new_review",
+            }
+            self._update(child)
+            def render():
+                started = time.monotonic()
+                output = self._path("jobs", child, "bundle")
+                try:
+                    with worker_limits(
+                        deadline=started + min(120, self.run_timeout_seconds),
+                        max_mem_mb=min(1024, self.parameters["memory_mb"]),
+                        scratch_dir=self._path("jobs", child),
+                        growth_window_seconds=self.parameters.get(
+                            "growth_window_seconds", 0
+                        ),
+                    ):
+                        self._verified(job)
+                        prepare_figure_revision(
+                            bundle,
+                            normalized["parent_bundle_root"],
+                            normalized["figure_id"],
+                            normalized["display_options"],
+                            output,
+                            author_label=normalized["author_label"],
+                        )
+                        self._update(child, status="running")
+                        result = execute_figure_revision(output)
+                        _raise_if_cancelled()
+                        options = (
+                            {
+                                "audience": "presentation",
+                                "guard": workspace_guard(self.workspace),
+                            }
+                            if public
+                            else {}
+                        )
+                        archive = pack_bundle(
+                            output,
+                            self._path("jobs", child, "presentation.zip"),
+                            result["manifest_sha256"],
+                            **options,
+                        )
+                        _raise_if_cancelled()
+                        self._update(
+                            child,
+                            status="completed_presentation",
+                            execution={**result, **archive},
+                            completed_analysis=False,
+                        )
+                finally:
+                    self._update(
+                        child,
+                        execution_history=[
+                            {
+                                "attempt": 1,
+                                "elapsed_sec": time.monotonic() - started,
+                                "operation_kind": "presentation",
+                            }
+                        ],
+                    )
+
+            self._submit(child, render)
+            return {"id": child, "status": "queued", "cached": False}
+
+    def figure_revision(self, job, revision):
+        self._verified(job)
+        record = self._status(revision)
+        if (
+            record.get("operation_kind") != "presentation"
+            or record.get("parent_job") != job
+        ):
+            raise ValueError("Revision does not belong to this analysis")
+        return record
+
+    def download_figure_revision(self, job, revision, name, *, public=False):
+        from devbench.analysis.bundles import verify_bundle
+        from devbench.analysis.figure_artifacts import load_figure
+        record = self.figure_revision(job, revision)
+        if record["status"] != "completed_presentation":
+            raise RuntimeError(
+                "Completed presentation is unavailable; inspect retained "
+                "failure/cancellation"
+            )
+        bundle = self._path("jobs", revision, "bundle")
+        verify_bundle(bundle, record["execution"]["manifest_sha256"])
+        if public:
+            from devbench.analysis.figure_revisions import check_public_figure
+            parent = self._path("jobs", job, "bundle")
+            guard = workspace_guard(self.workspace)
+            check_public_figure(parent, record["figure_id"], guard=guard)
+            check_public_figure(bundle, record["figure_id"], guard=guard)
+        if name == "archive":
+            path = self._path("jobs", revision, "presentation.zip")
+            if sha256(path) != record["execution"]["archive_sha256"]:
+                raise ValueError("Presentation archive identity mismatch")
+            return path, "application/zip", "presentation-evidence.zip"
+        if name == "image":
+            figure, _ = load_figure(bundle, record["figure_id"])
+            path = self._path("jobs", revision, "bundle", figure["image"]["path"])
+            return path, "image/png", path.name
+        raise ValueError("Unknown presentation download")
+
+    @staticmethod
+    def _allowed_artifact(name):
+        return name in DOWNLOADS or bool(
+            re.fullmatch(r"figures/[A-Za-z0-9_-]+\.(png|svg|html|json)", name)
+        )
+
+    def results(self, job, *, public=False):
+        _, bundle, verification = self._verified(job)
+        manifest = _read(bundle / "receipts.json")
+        names = [name for name in manifest["artifacts"] if self._allowed_artifact(name)]
+        value = {"verification": verification, "report": _read(bundle / "report.json"),
+            "deterministic_review": _read(bundle / "reviewer-report.json"),
+            "scientific_review": "not_performed_by_this_service",
+            "artifacts": [
+                {"name": name, "bytes": (bundle / name).stat().st_size}
+                for name in sorted(names)
+            ],
+            "archive_available": True,
+        }
+        if public:
+            value["archive_available"] = False
+            value["artifacts"] = []
+            value["report"] = {
+                key: value["report"][key]
+                for key in ("cells_input", "cells_retained", "HVG_count")
+                if type(value["report"].get(key)) is int and value["report"][key] >= 0
+            }
+            value["deterministic_review"] = {
+                "passed": value["deterministic_review"].get("passed") is True
+            }
+            return public_metadata(value, blocked_hashes=_publication_hashes(self))
+        return value
+
+    def download(self, job, name, *, public=False):
+        record, bundle, _ = self._verified(job)
+        if public:
+            if not re.fullmatch(r"figures/[A-Za-z0-9_-]+\.png", name):
+                raise PermissionError("restricted_audit_entitlement_required")
+            from devbench.analysis.figure_revisions import check_public_figure
+
+            check_public_figure(
+                bundle, Path(name).stem, guard=workspace_guard(self.workspace)
+            )
+        if name == "archive":
+            path = self._path("jobs", job, "bundle.bundle.zip")
+            if (
+                str(path) != record["execution"]["archive"]
+                or sha256(path)
+                != record["execution"]["native_result"]["archive_sha256"]
+            ):
+                raise ValueError("Export archive identity mismatch")
+            return path, "application/zip", "scRNA-evidence.bundle.zip"
+        manifest = _read(bundle / "receipts.json")
+        if not self._allowed_artifact(name) or name not in manifest["artifacts"]:
+            raise ValueError("Artifact is not in the permitted verified result routes")
+        path = self._path("jobs", job, "bundle", name)
+        return (
+            path,
+            mimetypes.guess_type(name)[0] or "application/octet-stream",
+            path.name,
+        )
+
+    def close(self):
+        if self._executor is not None and self._owns_executor:
+            self._executor.shutdown(wait=True, cancel_futures=False)
+        self._release_lock()
+
+
+def make_server(app, *, port=8765, project_hub=None, default_project_id=None):
+    from .workbench_http import make_workbench_server
+
+    return make_workbench_server(
+        app,
+        port=port,
+        project_hub=project_hub,
+        default_project_id=default_project_id,
+        ui=sys.modules[__name__],
+    )
+
+
+_BROWSER_OPEN_FAILURE = (
+    "Workbench is still running, but a browser could not be opened. "
+    "Open the displayed loopback URL manually.")
+
+
+def _open_system_browser(launch_url):
+    """Use the native URL handler for the local Workbench."""
+    if sys.platform == "darwin":
+        command = ["/usr/bin/open", launch_url]
+    elif sys.platform.startswith("linux"):
+        executable = shutil.which("xdg-open", path=os.defpath)
+        if executable is None:
+            return False
+        command = [str(Path(executable).resolve()), launch_url]
+    else:
+        return False
+    opener_environment = os.environ.copy()
+    opener_environment.pop("BROWSER", None)
+    try:
+        result = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=opener_environment,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
+def _open_browser_async(launch_url):
+    """Opening the desktop browser must never block the bound service loop."""
+    def open_page():
+        try:
+            opened = _open_system_browser(launch_url)
+        except Exception:
+            opened = False
+        if not opened:
+            print(_BROWSER_OPEN_FAILURE, file=sys.stderr, flush=True)
+
+    launch = threading.Thread(
+        target=open_page, name="workbench-browser-launch", daemon=True
+    )
+    launch.start()
+    return launch
+
+
+def main(argv=None, *, pin_execution=False, interactive_adaptive=False):
+    parser = argparse.ArgumentParser(
+        prog="devbench workbench" if interactive_adaptive else None, description=__doc__
+    )
+    parser.add_argument("--input-root", action="append", type=Path, required=True)
+    parser.add_argument(
+        "--input-import-root", type=Path,
+        help="Allow browser imports into this exact configured input directory",
+    )
+    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument(
+        "--projects-root",
+        type=Path,
+        help="Separate local project catalog. Retains --workspace as read-only.",
+    )
+    parser.add_argument(
+        "--parameters",
+        type=Path,
+        help="Existing workbench parameter overrides, fixed for this workspace",
+    )
+    parser.add_argument("--run-timeout-seconds", type=int, default=3600)
+    parser.add_argument("--allow-data-execution", action="store_true")
+    parser.add_argument(
+        "--offline-only", action="store_true",
+        help="Disable model and discovery access for this startup only",
+    )
+    parser.add_argument(
+        "--restore-view-state-backup",
+        action="store_true",
+        help="Explicitly recover missing/invalid local view metadata from its "
+            "previous valid snapshot; does not restore jobs or permissions",
+    )
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument(
+        "--codex-model",
+        help="Configure the existing Codex proposal selector; does not authorize "
+            "model calls",
+    )
+    selection.add_argument(
+        "--recorded-plan-answer",
+        type=Path,
+        help="Explicit offline fixture decision, visibly labeled; never live model "
+            "evidence",
+    )
+    parser.add_argument(
+        "--agent-workspaces",
+        type=Path,
+        help="Disjoint protected actor workspace parent for Codex",
+    )
+    parser.add_argument(
+        "--allow-model-execution",
+        action="store_true",
+        help="Explicitly permit the configured Codex selector and its mandatory "
+            "preflight",
+    )
+    parser.add_argument(
+        "--model-data-scope",
+        choices=("local_only", "synthetic", "public"),
+        default="local_only",
+    )
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="Open the local Workbench in the default browser",
+    )
+    parser.add_argument(
+        "--local-analyst-spec",
+        type=Path,
+        help="Reviewed immutable bulk episode specification bound to this project",
+    )
+    parser.add_argument(
+        "--singlecell-trial-request",
+        type=Path,
+        help="Explicit absolute path to frozen source/question-bound single-cell "
+            "facts; does not grant planning or execution permission",
+    )
+    parser.add_argument(
+        "--enable-scientific",
+        action="store_true",
+        help="Expose shared scientific metadata; initialization remains an explicit "
+            "authenticated action",
+    )
+    parser.add_argument(
+        "--scientific-workspace",
+        type=Path,
+        help="Existing method workspace to explicitly bind to this local project",
+    )
+    parser.add_argument(
+        "--adaptive-workflow",
+        type=Path,
+        help="Absolute in-project devbench.workbench-adaptive-startup/1 or "
+        "devbench.workbench-adaptive-startup/2 manifest with session_id, context_id, "
+        "source_id and optional frozen OCI parameters",
+    )
+    parser.add_argument(
+        "--mounted-image-id",
+        help="Exact local OCI image ID. The scientific launcher can detect an "
+        "installed registered limma-voom image when omitted.",
+    )
+    parser.add_argument(
+        "--synthetic-erql-capsule",
+        type=Path,
+        help="Explicit signed canonical ERQL evaluation capsule directory",
+    )
+    parser.add_argument(
+        "--scientific-workflow-config",
+        type=Path,
+        help="Explicit registered discovery, reviewer and implementation policy",
+    )
+    parser.add_argument("--allow-discovery-network", action="store_true")
+    parser.add_argument("--allow-review-model-execution", action="store_true")
+    parser.add_argument("--allow-implementation-model-execution", action="store_true")
+    parser.add_argument(
+        "--recorded-method-decisions",
+        type=Path,
+        help="Explicit offline method-planner responses; never live model evidence",
+    )
+    parser.add_argument(
+        "--restore-scientific-backup",
+        type=Path,
+        help="Explicitly recover invalid scientific metadata from its validated "
+            "retained backup; never restores execution grants or launches work",
+    )
+    args = parser.parse_args(argv)
+    _validate_cli_args(parser, args)
+    if interactive_adaptive and not args.offline_only:
+        _validate_interactive_model_args(parser, args)
+    trial_request = None
+    if pin_execution:
+        from devbench.engine.execution_snapshot import launch
+
+        launch_args = sys.argv[1:] if argv is None else argv
+        module = "devbench.platform.workbench_ui"
+        if interactive_adaptive:
+            module = "devbench.platform.cli"
+            launch_args = ["workbench", *launch_args]
+        try:
+            launch(module, launch_args, replace_process=True)
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+    if args.singlecell_trial_request:
+        from .workbench_singlecell import load_singlecell_trial_request
+        trial_request = load_singlecell_trial_request(args.singlecell_trial_request)
+    from devbench.analysis.episode_planning import RecordedPlanningSelector
+
+    selector = (
+        RecordedPlanningSelector(_read(args.recorded_plan_answer))
+        if args.recorded_plan_answer and not args.offline_only
+        else None
+    )
+    method_selector = None
+    if args.recorded_method_decisions and not args.offline_only:
+        from devbench.analysis.method_planner_cli import RecordedMethodSelector
+
+        method_selector = RecordedMethodSelector(
+            _read(args.recorded_method_decisions)["responses"]
+        )
+    mounted_image_id = args.mounted_image_id
+    if mounted_image_id is None and interactive_adaptive and args.enable_scientific:
+        mounted_image_id = _detect_mounted_image()
+    service_options = {
+        "parameter_overrides": _read(args.parameters) if args.parameters else None,
+        "run_timeout_seconds": args.run_timeout_seconds,
+        "allow_data_execution": args.allow_data_execution,
+        "codex_model": args.codex_model,
+        "allow_model_execution": args.allow_model_execution,
+        "model_data_scope": args.model_data_scope,
+        "enable_scientific": args.enable_scientific,
+        "mounted_image_id": mounted_image_id,
+        "interactive_adaptive": interactive_adaptive,
+        "offline_only": args.offline_only,
+    }
+    app = WorkbenchService(
+        args.workspace,
+        args.input_root,
+        proposal_selector=selector,
+        agent_workspaces=args.agent_workspaces,
+        restore_view_state_backup=args.restore_view_state_backup,
+        scientific_workspace=args.scientific_workspace,
+        method_selector=method_selector,
+        scientific_workflow_config=args.scientific_workflow_config,
+        allow_discovery_network=args.allow_discovery_network,
+        allow_review_model_execution=args.allow_review_model_execution,
+        allow_implementation_model_execution=args.allow_implementation_model_execution,
+        restore_scientific_backup=args.restore_scientific_backup,
+        local_analyst_spec=args.local_analyst_spec,
+        singlecell_trial_binding=trial_request,
+        synthetic_erql_capsule=args.synthetic_erql_capsule,
+        input_import_root=args.input_import_root,
+        **service_options,
+    )
+    _serve_workbench(app, args, parser, service_options)
+
+
+def _detect_mounted_image() -> str | None:
+    from platform import machine
+
+    from devharness_controlled.native_contracts import (
+        kernel_test_platform,
+        limma_voom_kernel_images,
+    )
+    from devharness_controlled.native_runtime import LocalDocker
+
+    try:
+        runtime = LocalDocker()
+    except (OSError, ValueError):
+        return None
+    architecture = machine().lower()
+    architecture = {"aarch64": "arm64", "x86_64": "amd64"}.get(
+        architecture, architecture
+    )
+    host_platform = "linux/" + architecture
+    candidates = sorted(
+        limma_voom_kernel_images(),
+        key=lambda image: (kernel_test_platform(image) != host_platform, image),
+    )
+    for image_id in candidates:
+        try:
+            identity = runtime._call(
+                ["image", "inspect", image_id, "--format", "{{.Id}}"], timeout=5
+            )
+        except ValueError:
+            continue
+        if identity == image_id:
+            return image_id
+    return None
+
+
+def _validate_interactive_model_args(parser, args):
+    if args.allow_model_execution and (
+        not args.codex_model or args.model_data_scope not in {"synthetic", "public"}
+    ):
+        parser.error(
+            "--allow-model-execution requires --codex-model and explicit "
+            "--model-data-scope synthetic or public"
+        )
+    if args.codex_model and args.agent_workspaces is None:
+        parser.error("--codex-model requires --agent-workspaces")
+
+
+def _validate_cli_args(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
+    if not 0 <= args.port <= 65535:
+        parser.error("Port must be between 0 and 65535")
+    if args.mounted_image_id is not None and not re.fullmatch(
+        r"sha256:[a-f0-9]{64}", args.mounted_image_id
+    ):
+        parser.error("--mounted-image-id requires an exact sha256 image ID")
+    if args.projects_root is not None:
+        _validate_projects_root(parser, args)
+    if args.adaptive_workflow is not None and (
+        not args.enable_scientific
+        or not args.adaptive_workflow.is_absolute()
+        or not args.workspace.is_absolute()
+        or not (args.workspace / "service.json").is_file()
+    ):
+        parser.error(
+            "--adaptive-workflow requires --enable-scientific, an absolute manifest, "
+            "and an existing project workspace"
+        )
+    if args.singlecell_trial_request:
+        if not args.singlecell_trial_request.is_absolute():
+            parser.error("The single-cell trial request must use an absolute path")
+        if not args.enable_scientific:
+            parser.error("The single-cell trial request requires --enable-scientific")
+
+
+def _validate_projects_root(parser, args):
+    try:
+        root = _canonical(args.projects_root)
+    except ValueError as error:
+        parser.error(str(error))
+    project_paths = (
+        args.workspace,
+        args.scientific_workspace,
+        args.agent_workspaces,
+        *args.input_root,
+    )
+    for path in project_paths:
+        if path is None:
+            continue
+        resolved = path.resolve()
+        if resolved.is_relative_to(root) or root.is_relative_to(resolved):
+            parser.error(
+                "--projects-root must be disjoint from startup workspace, actor and "
+                "input roots"
+            )
+
+
+def _project_hub(app, args, service_options):
+    from devbench.analysis.workbench_projects import WorkbenchProjectHub
+
+    def project_service(workspace, data, actors, executor):
+        protected = (app.workspace, *app.input_roots, *hub.denied_roots)
+        if args.scientific_workspace is not None:
+            protected += (args.scientific_workspace,)
+        if args.agent_workspaces is not None:
+            protected += (args.agent_workspaces,)
+        return WorkbenchService(
+            workspace, [data], agent_workspaces=actors, shared_executor=executor,
+            actor_denied_roots=protected, **service_options,
+        )
+
+    hub = WorkbenchProjectHub(
+        args.projects_root, project_service, library_roots=app.input_roots,
+        existing={"startup": app},
+    )
+    return hub
+
+
+def _attach_startup_workflow(app, args, parser):
+    if args.adaptive_workflow is not None:
+        from .workbench_adaptive import local_startup_binding
+        try:
+            app.bind_adaptive_workflow(
+                local_startup_binding(app, args.adaptive_workflow)
+            )
+        except (
+            OSError,
+            PermissionError,
+            ValueError,
+            RuntimeError,
+            KeyError,
+        ) as error:
+            parser.error(
+                "Adaptive workflow startup refused: " + safe_diagnostic(error)
+            )
+
+
+def _handle_studio_shutdown(_signum, _frame):
+    raise KeyboardInterrupt
+
+
+def _remove_studio_liveness(path, inode):
+    if path is None or inode is None:
+        return
+    try:
+        if path.lstat().st_ino == inode:
+            path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _serve_workbench(app, args, parser, service_options):
+    server = project_hub = liveness_path = liveness_inode = None
+    main_thread = threading.current_thread() is threading.main_thread()
+    previous_signal = (
+        signal.signal(signal.SIGTERM, _handle_studio_shutdown) if main_thread else None
+    )
+    try:
+        _attach_startup_workflow(app, args, parser)
+        if args.projects_root is None:
+            server = make_server(app, port=args.port)
+            current_app = app
+        else:
+            project_hub = _project_hub(app, args, service_options)
+            if project_hub.default_project_id is None:
+                project_hub.create({"name": "Local project"})
+            current_app = project_hub.resolve()
+            server = make_server(current_app, port=args.port, project_hub=project_hub)
+        origin = f"http://127.0.0.1:{server.server_address[1]}"
+        liveness_path = app.workspace / "studio-server.json"
+        atomic_json(liveness_path, {
+            "url": origin + "/", "pid": os.getpid(), "workspace": str(app.workspace),
+            "offline_only": app.offline_only,
+            "started_at": datetime.now(UTC).isoformat(),
+        })
+        liveness_inode = liveness_path.stat().st_ino
+        if args.open_browser:
+            print(
+                "Opening Workbench at " + origin + "/ in your default browser.",
+                flush=True,
+            )
+            try:
+                _open_browser_async(origin + "/")
+            except Exception:
+                print(_BROWSER_OPEN_FAILURE, file=sys.stderr, flush=True)
+        else:
+            print("Open " + origin + "/", flush=True)
+        print(
+            "Local scRNA research interface; "
+            + current_app.configuration()["proposal_selection"]["label"]
+            + ". Ctrl+C stops accepting requests.",
+            flush=True,
+        )
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print(
+            "Closing local interface; any active supervised attempt retains its "
+            "existing deadline.",
+            flush=True,
+        )
+    finally:
+        try:
+            if server is not None:
+                server.server_close()
+            _remove_studio_liveness(liveness_path, liveness_inode)
+            if previous_signal is not None:
+                signal.signal(signal.SIGTERM, previous_signal)
+        finally:
+            if project_hub is None:
+                app.close()
+            else:
+                project_hub.close()
+
+
+if __name__ == "__main__":
+    main(pin_execution=True)

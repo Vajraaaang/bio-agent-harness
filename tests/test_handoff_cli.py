@@ -1,10 +1,11 @@
 """Actual CLI process round trips using reviewed local actions, never a model."""
 import json
-from pathlib import Path
 import subprocess
 import sys
 
-from tests.test_analysis_episodes import inputs, workspace
+from tests.test_analysis_episodes import inputs, workspace as _workspace
+
+workspace = _workspace
 from tests.test_episode_handoff import REPLY
 
 
@@ -77,6 +78,10 @@ def test_cli_resumes_frozen_nondefault_selector_settings(workspace, monkeypatch,
         def configuration(self):
             return {"backend": "codex-cli", "requested_model": self.model, "memory_mb": self.memory,
                 "reasoning_effort": self.effort, "executable": self.executable}
+        def episode_lease(self):
+            from contextlib import nullcontext
+            return nullcontext()
+
         def select(self, context, output, **kwargs):
             kwargs.pop("allow_model_execution", None)
             return super().select(context, output, **kwargs)

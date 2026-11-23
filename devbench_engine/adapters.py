@@ -1,5 +1,6 @@
 """Subscription-authenticated Codex execution and deterministic offline adapters."""
 from abc import ABC, abstractmethod
+from copy import deepcopy
 import json
 import math
 import os
@@ -23,6 +24,11 @@ _MAX_ANSWER_BYTES = 1_000_000
 _TAIL_BYTES = 4096
 _MAX_EVENT_BYTES = 1_000_000
 _MAX_TRACE_BYTES = 8_000_000
+_OPENAI_LOCAL_ONLY_KEYWORDS = {
+    "minLength", "maxLength", "minItems", "maxItems", "minimum", "maximum",
+    "exclusiveMinimum", "exclusiveMaximum", "uniqueItems", "maxProperties",
+    "minProperties", "pattern", "format", "multipleOf", "propertyNames", "default",
+}
 
 
 def _signal_owned_process_group(process: subprocess.Popen, signum: int) -> None:
@@ -240,6 +246,34 @@ def local_schema_prompt(instruction, schema_path):
             "Every answer is validated locally against that original schema before acceptance.")
 
 
+def to_openai_strict_schema(schema: dict) -> dict:
+    """Project schema nodes for Codex transport after checking strict eligibility."""
+    projected = deepcopy(schema)
+    pending = [projected]
+    while pending:
+        node = pending.pop()
+        for keyword in _OPENAI_LOCAL_ONLY_KEYWORDS:
+            node.pop(keyword, None)
+        if "oneOf" in node:
+            # When both are present, keep the existing anyOf as a necessary
+            # condition for local validity. The local schema enforces both.
+            node.setdefault("anyOf", node.pop("oneOf"))
+        kinds = node.get("type", [])
+        if (kinds == "object" or "properties" in node
+                or isinstance(kinds, list) and "object" in kinds):
+            node["additionalProperties"] = False
+        # Only walk schema positions. Property names, enum values and
+        # other data can contain strings that also name schema keywords.
+        for keyword in ("properties", "$defs", "definitions"):
+            children = node.get(keyword, {}).values()
+            pending.extend(child for child in children if isinstance(child, dict))
+        if isinstance(node.get("items"), dict):
+            pending.append(node["items"])
+        branches = node.get("anyOf", [])
+        pending.extend(child for child in branches if isinstance(child, dict))
+    return projected
+
+
 class CodexCLIAdapter(AgentAdapter):
     """Run the local CLI using ChatGPT login; subscription usage limits apply.
 
@@ -251,6 +285,8 @@ class CodexCLIAdapter(AgentAdapter):
 
     backend_name = "Codex CLI"
     billing_mode = "chatgpt_subscription"
+    _uses_openai_schema_transport = True
+    _process_growth_window_seconds = 0.0
 
     def __init__(self, executable: str = "codex", timeout_sec: float = 300,
                  model: Optional[str] = None, max_mem_mb: float = 8000,
@@ -487,12 +523,26 @@ class CodexCLIAdapter(AgentAdapter):
         try:
             self._preflight(executable, workspace, environment, min(self.timeout_sec, 15))
             with tempfile.TemporaryDirectory(prefix=".devbench-cli-", dir=workspace) as temporary:
-                temporary = Path(temporary)
-                self._prepare_options(temporary, workspace)
-                phase_schema = temporary / "phase_schema.json"
-                phase_schema.write_text(json.dumps(PHASE_SCHEMA), encoding="utf-8")
-                final_schema = temporary / "answer_schema.json"
-                final_schema.write_text(json.dumps(original_schema, allow_nan=False), encoding="utf-8")
+                temporary_path = Path(temporary)
+                self._prepare_options(temporary_path, workspace)
+                phase_schema = temporary_path / "phase_schema.json"
+                final_schema = temporary_path / "answer_schema.json"
+                transport_schemas: dict[Path, Path] = {}
+                schema_files = (
+                    (phase_schema, PHASE_SCHEMA),
+                    (final_schema, original_schema),
+                )
+                for path, definition in schema_files:
+                    path.write_text(
+                        json.dumps(definition, allow_nan=False), encoding="utf-8"
+                    )
+                    if (
+                        self._uses_openai_schema_transport
+                        and strict_schema_compatible(definition)
+                    ):
+                        transport = path.with_name("openai-" + path.name)
+                        _write_answer(to_openai_strict_schema(definition), transport)
+                        transport_schemas[path] = transport
                 for index, phase in enumerate(self.phases):
                     remaining = self.timeout_sec - (time.monotonic() - started)
                     if remaining <= 0:
@@ -501,7 +551,7 @@ class CodexCLIAdapter(AgentAdapter):
                     self._turn_usage, self._turn_result = None, None
                     self._last_process_measurements = {}
                     final = index == len(self.phases) - 1
-                    output = self._output_path(workspace, temporary, phase, final)
+                    output = self._output_path(workspace, temporary_path, phase, final)
                     output.unlink(missing_ok=True)
                     self._active_schema_definition = original_schema if final else PHASE_SCHEMA
                     compatible = strict_schema_compatible(self._active_schema_definition)
@@ -519,6 +569,17 @@ class CodexCLIAdapter(AgentAdapter):
                     turn_started, event_start = time.monotonic(), len(self.events)
                     answer, error = None, None
                     try:
+                        if (
+                            "--output-schema" in command
+                            and active_schema in transport_schemas
+                        ):
+                            # Keep the canonical command binding separate from
+                            # the provider invocation and its retained metadata.
+                            command = command.copy()
+                            schema_arg = command.index("--output-schema") + 1
+                            command[schema_arg] = str(transport_schemas[active_schema])
+                            if "cli_command" in self.metadata:
+                                self.metadata["cli_command"] = command
                         status, _, _ = self._run_process(command, workspace, environment, prompt, remaining)
                         if status != 0:
                             raise RuntimeError(self.backend_name + " exited with status {}; inspect adapter metadata diagnostics".format(status))
@@ -557,7 +618,10 @@ class CodexCLIAdapter(AgentAdapter):
                 prompt.seek(0)
                 process = subprocess.Popen(command, cwd=str(workspace), env=environment, stdin=prompt,
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-                monitor = MemoryWatchdog(process.pid, max_mem_mb=self.max_mem_mb).start()
+                monitor = MemoryWatchdog(
+                    process.pid, max_mem_mb=self.max_mem_mb,
+                    growth_window_seconds=self._process_growth_window_seconds,
+                ).start()
                 self._process_observation("wait")
                 captures = [_OutputCapture(process.stdout, self._event if parse_events else None),
                             _OutputCapture(process.stderr)]
@@ -588,6 +652,8 @@ class CodexCLIAdapter(AgentAdapter):
                 monitor.stop()
                 monitor.terminate_tree()
                 self.metadata["peak_rss_mb"] = max(self.metadata.get("peak_rss_mb", 0), monitor.peak_rss_mb)
+                if parse_events and self._process_growth_window_seconds:
+                    self.metadata["process_watchdog"] = monitor.observation_report()
             if process is not None:
                 _signal_owned_process_group(process, signal.SIGKILL)
                 if process.poll() is None:
@@ -704,6 +770,7 @@ class ClaudeCLIAdapter(CodexCLIAdapter):
 
     backend_name = "Claude CLI"
     billing_mode = "claude_subscription"
+    _uses_openai_schema_transport = False
 
     def __init__(self, executable: str = "claude", timeout_sec: float = 300,
                  model: Optional[str] = None, max_mem_mb: float = 8000,

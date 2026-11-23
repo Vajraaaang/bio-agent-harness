@@ -32,3 +32,22 @@ def test_packaged_and_composed_summary_renderer():
     assert allowed_bundle_path(path)
     assert 'WorkbenchSummaryPlots' in render_page('summary-check')
     assert 'analysis/assets/workbench-summary-plots.js' in (ROOT/'pyproject.toml').read_text()
+
+
+def test_single_batch_and_zero_histograms_conserve_records():
+    node = shutil.which('node')
+    assert node
+    program = r'''
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),window={};
+vm.runInNewContext(fs.readFileSync(process.argv[1],'utf8'),{window});
+const data={project:{id:'fixture'},provenance:{kind:'synthetic'},cells:[0,1,2].map((batch)=>({batch,group:batch,reads:0,genes:0,mito:0,expression:Array(8).fill(0)}))};
+for(const batch of ['all','0','1','2']){
+ const result=window.WorkbenchSummaryPlots.summarize(data,batch);
+ assert.equal(result.batches.length,batch==='all'?3:1);
+ if(batch!=='all')assert.equal(result.batches[0].batch,Number(batch));
+ assert.equal(result.batches.reduce((n,b)=>n+b.depthBins.reduce((a,x)=>a+x,0),0),result.n);
+ assert.equal(result.batches.reduce((n,b)=>n+b.mitoBins.reduce((a,x)=>a+x,0),0),result.n);
+}
+'''
+    result=subprocess.run([node,'-e',program,str(ROOT/'devbench/analysis/assets/workbench-summary-plots.js')],capture_output=True,text=True)
+    assert result.returncode == 0, result.stderr

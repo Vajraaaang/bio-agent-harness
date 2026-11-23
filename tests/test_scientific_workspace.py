@@ -1,7 +1,6 @@
 """Browser service workflow over actual scientific and method SQLite records."""
 from copy import deepcopy
 from concurrent.futures import Future
-from pathlib import Path
 from types import SimpleNamespace
 import uuid
 
@@ -13,11 +12,8 @@ from tests.test_method_planner import Selector, candidate, trial_spec
 
 
 @pytest.fixture
-def tmp_path():
-    # Exercise real storage admission; platform scratch is deliberately denied.
-    root = Path(__file__).resolve().parents[1] / "reports" / "scientific-workspace-fixtures" / uuid.uuid4().hex
-    root.mkdir(parents=True)
-    return root
+def tmp_path(workspace_tmp_path):
+    return workspace_tmp_path
 
 
 def setup_workspace(tmp_path):
@@ -88,7 +84,10 @@ def test_explicit_plan_intent_and_user_requirements_are_retained_without_executi
                             lambda *args, **kwargs: pytest.fail("Listing recomputed execution evidence"))
         before = methods.database.read_bytes()
         listed = app.scientific.catalog()["plans"]
-        assert next(row for row in listed if row["session_id"] == plan["session_id"]) == retained
+        projected = next(row for row in listed if row["session_id"] == plan["session_id"])
+        for key in ("session_id", "context", "evaluation_purpose", "user_parameter_requirements"):
+            assert projected[key] == retained[key]
+        assert "rationale" not in projected["recommendation"]
         assert methods.database.read_bytes() == before
     finally:
         app.close()

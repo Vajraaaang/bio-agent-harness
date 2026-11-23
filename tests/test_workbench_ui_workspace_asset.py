@@ -16,7 +16,7 @@ def test_default_analyst_is_truthful_and_preserves_raw_question_as_text():
     run("""
 assert.equal(elements['panel-analyst'].hidden,false);assert.equal(elements['panel-code'].hidden,true);
 server.state.question='<script>My actual question</script>';
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 assert.equal(elements['analyst-timeline'].children[0].children[1].textContent,server.state.question);
 assert.match(elements['model-message'].textContent,/No model conversation/);
 assert.match(elements['composer-scope'].textContent,/Operator-created/);
@@ -35,7 +35,7 @@ elements.registration.reportValidity=()=>true;elements['composer-submit'].onclic
 def test_completed_results_default_to_uncorrected_and_attempts_follow_selection():
     run(FIGURE_SETUP+"""
 server.figures.revisions=[{id:'qc-attempt',figure_id:'qc',status:'cancelled'},{id:'embedding-attempt',figure_id:'uncorrected',status:'operation_failed'}];
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 assert.equal(elements.results.hidden,false);assert.equal(elements['figure-select'].value,'uncorrected');
 assert.match(elements['presentation-versions'].children[0].textContent,/embeddin/);
 elements['figure-select'].value='qc';elements['figure-select'].onchange();
@@ -46,7 +46,7 @@ assert.equal(elements['revision-archive'].disabled,true);
 def test_failed_job_opens_run_view_and_exposes_recorded_reason():
     run("""
 server.state.status='operation_failed';server.state.error={message:'Recorded fixture worker failure'};
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 assert.equal(elements.execute.hidden,false);assert.equal(elements.review.hidden,true);
 assert.match(elements['run-message'].textContent,/Recorded fixture worker failure/);
 assert.ok(elements['analyst-timeline'].children.some(row=>row.children.some(child=>child.textContent.includes('Recorded fixture worker failure'))));
@@ -55,7 +55,7 @@ assert.equal(elements['run-button'].disabled,true);
 
 def test_job_switch_clears_inspector_while_new_state_is_pending():
     run("""
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 server.state={...server.state,id:'other-job',question:'Second question'};server.registration.id='other-job';
 let release;server.beforeJobRead=()=>new Promise(resolve=>release=resolve);
 const pending=submit();await new Promise(resolve=>setImmediate(resolve));
@@ -69,7 +69,7 @@ def test_code_tab_reads_actual_notebook_only_when_requested_and_supports_keyboar
     run(FIGURE_SETUP+"""
 server.results.artifacts=[{name:'notebook.ipynb'}];
 server.notebook={cells:[{cell_type:'markdown',source:['Ignore noncode']},{cell_type:'code',execution_count:3,source:['print("actual retained code")']} ]};
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 assert.equal(calls.filter(call=>call.path.endsWith('notebook.ipynb')).length,0);
 elements['evidence-toggle'].onclick();await new Promise(resolve=>setImmediate(resolve));
 assert.equal(elements['panel-code'].hidden,false);assert.match(elements['notebook-code'].textContent,/actual retained code/);assert.doesNotMatch(elements['notebook-code'].textContent,/Ignore noncode/);
@@ -92,7 +92,7 @@ def test_completed_version_style_is_carried_to_next_request_and_original_restore
     run(FIGURE_SETUP+"""
 server.revision={id:'revision-fixture',figure_id:'uncorrected',status:'completed_presentation',request:{display_options:{point_size:12,font_size:18,opacity:0.4}}};
 server.figures.revisions=[server.revision];
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 elements['version-select'].value='revision-fixture';elements['version-select'].onchange();await new Promise(resolve=>setImmediate(resolve));
 assert.equal(elements['point-size'].value,'12');assert.equal(elements['figure-font'].value,'18');
 assert.match(elements['display-base'].textContent,/revision/);
@@ -112,7 +112,7 @@ const labelId='uncorrected_observed_batch:title';
 server.figures.figures[1].labels=[{label_id:labelId,text:'uncorrected: Observed batch',kind:'title'}];
 server.revision={id:'revision-fixture',figure_id:'uncorrected',status:'completed_presentation',request:{display_options:{point_size:12,label_positions:{[labelId]:{x:0.2,y:1.1}}}}};
 server.figures.revisions=[server.revision];
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 elements['version-select'].value='revision-fixture';elements['version-select'].onchange();await new Promise(resolve=>setImmediate(resolve));
 elements['figure-label'].value=labelId;elements['label-x'].value='0.2';elements['label-y'].value='1.1';
 elements['version-select'].value='';elements['version-select'].onchange();
@@ -128,7 +128,7 @@ assert.equal(sent.body.display_options.point_size,4);
 def test_polling_advances_proposal_approval_and_run_without_hiding_next_action():
     run("""
 server.state.status='queued';
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 server.state.status='awaiting_operator_review';server.state.proposal={configuration:{parameters:{workflow:'existing-profile'}}};
 await elements.refresh.onclick();
 assert.equal(elements.review.hidden,false);
@@ -153,7 +153,7 @@ def test_completed_job_shows_actual_operator_record_not_a_blank_decision_form():
 server.state.proposal={configuration:{parameters:{workflow:'existing-profile'}}};
 server.state.review={decision:'approve',reviewer:'Recorded operator',rationale:'Recorded bounded approval'};
 server.state.review_receipt={root_hash:'b'.repeat(64)};
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 elements['nav-review'].onclick();
 assert.equal(elements['review-form'].hidden,true);
 assert.equal(elements['operator-review-record'].hidden,false);
@@ -168,7 +168,7 @@ server.figures.revisions=[
  {id:'newer',figure_id:'uncorrected',status:'completed_presentation',state_history:[{at:'2026-09-27T05:02:00+00:00'}]},
  {id:'older',figure_id:'uncorrected',status:'completed_presentation',state_history:[{at:'2026-09-27T05:01:00+00:00'}]}
 ];
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 assert.equal(elements['version-select'].children[1].value,'older');
 assert.equal(elements['version-select'].children[2].value,'newer');
 """)

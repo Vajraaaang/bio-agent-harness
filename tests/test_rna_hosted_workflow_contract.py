@@ -235,24 +235,42 @@ def test_malformed_or_unbounded_topology_is_rejected(tmp_path, mutation):
     contract = _api()
     scope = make_scope(tmp_path, contract)
     topology = scope["topology"]
-    if mutation == "few": topology.pop()
-    elif mutation == "many": topology.append({**topology[-1], "span_id": str(uuid4())})
-    elif mutation == "unknown": topology[1]["private_prompt"] = "CANARY"
-    elif mutation == "duplicate_id": topology[1]["span_id"] = topology[0]["span_id"]
-    elif mutation == "parent_after": topology[1]["parent_span_id"] = topology[2]["span_id"]
-    elif mutation == "two_roots": topology[1]["parent_span_id"] = None
-    elif mutation == "missing_parent": topology[1]["parent_span_id"] = str(uuid4())
-    elif mutation == "root_role": topology[0]["role"] = "lead"
-    elif mutation == "root_phase": topology[0]["phase"] = "audit"
-    elif mutation == "root_parent": topology[0]["parent_span_id"] = str(uuid4())
-    elif mutation == "slot": topology[2].update(role=topology[1]["role"], phase=topology[1]["phase"])
-    elif mutation == "role": topology[1]["role"] = "model"
-    elif mutation == "phase": topology[1]["phase"] = "upload"
-    elif mutation == "attempt_bool": topology[1]["attempt"] = True
-    elif mutation == "attempt_zero": topology[1]["attempt"] = 0
-    elif mutation == "retry": topology[1]["attempt"] = 2
-    elif mutation == "id_bool": topology[1]["span_id"] = True
-    elif mutation == "self_parent": topology[1]["parent_span_id"] = topology[1]["span_id"]
+    if mutation == "few":
+        topology.pop()
+    elif mutation == "many":
+        topology.append({**topology[-1], "span_id": str(uuid4())})
+    elif mutation == "unknown":
+        topology[1]["private_prompt"] = "CANARY"
+    elif mutation == "duplicate_id":
+        topology[1]["span_id"] = topology[0]["span_id"]
+    elif mutation == "parent_after":
+        topology[1]["parent_span_id"] = topology[2]["span_id"]
+    elif mutation == "two_roots":
+        topology[1]["parent_span_id"] = None
+    elif mutation == "missing_parent":
+        topology[1]["parent_span_id"] = str(uuid4())
+    elif mutation == "root_role":
+        topology[0]["role"] = "lead"
+    elif mutation == "root_phase":
+        topology[0]["phase"] = "audit"
+    elif mutation == "root_parent":
+        topology[0]["parent_span_id"] = str(uuid4())
+    elif mutation == "slot":
+        topology[2].update(role=topology[1]["role"], phase=topology[1]["phase"])
+    elif mutation == "role":
+        topology[1]["role"] = "model"
+    elif mutation == "phase":
+        topology[1]["phase"] = "upload"
+    elif mutation == "attempt_bool":
+        topology[1]["attempt"] = True
+    elif mutation == "attempt_zero":
+        topology[1]["attempt"] = 0
+    elif mutation == "retry":
+        topology[1]["attempt"] = 2
+    elif mutation == "id_bool":
+        topology[1]["span_id"] = True
+    elif mutation == "self_parent":
+        topology[1]["parent_span_id"] = topology[1]["span_id"]
     scope["session"]["span_topology"] = deepcopy(topology)
     with pytest.raises((ValueError, PermissionError)) as caught:
         contract.prepare_workflow_packet(**scope)
@@ -360,21 +378,36 @@ def test_unreviewed_crosspurpose_and_corrupt_inputs_cannot_admit(tmp_path, mutat
     scope = make_scope(tmp_path, contract)
     packet = contract.prepare_workflow_packet(**scope)
     approvals = handles(contract, packet, scope, tmp_path)
-    if mutation == "partial": approvals.pop("live_session")
-    elif mutation == "swapped": approvals["target_read"], approvals["live_session"] = approvals["live_session"], approvals["target_read"]
-    elif mutation == "same_path": approvals["target_read"] = approvals["live_session"]
-    elif mutation == "self_review": rewrite_record(approvals, "source_runtime_review", lambda r: r.update(reviewer_id=r["implementation_owner_id"]))
-    elif mutation == "self_operator": rewrite_record(approvals, "live_session", lambda r: r.update(operator_id=r["implementation_owner_id"]))
-    elif mutation == "owner_drift": rewrite_record(approvals, "target_read", lambda r: r.update(implementation_owner_id=str(uuid4())))
-    elif mutation == "expiry_drift": rewrite_record(approvals, "live_session", lambda r: r.update(expires_at=(scope["now"] + timedelta(minutes=6)).isoformat()))
-    elif mutation == "wrong_purpose": rewrite_record(approvals, "target_read", lambda r: r.update(action="live_session"))
-    elif mutation == "old_action": rewrite_record(approvals, "live_session", lambda r: r.update(format="devbench.rna-hosted-action-approval/2"))
-    elif mutation == "old_review": rewrite_record(approvals, "source_runtime_review", lambda r: r.update(format="devbench.rna-connection-review/2"))
-    elif mutation == "unapproved": rewrite_record(approvals, "live_session", lambda r: r.update(approved=1))
-    elif mutation == "packet_digest": rewrite_record(approvals, "source_runtime_review", lambda r: r.update(packet_digest="f" * 64))
-    elif mutation == "proposal_digest": rewrite_record(approvals, "target_read", lambda r: r.update(proposal_digest="f" * 64))
-    elif mutation == "public_input": Path(approvals["target_read"]["path"]).chmod(0o644)
-    elif mutation == "unknown_handle": approvals["target_read"]["api_key"] = "CANARY"
+    if mutation == "partial":
+        approvals.pop("live_session")
+    elif mutation == "swapped":
+        approvals["target_read"], approvals["live_session"] = approvals["live_session"], approvals["target_read"]
+    elif mutation == "same_path":
+        approvals["target_read"] = approvals["live_session"]
+    elif mutation == "self_review":
+        rewrite_record(approvals, "source_runtime_review", lambda r: r.update(reviewer_id=r["implementation_owner_id"]))
+    elif mutation == "self_operator":
+        rewrite_record(approvals, "live_session", lambda r: r.update(operator_id=r["implementation_owner_id"]))
+    elif mutation == "owner_drift":
+        rewrite_record(approvals, "target_read", lambda r: r.update(implementation_owner_id=str(uuid4())))
+    elif mutation == "expiry_drift":
+        rewrite_record(approvals, "live_session", lambda r: r.update(expires_at=(scope["now"] + timedelta(minutes=6)).isoformat()))
+    elif mutation == "wrong_purpose":
+        rewrite_record(approvals, "target_read", lambda r: r.update(action="live_session"))
+    elif mutation == "old_action":
+        rewrite_record(approvals, "live_session", lambda r: r.update(format="devbench.rna-hosted-action-approval/2"))
+    elif mutation == "old_review":
+        rewrite_record(approvals, "source_runtime_review", lambda r: r.update(format="devbench.rna-connection-review/2"))
+    elif mutation == "unapproved":
+        rewrite_record(approvals, "live_session", lambda r: r.update(approved=1))
+    elif mutation == "packet_digest":
+        rewrite_record(approvals, "source_runtime_review", lambda r: r.update(packet_digest="f" * 64))
+    elif mutation == "proposal_digest":
+        rewrite_record(approvals, "target_read", lambda r: r.update(proposal_digest="f" * 64))
+    elif mutation == "public_input":
+        Path(approvals["target_read"]["path"]).chmod(0o644)
+    elif mutation == "unknown_handle":
+        approvals["target_read"]["api_key"] = "CANARY"
     with pytest.raises((ValueError, PermissionError)) as caught:
         admitted(contract, packet, scope, approvals)
     assert "CANARY" not in str(caught.value)
@@ -639,19 +672,32 @@ def test_v4_closed_bounded_topology_rejects_invalid_structure(tmp_path, mutation
     contract = _context_api()
     scope = make_context_scope(tmp_path, contract, 16)
     topology = scope["topology"]
-    if mutation == "too_many": topology.append({**topology[-1], "span_id": str(uuid4())})
-    elif mutation == "duplicate_id": topology[1]["span_id"] = topology[0]["span_id"]
-    elif mutation == "parent_after": topology[1]["parent_span_id"] = topology[2]["span_id"]
-    elif mutation == "missing_parent": topology[1]["parent_span_id"] = str(uuid4())
-    elif mutation == "second_root": topology[1]["parent_span_id"] = None
-    elif mutation == "root_role": topology[0]["role"] = "lead"
-    elif mutation == "root_phase": topology[0]["phase"] = "generate"
-    elif mutation == "attempt_zero": topology[1]["attempt"] = 0
-    elif mutation == "attempt_bool": topology[1]["attempt"] = True
-    elif mutation == "attempt_overflow": topology[1]["attempt"] = 2**31
-    elif mutation == "role": topology[1]["role"] = "provider"
-    elif mutation == "phase": topology[1]["phase"] = "unknown"
-    elif mutation == "private_field": topology[1]["local_span_id"] = "CANARY"
+    if mutation == "too_many":
+        topology.append({**topology[-1], "span_id": str(uuid4())})
+    elif mutation == "duplicate_id":
+        topology[1]["span_id"] = topology[0]["span_id"]
+    elif mutation == "parent_after":
+        topology[1]["parent_span_id"] = topology[2]["span_id"]
+    elif mutation == "missing_parent":
+        topology[1]["parent_span_id"] = str(uuid4())
+    elif mutation == "second_root":
+        topology[1]["parent_span_id"] = None
+    elif mutation == "root_role":
+        topology[0]["role"] = "lead"
+    elif mutation == "root_phase":
+        topology[0]["phase"] = "generate"
+    elif mutation == "attempt_zero":
+        topology[1]["attempt"] = 0
+    elif mutation == "attempt_bool":
+        topology[1]["attempt"] = True
+    elif mutation == "attempt_overflow":
+        topology[1]["attempt"] = 2**31
+    elif mutation == "role":
+        topology[1]["role"] = "provider"
+    elif mutation == "phase":
+        topology[1]["phase"] = "unknown"
+    elif mutation == "private_field":
+        topology[1]["local_span_id"] = "CANARY"
     with pytest.raises(ValueError) as caught:
         contract.validate_context_topology(topology)
     assert "CANARY" not in str(caught.value)
@@ -666,34 +712,57 @@ def test_v4_profile_is_closed_exact_synthetic_and_independently_counted(tmp_path
     contract = _context_api()
     scope = make_context_scope(tmp_path, contract)
     profile, rows = scope["profile"], scope["profile"]["contexts"]
-    if mutation == "profile_format": profile["format"] = "devbench.rna-context-observation-profile/3"
-    elif mutation == "unknown_field": profile["raw_data"] = "CANARY"
-    elif mutation == "usage": profile["usage_policy"] = "provider_observed"
-    elif mutation == "digest_policy": profile["digest_policy"] = "raw_local_receipts"
-    elif mutation == "provenance": profile["provenance"] = "live_model_qualified"
-    elif mutation == "scope": profile["data_scope"] = "public_processed"
-    elif mutation == "dispatch": profile["dispatch_event_count"] = 1
-    elif mutation == "contexts": profile["context_count"] = 8
-    elif mutation == "source_events": profile["source_event_count"] += 1
-    elif mutation == "captures": profile["capture_event_count"] -= 1
-    elif mutation == "operations": profile["operation_count"] += 1
-    elif mutation == "terminal_set": profile["terminal_span_ids"] = [rows[0]["span_id"], *profile["terminal_span_ids"]]
-    elif mutation == "open_set": profile["open_span_ids"] = []
-    elif mutation == "row_count": rows.pop()
-    elif mutation == "duplicate_alias": rows[1]["context_alias"] = rows[0]["context_alias"]
-    elif mutation == "remote_alias": rows[1]["context_alias"] = rows[1]["span_id"]
-    elif mutation == "parent_alias": rows[4]["parent_context_alias"] = rows[0]["context_alias"]
-    elif mutation == "start_bool": rows[4]["start_observed"] = 0
-    elif mutation == "digest_count": rows[1]["source_event_digests"].pop()
-    elif mutation == "duplicate_digest": rows[1]["source_event_digests"][0] = rows[0]["source_event_digests"][0]
-    elif mutation == "row_captures": rows[4]["capture_event_count"] = 3
-    elif mutation == "terminal_status": rows[1]["terminal_status"] = "success"
+    if mutation == "profile_format":
+        profile["format"] = "devbench.rna-context-observation-profile/3"
+    elif mutation == "unknown_field":
+        profile["raw_data"] = "CANARY"
+    elif mutation == "usage":
+        profile["usage_policy"] = "provider_observed"
+    elif mutation == "digest_policy":
+        profile["digest_policy"] = "raw_local_receipts"
+    elif mutation == "provenance":
+        profile["provenance"] = "live_model_qualified"
+    elif mutation == "scope":
+        profile["data_scope"] = "public_processed"
+    elif mutation == "dispatch":
+        profile["dispatch_event_count"] = 1
+    elif mutation == "contexts":
+        profile["context_count"] = 8
+    elif mutation == "source_events":
+        profile["source_event_count"] += 1
+    elif mutation == "captures":
+        profile["capture_event_count"] -= 1
+    elif mutation == "operations":
+        profile["operation_count"] += 1
+    elif mutation == "terminal_set":
+        profile["terminal_span_ids"] = [rows[0]["span_id"], *profile["terminal_span_ids"]]
+    elif mutation == "open_set":
+        profile["open_span_ids"] = []
+    elif mutation == "row_count":
+        rows.pop()
+    elif mutation == "duplicate_alias":
+        rows[1]["context_alias"] = rows[0]["context_alias"]
+    elif mutation == "remote_alias":
+        rows[1]["context_alias"] = rows[1]["span_id"]
+    elif mutation == "parent_alias":
+        rows[4]["parent_context_alias"] = rows[0]["context_alias"]
+    elif mutation == "start_bool":
+        rows[4]["start_observed"] = 0
+    elif mutation == "digest_count":
+        rows[1]["source_event_digests"].pop()
+    elif mutation == "duplicate_digest":
+        rows[1]["source_event_digests"][0] = rows[0]["source_event_digests"][0]
+    elif mutation == "row_captures":
+        rows[4]["capture_event_count"] = 3
+    elif mutation == "terminal_status":
+        rows[1]["terminal_status"] = "success"
     elif mutation == "invent_root_terminal":
         rows[0]["terminal_status"] = "completed"
         profile["terminal_span_ids"].insert(0, rows[0]["span_id"])
         profile["open_span_ids"] = []
         profile["operation_count"] += 1
-    elif mutation == "private_row": rows[0]["local_context_id"] = "CANARY"
+    elif mutation == "private_row":
+        rows[0]["local_context_id"] = "CANARY"
     elif mutation == "oversized_events":
         rows[0]["source_event_digests"] = [digest(canonical_json_bytes(index)) for index in range(65)]
         rows[0]["source_event_count"] = 65
@@ -772,14 +841,22 @@ def test_v4_approvals_do_not_inherit_v3_authority_or_allow_corruption(tmp_path, 
     scope = make_context_scope(tmp_path, contract)
     packet = contract.prepare_context_packet(**scope)
     approvals = context_handles(contract, packet, scope, tmp_path)
-    if mutation == "partial": approvals.pop("live_session")
-    elif mutation == "swapped": approvals["target_read"], approvals["live_session"] = approvals["live_session"], approvals["target_read"]
-    elif mutation == "old_review": rewrite_record(approvals, "source_runtime_review", lambda r: r.update(format="devbench.rna-workflow-review/3"))
-    elif mutation == "old_action": rewrite_record(approvals, "live_session", lambda r: r.update(format="devbench.rna-hosted-action-approval/3"))
-    elif mutation == "self_review": rewrite_record(approvals, "source_runtime_review", lambda r: r.update(reviewer_id=r["implementation_owner_id"]))
-    elif mutation == "self_operator": rewrite_record(approvals, "live_session", lambda r: r.update(operator_id=r["implementation_owner_id"]))
-    elif mutation == "expiry_drift": rewrite_record(approvals, "live_session", lambda r: r.update(expires_at=(scope["now"] + timedelta(minutes=6)).isoformat()))
-    elif mutation == "public_input": Path(approvals["target_read"]["path"]).chmod(0o644)
+    if mutation == "partial":
+        approvals.pop("live_session")
+    elif mutation == "swapped":
+        approvals["target_read"], approvals["live_session"] = approvals["live_session"], approvals["target_read"]
+    elif mutation == "old_review":
+        rewrite_record(approvals, "source_runtime_review", lambda r: r.update(format="devbench.rna-workflow-review/3"))
+    elif mutation == "old_action":
+        rewrite_record(approvals, "live_session", lambda r: r.update(format="devbench.rna-hosted-action-approval/3"))
+    elif mutation == "self_review":
+        rewrite_record(approvals, "source_runtime_review", lambda r: r.update(reviewer_id=r["implementation_owner_id"]))
+    elif mutation == "self_operator":
+        rewrite_record(approvals, "live_session", lambda r: r.update(operator_id=r["implementation_owner_id"]))
+    elif mutation == "expiry_drift":
+        rewrite_record(approvals, "live_session", lambda r: r.update(expires_at=(scope["now"] + timedelta(minutes=6)).isoformat()))
+    elif mutation == "public_input":
+        Path(approvals["target_read"]["path"]).chmod(0o644)
     with pytest.raises((ValueError, PermissionError)):
         context_admitted(contract, packet, scope, approvals)
 
@@ -817,7 +894,7 @@ def test_v4_identity_is_bounded_installed_and_distinct_from_v3(monkeypatch):
     assert identity["fixture_manifest_digest"] != contract.packet_digest(legacy.WORKFLOW_FIXTURE)
 
 
-def test_v4_actual_identity_covers_context_contract_and_modified_runtime_modules():
+def test_v4_actual_identity_covers_context_contract_and_modified_runtime_modules(installed_hosted_wheel):
     """GREEN must bind ordinary installed origins, RECORD and reproduction bytes."""
     import base64
     import csv
@@ -844,6 +921,7 @@ def test_v4_actual_identity_covers_context_contract_and_modified_runtime_modules
         "rna_langsmith_live", "rna_langsmith_verify", "langsmith_outbox", "rna_langsmith_export")
     prefix = Path(sys.prefix).resolve()
     with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        source_prefix = "src/" if "src/devbench/__init__.py" in archive.namelist() else ""
         for module in required:
             name = "devbench/study/" + module + ".py"
             expected, size = rows[name]
@@ -855,8 +933,8 @@ def test_v4_actual_identity_covers_context_contract_and_modified_runtime_modules
             assert len(contents) <= 2_000_000 and len(contents) == int(size)
             encoded = base64.urlsafe_b64encode(hashlib.sha256(contents).digest()).decode().rstrip("=")
             assert expected == "sha256=" + encoded
-            assert archive.getinfo(name).file_size <= 2_000_000
-            with archive.open(name) as stream:
+            assert archive.getinfo(source_prefix + name).file_size <= 2_000_000
+            with archive.open(source_prefix + name) as stream:
                 assert stream.read(2_000_001) == contents
 
 
@@ -1046,11 +1124,18 @@ def make_readback_archive(tmp_path, count=9, *,
 
 def make_readback_scope(tmp_path, count=9, *,
         seal_format="devbench.rna-context-history-seal/1", checkpoint_bytes=None,
-        unacknowledged_terminal=False, duplicate_slots=False):
+        unacknowledged_terminal=False, duplicate_slots=False, installed_identity=None):
+    contract = _readback_api()
+    if installed_identity is None:
+        # Contract-only tests bind independent synthetic reader identity. The
+        # actual child integration supplies the wheel-verified identity.
+        installed_identity = dict(source_digest="1" * 64, runtime_digest="2" * 64, policy_digest="3" * 64,
+            criteria_digest=contract.packet_digest(contract.READBACK_CRITERIA),
+            fixture_manifest_digest=contract.packet_digest(contract.READBACK_FIXTURE))
     archive = make_readback_archive(tmp_path, count=count, seal_format=seal_format,
         checkpoint_bytes=checkpoint_bytes, unacknowledged_terminal=unacknowledged_terminal,
         duplicate_slots=duplicate_slots)
-    return dict(installed_identity=_readback_api().readback_installed_identity(), **archive)
+    return dict(installed_identity=installed_identity, **archive)
 
 
 def test_context_readback_old_public_archive_builder_selfcheck(tmp_path):
@@ -1109,7 +1194,8 @@ def readback_handles(tmp_path, contract, packet):
     result = {}
     for name, record in records.items():
         path = tmp_path / ("readback-" + name + ".json")
-        path.write_bytes(canonical_json_bytes(record)); path.chmod(0o600)
+        path.write_bytes(canonical_json_bytes(record))
+        path.chmod(0o600)
         result[name] = dict(path=str(path), sha256=digest(path.read_bytes()))
     return result
 
@@ -1168,7 +1254,8 @@ def test_context_readback_fresh_reader_preserves_expired_producer_and_generic_pr
     ("producer", "topology_digest"), ("producer", "operations_digest"),
     ("producer", "latest_acknowledged_digest"), ("producer", "failure_seal_digest")])
 def test_context_readback_independent_reader_producer_and_seal_bindings_cannot_drift(tmp_path, binding, field):
-    contract = _readback_api(); scope = make_readback_scope(tmp_path, count=3)
+    contract = _readback_api()
+    scope = make_readback_scope(tmp_path, count=3)
     packet = contract.prepare_context_readback_packet(**scope)
     argument = "installed_identity" if binding == "reader" else "expected_producer_binding"
     original = scope["installed_identity"] if binding == "reader" else scope["producer_binding"]
@@ -1179,27 +1266,44 @@ def test_context_readback_independent_reader_producer_and_seal_bindings_cannot_d
 @pytest.mark.parametrize("mutation", ["upload", "read", "session_expiry", "producer_rebase", "topology",
     "history_ref", "history_root", "read_route", "run_allowlist", "mutations", "polls", "source_events", "body_cap", "deadline"])
 def test_context_readback_packet_rejects_authority_history_topology_and_budget_substitution(tmp_path, mutation):
-    contract = _readback_api(); scope = make_readback_scope(tmp_path, count=3)
+    contract = _readback_api()
+    scope = make_readback_scope(tmp_path, count=3)
     packet = contract.prepare_context_readback_packet(**scope)
-    if mutation == "upload": packet["authorize_upload"] = True
-    elif mutation == "read": packet["authorize_remote_read"] = True
-    elif mutation == "session_expiry": packet["session"]["expires_at"] = packet["expires_at"]
-    elif mutation == "producer_rebase": packet["session"]["runtime_digest"] = packet["reader_binding"]["runtime_digest"]
-    elif mutation == "topology": packet["topology"][1]["parent_span_id"] = None
-    elif mutation == "history_ref": packet["history"]["operations"]["sha256"] = "0" * 64
-    elif mutation == "history_root": packet["history"]["root"] = str(tmp_path)
-    elif mutation == "read_route": packet["read_descriptor"]["run_routes"][0] = "/api/v1/runs/query"
-    elif mutation == "run_allowlist": packet["read_descriptor"]["run_ids"].append(str(uuid4()))
-    elif mutation == "mutations": packet["limits"]["max_mutation_requests"] = 1
-    elif mutation == "polls": packet["limits"]["max_read_requests"] += 1
-    elif mutation == "source_events": packet["limits"]["max_source_events"] += 1
-    elif mutation == "body_cap": packet["limits"]["max_response_bytes"] += 1
-    else: packet["limits"]["total_deadline_seconds"] += 1
-    with pytest.raises(ValueError): readback_checked(contract, packet, scope)
+    if mutation == "upload":
+        packet["authorize_upload"] = True
+    elif mutation == "read":
+        packet["authorize_remote_read"] = True
+    elif mutation == "session_expiry":
+        packet["session"]["expires_at"] = packet["expires_at"]
+    elif mutation == "producer_rebase":
+        packet["session"]["runtime_digest"] = packet["reader_binding"]["runtime_digest"]
+    elif mutation == "topology":
+        packet["topology"][1]["parent_span_id"] = None
+    elif mutation == "history_ref":
+        packet["history"]["operations"]["sha256"] = "0" * 64
+    elif mutation == "history_root":
+        packet["history"]["root"] = str(tmp_path)
+    elif mutation == "read_route":
+        packet["read_descriptor"]["run_routes"][0] = "/api/v1/runs/query"
+    elif mutation == "run_allowlist":
+        packet["read_descriptor"]["run_ids"].append(str(uuid4()))
+    elif mutation == "mutations":
+        packet["limits"]["max_mutation_requests"] = 1
+    elif mutation == "polls":
+        packet["limits"]["max_read_requests"] += 1
+    elif mutation == "source_events":
+        packet["limits"]["max_source_events"] += 1
+    elif mutation == "body_cap":
+        packet["limits"]["max_response_bytes"] += 1
+    else:
+        packet["limits"]["total_deadline_seconds"] += 1
+    with pytest.raises(ValueError):
+        readback_checked(contract, packet, scope)
 
 
 def test_context_readback_only_fresh_purpose_specific_private_approvals_admit(tmp_path):
-    contract = _readback_api(); scope = make_readback_scope(tmp_path, count=3)
+    contract = _readback_api()
+    scope = make_readback_scope(tmp_path, count=3)
     packet = contract.prepare_context_readback_packet(**scope)
     blocked = readback_admitted(contract, packet, scope, {})
     assert blocked["status"] == "blocked"
@@ -1217,35 +1321,50 @@ def test_context_readback_only_fresh_purpose_specific_private_approvals_admit(tm
 @pytest.mark.parametrize("mutation", ["old_handles", "producer", "reader", "nonce", "seal", "output", "runs", "limits", "expired", "self_review", "mode", "hardlink", "symlink", "alias"])
 def test_context_readback_approval_cannot_self_endorse_reuse_or_substitute_scope(tmp_path, mutation):
     import os
-    contract = _readback_api(); scope = make_readback_scope(tmp_path, count=3)
+    contract = _readback_api()
+    scope = make_readback_scope(tmp_path, count=3)
     packet = contract.prepare_context_readback_packet(**scope)
     handles = readback_handles(tmp_path, contract, packet)
     if mutation == "old_handles":
         handles = {name: scope["history"][name] for name in ("source_runtime_review", "target_read", "live_session")}
-    elif mutation == "mode": Path(handles["readback"]["path"]).chmod(0o644)
-    elif mutation == "hardlink": os.link(handles["readback"]["path"], tmp_path / "alias.json")
+    elif mutation == "mode":
+        Path(handles["readback"]["path"]).chmod(0o644)
+    elif mutation == "hardlink":
+        os.link(handles["readback"]["path"], tmp_path / "alias.json")
     elif mutation == "symlink":
-        alias = tmp_path / "symlink.json"; alias.symlink_to(handles["readback"]["path"])
+        alias = tmp_path / "symlink.json"
+        alias.symlink_to(handles["readback"]["path"])
         handles["readback"]["path"] = str(alias)
-    elif mutation == "alias": handles["readback"] = handles["source_runtime_review"]
+    elif mutation == "alias":
+        handles["readback"] = handles["source_runtime_review"]
     else:
         def update(record):
-            if mutation == "producer": record["producer_binding"]["runtime_digest"] = "0" * 64
-            elif mutation == "reader": record["reader_binding"]["source_digest"] = "0" * 64
-            elif mutation == "nonce": record["nonce"] = str(uuid4())
-            elif mutation == "seal": record["expected_historical_root"] = "0" * 64
-            elif mutation == "output": record["evidence_path"] = str(tmp_path / "elsewhere")
-            elif mutation == "runs": record["run_ids"] = [str(uuid4())]
-            elif mutation == "limits": record["limits"]["max_total_requests"] += 1
-            elif mutation == "expired": record["expires_at"] = scope["session"]["expires_at"]
-            else: record["operator_id"] = record["implementation_owner_id"]
+            if mutation == "producer":
+                record["producer_binding"]["runtime_digest"] = "0" * 64
+            elif mutation == "reader":
+                record["reader_binding"]["source_digest"] = "0" * 64
+            elif mutation == "nonce":
+                record["nonce"] = str(uuid4())
+            elif mutation == "seal":
+                record["expected_historical_root"] = "0" * 64
+            elif mutation == "output":
+                record["evidence_path"] = str(tmp_path / "elsewhere")
+            elif mutation == "runs":
+                record["run_ids"] = [str(uuid4())]
+            elif mutation == "limits":
+                record["limits"]["max_total_requests"] += 1
+            elif mutation == "expired":
+                record["expires_at"] = scope["session"]["expires_at"]
+            else:
+                record["operator_id"] = record["implementation_owner_id"]
         rewrite_record(handles, "readback", update)
     with pytest.raises((ValueError, PermissionError)):
         readback_admitted(contract, packet, scope, handles)
 
 
 def test_context_readback_rehashed_history_cannot_replace_independently_approved_root(tmp_path):
-    contract = _readback_api(); scope = make_readback_scope(tmp_path, count=3)
+    contract = _readback_api()
+    scope = make_readback_scope(tmp_path, count=3)
     original = contract.prepare_context_readback_packet(**scope)
     protected_handles = readback_handles(tmp_path, contract, original)
     protected_bytes = {name: Path(handle["path"]).read_bytes() for name, handle in protected_handles.items()}
@@ -1272,7 +1391,8 @@ def test_context_readback_rehashed_history_cannot_replace_independently_approved
 
 @pytest.mark.parametrize("destination", ["historical_root", "new_child", "original_outbox_parent"])
 def test_context_readback_output_cannot_overlap_original_history_even_with_agreeing_scope(tmp_path, destination):
-    contract = _readback_api(); scope = make_readback_scope(tmp_path, count=3)
+    contract = _readback_api()
+    scope = make_readback_scope(tmp_path, count=3)
     root = Path(scope["history"]["root"])
     output = root if destination == "historical_root" else root / "new-readback" if destination == "new_child" else Path(scope["history"]["outbox"]["path"]).parent
     before = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}

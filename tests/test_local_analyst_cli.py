@@ -54,14 +54,14 @@ def test_create_analyst_requires_explicit_method_free_design(tmp_path):
 def test_audit_design_does_not_mislabel_legacy_integrity_check(tmp_path):
     from tests.test_langgraph_workflow import rna_plan
     planner, plan, *_ = rna_plan(tmp_path)
-    with pytest.raises(ValueError, match="rna_design"):
+    with pytest.raises(ValueError, match="explicit RNA design or supplied-population binding"):
         main(["--workspace", str(planner.methods.root), "audit-design", "--plan", plan["session_id"]])
 
 
 def test_advance_requires_design_before_selector_or_scientific_runtime(tmp_path):
     from tests.test_langgraph_workflow import rna_plan
     planner, plan, *_ = rna_plan(tmp_path)
-    with pytest.raises(ValueError, match="rna_design"):
+    with pytest.raises(ValueError, match="explicit RNA design or supplied-population binding"):
         main(["--workspace", str(planner.methods.root), "advance", "--plan", plan["session_id"]])
 
 

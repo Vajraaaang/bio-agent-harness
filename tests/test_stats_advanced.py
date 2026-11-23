@@ -125,9 +125,28 @@ def test_calibration_panel_is_bounded_and_includes_requested_genes(tmp_path):
     calibration = result["dispersion_calibration"]
     assert len(calibration["gene_ids"]) == 80
     assert "g349" in calibration["gene_ids"]
-    assert calibration["panel_selection"] == "evenly_spaced_plus_requested"
+    assert calibration["panel_selection"] == "seeded_uniform_without_replacement_plus_requested"
+    assert calibration["panel_seed"] == 0
+    assert calibration["gene_ids"] == [paths[2][index] for index in calibration["panel_gene_indices"]]
     assert result["normalization"]["reference_gene_count"] <= 80
     assert any("panel" in warning.lower() for warning in result["warnings"])
+
+
+def test_calibration_sampling_is_reproducible_and_seeded(tmp_path):
+    from devharness_core.storage import ChunkedExpressionStore
+    from rna_kernels.normalization import calibration_panel
+
+    stages = np.arange(6)
+    source, _, genes = _dataset(tmp_path, np.arange(600).reshape(100, 6), stages, suffix="h5")
+    with ChunkedExpressionStore(source) as store:
+        first, details = calibration_panel(store, [genes[90]], 7, seed=9)
+        repeated, same_details = calibration_panel(store, [genes[90]], 7, seed=9)
+        _, different_details = calibration_panel(store, [genes[90]], 7, seed=10)
+    assert details == same_details
+    np.testing.assert_array_equal(first, repeated)
+    assert details["panel_seed"] == 9 and details["panel_gene_count"] == 7
+    assert 90 in details["panel_gene_indices"]
+    assert details["panel_gene_indices"] != different_details["panel_gene_indices"]
 
 
 def test_batch_partial_r_squared_and_confounding_diagnostics(tmp_path):
@@ -152,6 +171,103 @@ def test_batch_partial_r_squared_and_confounding_diagnostics(tmp_path):
     assert "causal" in confounded["inference_scope"].lower()
 
 
+@pytest.mark.parametrize("use_h5ad_layer", [False, True])
+def test_case_control_batch_diagnostics_dispatch_on_explicit_columns(
+    tmp_path, use_h5ad_layer,
+):
+    from devharness_server.dispatcher import ToolDispatcher
+
+    conditions = np.repeat(["case", "control"], 4)
+    batches = np.tile(["01", "02"], 4)
+    condition_signal = (conditions == "case") * 7
+    batch_signal = (batches == "02") * 5
+    values = np.vstack((condition_signal + batch_signal, condition_signal * 2))
+    counts, metadata, genes = _dataset(tmp_path, values, range(8))
+    frame = pd.DataFrame({
+        "sample_id": [f"s{i}" for i in range(8)],
+        "collection site": batches,
+        "condition": conditions,
+        "donor_id": np.repeat(["d1", "d2", "d3", "d4"], 2),
+    })
+    frame.iloc[::-1].to_csv(metadata, index=False)
+    arguments = {
+        "counts_path": counts,
+        "metadata_path": metadata,
+        "time_col": None,
+        "batch_col": "collection site",
+        "condition_col": "condition",
+        "data_type": "continuous",
+        "gene_list": genes,
+    }
+    if use_h5ad_layer:
+        from anndata import AnnData
+
+        dataset = AnnData(
+            X=np.ones((8, 2)),
+            obs=frame.set_index("sample_id"),
+            var=pd.DataFrame(index=genes),
+            layers={"selected": values.T},
+        )
+        path = tmp_path / "cohort.h5ad"
+        dataset.write_h5ad(path)
+        arguments.update(counts_path=str(path), layer="selected")
+    dispatcher = ToolDispatcher(allowed_root=tmp_path)
+    result = json.loads(dispatcher.execute("analyze_batch_effects", arguments))
+
+    assert result["identifiable"]
+    assert result["genes"][genes[0]]["batch_partial_r2"] == pytest.approx(1)
+    assert result["genes"][genes[1]]["batch_partial_r2"] is None
+    assert result["genes"][genes[0]]["time_partial_r2"] is None
+    assert result["transformation"] == "none_continuous_input"
+    assert result["stage_replicates"] == {}
+    assert result["biological_units"]["repeated_unit_columns"] == ["donor_id"]
+    pca = result["pca"]
+    assert pca["sample_ids"] == frame["sample_id"].tolist()
+    assert pca["batch_labels"] == batches.tolist()
+    assert np.asarray(pca["coordinates"]).shape == (8, 2)
+    assert np.isfinite(pca["coordinates"]).all()
+    assert len(pca["variance_ratio"]) == 2
+
+    frame["collection site"] = frame["condition"]
+    frame.to_csv(metadata, index=False)
+    confounded = json.loads(dispatcher.execute("analyze_batch_effects", arguments))
+    assert not confounded["identifiable"]
+    assert all(row["batch_partial_r2"] is None for row in confounded["genes"].values())
+    assert "confounded_or_saturated_batch_condition_design" in {
+        row["code"] for row in confounded["diagnostics"]
+    }
+
+
+def test_batch_effect_is_unidentifiable_with_one_observed_level(tmp_path):
+    from devharness_server.tools_stat import analyze_batch_effects
+
+    conditions = np.repeat(["case", "control"], 4)
+    batch = ["only"] * len(conditions)
+    values = np.vstack([
+        4.0 * (conditions == "case") + np.tile([0, 1], 4),
+        np.arange(8.0),
+    ])
+    counts, metadata, genes = _dataset(tmp_path, values, range(8), batch=batch)
+    pd.read_csv(metadata).assign(condition=conditions).to_csv(metadata, index=False)
+
+    result = analyze_batch_effects(
+        counts, metadata, time_col=None, gene_list=genes,
+        condition_col="condition", data_type="continuous",
+    )
+
+    assert result["design"]["is_full_rank"]
+    assert result["design"]["rank"] == result["reduced_model_ranks"]["condition_only"]
+    assert result["identifiable"] is False
+    diagnostics = {row["code"]: row for row in result["diagnostics"]}
+    assert diagnostics["insufficient_batch_levels"]["severity"] == "warning"
+    assert "confounded_or_saturated_batch_condition_design" not in diagnostics
+    assert all(row["batch_partial_r2"] is None for row in result["genes"].values())
+    assert all(row["status"] == "not_identifiable" for row in result["genes"].values())
+    assert result["genes"][genes[0]]["condition_partial_r2"] == pytest.approx(16 / 17)
+    assert result["pca"]["batch_labels"] == batch
+    assert np.isfinite(result["pca"]["coordinates"]).all()
+
+
 def test_nonfinite_input_and_confounding_fail_explicitly(tmp_path):
     rng = np.random.default_rng(44)
     stages = np.repeat(np.arange(3), 6)
@@ -167,6 +283,7 @@ def test_nonfinite_input_and_confounding_fail_explicitly(tmp_path):
 
 def _continuous_without_count_backend_worker(counts, metadata):
     import sys
+
     import devharness_server.normalization as normalization
     from devharness_server.tools_stat import _fit_worker
 
@@ -187,6 +304,7 @@ def test_continuous_worker_never_imports_or_calls_pydeseq2(tmp_path):
 
 def _dispersion_retry_worker():
     from pydeseq2.utils import grid_fit_alpha
+
     from devharness_server.normalization import _retry_dispersion
 
     rng = np.random.default_rng(567)
@@ -250,7 +368,10 @@ def test_no_information_gene_is_distinguished_from_fit_failure(tmp_path):
 
 
 def test_clinical_time_column_is_consistent_in_validation_and_fit(tmp_path):
-    from devharness_server.tools_stat import fit_temporal_trajectory, validate_design_matrix
+    from devharness_server.tools_stat import (
+        fit_temporal_trajectory,
+        validate_design_matrix,
+    )
 
     rng = np.random.default_rng(914)
     stages = np.repeat([0, 7, 14, 21], 6)
@@ -295,6 +416,7 @@ def test_formula_cannot_create_a_file_and_clinical_arithmetic_still_works(tmp_pa
 
 def _calibration_mean_failure_worker(counts, metadata, strict):
     from pydeseq2.default_inference import DefaultInference
+
     from devharness_server.tools_stat import _fit_worker
 
     original = DefaultInference.irls
@@ -331,8 +453,8 @@ def test_batch_numerical_overflow_never_returns_nonfinite_success(tmp_path):
 
 
 def _pseudoreplication_guard_worker(counts, metadata, strict):
-    import devharness_server.tools_stat as stats
     import devharness_server.normalization as normalization
+    import devharness_server.tools_stat as stats
 
     def forbidden(*args, **kwargs):
         raise AssertionError("Model fitting began before the biological-unit guard")
@@ -405,3 +527,63 @@ def test_unknown_unit_sentinel_and_unverified_annotation_are_not_verified_animal
     assumption, diagnostics = _biological_unit_diagnostics(labeled)
     assert assumption['verification_status'] == 'unknown_unit_provenance'
     assert any(d['code']=='unknown_biological_unit_provenance' for d in diagnostics)
+
+
+def test_genome_wide_temporal_bh_is_computed_before_paging(tmp_path):
+    from statsmodels.stats.multitest import multipletests
+
+    from devharness_server.tools_stat import fit_temporal_trajectory
+
+    rng = np.random.default_rng(409)
+    stages = np.repeat(np.arange(4), 6)
+    abundance = rng.uniform(20, 120, (24, 1)) * np.exp(stages * .1)
+    values = rng.negative_binomial(10, 10 / (10 + abundance))
+    values[2] = [1, *([0] * (len(stages) - 1))]
+    counts, metadata, names = _dataset(tmp_path, values, stages)
+
+    def page(offset, limit, genes):
+        return fit_temporal_trajectory(counts, metadata, "1 + numeric_time + C(batch)", "embryonic_age",
+            genes, selection_criterion="fixed", spline_dfs=[2], strict=False, calibration_max_genes=20,
+            fdr_scope="genome_wide", gene_offset=offset, gene_limit=limit)
+
+    first, second = page(0, 12, []), page(12, 12, [])
+    explicit = page(0, 100, ["g0"])
+    assert list(first["genes"]) == names[:12]
+    assert list(second["genes"]) == names[12:]
+    first_gene = first["genes"]["g0"]
+    assert first_gene == explicit["genes"]["g0"]
+    assert first_gene["test_distribution"] == "F"
+    assert first_gene["test_df_denom"] == len(stages) - 4
+    assert first["gene_page"]["next_offset"] == 12
+    assert second["gene_page"]["next_offset"] is None
+    assert first["fdr_family"]["test_family_count"] == 23
+    assert first["genes"]["g2"]["status"] == "filtered"
+    assert first["genes"]["g2"]["p_value"] is None
+    assert first["genes"]["g2"]["q_value"] is None
+    assert first["fdr_family"] == second["fdr_family"] == explicit["fdr_family"]
+    eligible = [gene for result in (first, second) for gene in result["genes"].values()
+                if gene["status"] != "filtered"]
+    expected = multipletests([gene["p_value"] if gene["p_value"] is not None else 1.0 for gene in eligible],
+        method="fdr_bh")[1]
+    for gene, q_value in zip(eligible, expected):
+        if gene["p_value"] is not None:
+            assert gene["q_value"] == pytest.approx(q_value)
+
+
+def test_expression_selected_inference_requires_disjoint_units_and_thinning_evidence(tmp_path):
+    rng = np.random.default_rng(432)
+    stages = np.repeat(np.arange(4), 4)
+    paths = _dataset(tmp_path, rng.normal(5, 1, (3, len(stages))), stages)
+    frame = pd.read_csv(paths[1])
+    frame["donor_id"] = [f"donor{i}" for i in range(len(frame))]
+    frame.to_csv(paths[1], index=False)
+    split = {"source": "hvg", "strategy": "sample_split", "biological_unit_column": "donor_id",
+             "discovery_unit_ids": ["donor0", "outside0"]}
+    with pytest.raises(Exception, match="discovery_and_inference_biological_units_overlap"):
+        _fit(paths, selection_criterion="fixed", spline_dfs=[2], selection_provenance=split)
+    admitted = _fit(paths, selection_criterion="fixed", spline_dfs=[2],
+                    selection_provenance={**split, "discovery_unit_ids": ["outside0", "outside1"]})
+    assert admitted["selection_provenance"]["scope"] == "conditional_on_declared_disjoint_units"
+    with pytest.raises(Exception, match="data_thinning_requires_verified_independent_count_partition"):
+        _fit(paths, selection_criterion="fixed", spline_dfs=[2],
+             selection_provenance={"source": "lineage", "strategy": "data_thinning"})

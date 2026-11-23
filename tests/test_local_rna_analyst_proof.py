@@ -2,8 +2,6 @@
 import csv
 import json
 from pathlib import Path
-import tempfile
-from uuid import uuid4
 
 import pytest
 
@@ -43,13 +41,16 @@ def test_script_requires_execution_flag_before_output_or_input_access(tmp_path):
     assert not output.exists()
 
 
-def test_proof_refuses_outside_repository_even_with_execution_flag():
-    from scripts.run_local_rna_analyst_proof import run_proof
-    output = Path(tempfile.gettempdir()).resolve() / f"rna-proof-refused-{uuid4().hex}"
-    assert not output.is_relative_to(Path(__file__).resolve().parents[1])
+def test_proof_refuses_outside_repository_even_with_execution_flag(tmp_path, monkeypatch):
+    from scripts import run_local_rna_analyst_proof as proof
+
+    repository = tmp_path / "repository"
+    monkeypatch.setattr(proof, "__file__", str(repository / "scripts/run_local_rna_analyst_proof.py"))
+    output = tmp_path / "outside-repository"
+    assert not output.is_relative_to(repository)
     assert not output.exists()
     with pytest.raises(ValueError, match="repository"):
-        run_proof(output, allow_data_execution=True)
+        proof.run_proof(output, allow_data_execution=True)
     assert not output.exists()
 
 

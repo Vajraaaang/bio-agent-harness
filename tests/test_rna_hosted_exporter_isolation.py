@@ -564,13 +564,14 @@ def _readback_fixture(tmp_path, monkeypatch, *, mode='exact', lifetime_seconds=N
     contract_name = 'devbench.study.rna_hosted_context_readback_contract'
     assert importlib.util.find_spec(contract_name) is not None, 'Historical readback contract absent'
     contract = importlib.import_module(contract_name)
+    from devbench.study import rna_hosted_connection_contract
+    monkeypatch.setattr(rna_hosted_connection_contract, 'ASSIGNED_WORKSPACE', tmp_path)
     scope = make_readback_scope(tmp_path, count=count, seal_format=seal_format,
         checkpoint_bytes=checkpoint_bytes, unacknowledged_terminal=unacknowledged_terminal,
-        duplicate_slots=duplicate_slots)
+        duplicate_slots=duplicate_slots, installed_identity=contract.readback_installed_identity())
     # This is retained by the trusted fixture launcher before packet assembly.
     # Packet/history fields are untrusted inputs to the eventual child.
     trusted_root = scope['producer_binding']['failure_seal_digest']
-    scope['installed_identity'] = contract.readback_installed_identity()
     if lifetime_seconds is not None:
         from datetime import datetime, timedelta, timezone
         scope['now'] = datetime.now(timezone.utc)
@@ -657,6 +658,8 @@ urllib.request.urlopen = denied
 from devbench.study import rna_hosted_qualification as driver
 from devbench.study import rna_hosted_exporter as exporter
 from devbench.study import rna_hosted_context_readback as readback
+from devbench.study import rna_hosted_connection_contract as contract
+contract.ASSIGNED_WORKSPACE = pathlib.Path(sys.argv[1]).resolve().parent
 def producer(command, **kwargs):
     assert command == exporter._native_credential_command()
     assert kwargs['env'] == exporter._native_credential_environment() and kwargs['close_fds']
@@ -743,7 +746,7 @@ raise SystemExit(driver.main(['--hosted-exporter-child']))
 
 
 @pytest.mark.parametrize('count', [3, 9])
-def test_readback_original_child_descriptor_runs_only_approved_gets(tmp_path, monkeypatch, count):
+def test_readback_original_child_descriptor_runs_only_approved_gets(tmp_path, monkeypatch, count, installed_hosted_wheel):
     fixture = _readback_fixture(tmp_path, monkeypatch, count=count)
     before = fixture.snapshot()
     with fixture.channel() as channel:
@@ -769,11 +772,12 @@ def test_readback_original_child_descriptor_runs_only_approved_gets(tmp_path, mo
     {'command':'emit','operation':{}}, {'command':'reconcile','receipt':{},'approval_handle':{}},
     {'command':'prepare'}, {'command':'drain'}, {'command':'verify','route':'/api/v1/runs/query'},
     {'command':'verify','method':'POST'}, {'command':'verify','model':'PRIVATE_CANARY'}])
-def test_readback_parent_rejects_mutation_query_and_model_commands_before_ipc(tmp_path, monkeypatch, wire_request):
+def test_readback_parent_rejects_mutation_query_and_model_commands_before_ipc(tmp_path, monkeypatch, wire_request, installed_hosted_wheel):
     fixture = _readback_fixture(tmp_path, monkeypatch)
     with fixture.channel() as channel:
         before = fixture.rows()
-        with pytest.raises(ValueError): channel.request(wire_request)
+        with pytest.raises(ValueError):
+            channel.request(wire_request)
         assert fixture.rows() == before
 
 
@@ -781,24 +785,28 @@ def test_readback_parent_rejects_mutation_query_and_model_commands_before_ipc(tm
     {'command':'emit','operation':{}}, {'command':'reconcile','receipt':{},'approval_handle':{}},
     {'command':'prepare'}, {'command':'drain'}, {'command':'verify','route':'/api/v1/runs/query'},
     {'command':'verify','method':'POST'}])
-def test_readback_original_child_independently_denies_parent_bypass(tmp_path, monkeypatch, wire_request):
+def test_readback_original_child_independently_denies_parent_bypass(tmp_path, monkeypatch, wire_request, installed_hosted_wheel):
     fixture = _readback_fixture(tmp_path, monkeypatch)
     with fixture.channel() as channel:
         before = fixture.rows()
-        with pytest.raises(ValueError): channel._send(wire_request)
+        with pytest.raises(ValueError):
+            channel._send(wire_request)
         assert fixture.rows() == before
 
 
 @pytest.mark.parametrize('mutation', ['approval', 'history', 'root', 'reader'])
-def test_readback_bad_approval_custody_or_reader_never_resolves_secret(tmp_path, monkeypatch, mutation):
+def test_readback_bad_approval_custody_or_reader_never_resolves_secret(tmp_path, monkeypatch, mutation, installed_hosted_wheel):
     from pathlib import Path
     fixture = _readback_fixture(tmp_path, monkeypatch)
     before = fixture.snapshot()
-    if mutation == 'approval': fixture.descriptor['approval_handles'] = {}
+    if mutation == 'approval':
+        fixture.descriptor['approval_handles'] = {}
     elif mutation == 'history':
         fixture.descriptor['packet']['history']['outbox']['sha256'] = '0' * 64
-    elif mutation == 'root': fixture.descriptor['expected_historical_root'] = '0' * 64
-    else: fixture.descriptor['packet']['reader_binding']['source_digest'] = '0' * 64
+    elif mutation == 'root':
+        fixture.descriptor['expected_historical_root'] = '0' * 64
+    else:
+        fixture.descriptor['packet']['reader_binding']['source_digest'] = '0' * 64
     try:
         with fixture.channel() as channel:
             state = channel.request({'command':'status'})
@@ -814,7 +822,7 @@ def test_readback_bad_approval_custody_or_reader_never_resolves_secret(tmp_path,
     assert not Path(fixture.packet['evidence_path']).exists()
 
 
-def test_readback_incomplete_existing_output_cannot_be_reset_or_reused(tmp_path, monkeypatch):
+def test_readback_incomplete_existing_output_cannot_be_reset_or_reused(tmp_path, monkeypatch, installed_hosted_wheel):
     from pathlib import Path
     fixture = _readback_fixture(tmp_path, monkeypatch)
     output = Path(fixture.packet['evidence_path'])
@@ -830,7 +838,7 @@ def test_readback_incomplete_existing_output_cannot_be_reset_or_reused(tmp_path,
     assert (output / 'incomplete-intent').read_bytes() == b''
 
 
-def test_readback_descriptor_never_accepts_extra_secret_or_route_before_spawn(tmp_path, monkeypatch):
+def test_readback_descriptor_never_accepts_extra_secret_or_route_before_spawn(tmp_path, monkeypatch, installed_hosted_wheel):
     fixture = _readback_fixture(tmp_path, monkeypatch)
     import subprocess
     monkeypatch.setattr(subprocess, 'Popen', lambda *a, **kw: pytest.fail('untrusted descriptor spawned'))
@@ -842,7 +850,7 @@ def test_readback_descriptor_never_accepts_extra_secret_or_route_before_spawn(tm
     assert fixture.rows() == []
 
 
-def test_readback_rebased_history_cannot_replace_trusted_root_or_protected_approval(tmp_path, monkeypatch):
+def test_readback_rebased_history_cannot_replace_trusted_root_or_protected_approval(tmp_path, monkeypatch, installed_hosted_wheel):
     from copy import deepcopy
     from pathlib import Path
     import json
@@ -870,3 +878,35 @@ def test_readback_rebased_history_cannot_replace_trusted_root_or_protected_appro
     _readback_initialize_original_child_directly(fixture)
     assert fixture.rows() == []
     assert fixture.snapshot() == before
+
+
+def test_bounded_child_receives_only_validated_assigned_workspace(workspace_tmp_path, monkeypatch):
+    import subprocess
+    from devbench.study import rna_hosted_connection_contract
+
+    exporter = _hosted_exporter_module()
+    monkeypatch.setattr(rna_hosted_connection_contract, "ASSIGNED_WORKSPACE", workspace_tmp_path)
+    monkeypatch.setenv("PRIVATE_TEST_SENTINEL", "never-forward")
+    output = workspace_tmp_path / "export"
+    descriptor = {"format": "devbench.rna-hosted-exporter-session/2", "packet": {
+        "evidence_path": str(output), "expires_at": "2030-01-01T00:00:00Z",
+        "limits": {"total_deadline_seconds": 60}}}
+    monkeypatch.setattr(exporter, "_validate_descriptor", lambda value: value)
+    launches = []
+
+    def stop(*args, **kwargs):
+        launches.append(kwargs)
+        raise OSError("fixture stops before child creation")
+
+    monkeypatch.setattr(subprocess, "Popen", stop)
+    with pytest.raises(ValueError, match="Exporter process unavailable"):
+        exporter.HostedExporterChannel(root=output, descriptor=descriptor,
+                                       credential_handle=exporter.keychain_credential_handle())
+    assert launches[0]["env"] == {**minimal_environment(), "DEVBENCH_HOSTED_WORKSPACE": str(workspace_tmp_path)}
+    alias = workspace_tmp_path / "alias"
+    alias.symlink_to(workspace_tmp_path, target_is_directory=True)
+    monkeypatch.setattr(rna_hosted_connection_contract, "ASSIGNED_WORKSPACE", alias)
+    with pytest.raises(ValueError, match="canonical"):
+        exporter.HostedExporterChannel(root=output, descriptor=descriptor,
+                                       credential_handle=exporter.keychain_credential_handle())
+    assert len(launches) == 1

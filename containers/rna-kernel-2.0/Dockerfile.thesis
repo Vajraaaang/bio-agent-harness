@@ -1,0 +1,75 @@
+# Refresh first-party workers over the exact locked downstream package image.
+ARG PATHWAY_IMAGE=devbench-rna-kernel:2.0-thesis-pathways-arm64
+FROM ${PATHWAY_IMAGE}
+
+COPY src/devbench/__init__.py \
+    /opt/rna/runtime/devbench/
+COPY src/devbench/analysis/__init__.py \
+    src/devbench/analysis/annotation.py \
+    src/devbench/analysis/checkpoints.py \
+    src/devbench/analysis/embedding.py \
+    src/devbench/analysis/integration_metrics.py \
+    src/devbench/analysis/qc_concordance.py \
+    src/devbench/analysis/resources.py \
+    src/devbench/analysis/scrna_qc.py \
+    src/devbench/analysis/singlecell.py \
+    src/devbench/analysis/streaming.py \
+    /opt/rna/runtime/devbench/analysis/
+COPY src/devbench/core/__init__.py \
+    src/devbench/core/_files.py \
+    src/devbench/core/_hashing.py \
+    src/devbench/core/expression_io.py \
+    src/devbench/core/publication_families.py \
+    src/devbench/core/rna_pathway_analysis.py \
+    src/devbench/core/scientific_types.py \
+    src/devbench/core/scrna_composition.py \
+    src/devbench/core/scrna_composition_solver.py \
+    src/devbench/core/tenx.py \
+    /opt/rna/runtime/devbench/core/
+COPY src/devbench/engine/__init__.py \
+    src/devbench/engine/runtime_contracts.py \
+    /opt/rna/runtime/devbench/engine/
+COPY devharness_core/__init__.py \
+    devharness_core/provenance.py \
+    devharness_core/storage.py \
+    /opt/rna/runtime/devharness_core/
+COPY devharness_server/__init__.py \
+    devharness_server/tools_rna_pathways.py \
+    devharness_server/tools_scrna_composition.py \
+    /opt/rna/runtime/devharness_server/
+COPY devharness_server/r/bulk_deseq2_sensitivity.R \
+    devharness_server/r/bulk_dream.R \
+    devharness_server/r/bulk_edger.R \
+    devharness_server/r/bulk_latent_diagnostics.R \
+    devharness_server/r/mounted_edger.R \
+    devharness_server/r/mounted_general.R \
+    devharness_server/r/paired_tximport_svaseq.R \
+    devharness_server/r/rna_pathways.R \
+    devharness_server/r/scrna_emptydrops.R \
+    devharness_server/r/scrna_scran.R \
+    /opt/rna/runtime/devharness_server/r/
+COPY rna_kernels/__init__.py \
+    rna_kernels/bulk_solver_policy.py \
+    rna_kernels/canonical.py \
+    rna_kernels/embedding_qc.py \
+    rna_kernels/mounted_bulk.py \
+    rna_kernels/mounted_count.py \
+    rna_kernels/mounted_model.py \
+    rna_kernels/mounted_rank.py \
+    rna_kernels/mounted_scrna.py \
+    rna_kernels/rank_sensitivity.py \
+    rna_kernels/scrna_droplets.py \
+    rna_kernels/scrna_nb_clustering.py \
+    rna_kernels/scrna_nb_countsplit.py \
+    rna_kernels/scrna_nb_marker_fit.py \
+    rna_kernels/scrna_nb_pseudobulk.py \
+    rna_kernels/scrna_scran.py \
+    rna_kernels/scrna_upstream_contract.py \
+    rna_kernels/streaming_rle.py \
+    /opt/rna/runtime/rna_kernels/
+
+RUN --network=none --mount=type=tmpfs,target=/tmp \
+    python3.13 -m rna_kernels.mounted_bulk --help > /dev/null \
+ && python3.13 -m rna_kernels.mounted_scrna --help > /dev/null \
+ && python3.13 -m devharness_server.tools_scrna_composition --help > /dev/null \
+ && python3.13 -m devharness_server.tools_rna_pathways --help > /dev/null

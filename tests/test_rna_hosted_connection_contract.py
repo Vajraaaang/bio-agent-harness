@@ -220,16 +220,26 @@ def test_exact_one_root_operations_cannot_be_swapped_or_widened(tmp_path, mutati
     scope = make_scope(tmp_path, contract)
     candidate = deepcopy(scope)
     operations = candidate["operations"]
-    if mutation == "reverse": operations.reverse()
-    elif mutation == "duplicate": operations[1] = deepcopy(operations[0])
-    elif mutation == "revision_bool": operations[1]["operation"]["revision"] = True
-    elif mutation == "id_bool": operations[0]["operation"]["operation_id"] = True
-    elif mutation == "payload_swap": operations[1]["payload"] = deepcopy(operations[0]["payload"])
-    elif mutation == "child": operations[1]["payload"]["parent_run_id"] = str(uuid4())
-    elif mutation == "privacy": operations[0]["payload"]["inputs"] = {"prompt": "CANARY"}
-    elif mutation == "source": operations[0]["payload"]["extra"]["metadata"]["source_digest"] = "f" * 64
-    elif mutation == "proof": operations[1]["payload"]["extra"]["metadata"]["remote_proof"]["revision"] = True
-    elif mutation == "session_enable": candidate["session"]["authorize_upload"] = True
+    if mutation == "reverse":
+        operations.reverse()
+    elif mutation == "duplicate":
+        operations[1] = deepcopy(operations[0])
+    elif mutation == "revision_bool":
+        operations[1]["operation"]["revision"] = True
+    elif mutation == "id_bool":
+        operations[0]["operation"]["operation_id"] = True
+    elif mutation == "payload_swap":
+        operations[1]["payload"] = deepcopy(operations[0]["payload"])
+    elif mutation == "child":
+        operations[1]["payload"]["parent_run_id"] = str(uuid4())
+    elif mutation == "privacy":
+        operations[0]["payload"]["inputs"] = {"prompt": "CANARY"}
+    elif mutation == "source":
+        operations[0]["payload"]["extra"]["metadata"]["source_digest"] = "f" * 64
+    elif mutation == "proof":
+        operations[1]["payload"]["extra"]["metadata"]["remote_proof"]["revision"] = True
+    elif mutation == "session_enable":
+        candidate["session"]["authorize_upload"] = True
     with pytest.raises((ValueError, PermissionError)):
         contract.prepare_connection_packet(**candidate)
 
@@ -284,21 +294,33 @@ def test_private_handle_integrity_and_bounded_file_rules(tmp_path, mutation):
     inputs = handles(contract, packet, scope, tmp_path)
     handle = inputs["target_read"]
     path = Path(handle["path"])
-    if mutation == "digest": handle["sha256"] = "f" * 64
-    elif mutation == "public": path.chmod(0o644)
+    if mutation == "digest":
+        handle["sha256"] = "f" * 64
+    elif mutation == "public":
+        path.chmod(0o644)
     elif mutation == "symlink":
-        link = tmp_path / "alias.json"; link.symlink_to(path); handle["path"] = str(link)
+        link = tmp_path / "alias.json"
+        link.symlink_to(path)
+        handle["path"] = str(link)
     elif mutation == "parent_symlink":
-        link = tmp_path / "aliasdir"; link.symlink_to(tmp_path, target_is_directory=True)
+        link = tmp_path / "aliasdir"
+        link.symlink_to(tmp_path, target_is_directory=True)
         handle["path"] = str(link / path.name)
-    elif mutation == "hardlink": os.link(path, tmp_path / "other.json")
+    elif mutation == "hardlink":
+        os.link(path, tmp_path / "other.json")
     elif mutation == "fifo":
-        path.unlink(); os.mkfifo(path, 0o600)
-    elif mutation == "oversize": path.write_bytes(b" " * 32769)
-    elif mutation == "duplicates": path.write_bytes(b'{"approved":true,"approved":false}')
-    elif mutation == "nonfinite": path.write_bytes(b'{"n":1e999}')
-    elif mutation == "unknown_handle_field": handle["api_key"] = "CANARY"
-    if mutation in {"oversize", "duplicates", "nonfinite"}: handle["sha256"] = digest(path.read_bytes())
+        path.unlink()
+        os.mkfifo(path, 0o600)
+    elif mutation == "oversize":
+        path.write_bytes(b" " * 32769)
+    elif mutation == "duplicates":
+        path.write_bytes(b'{"approved":true,"approved":false}')
+    elif mutation == "nonfinite":
+        path.write_bytes(b'{"n":1e999}')
+    elif mutation == "unknown_handle_field":
+        handle["api_key"] = "CANARY"
+    if mutation in {"oversize", "duplicates", "nonfinite"}:
+        handle["sha256"] = digest(path.read_bytes())
     with pytest.raises((ValueError, PermissionError, OSError)) as caught:
         admitted(contract, packet, scope, inputs)
     assert "CANARY" not in str(caught.value)
@@ -337,3 +359,17 @@ def test_operator_input_corruption_cannot_enable_admission(tmp_path, action, key
     with pytest.raises((ValueError, PermissionError)) as caught:
         admitted(contract, packet, scope, inputs)
     assert "CANARY" not in str(caught.value)
+
+def test_assigned_workspace_refuses_symlink_and_source_paths(tmp_path, monkeypatch):
+    contract = _api()
+    workspace = tmp_path / "assigned"
+    workspace.mkdir()
+    monkeypatch.setattr(contract, "ASSIGNED_WORKSPACE", workspace)
+    assert contract.validate_output_path(workspace / "output") == workspace / "output"
+    with pytest.raises(ValueError, match="Protected source"):
+        contract.validate_output_path(workspace / "src" / "output")
+    alias = tmp_path / "alias"
+    alias.symlink_to(workspace, target_is_directory=True)
+    monkeypatch.setattr(contract, "ASSIGNED_WORKSPACE", alias)
+    with pytest.raises(ValueError, match="canonical"):
+        contract.validate_output_path(alias / "output")

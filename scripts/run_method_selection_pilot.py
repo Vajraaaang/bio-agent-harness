@@ -281,7 +281,7 @@ def _reserve_phase(root, identity, phase):
 def offline_boundary_check(root, expected_digest, source_manifest, actor_parent):
     """Probe the native sandbox with harmless files; no provider or method run."""
     from devbench.staging import stage_python
-    from devbench.study.execution import _runtime_roots
+    from devbench.engine.workspace import runtime_read_roots
     from devbench.study.permissions import PermissionBoundary, probe_boundary
     from devbench.analysis.method_executor import container_command
     root, actor_parent = _path(root), _path(actor_parent)
@@ -298,7 +298,7 @@ def offline_boundary_check(root, expected_digest, source_manifest, actor_parent)
     (workspace / "control").mkdir(mode=0o700)
     environment = stage_python(workspace, assisted=False)
     boundary = PermissionBoundary(workspace=workspace, private_roots=(root, sibling),
-        runtime_roots=_runtime_roots(workspace, environment),
+        runtime_roots=runtime_read_roots(workspace, environment),
         protected_paths=(workspace / "control", workspace / ".venv"))
     probe = probe_boundary(boundary, executable, Path(environment["python"]), allow_configuration_probe=True)
     if not probe["verified"]:

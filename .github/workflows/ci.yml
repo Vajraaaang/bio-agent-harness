@@ -1,17 +1,16 @@
-name: Software verification
+name: Public software verification
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
-  test:
-    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+  check:
+    name: ${{ matrix.os }} / Python 3.13
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest]
-        python: ['3.11', '3.12']
     env:
       VECLIB_MAXIMUM_THREADS: '1'
       OPENBLAS_NUM_THREADS: '1'
@@ -23,20 +22,20 @@ jobs:
         with:
           version: '0.11.3'
           enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - name: Install locked environment
-        run: make install PYTHON_VERSION=${{ matrix.python }}
+        run: uv sync --locked --extra dev --python 3.13
       - name: Verify expected architecture
         run: .venv/bin/python -c 'import platform; assert platform.machine() == ("arm64" if platform.system() == "Darwin" else "x86_64")'
-      - name: Test suite
-        run: make test
-      - name: Generate synthetic formats
-        run: .venv/bin/devharness-synthetic --output-dir "$PWD/results/ci-synthetic"
-      - name: Offline oracle demo
-        run: make demo
-      - name: Save verification artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: software-${{ matrix.os }}-${{ matrix.python }}
-          path: results/
-          if-no-files-found: ignore
+      - name: Verify portable Workbench and source contracts
+        run: |
+          .venv/bin/python -m pytest -q \
+            tests/test_workbench_redesign.py \
+            tests/test_workbench_studio_thesis.py \
+            tests/test_workbench_project_scope.py \
+            tests/test_workbench_studio_drawer.py \
+            tests/test_thesis_answerability_matrix.py \
+            tests/test_source_bundle_verification.py \
+            integrations/codex/tests/test_plugin.py

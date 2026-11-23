@@ -1,0 +1,16 @@
+**
+!containers/
+!containers/rna-kernel-2.0/
+!containers/rna-kernel-2.0/Dockerfile.trajectory
+!rna_kernels/
+!rna_kernels/mounted_scrna.py
+!rna_kernels/scrna_upstream_contract.py
+!src/
+!src/devbench/
+!src/devbench/core/
+!src/devbench/core/design.py
+!src/devbench/core/h5ad_gene_blocks.py
+!src/devbench/core/input_files.py
+!src/devbench/core/population_data.py
+!src/devbench/core/scrna_donor_trajectory.py
+!src/devbench/core/trajectory_evidence.py

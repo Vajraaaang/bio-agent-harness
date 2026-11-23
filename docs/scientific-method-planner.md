@@ -98,6 +98,30 @@ Recorded decision files are offline fixtures or explicit decision replays. They 
 
 Codex documents `--output-schema` for structured responses in its [non-interactive interface](https://learn.chatgpt.com/docs/non-interactive-mode#create-structured-outputs-with-a-schema). The implementation-draft schema uses that flag and mandatory local validation. The other planner schemas include optional fields and open metadata maps, so the existing compatibility path stages a protected exact schema and validates locally. Every method-planner prompt includes its literal schema so it is available without a forbidden file-read tool call. Offline protocol tests do not establish live selection or code-generation quality.
 
+## Frozen population study
+
+Use the installed CLI with the exact AnnData path in a frozen Workbench study
+request. The output directory must be fresh.
+
+```sh
+devbench run --dataset /absolute/input.h5ad \
+  --study-request /absolute/workbench-trial-request.json \
+  --output /absolute/fresh-run --allow-data-execution
+```
+
+The command runs the audit, design and pseudobulk checks, then fits the fixed
+population procedure if preflight passes. It writes `execution.json` and the
+method store with output artifacts and receipts. CLI and Workbench dispatch
+these registered steps through the same engine. The local route verifies
+execution of the declared procedure and does not select or qualify a method.
+
+To open an interactive Workbench session for a separately authorized model
+campaign, add `--model MODEL --agent-workspaces /absolute/actor-root
+--allow-model-execution`. The actor root must be outside platform scratch and
+disjoint from inputs and private service storage. Workbench handles campaign
+grants and operator approval. Existing benchmark and planner entry points
+remain available.
+
 ## Verification and scope
 
 `scripts/verify_method_planner.py` is explicitly an `execution_verification` fixture with recorded decisions. Its MAD parameters are fixture-author choices. It preserves an unavailable candidate, verifies the predefined ten-row software fixture becomes eight rows and confirms sandbox probes. It records abstention and checks that scientific recommendation approval, a scientifically selected recipe and a selected-winner proposal remain blocked. Canonical analysis and implementation trust stay unchanged.

@@ -7,6 +7,8 @@ import pytest
 
 from tests.test_episode_codex import fixture_adapter, setup_selector_protocol, staged, workspace
 
+__all__ = ['staged', 'workspace']
+
 
 PURPOSES = [
     ("method_scientific_planning", "SCIENTIFIC_SCHEMA", "SCIENTIFIC_PLANNER_INSTRUCTIONS"),
@@ -108,13 +110,18 @@ def test_method_modes_bind_their_real_schema_and_reject_an_episode_answer(staged
     else:
         from devbench.analysis import method_planner_contract as contract
     expected = getattr(contract, schema_name)
-    assert len(probes) == len(calls) == len(bound) == 1
+    assert probes == [] and len(calls) == len(bound) == 1
     actor = Path(bound[0]["actor"])
     assert json.loads((actor / "answer_schema.json").read_bytes()) == expected
     assert bound[0]["schema"] == expected
     assert json.loads((actor / "control" / "context.json").read_bytes()) == context
     assert getattr(contract, prompt_name) in calls[0]["instruction"]
-    assert json.dumps(expected, ensure_ascii=False, allow_nan=False) in calls[0]["instruction"]
+    instruction = calls[0]["instruction"]
+    if strict_schema_compatible(expected):
+        assert "Required JSON response schema:\n" not in instruction
+    else:
+        inline = instruction.split("Required JSON response schema:\n", 1)[1].split("\n\nTask context:\n", 1)[0]
+        assert json.loads(inline) == expected
     if purpose == "method_scientific_planning":
         assert "available_method_contracts" not in calls[0]["instruction"]
     command = bound[0]["command"]
@@ -129,7 +136,7 @@ def test_method_modes_bind_their_real_schema_and_reject_an_episode_answer(staged
     assert not (actor / "solve.py").exists()
     evidence = json.loads((output / "evidence.json").read_bytes())
     assert evidence["scope"] == "exploratory_method_planning_not_scientific_approval"
-    assert evidence["model_sessions_attempted"] == 2
+    assert evidence["model_sessions_attempted"] == 1
     assert evidence["selection"]["execution_role"] == "scientific_method_planner_selector"
     enforcement = "provider_and_local" if strict_schema_compatible(expected) else "local"
     assert evidence["selection"]["turns"][-1]["schema_enforcement"] == enforcement
@@ -150,30 +157,33 @@ def test_method_planner_valid_response_preserves_provider_identity_and_budget_ev
     selector, output, probes, calls = setup_selector_protocol(staged, monkeypatch, answer=answer)
     selection = selector._select(_context(purpose), output, timeout_seconds=5)
     assert selection.action == answer
-    assert len(probes) == len(calls) == 1
+    assert probes == [] and len(calls) == 1
     evidence = selection.evidence
     assert evidence["scope"] == "exploratory_method_planning_not_scientific_approval"
-    assert evidence["model_sessions_attempted"] == 2
-    assert evidence["tokens"] == 60
+    assert evidence["model_sessions_attempted"] == 1
+    assert evidence["tokens"] == 30
     assert evidence["actual_model"] == "fixture-model"
     assert evidence["model_identity_verified"] is True
     assert evidence["selection"]["event_capture_complete"] is True
     assert evidence["selection"]["execution_role"] == "scientific_method_planner_selector"
     assert evidence["selection"]["benchmark_condition"] is None
     assert evidence["selection"]["tool_evidence_source"] == "no_scientific_execution_during_planning"
-    assert (output / "exec-preflight" / "evidence.json").is_file()
+    assert evidence["preflight"]["model_launched"] is False
+    assert not (output / "exec-preflight" / "evidence.json").exists()
     assert (output / "selection-dispatch.json").is_file()
 
 
 @pytest.mark.parametrize("purpose,_,__", PURPOSES)
 def test_method_planner_failed_preflight_cannot_launch_the_planning_turn(staged, monkeypatch, purpose, _, __):
-    selector, output, probes, calls = setup_selector_protocol(staged, monkeypatch, preflight_ok=False,
-                                                             answer=ANSWERS[purpose])
-    with pytest.raises(RuntimeError, match="preflight_failed"):
+    from devbench.study import permissions
+    selector, output, probes, calls = setup_selector_protocol(staged, monkeypatch, answer=ANSWERS[purpose])
+    monkeypatch.setattr(permissions, "probe_boundary", lambda boundary, *args, **kwargs: {
+        "verified": False, "configuration": {}, "evidence_scope": "offline_protocol_fixture"})
+    with pytest.raises(RuntimeError, match="local_permission_probe_failed"):
         selector._select(_context(purpose), output, timeout_seconds=5)
-    assert len(probes) == 1 and calls == []
+    assert not probes and calls == []
     evidence = json.loads((output / "evidence.json").read_bytes())
-    assert evidence["model_sessions_attempted"] == 1
+    assert evidence["model_sessions_attempted"] == 0
     assert evidence["model_identity_verified"] is False
 
 
@@ -183,7 +193,7 @@ def test_method_planner_provider_identity_change_is_not_accepted(staged, monkeyp
                                                              answer=ANSWERS[purpose])
     with pytest.raises(RuntimeError, match="model_identity_changed"):
         selector._select(_context(purpose), output, timeout_seconds=5)
-    assert len(probes) == len(calls) == 1
+    assert probes == [] and len(calls) == 1
     assert json.loads((output / "evidence.json").read_bytes())["model_identity_verified"] is False
 
 
@@ -196,5 +206,5 @@ def test_implementation_text_is_returned_without_execution_or_actor_source_files
     assert "write code, or seek" not in calls[0]["instruction"]
     actor = Path(selection.evidence["workspace"])
     assert not (actor / "main.py").exists() and not (actor / "draft.py").exists()
-    assert len(probes) == len(calls) == 1
+    assert probes == [] and len(calls) == 1
     assert selection.evidence["selection"]["tool_evidence_source"] == "no_scientific_execution_during_planning"

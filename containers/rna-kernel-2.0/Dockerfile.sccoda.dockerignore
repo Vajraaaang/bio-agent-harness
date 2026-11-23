@@ -1,0 +1,16 @@
+**
+!containers/
+!containers/rna-kernel-2.0/
+!containers/rna-kernel-2.0/Dockerfile.sccoda
+!containers/rna-kernel-2.0/python-sccoda.lock
+!src/
+!src/devbench/
+!src/devbench/core/
+!src/devbench/core/scrna_composition.py
+!src/devbench/core/scientific_types.py
+!src/devbench/core/scrna_composition_solver.py
+!src/devbench/engine/
+!src/devbench/engine/__init__.py
+!src/devbench/engine/runtime_contracts.py
+!devharness_server/
+!devharness_server/tools_scrna_composition.py

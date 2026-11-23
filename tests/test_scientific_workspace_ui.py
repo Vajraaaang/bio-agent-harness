@@ -1,10 +1,13 @@
-"""Unified local UI routes retain scientific and authenticated read boundaries."""
+"""Unified local UI routes retain scientific and loopback read boundaries."""
 import json
+
 import pytest
 
-from tests.test_scientific_workspace import tmp_path, setup_workspace
-from tests.test_scientific_workspace_http import running, call
+from tests.test_scientific_workspace import setup_workspace
+from tests.test_scientific_workspace import tmp_path as _tmp_path_fixture
+from tests.test_scientific_workspace_http import call, running
 
+tmp_path = _tmp_path_fixture
 
 def test_unified_discovery_and_thread_routes_keep_existing_scientific_reads_inert(tmp_path):
     app, methods, _, _, _ = setup_workspace(tmp_path)
@@ -12,13 +15,12 @@ def test_unified_discovery_and_thread_routes_keep_existing_scientific_reads_iner
         before = methods.database.read_bytes()
         with running(app) as port:
             for route in ["/api/inputs", "/api/investigations", "/api/scientific", "/api/jobs"]:
-                assert call(port, route)[0] == 403
-                status, _, _ = call(port, route, token=app.token)
+                status, _, _ = call(port, route)
                 assert status == 200
-            status, body, _ = call(port, "/api/inputs", token=app.token)
+            status, body, _ = call(port, "/api/inputs")
             catalog = json.loads(body)
             assert status == 200 and isinstance(catalog["inputs"], list)
-            assert json.loads(call(port, "/api/investigations", token=app.token)[1])["investigations"] == []
+            assert json.loads(call(port, "/api/investigations")[1])["investigations"] == []
             assert methods.database.read_bytes() == before
             assert app.jobs() == [] and methods.list_records("run") == []
     finally:
@@ -30,18 +32,19 @@ def test_inspection_requires_same_origin_and_rejects_unregistered_sources(tmp_pa
     try:
         with running(app) as port:
             request = {"source": "/unregistered/source.h5ad"}
-            assert call(port, "/api/inputs/inspect", token=app.token, body=request)[0] == 403
-            assert call(port, "/api/inputs/inspect", token=app.token, body=request,
+            assert call(port, "/api/inputs/inspect", body=request)[0] == 403
+            assert call(port, "/api/inputs/inspect", body=request,
                         origin="https://foreign.invalid")[0] == 403
             origin = "http://127.0.0.1:" + str(port)
-            assert call(port, "/api/inputs/inspect", token=app.token, body=request, origin=origin)[0] == 400
-            assert call(port, "/api/inputs/inspect", token=app.token,
+            assert call(port, "/api/inputs/inspect", body=request, origin=origin)[0] == 400
+            assert call(port, "/api/inputs/inspect",
                         body={"source": "/unregistered/source.h5ad", "allow_model_execution": True}, origin=origin)[0] == 400
             assert app.jobs() == [] and methods.list_records("run") == []
     finally:
         app.close()
 
 
+@pytest.mark.wal
 @pytest.mark.parametrize("filename,contents", [("matrix.json", '{"counts":[[1,2],[3,4]]}'),
                                               ("samples.csv", "sample,batch\na,A\nb,B\n")])
 def test_actual_unified_route_admits_non_h5ad_without_widening_legacy_route(tmp_path, filename, contents):
@@ -53,7 +56,7 @@ def test_actual_unified_route_admits_non_h5ad_without_widening_legacy_route(tmp_
             app._input(str(source))
         with running(app) as port:
             origin = "http://127.0.0.1:" + str(port)
-            status, body, _ = call(port, "/api/investigations", token=app.token,
+            status, body, _ = call(port, "/api/investigations",
                 body={"question": "Which methods suit these measurements?", "source": str(source)}, origin=origin)
             value = json.loads(body)
             assert status == 202, value
@@ -67,8 +70,8 @@ def test_actual_unified_route_admits_non_h5ad_without_widening_legacy_route(tmp_
 
 def test_real_unified_question_clarification_approval_and_synthesis(tmp_path):
     """Fresh real numeric software journey; run after all source writers freeze."""
-    from devbench.analysis.workbench_ui import WorkbenchService, CONFIRMATIONS
     from devbench.analysis.checkpoints import sha256
+    from devbench.analysis.workbench_ui import CONFIRMATIONS, WorkbenchService
     from tests.test_workbench_proposals import fixture
     from tests.test_workbench_ui import wait
     inputs = tmp_path / "unified-inputs"
@@ -96,7 +99,10 @@ def test_real_unified_question_clarification_approval_and_synthesis(tmp_path):
         record = app.investigations.get(record["id"])
         record = app.investigations.action(record["id"], {"action": "run", "expected_revision": record["revision"],
                                                         "allow_data_execution": True})
-        assert wait(app, record["job_id"])["status"] == "completed_review_passed"
+        executed = wait(app, record["job_id"])
+        assert executed["status"] == "completed_review_passed", (
+            executed.get("error"), executed.get("execution")
+        )
         final = app.investigations.get(record["id"])
         assert final["synthesis"]["supported_findings"]["metrics"]["cells_input"] == 80
         assert final["synthesis"]["uncertainties"]

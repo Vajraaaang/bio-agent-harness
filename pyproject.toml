@@ -7,11 +7,12 @@ name = "devharness"
 version = "0.5.0.dev0"
 description = "Memory-supervised temporal transcriptomics tools and deterministic agent benchmarks"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 license = {text = "MIT"}
 dependencies = [
   "numpy>=1.24,<3",
   "pandas>=2,<3",
+  "pyarrow==23.0.1",
   "scipy>=1.11,<2",
   "scikit-learn>=1.3,<2",
   "statsmodels>=0.14,<0.15",
@@ -42,8 +43,8 @@ workflow = [
   "langchain-core==1.6.6",
   "langgraph-checkpoint-sqlite==3.1.1",
 ]
-dev = ["pytest>=8,<10", "tinycss2>=1.4,<2"]
-reporting = ["matplotlib>=3.8,<4"]
+dev = ["pytest>=8,<10", "tinycss2>=1.4,<2", "pypdf>=6.21.4,<7", "ruff==0.14.14", "mypy==1.19.1", "setuptools==84.0.0"]
+reporting = ["matplotlib>=3.8,<4", "pypdf>=6.21.4,<7"]
 analysis = [
   "anndata>=0.12,<0.13",
   "scanpy>=1.11,<2",
@@ -63,7 +64,7 @@ analysis = [
 
 [project.scripts]
 devharness = "devharness_server.server:main"
-devbench = "experiments.run_sweep:main"
+devbench = "devbench.platform.cli:main"
 devbench-metrics = "experiments.compile_metrics:main"
 devharness-synthetic = "benchmarks.generate_synthetic:main"
 devharness-ingest = "benchmarks.ingest_real_data:main"
@@ -77,17 +78,43 @@ devbench-study = "devbench.study.cli:main"
 devbench-analyze = "devbench.analysis.workbench:main"
 devbench-fastq-de = "devbench.analysis.fastq_cli:main"
 
+[tool.setuptools.package-dir]
+devbench = "src/devbench"
+
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["devharness*", "devbench*", "benchmarks*", "experiments*", "scripts*"]
+where = ["src", "."]
+namespaces = false
+include = ["devharness*", "devbench*", "benchmarks*", "experiments*", "scripts*", "rna_kernels*"]
 
 [tool.setuptools.package-data]
 benchmarks = ["task_definitions/*.json", "task_definitions/expanded/*.json", "reference_data/*.json", "reference_data/*.md"]
 devbench_engine = ["AGENTS.md"]
-devbench = ["tasks/catalog.json", "study/public_sources.json", "study/biology_catalog.json", "analysis/assets/workbench-ui.html", "analysis/assets/workbench-theme.css", "analysis/assets/workbench-conversation.js", "analysis/assets/workbench-investigations.js", "analysis/assets/workbench-artifacts.js", "analysis/assets/workbench-projects.js", "analysis/assets/workbench-synthetic.js", "analysis/assets/workbench-synthetic.css", "analysis/assets/workbench-demo.js", "analysis/assets/workbench-summary-plots.js", "analysis/assets/workbench-demo.css", "analysis/assets/scientific-figure.js", "analysis/assets/source-bundle.zip", "analysis/assets/community-workflow/*"]
-devharness_controlled = ["native-package-sources.lock.json"]
+devbench = ["adaptive/*.py", "tasks/catalog.json", "study/public_sources.json", "study/biology_catalog.json", "analysis/assets/workbench-ui.html", "analysis/assets/workbench-theme.css", "analysis/assets/workbench-conversation.js", "analysis/assets/workbench-investigations.js", "analysis/assets/workbench-research.js", "analysis/assets/workbench-studio.js", "analysis/assets/workbench-context.js", "analysis/assets/workbench-lineage.js", "analysis/assets/workbench-qc.js", "analysis/assets/workbench-thesis-studio.js", "analysis/assets/workbench-studio.css", "analysis/assets/workbench-artifacts.js", "analysis/assets/workbench-projects.js", "analysis/assets/workbench-synthetic.js", "analysis/assets/workbench-synthetic.css", "analysis/assets/workbench-demo.js", "analysis/assets/workbench-summary-plots.js", "analysis/assets/workbench-demo.css", "analysis/assets/scientific-figure.js", "analysis/assets/bulk-scientific-figure.js", "analysis/assets/bulk-scientific-figure.css", "analysis/assets/scientific-palettes.js", "analysis/assets/scientific-plot-panels.js", "analysis/assets/scientific-plot-workbench.js", "analysis/assets/scientific-plot-verification.json", "analysis/assets/source-bundle.zip", "analysis/assets/community-workflow/*"]
+"devbench.analysis" = [
+  "assets/agentic-rna-v24-evaluation-protocol.md",
+  "assets/2026-11-04-workbench-compute-contracts.schema.json",
+  "assets/official-client-pins.json",
+  "assets/owned-host-sentinel.txt",
+  "assets/workbench-compute-demo.*",
+]
+devharness_controlled = ["native-package-sources.lock.json", "native-kernel-runtime.lock.json", "erql-package-sources.lock.json"]
 devharness_server = ["r/*.R"]
+
+[tool.ruff]
+target-version = "py311"
+extend-exclude = ["*grader*", "*grading*", "*golden*", "*private*", "*secret*", "*credential*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "I", "UP", "C90"]
+
+[tool.mypy]
+python_version = "3.13"
+files = ["src/devbench", "devharness_core", "devharness_controlled", "devharness_server", "rna_kernels"]
+exclude = ["(^|/)\\.[^/]+/", "(^|/)build/", "(?i)grader|grading|golden|private|secret|credential"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+pythonpath = ["src", "."]
+addopts = "-ra --import-mode=importlib"
+markers = ["wal: requires patched SQLite for scientific WAL; DEVBENCH_SKIP_UNPATCHED_WAL_TESTS=1 opts out on unpatched runtimes"]

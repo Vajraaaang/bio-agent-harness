@@ -1,0 +1,588 @@
+"""DevBench entry point for benchmark, Workbench, RNA workflow, and replay commands."""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from uuid import uuid4
+
+
+def _runtime_failure(error):
+    print(f"devbench: {type(error).__name__}: {error}", file=sys.stderr)
+    return 1
+
+
+def main():
+    if sys.argv[1:2] == ["plugin-mcp"]:
+        from .plugin_mcp import main as plugin_main
+
+        return plugin_main(sys.argv[2:])
+    if sys.argv[1:2] == ["workbench"]:
+        from .workbench_ui import main as workbench_main
+
+        workbench_main(sys.argv[2:], pin_execution=True, interactive_adaptive=True)
+        return 0
+    if sys.argv[1:2] == ["workflow"]:
+        return run_workflow(sys.argv[2:])
+    if sys.argv[1:2] == ["replay-package"]:
+        return replay_package(sys.argv[2:])
+    if sys.argv[1:2] == ["replay-erql"]:
+        return replay_erql(sys.argv[2:])
+    if sys.argv[1:2] == ["run-erql"]:
+        return run_erql(sys.argv[2:])
+    if sys.argv[1:2] != ["run"]:
+        from experiments.run_sweep import main as run_sweep
+
+        return run_sweep()
+    return run_population(sys.argv[2:], pin_execution=True)
+
+
+def run_workflow(argv):
+    """Inspect or advance an existing local adaptive investigation."""
+    parser = argparse.ArgumentParser(
+        prog="devbench workflow", description=run_workflow.__doc__
+    )
+    commands = parser.add_subparsers(dest="operation", required=True)
+    status = commands.add_parser(
+        "status", help="Read the retained adaptive lineage status"
+    )
+    advance = commands.add_parser("advance", help="Dispatch admitted local OCI steps")
+    for command in (status, advance):
+        command.add_argument(
+            "--workspace", type=Path, required=True, help="Existing method workspace"
+        )
+        command.add_argument(
+            "--session-id",
+            required=True,
+            help="Exact retained scientific plan session ID",
+        )
+    advance.add_argument("--actor", required=True)
+    advance.add_argument(
+        "--parameters",
+        type=Path,
+        required=True,
+        help="JSON array of the exact frozen step parameter objects",
+    )
+    advance.add_argument(
+        "--max-steps", type=int, default=1, help="Step budget from 1 to 64"
+    )
+    advance.add_argument("--allow-data-execution", action="store_true")
+    args = parser.parse_args(argv)
+    writing = args.operation == "advance"
+    if writing and not args.allow_data_execution:
+        advance.error("Adaptive dispatch requires --allow-data-execution")
+    if writing and not 1 <= args.max_steps <= 64:
+        advance.error("--max-steps must be between 1 and 64")
+
+    from devbench.engine.method_executor import _path
+    from devbench.engine.methods import MethodService
+    from devbench.engine.workflow_operations import LEDGER_NAME, WorkflowOperationLedger
+    from devbench.engine.workspace import read_bounded_file
+    from devbench.study.evidence import decode_json
+
+    from .method_planner import ScientificMethodPlanner
+    from .workflow_entrypoints import advance_adaptive_workflow
+
+    try:
+        workspace = _path(args.workspace)
+        methods = MethodService(workspace, readonly=True)
+        planner = ScientificMethodPlanner(methods)
+        ledger = WorkflowOperationLedger(workspace / LEDGER_NAME, readonly=True)
+        adaptive = planner.adaptive_workflow(args.session_id, ledger)
+        if writing and adaptive.controller_state()["binding"] is not None:
+            raise PermissionError(
+                "The bound controller requires its own runtime capabilities"
+            )
+        result = adaptive.status()
+        if result["revision"] == 0:
+            raise ValueError("The requested session has no retained adaptive lineage")
+        if writing:
+            parameters = decode_json(read_bounded_file(_path(args.parameters), 65_536))
+            if (
+                not isinstance(parameters, list)
+                or len(parameters) > 64
+                or any(not isinstance(document, dict) for document in parameters)
+            ):
+                raise ValueError("Provide at most 64 frozen parameter objects")
+            methods = MethodService(workspace, initialize=False, reconcile=False)
+            planner = ScientificMethodPlanner(methods)
+            ledger = WorkflowOperationLedger(workspace / LEDGER_NAME)
+            executor = planner.exploratory_executor(args.session_id, ledger, parameters)
+            result = advance_adaptive_workflow(
+                planner,
+                args.session_id,
+                actor=args.actor,
+                executor=executor,
+                ledger=ledger,
+                max_steps=args.max_steps,
+                allow_data_execution=True,
+                manual_local_oci=True,
+            )
+    except (OSError, ValueError, RuntimeError) as error:
+        return _runtime_failure(error)
+    fields = ("mode", "revision", "ready", "blocked", "outcomes", "execution_block")
+    if writing:
+        fields += ("steps_dispatched",)
+    print(json.dumps({key: result[key] for key in fields}, allow_nan=False))
+    return 0
+
+
+def replay_package(argv):
+    """Closed portable verification route, with no launch or controller mode."""
+    parser = argparse.ArgumentParser(prog="devbench replay-package")
+    parser.add_argument("operation", choices=("verify", "presentation"))
+    parser.add_argument("--package", type=Path, required=True)
+    parser.add_argument("--expected-root", required=True)
+    parser.add_argument(
+        "--audience", choices=("public", "restricted_audit"), required=True
+    )
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--audit-ledger", type=Path)
+    parser.add_argument("--audit-context")
+    parser.add_argument("--audit-source")
+    args = parser.parse_args(argv)
+    if bool(args.output) != (args.operation == "presentation"):
+        parser.error("Only presentation requires a fresh --output")
+    audit_fields = (args.audit_ledger, args.audit_context, args.audit_source)
+    if (
+        args.audience == "public"
+        and any(audit_fields)
+        or args.audience == "restricted_audit"
+        and not all(audit_fields)
+    ):
+        parser.error(
+            "Restricted audit requires its ledger, context and exact source; "
+            "public packages have no audit settings"
+        )
+    import zipfile
+
+    from devbench.analysis import bundles
+
+    try:
+        if args.audience == "public":
+            result = (
+                bundles.verify_public_replay_package(args.package, args.expected_root)
+                if args.operation == "verify"
+                else bundles.replay_public_presentation(
+                    args.package, args.expected_root, args.output
+                )
+            )
+        else:
+            from devbench.analysis.evidence_access import EvidenceBroker
+            from devbench.analysis.scientific_publication import AuditReplayEntitlement
+            from devbench.engine.workflow_operations import WorkflowOperationLedger
+
+            ledger = WorkflowOperationLedger(
+                args.audit_ledger, readonly=True, inert=True
+            )
+            broker = EvidenceBroker.open_readonly(ledger.scientific)
+            with ledger._database() as db:
+                identity = broker._source(db, args.audit_source)["content_sha256"]
+            entitlement = AuditReplayEntitlement(
+                broker.delivery(args.audit_context, args.audit_source), identity
+            )
+            manifest = bundles.replay_package_manifest(
+                args.package, args.expected_root, entitlement=entitlement
+            )
+            if manifest.get("format") == bundles.INVESTIGATION_REPLAY_FORMAT:
+                if args.operation != "verify":
+                    raise PermissionError(
+                        "Investigation presentation requires a separately admitted "
+                        "public replay package"
+                    )
+                result = bundles.verify_investigation_replay(
+                    args.package, args.expected_root, entitlement=entitlement
+                )
+            elif manifest.get("format") == bundles.REPLAY_FORMAT:
+                result = (
+                    bundles.verify_replay_package(
+                        args.package, args.expected_root, entitlement=entitlement
+                    )
+                    if args.operation == "verify"
+                    else bundles.replay_package_presentation(
+                        args.package,
+                        args.expected_root,
+                        args.output,
+                        entitlement=entitlement,
+                    )
+                )
+            else:
+                raise ValueError("Unsupported replay package format")
+    except (
+        OSError,
+        ValueError,
+        RuntimeError,
+        TypeError,
+        KeyError,
+        zipfile.BadZipFile,
+    ) as error:
+        return _runtime_failure(error)
+    print(json.dumps(result, allow_nan=False))
+    return 0
+
+
+def replay_erql(argv):
+    parser = argparse.ArgumentParser(
+        prog="devbench replay-erql",
+        description="Separate retained evidence verification, presentation and "
+        "authorized synthetic replay",
+    )
+    parser.add_argument(
+        "operation",
+        choices=(
+            "describe",
+            "export",
+            "verify",
+            "presentation",
+            "numerical",
+            "legacy-verify",
+            "legacy-import",
+        ),
+    )
+    for option in (
+        "capsule",
+        "execution",
+        "package",
+        "output",
+        "audit-ledger",
+        "input",
+        "grant",
+        "execution-ledger",
+    ):
+        parser.add_argument("--" + option, type=Path)
+    for option in (
+        "expected-root",
+        "audit-context",
+        "audit-source",
+        "capture-source",
+        "input-context",
+        "input-source",
+    ):
+        parser.add_argument("--" + option)
+    parser.add_argument("--scope", choices=("synthetic_numerical_replay",))
+    parser.add_argument("--allow-data-execution", action="store_true")
+    parser.add_argument(
+        "--audience", choices=("restricted_audit", "public"), default="restricted_audit"
+    )
+    args = parser.parse_args(argv)
+    return _replay_request(parser, args, argv)
+
+
+def _validate_replay_request(parser, args):
+    common = {"audit_ledger", "audit_context", "audit_source"}
+    fields = {
+        "describe": {"capsule", "execution", *common},
+        "export": {"capsule", "execution", "output", "capture_source", *common},
+        "verify": {"package", "expected_root", *common},
+        "presentation": {"package", "expected_root", "output", *common},
+        "numerical": {
+            "package",
+            "expected_root",
+            "output",
+            "input",
+            "input_context",
+            "input_source",
+            "grant",
+            "execution_ledger",
+            "scope",
+            "allow_data_execution",
+            *common,
+        },
+        "legacy-verify": {"package", "expected_root"},
+        "legacy-import": {"package", "expected_root", "output", *common},
+    }
+    required = fields[args.operation]
+    provided = {
+        key
+        for key, value in vars(args).items()
+        if value not in (None, False) and key not in {"operation", "audience"}
+    }
+    if provided != required:
+        parser.error(
+            "This operation requires exactly: "
+            + ", ".join("--" + key.replace("_", "-") for key in sorted(required))
+        )
+    if args.audience != "restricted_audit":
+        parser.error("Synthetic replay has no admitted public package")
+
+
+def _replay_request(parser, args, argv):
+    from devbench.analysis import bundles
+    from devbench.analysis.evidence_access import EvidenceBroker
+    from devbench.analysis.scientific_publication import AuditReplayEntitlement
+    from devbench.engine.workflow_operations import WorkflowOperationLedger
+    from devbench.study.evidence import _read, decode_json
+
+    from .workflow_entrypoints import SyntheticERQLCapsule, replay_fixed_erql
+
+    _validate_replay_request(parser, args)
+    try:
+        if args.operation == "legacy-verify":
+            result = bundles.verify_legacy_readonly(args.package, args.expected_root)
+        else:
+            writing = args.operation in {"export", "numerical", "legacy-import"}
+            ledger = WorkflowOperationLedger(
+                args.audit_ledger, readonly=not writing, inert=not writing
+            )
+            broker = (
+                EvidenceBroker(ledger.scientific)
+                if writing
+                else EvidenceBroker.open_readonly(ledger.scientific)
+            )
+
+            def entitled(source):
+                with ledger._database() as db:
+                    identity = broker._source(db, source)["content_sha256"]
+                result = AuditReplayEntitlement(
+                    broker.delivery(args.audit_context, source), identity
+                )
+                result.require(identity)
+                return result
+
+            entitlement = entitled(args.audit_source)
+            if args.operation == "describe":
+                result = SyntheticERQLCapsule(args.capsule).describe_replay(
+                    args.execution, entitlement=entitlement
+                )
+            elif args.operation == "export":
+                capture = entitled(args.capture_source)
+                capsule = SyntheticERQLCapsule(args.capsule)
+                result = capsule.export_replay(
+                    args.execution,
+                    args.output,
+                    entitlement=entitlement,
+                    capture_entitlement=capture,
+                )
+            else:
+                bundles._require_replay_scope(entitlement, args.expected_root)
+                if args.operation == "verify":
+                    result = bundles.verify_replay_package(
+                        args.package, args.expected_root, entitlement=entitlement
+                    )
+                elif args.operation == "presentation":
+                    result = bundles.replay_package_presentation(
+                        args.package,
+                        args.expected_root,
+                        args.output,
+                        entitlement=entitlement,
+                    )
+                elif args.operation == "legacy-import":
+                    result = bundles.import_legacy_readonly(
+                        args.package,
+                        args.output,
+                        args.expected_root,
+                        entitlement=entitlement,
+                    )
+                else:
+                    from devbench.engine.execution_snapshot import launch
+
+                    # Validate the separate grant and input before any snapshot launch.
+                    grant = decode_json(_read(args.grant, 16_384))
+                    inputs = broker.delivery(args.input_context, args.input_source)
+                    from .workflow_entrypoints import validate_erql_replay
+
+                    validate_erql_replay(
+                        args.package,
+                        args.expected_root,
+                        entitlement=entitlement,
+                        input_path=args.input,
+                        input_delivery=inputs,
+                        grant=grant,
+                        allow_data_execution=True,
+                    )
+                    launch(
+                        "devbench.platform.cli",
+                        ["replay-erql", *argv],
+                        replace_process=True,
+                    )
+                    result = replay_fixed_erql(
+                        args.package,
+                        args.expected_root,
+                        args.output,
+                        entitlement=entitlement,
+                        input_path=args.input,
+                        input_delivery=inputs,
+                        grant=grant,
+                        execution_ledger=args.execution_ledger,
+                        allow_data_execution=True,
+                    )
+    except (OSError, ValueError, RuntimeError, TypeError, KeyError) as error:
+        return _runtime_failure(error)
+    print(json.dumps(result, allow_nan=False))
+    return 0 if result.get("numerical_match", True) else 1
+
+
+def run_erql(argv):
+    parser = argparse.ArgumentParser(
+        prog="devbench run-erql",
+        description="Run a signed synthetic ERQL verification capsule",
+    )
+    parser.add_argument("--capsule", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--scope", choices=("synthetic-verification",), required=True)
+    parser.add_argument("--allow-data-execution", action="store_true")
+    args = parser.parse_args(argv)
+    if not args.allow_data_execution:
+        parser.error("Synthetic ERQL requires --allow-data-execution")
+    from devbench.engine.execution_snapshot import launch
+
+    from .workflow_entrypoints import SyntheticERQLCapsule
+
+    try:
+        launch("devbench.platform.cli", ["run-erql", *argv], replace_process=True)
+        capsule = SyntheticERQLCapsule(args.capsule)
+        outcome = capsule.run(
+            args.output, allow_data_execution=args.allow_data_execution
+        )
+        result = capsule.status(args.output)
+    except (OSError, ValueError, RuntimeError) as error:
+        return _runtime_failure(error)
+    print(json.dumps(result, allow_nan=False))
+    return 0 if outcome["status"] == "analysis_complete_pending_review" else 1
+
+
+def run_population(argv, *, pin_execution=False):
+    parser = argparse.ArgumentParser(
+        prog="devbench run",
+        description="Run a frozen scRNA population study locally or open its "
+        "Workbench session.",
+    )
+    parser.add_argument("--dataset", type=Path, required=True)
+    parser.add_argument("--study-request", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--allow-data-execution", action="store_true")
+    parser.add_argument(
+        "--model", help="Configure a Codex model for an interactive Workbench session"
+    )
+    parser.add_argument(
+        "--agent-workspaces", type=Path, help="Protected actor root for Workbench"
+    )
+    parser.add_argument("--allow-model-execution", action="store_true")
+    parser.add_argument(
+        "--port",
+        type=int,
+        help="Workbench loopback port; defaults to an available port",
+    )
+    args = parser.parse_args(argv)
+    if not args.allow_data_execution:
+        parser.error("Population execution requires --allow-data-execution")
+    if args.model and (not args.allow_model_execution or args.agent_workspaces is None):
+        parser.error("--model requires --allow-model-execution and --agent-workspaces")
+    if not args.model and (
+        args.allow_model_execution
+        or args.agent_workspaces is not None
+        or args.port is not None
+    ):
+        parser.error("Workbench settings require --model")
+
+    if pin_execution:
+        from devbench.engine.execution_snapshot import launch
+
+        try:
+            launch("devbench.platform.cli", ["run", *argv], replace_process=True)
+        except (OSError, ValueError, RuntimeError) as error:
+            return _runtime_failure(error)
+
+    from devbench.analysis.method_executor import _path
+
+    from .workbench_singlecell import load_singlecell_trial_request
+
+    try:
+        request = load_singlecell_trial_request(args.study_request)
+        dataset = _path(args.dataset)
+        output = _path(args.output)
+    except (OSError, ValueError, RuntimeError) as error:
+        return _runtime_failure(error)
+
+    if dataset != Path(request["source"]):
+        parser.error("--dataset must match the frozen study request")
+    if dataset.is_relative_to(output) or args.study_request.is_relative_to(output):
+        parser.error("Output must be separate from the supplied inputs")
+    try:
+        return _run_population_request(args, request, dataset, output)
+    except (OSError, ValueError, RuntimeError) as error:
+        return _runtime_failure(error)
+
+
+def _run_population_request(args, request, dataset, output):
+    from devbench.analysis.method_executor import _path
+    from devbench.analysis.method_planner import ScientificMethodPlanner
+    from devbench.engine.methods import MethodService
+
+    from .population_verification import verify_population_execution
+    from .workbench_singlecell import bind_singlecell_trial, population_input_binding
+
+    if args.model:
+        from .workbench_ui import main as workbench_main
+
+        return workbench_main(
+            [
+                "--workspace",
+                str(output),
+                "--input-root",
+                str(dataset.parent),
+                "--singlecell-trial-request",
+                str(args.study_request),
+                "--enable-scientific",
+                "--allow-data-execution",
+                "--codex-model",
+                args.model,
+                "--agent-workspaces",
+                str(_path(args.agent_workspaces)),
+                "--model-data-scope",
+                request["user_declarations"]["data_classification"],
+                "--allow-model-execution",
+                "--port",
+                str(args.port if args.port is not None else 0),
+                "--open-browser",
+            ]
+        )
+    binding = bind_singlecell_trial(
+        request,
+        project_id=request.get("project_id") or uuid4().hex,
+        input_roots=(dataset.parent,),
+    )
+    output.mkdir(mode=0o700)
+    actor = "local-population-verification"
+    methods = MethodService(output / "methods")
+    artifact = methods.import_artifact(dataset, artifact_type="anndata", actor=actor)
+    planner = ScientificMethodPlanner(methods)
+    plan = planner.create(
+        {
+            "scientific_objective": request["question"],
+            "computational_task": "experimental_scRNA_contrast",
+        },
+        {
+            "observed": {},
+            "inferred": {},
+            "unknowns": [],
+            "artifact_ids": [artifact["artifact_id"]],
+        },
+        actor=actor,
+        data_classification=request["user_declarations"]["data_classification"],
+        evaluation_purpose="execution_verification",
+        rna_input_contract=population_input_binding(
+            {"singlecell_trial": binding}, artifact["artifact_id"]
+        ),
+    )
+    result = verify_population_execution(
+        planner, plan["session_id"], actor=actor, allow_data_execution=True
+    )
+    from devbench.analysis.checkpoints import atomic_json
+
+    atomic_json(output / "execution.json", result)
+    print(
+        json.dumps(
+            {
+                "status": result["status"],
+                "session_id": plan["session_id"],
+                "execution_record": str(output / "execution.json"),
+            },
+            allow_nan=False,
+        )
+    )
+    return 0 if result["status"] == "completed" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

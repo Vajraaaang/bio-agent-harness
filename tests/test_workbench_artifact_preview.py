@@ -136,7 +136,140 @@ def test_matrix_preview_is_disabled_and_large_explicit_download_does_not_fetch()
     assert "existing export or CLI" in value["text"]
 
 
+def test_verified_scientific_json_result_download_extends_without_widening_preview_budget():
+    value = run_js(DOM + r"""(async()=>{
+      const data=Buffer.alloc(96000000,32);data.write('{"result":"');data.write('"}',data.length-2);
+      const artifact={...descriptor('gene-stage.json',data,'a','application/json'),scientific_ref:{object_type:'result',object_id:'c'.repeat(32),version_id:'d'.repeat(64)}};
+      const c=f.mount(host,{artifacts:[artifact],request:async path=>{requests.push(path);return new Response(data);}});
+      const previewDisabled=preview('a').disabled;await preview('a').fire('click');const afterPreview=requests.length;
+      await all().find(n=>n.dataset.artifactAction==='download').fire('click');
+      console.log(JSON.stringify({previewDisabled,afterPreview,requests,created,text:content()}));c.destroy();
+    })();""")
+    assert value['previewDisabled'] is True and value['afterPreview'] == 0
+    assert value['requests'] == ['/api/scientific/artifacts/' + 'a' * 64]
+    assert value['created'] == ['blob:test-0']
+    assert 'Verified download prepared' in value['text']
+
+
+def test_scientific_result_above_decimal_96mb_is_rejected_before_fetch():
+    value = run_js(DOM + r"""(async()=>{
+      const artifact={...descriptor('gene-stage.json','{}','a','application/json'),size_bytes:96000001,scientific_ref:{object_type:'result',object_id:'c'.repeat(32),version_id:'d'.repeat(64)}};
+      f.mount(host,{artifacts:[artifact],request:async()=>{requests.push(1);return new Response('{}');}});
+      await all().find(n=>n.dataset.artifactAction==='download').fire('click');
+      console.log(JSON.stringify({requests,created,text:content()}));
+    })();""")
+    assert value['requests'] == [] and value['created'] == []
+    assert 'existing export or CLI' in value['text']
+
+
 def test_actual_json_object_is_not_confused_with_missing_value_display_marker():
     value = run_js(DOM + "(async()=>{const data='[{\"gene\":\"G1\",\"flag\":{\"not_supplied\":true}},{\"gene\":\"G2\"}]';f.mount(host,{artifacts:[descriptor('table.json',data,'a','application/json')],request:async()=>new Response(data)});await preview('a').fire('click');console.log(JSON.stringify(content()));})();")
     assert '{"not_supplied":true}' in value
     assert "Not supplied" in value
+
+
+def test_generic_json_does_not_advertise_plots_without_verified_saved_capabilities():
+    value = run_js(DOM + r"""(async()=>{
+      const data='{"status":"no saved plots"}';f.mount(host,{artifacts:[descriptor('plain.json',data,'a','application/json')],request:async path=>{requests.push(path);return new Response(data);}});
+      console.log(JSON.stringify({plotButtons:all().filter(n=>['bulk-plots','scientific-plots'].includes(n.dataset.artifactAction)).length,requests}));
+    })();""")
+    assert value == {'plotButtons': 0, 'requests': []}
+
+
+def test_verified_prefit_plot_availability_enables_only_its_bound_scientific_route():
+    value = run_js(DOM + r"""(async()=>{
+      const data='{"format":"saved-prefit-fixture"}',a=descriptor('population-audit.json',data,'a','application/json');
+      a.plot_availability={available:true,capabilities:['scrna_population_cell_counts'],reason:null,source:{artifact_id:a.artifact_id,sha256:a.sha256}};
+      let mounted=0;globalThis.BulkScientificFigure={mount(node,options){mounted++;return {destroy(){}};}};
+      f.mount(host,{artifacts:[a],request:async path=>{requests.push(path);return new Response(JSON.stringify({format:'devbench.scientific-plot-workspace/1',source:{artifact_id:a.artifact_id,sha256:a.sha256},panels:[]}));}});
+      const buttons=all().filter(n=>['bulk-plots','scientific-plots'].includes(n.dataset.artifactAction));const count=buttons.length;
+      await buttons.find(n=>n.dataset.artifactAction==='scientific-plots').fire('click');console.log(JSON.stringify({count,requests,mounted}));
+    })();""")
+    assert value == {'count': 1, 'requests': ['/api/scientific/artifacts/' + 'a' * 64 + '/scientific-plots'], 'mounted': 1}
+
+
+def test_restricted_raw_artifact_still_offers_its_registered_plot():
+    value = run_js(DOM + r"""(async()=>{
+      const a=descriptor('result.json','{}','a','application/json');
+      a.download_status='restricted_audit_entitlement_required';
+      a.plot_availability={available:true,capabilities:['scrna_population_cell_counts'],source:{artifact_id:a.artifact_id,sha256:a.sha256}};
+      f.mount(host,{mode:'figures',artifacts:[a],request:async path=>{requests.push(path);return new Response('{}');}});
+      const controls=Object.fromEntries(all().filter(n=>n.dataset.artifactAction).map(n=>[n.dataset.artifactAction,n]));
+      await controls.download.fire('click');
+      console.log(JSON.stringify({preview:controls.preview.disabled,download:controls.download.disabled,
+        plot:!!controls['scientific-plots'],requests}));
+    })();""")
+    assert value == {'preview': True, 'download': True, 'plot': True, 'requests': []}
+
+
+def test_actual_saved_population_capability_contract_enables_its_exact_artifact(tmp_path):
+    from devbench.analysis.bulk_plot_service import scientific_artifact_plot_availability
+    from tests.test_plot_adapters_scrna_population import ScopedScientific
+
+    scientific = ScopedScientific(tmp_path)
+    availability = scientific_artifact_plot_availability(scientific, scientific.identity)
+    assert availability['available'] is True
+    assert set(availability['capabilities']) == {'scrna_population_cell_counts', 'scrna_population_contrast_support'}
+    artifact = {'artifact_id': scientific.identity, 'sha256': scientific.identity,
+        'name': 'saved-design.json', 'content_type': 'application/json', 'artifact_type': 'file',
+        'size_bytes': scientific.path.stat().st_size, 'download_path': '/api/scientific/artifacts/' + scientific.identity,
+        'plot_availability': availability}
+    value = run_js(DOM + r"""
+      const artifact=ARTIFACT;f.mount(host,{artifacts:[artifact],request:async path=>{requests.push(path);return new Response('{}');}});
+      console.log(JSON.stringify({buttons:all().filter(n=>n.dataset.artifactAction==='scientific-plots').map(n=>n.dataset.artifactId),requests}));
+    """.replace('ARTIFACT', json.dumps(artifact)))
+    assert value == {'buttons': [scientific.identity], 'requests': []}
+
+
+@pytest.mark.parametrize('availability', [
+    {'available': False, 'capabilities': ['scrna_population_cell_counts']},
+    {'available': True, 'capabilities': []},
+    {'available': True, 'capabilities': ['scrna_population_cell_counts'], 'source': {'artifact_id': 'b' * 64, 'sha256': 'a' * 64}},
+    {'available': True, 'capabilities': ['scrna_population_cell_counts'], 'source': {'artifact_id': 'a' * 64, 'sha256': 'b' * 64}},
+    {'available': True, 'capabilities': [None]},
+])
+def test_missing_unavailable_or_mismatched_plot_metadata_cannot_enable_explore(availability):
+    value = run_js(DOM + r"""
+      const a=descriptor('result.json','{}','a','application/json');a.plot_availability=AVAILABILITY;
+      f.mount(host,{artifacts:[a],request:async path=>{requests.push(path);return new Response('{}');}});
+      console.log(JSON.stringify({plotButtons:all().filter(n=>['bulk-plots','scientific-plots'].includes(n.dataset.artifactAction)).length,requests}));
+    """.replace('AVAILABILITY', json.dumps(availability)))
+    assert value == {'plotButtons': 0, 'requests': []}
+
+
+def test_episode_artifacts_use_only_the_current_authenticated_job_route():
+    value = run_js(DOM + r"""(async()=>{
+      const job='c'.repeat(32),data=JSON.stringify({findings:[{gene_id:'G1',p_value:0,q_value:null}]});
+      const a={kind:'episode_output',job_id:job,name:'synthesis',download_url:'/api/agentic-episodes/'+job+'/download/synthesis'};
+      f.mount(host,{context:{job_id:job},artifacts:[a,{...a,job_id:'d'.repeat(32)},{...a,download_url:'https://example.com/stolen'}],request:async path=>{requests.push(path);return new Response(data);}});
+      const previews=all().filter(n=>n.dataset.artifactAction==='preview');assert.equal(previews.length,1);await previews[0].fire('click');
+      console.log(JSON.stringify({requests,text:content(),unsafe:all().some(n=>n.innerHTML!==undefined),raw:all().some(n=>n.tagName==='pre')}));
+    })();""")
+    assert value["requests"] == ["/api/agentic-episodes/" + "c" * 32 + "/download/synthesis"]
+    assert "G1" in value["text"] and "P value" in value["text"]
+    assert value["unsafe"] is False
+    assert value["raw"] is False
+
+
+def test_episode_plot_preview_binds_current_job_and_retains_pdf_route():
+    value = run_js(DOM + r"""(async()=>{
+      const job='c'.repeat(32),data='{}',base='/api/agentic-episodes/'+job;
+      const a={kind:'episode_output',job_id:job,name:'result',download_url:base+'/download/result',sha256:crypto.createHash('sha256').update(data).digest('hex'),size_bytes:2};let mounted=0,pdf;
+      globalThis.BulkScientificFigure={mount(node,options){mounted++;assert.equal(options.loadCapabilities,undefined);assert.equal(options.exportBundle,undefined);pdf=options.exportPDF;return {destroy(){}};}};
+      f.mount(host,{context:{job_id:job},artifacts:[a],request:async(path,body)=>{requests.push({path,body});return new Response(body?'PDF':JSON.stringify({format:'devbench.scientific-plot-workspace/1',source:{run_id:job,sha256:a.sha256},panels:[]}));}});
+      await all().find(n=>n.dataset.artifactAction==='scientific-plots').fire('click');await pdf({kind:'ma',scope:'complete'});
+      console.log(JSON.stringify({requests,mounted}));
+    })();""")
+    assert value["mounted"] == 1
+    assert [item["path"] for item in value["requests"]] == [
+        "/api/agentic-episodes/" + "c" * 32 + "/scientific-plots",
+        "/api/agentic-episodes/" + "c" * 32 + "/scientific-pdf",
+    ]
+
+
+def test_episode_artifact_does_not_downgrade_malformed_digest_metadata():
+    value = run_js(DOM + r"""
+      const job='c'.repeat(32),a={kind:'episode_output',job_id:job,name:'synthesis',download_url:'/api/agentic-episodes/'+job+'/download/synthesis',sha256:'invalid',size_bytes:2};
+      f.mount(host,{context:{job_id:job},artifacts:[a],request:async()=>new Response('{}')});console.log(JSON.stringify(all().filter(n=>n.dataset.artifactAction==='preview').length));
+    """)
+    assert value == 0

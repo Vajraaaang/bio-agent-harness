@@ -11,6 +11,43 @@ def _api():
     return import_module("devbench.analysis.method_planner_contract")
 
 
+def test_adaptive_controller_schema_is_strict_and_normalizes_bounded_queries():
+    from devbench_engine.lifecycle import strict_schema_compatible
+
+    module = _api()
+    schema = module.ADAPTIVE_CONTROLLER_SCHEMA
+    assert strict_schema_compatible(schema)
+    validator = Draft202012Validator(schema)
+    common = {"rationale": "Inspect the retained family", "evidence_ids": []}
+    evidence = next(variant for variant in schema["properties"]["action"]["anyOf"]
+                    if variant["properties"]["kind"]["const"] == "query_evidence")
+    filtered = next(query for query in evidence["properties"]["query"]["anyOf"]
+                    if query["properties"]["mode"]["const"] == "filtered")
+    filters = next(option for option in filtered["properties"]["filters"]["anyOf"]
+                   if option["type"] == "object")
+    query = dict.fromkeys(filtered["properties"])
+    query.update(mode="filtered", target_id="family", filters={**dict.fromkeys(filters["properties"]), "q_local_lte": 0.1})
+    response = {"action": {"kind": "query_evidence", "handle_id": "result", "query": query, **common}}
+    validator.validate(response)
+    assert module.validate_adaptive_controller_decision(response) == {
+        **response["action"], "query": {"mode": "filtered", "target_id": "family", "filters": {"q_local_lte": 0.1}}}
+
+    summary = {"kind": "query_evidence", "handle_id": "result", "query": {"mode": "family_summary", "target_id": "family"}, **common}
+    assert module.validate_adaptive_controller_decision(summary) == summary
+    assert not validator.is_valid({"action": {**summary, "query": {**summary["query"], "filters": {}}}})
+
+    request = {"operation": "fetch", "provider": "pubmed", "identifier": "123"}
+    literature = {"kind": "query_literature", "handle_id": "lit", "claim_id": "claim", "request": request, **common}
+    assert module.validate_adaptive_controller_decision(literature) == literature
+    with pytest.raises(ValueError):
+        module.validate_adaptive_controller_decision({**literature, "request": {**request, "path": "local-data"}})
+    assert validator.is_valid({"action": {"kind": "route_diagnostic", "action_id": "bound-check", **common}})
+    page = {"kind": "page_context", "section": "diagnostic_actions", "cursor": "2:" + "a" * 64, **common}
+    validator.validate({"action": page})
+    assert module.validate_adaptive_controller_decision({"action": page}) == page
+    assert not validator.is_valid({"action": {**page, "section": "inputs"}})
+
+
 def _task():
     return {"scientific_objective": "Assess a prespecified treatment contrast",
             "computational_task": "differential_expression", "constraints": ["Synthetic fixtures only"]}

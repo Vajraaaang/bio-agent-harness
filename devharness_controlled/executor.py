@@ -11,7 +11,6 @@ import hashlib
 import importlib.metadata
 import os
 import platform
-import shutil
 import time
 from pathlib import Path
 
@@ -21,7 +20,7 @@ from devharness_controlled.contracts import AnalysisPlan, canonical_json_bytes, 
 from devharness_controlled.trust import Approval, TrustedSigner, verify_plan_approvals
 
 
-PACKAGES = ("devharness_controlled", "devharness_core", "devharness_server")
+PACKAGES = ("devharness_controlled", "devharness_core", "devharness_server", "rna_kernels")
 DEPENDENCIES = ("numpy", "pandas", "scipy", "statsmodels", "patsy", "scikit-learn",
                 "zarr", "numcodecs", "h5py", "pydeseq2", "psutil", "pydantic", "cryptography", "PyNaCl", "matplotlib")
 THREAD_VARIABLES = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",

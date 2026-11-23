@@ -199,3 +199,69 @@ def test_tampered_dependency_or_run_evidence_cannot_advance_approval(tmp_path, t
                     acknowledge_warnings=True)
     assert api.analysis(analysis["analysis_id"])["revision_id"] == analysis["revision_id"]
     assert api.get("proposal", proposal["proposal_id"])["status"] == "pending"
+
+
+def test_oci_execution_error_survives_cleanup_failure(tmp_path, monkeypatch):
+    """A failed cleanup must preserve the actual bounded worker failure."""
+    from types import SimpleNamespace
+
+    workspace = tmp_path.resolve()
+    output = workspace / "outputs"
+    output.mkdir()
+    source = workspace / "source.py"
+    source.write_text("pass\n")
+    lock = workspace / "environment.lock"
+    lock.write_text("{}")
+    image = "fixture.invalid/runtime@sha256:" + "1" * 64
+    primary = TimeoutError("primary worker failure")
+    primary.execution = {"stdout": "original worker output"}
+
+    def call(argv, **kwargs):
+        if argv[:2] == ["image", "inspect"]:
+            return {"id": "sha256:" + "2" * 64, "digests": [image], "volumes": {}, "os": "linux"}
+        if argv[0] == "create":
+            return "3" * 64
+        if argv[0] == "start":
+            return ""
+        if argv[0] == "rm":
+            raise ValueError("secondary cleanup failure")
+        pytest.fail(f"Unexpected runtime call: {argv[0]}")
+
+    def fail_worker(*args):
+        raise primary
+
+    runtime = SimpleNamespace(_call=call, command=list, env={})
+    executor = method_executor.LocalDockerExecutor()
+    monkeypatch.setattr(executor, "_runtime", lambda _: runtime)
+    monkeypatch.setattr(method_executor, "_bounded", fail_worker)
+    contract = {
+        "implementation": {"entrypoint": ["python", "/method/main.py"]},
+        "environment": {"image": image},
+        "execution": {"cpu": 1, "pids": 32, "memory_mb": 128, "timeout_seconds": 5, "max_output_bytes": 4096},
+    }
+
+    with pytest.raises(TimeoutError, match="primary worker failure") as caught:
+        executor.execute(contract, {}, {}, source, lock, output)
+    assert caught.value is primary
+    assert primary.execution["stdout"] == "original worker output"
+    assert primary.execution["cleanup_error"] == "ValueError"
+
+
+def test_grouped_evaluator_validates_under_python_optimization(tmp_path):
+    from devbench.adaptive.policy import GROUPED_EVALUATOR_SOURCE
+
+    inputs = tmp_path / "inputs"
+    outputs = tmp_path / "outputs"
+    inputs.mkdir()
+    outputs.mkdir()
+    (inputs / "held").write_text(json.dumps({
+        "features": ["observed"], "rows": [{"label": "A", "unit": "unit-1", "counts": [3]}],
+    }))
+    (inputs / "model").write_text(json.dumps({"features": ["wrong"], "centroids": {"A": 1, "B": 2}, "mean": 1}))
+    source = GROUPED_EVALUATOR_SOURCE.replace("'/inputs/'", repr(str(inputs) + "/")).replace(
+        "'/outputs/out.json'", repr(str(outputs / "out.json"))
+    )
+
+    with pytest.raises(ValueError, match="features"):
+        exec(compile(source, "<grouped-evaluator-test>", "exec", optimize=2), {})
+    assert not (outputs / "out.json").exists()

@@ -1,10 +1,10 @@
 """Offline official-client protocol tests; these never call Codex or authenticate."""
-from copy import deepcopy
 import json
 import os
-from pathlib import Path
 import sys
 import time
+from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -224,9 +224,11 @@ def test_pipe_holding_descendant_cannot_be_reported_completed(tmp_path):
     assert api._terminal_status(outcome, outcome["stdout"]) == "uncertain"
 
 
-def test_live_boundary_denial_precedes_client_generation_and_rejects_bool_proof(tmp_path, monkeypatch):
+def test_live_boundary_denial_precedes_client_generation_and_rejects_bool_proof(
+    workspace_tmp_path, monkeypatch
+):
     from devbench.analysis.methods import MethodService
-    methods = MethodService(tmp_path / "private")
+    methods = MethodService(workspace_tmp_path / "private")
     selector = api.SignedInCodexActionSelector(requested_model="fixture-model", private_root=methods.root)
     backend = api.SignedInCodexInvestigationBackend(methods, selector, policy=policy())
     monkeypatch.setattr(api, "_run_process", lambda *args, **kwargs: pytest.fail("No production child may launch"))
@@ -251,23 +253,41 @@ def test_prompt_schema_and_context_are_frozen_without_mutating_inputs():
     assert api._digest(material["schema"]) != api._digest(context)
 
 
-def test_synthetic_selection_retains_independently_verified_optional_usage(tmp_path, monkeypatch):
+@pytest.mark.parametrize("stage", (*api._STAGES, None))
+def test_synthetic_selection_retains_independently_verified_optional_usage(
+    workspace_tmp_path, monkeypatch, stage
+):
+    from devbench.analysis import rna_trial_authority
+    from devbench.analysis.codex_job_policy import validate_job_capture
     from devbench.analysis.methods import MethodService
     from devbench.analysis.workflow_operations import WorkflowOperationLedger
-    from devbench.analysis import rna_trial_authority
+    from tests.test_method_planner_codex import ANSWERS
+
+    context = {"decision_kind": stage or "method_trial_design"}
+    if stage is None:
+        canonical = {
+            "type": "object", "required": ["count"], "additionalProperties": False,
+            "properties": {"count": {"type": "integer", "minimum": 3, "default": 4}},
+        }
+        answer = {"count": 4}
+        material = {"prompt": "synthetic fixed prompt", "schema": canonical}
+        monkeypatch.setattr(api, "request_material", lambda context: material)
+    else:
+        answer = ANSWERS[stage]
+        material = api.request_material(context)
+        inline = material["prompt"].split("Required JSON schema:\n", 1)[1]
+        assert json.loads(inline.split("\nTask context:\n", 1)[0]) == material["schema"]
+
     monkeypatch.setattr(rna_trial_authority, "trial_enforcement_source_digest", lambda: "a"*64)
     monkeypatch.setattr(rna_trial_authority, "trial_enforcement_runtime_digest", lambda: "b"*64)
-    methods = MethodService(tmp_path / "private")
+    methods = MethodService(workspace_tmp_path / "private")
     selector = api.SignedInCodexActionSelector(requested_model="fixture-model", private_root=methods.root,
-        _test_process=api._OfflineProcessBinding(events()))
+        _test_process=api._OfflineProcessBinding(events(answer)))
     ledger = WorkflowOperationLedger(methods.root / "ledger.sqlite")
     backend = api.SignedInCodexInvestigationBackend(methods, selector, policy=policy(), ledger=ledger)
-    context = {"decision_kind": "method_trial_design"}
-    material = {"prompt": "synthetic fixed prompt", "schema": schema()}
-    monkeypatch.setattr(api, "request_material", lambda context: material)
     binding = {"parent_session_id": "parent", "session_id": "session", "invocation_id": "invocation",
         "backend_digest": backend.capabilities()["backend_digest"], "runtime_digest": "b"*64,
-        "schema_digest": api._digest(schema()), "context_digest": api._digest(context),
+        "schema_digest": api._digest(material["schema"]), "context_digest": api._digest(context),
         "prompt_digest": __import__("hashlib").sha256(material["prompt"].encode()).hexdigest()}
     reservation = SimpleNamespace(ref="fixture-reservation", campaign_id="fixture-campaign", request=binding,
         request_digest=api._digest(binding), limits={"jobs": 1, "seconds": 2, "context_bytes": 48000, "output_bytes": 100000})
@@ -278,11 +298,31 @@ def test_synthetic_selection_retains_independently_verified_optional_usage(tmp_p
     monkeypatch.setattr(ledger, "get_campaign", lambda campaign: {"capability": backend.capabilities()})
     output = methods.root / "capture"
     output.mkdir()
+    launches = []
+    candidate_command = selector._command
+
+    def capture_command(schema_path, workspace):
+        command = candidate_command(schema_path, workspace)
+        emitted = json.loads(schema_path.read_bytes()) if schema_path is not None else None
+        launches.append((command, schema_path, emitted))
+        return command
+
+    monkeypatch.setattr(selector, "_command", capture_command)
+
     selection = selector.select(context, output, timeout_seconds=2, allow_model_execution=True)
+    [(command, schema_path, emitted)] = launches
+    assert json.loads((output / "answer_schema.json").read_bytes()) == material["schema"]
+    if stage is None:
+        assert "--output-schema" in command
+        assert Path(command[command.index("--output-schema") + 1]) == schema_path
+        assert schema_path != output / "answer_schema.json" and not schema_path.exists()
+        assert emitted["properties"] == {"count": {"type": "integer"}}
+    else:
+        assert "--output-schema" not in command
+        assert schema_path is None and emitted is None
     ref, capture = backend.verify_selection_capture(output, bindings=binding, reservation=reservation)
-    assert selection.action == {"ok": True} and capture["status"] == "completed"
+    assert selection.action == answer and capture["status"] == "completed"
     assert "usage" not in capture and capture["job_count"] == 1
     assert "stdout_base64" not in capture and "authentication" not in capture
     assert backend.verify_capture(ref, reservation) == capture
-    from devbench.analysis.codex_job_policy import validate_job_capture
     assert validate_job_capture(capture, ref, reservation) == capture

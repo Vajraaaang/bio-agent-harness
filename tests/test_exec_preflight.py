@@ -9,7 +9,6 @@ import json
 from pathlib import Path
 import shlex
 import sys
-import tempfile
 
 import pytest
 
@@ -133,12 +132,10 @@ def test_untrusted_incomplete_and_extra_actions_are_rejected(corruption):
 
 
 @pytest.fixture
-def staged(monkeypatch):
+def staged(monkeypatch, workspace_tmp_path):
     from devbench.study import permissions
     from devbench.study.adapter import StudyCodeActionAdapter
 
-    # Test-only storage exemption. No production profile is altered or launched.
-    monkeypatch.setattr(permissions, "platform_scratch_roots", lambda: ())
     # The host tool sandbox itself denies socket binding. Replace local listener
     # plumbing as well as CLI dispatch; none of this is live permission proof.
     class LocalSocketFixture:
@@ -173,21 +170,19 @@ def staged(monkeypatch):
         "executable_path": str(path), "executable_sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest(),
         "component_sha256": {str(path): hashlib.sha256(Path(path).read_bytes()).hexdigest()},
         "version": "codex-cli 0.0.0-protocol-fixture"})
-    with tempfile.TemporaryDirectory(prefix="ep-", dir="/private/tmp") as temporary:
-        root = Path(temporary).resolve()
-        workspace, private, sibling = root / "w", root / "coordinator/p", root / "w2"
-        (workspace / "control").mkdir(parents=True)
-        (workspace / ".venv/bin").mkdir(parents=True)
-        (workspace / ".venv/bin/python").symlink_to(sys.executable)
-        private.mkdir(parents=True)
-        sibling.mkdir()
-        boundary = permissions.PermissionBoundary(workspace=workspace, private_roots=(private, sibling),
-            protected_paths=(workspace / "control", workspace / ".venv"))
-        instance = StudyCodeActionAdapter(boundary=boundary, requested_model="fixture-model",
-            executable=sys.executable, timeout_sec=90,
-            coordinator_dispatch_callback=lambda event: pytest.fail("Scored dispatch callback invoked"))
-        yield instance, private / "exec-preflight"
-
+    root = workspace_tmp_path
+    workspace, private, sibling = root / "w", root / "coordinator/p", root / "w2"
+    (workspace / "control").mkdir(mode=0o700, parents=True)
+    (workspace / ".venv/bin").mkdir(parents=True)
+    (workspace / ".venv/bin/python").symlink_to(sys.executable)
+    private.mkdir(parents=True)
+    sibling.mkdir()
+    boundary = permissions.PermissionBoundary(workspace=workspace, private_roots=(private, sibling),
+        protected_paths=(workspace / "control", workspace / ".venv"))
+    instance = StudyCodeActionAdapter(boundary=boundary, requested_model="fixture-model",
+        executable=sys.executable, timeout_sec=90,
+        coordinator_dispatch_callback=lambda event: pytest.fail("Scored dispatch callback invoked"))
+    yield instance, private / "exec-preflight"
 
 def fake_process(monkeypatch, *, mutate=None, complete=True, process_error=None):
     from devbench_engine.adapters import CodexCLIAdapter
@@ -548,3 +543,23 @@ def test_cli_may_atomically_replace_its_reserved_final_message(staged, monkeypat
     assert evidence["verified"] is True, evidence["validation_errors"]
     assert (output / "agent_final_message.txt").read_text() == "Atomic CLI output, still not proof."
     assert not list(instance.workspace.glob(".exec-preflight-*"))
+
+
+def test_long_workspace_uses_short_ephemeral_negative_control(staged, monkeypatch):
+    from devbench.study.permissions import PermissionBoundary
+    instance, output = staged
+    workspace = instance.workspace.parent / ("nested-" + "x" * 85)
+    (workspace / "control").mkdir(parents=True)
+    instance.boundary = PermissionBoundary(workspace=workspace,
+        private_roots=instance.boundary.private_roots, protected_paths=(workspace / "control",))
+    seen = []
+
+    def capture_socket(events, script, config):
+        path = Path(config["unassigned_socket"])
+        assert len(str(path).encode()) <= 100 and path.exists()
+        seen.append(path)
+
+    fake_process(monkeypatch, mutate=capture_socket)
+    evidence = module().run_exec_preflight(instance, output, allow_model_execution=True)
+    assert evidence["verified"], evidence["validation_errors"]
+    assert len(seen) == 1 and not seen[0].parent.exists()

@@ -117,9 +117,10 @@ def test_public_validator_runs_in_real_bulk_runtime(bulk_runtime):
 
 
 def test_entire_bulk_runtime_fingerprints_under_unchanged_limits(bulk_runtime):
-    from devbench.study.execution import _runtime_roots, _tree_digest
+    from devbench.engine.workspace import runtime_read_roots
+    from devbench.study.execution import _tree_digest
     workspace, environment = bulk_runtime
-    roots = _runtime_roots(workspace, environment)
+    roots = runtime_read_roots(workspace, environment)
     assert not any("torch" in str(root) for root in roots)
     for root in roots:
         assert len(_tree_digest(root, allowed_symlink_targets=roots)) == 64

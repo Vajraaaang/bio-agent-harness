@@ -39,7 +39,7 @@ def test_generic_capabilities_do_not_unlock_current_renderers():
     records = figure_catalog(capabilities=capabilities)
     assert not any(row["eligibility"]["eligible"] for row in records)
     for row in records:
-        expected = "verified_figure_artifact_required" if row["id"] in {"G02", "G08"} else "renderer_not_implemented"
+        expected = "verified_figure_artifact_required" if row["id"] in {"G02", "G08"} else "verified_scientific_plot_workspace_required"
         assert row["eligibility"]["reason"] == expected
 
 
@@ -70,7 +70,7 @@ def test_sample_inference_requires_independent_biological_units(family):
     }
 
 
-def test_claimed_future_inputs_never_promote_unimplemented_renderers():
+def test_claimed_inputs_never_promote_implemented_but_unbound_renderers():
     from devbench.analysis.figure_catalog import figure_catalog
 
     all_inputs = {item for row in figure_catalog() for item in row["required_inputs"]}
@@ -78,7 +78,7 @@ def test_claimed_future_inputs_never_promote_unimplemented_renderers():
     for row in records:
         if row["id"] not in {"G02", "G08"}:
             assert row["eligibility"] == {
-                "eligible": False, "reason": "renderer_not_implemented", "missing_inputs": [],
+                "eligible": False, "reason": "verified_scientific_plot_workspace_required", "missing_inputs": [],
             }
             assert row["verification_level"] == "requirements_only"
 
@@ -87,7 +87,9 @@ def test_umap_availability_does_not_claim_tsne_or_scientific_validation():
     from devbench.analysis.figure_catalog import figure_catalog
 
     row = next(row for row in figure_catalog(available_families=("G08",)) if row["id"] == "G08")
-    assert row["supported_subtypes"] == ["umap"]
+    assert "umap" in row["supported_subtypes"]
+    assert row["eligible_subtypes"] == ["umap"]
+    assert all(not subtype["eligibility"]["eligible"] for subtype in row["subtypes"])
     assert "t-SNE" in row["limitations"]
     assert "biological validation" in row["limitations"]
 

@@ -1,10 +1,12 @@
 """Build the synthetic controlled-workflow Colab notebook; no agents or login flow."""
 import argparse
-import inspect
 import json
 from pathlib import Path
 
-from scripts.build_colab_notebook import allowed_bundle_path, build_source_bundle, extract_source_bundle, _read_source_file
+from scripts.build_colab_notebook import (
+    build_source_bundle,
+    source_bundle_extractor_source,
+)
 
 
 def build_notebook(project):
@@ -60,7 +62,7 @@ from pathlib import Path, PurePosixPath
 from IPython.display import display, Markdown, HTML
 BASE = Path(tempfile.mkdtemp(prefix="devharness-controlled-", dir="/content"))
 '''
-    bootstrap += inspect.getsource(allowed_bundle_path) + "\n" + inspect.getsource(_read_source_file) + "\n" + inspect.getsource(extract_source_bundle)
+    bootstrap += source_bundle_extractor_source()
     bootstrap += f"\nSOURCE_BUNDLE_BASE64 = {bundle['base64']!r}\nSOURCE_BUNDLE_SHA256 = {bundle['sha256']!r}\n"
     bootstrap += '''PROJECT = extract_source_bundle(SOURCE_BUNDLE_BASE64, BASE / "source", SOURCE_BUNDLE_SHA256)
 VENV = BASE / "venv"

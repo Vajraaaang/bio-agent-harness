@@ -64,7 +64,8 @@ def _source_identity():
         "devbench/study/biology_planning.py", "devbench/study/biology_catalog.json",
         "devbench/study/public_study.py", "devbench/study/biology_cli.py",
         "devbench/study/public_cli.py", "devbench/analysis/episode_proposals.py",
-        "devharness_core/provenance.py",
+        "devharness_core/provenance.py", "devbench/engine/provenance.py",
+        "rna_kernels/__init__.py", "rna_kernels/canonical.py",
     )
     return {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in names}
 

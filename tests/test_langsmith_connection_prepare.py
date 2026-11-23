@@ -29,6 +29,7 @@ def prepare_module(monkeypatch, tmp_path):
         fixture_manifest_digest=digest(canonical_json_bytes(contract.CONNECTION_FIXTURE)))
     monkeypatch.setattr(module, "connection_identity", lambda: dict(identity))
     monkeypatch.setattr(module, "ASSIGNED_WORKSPACE", tmp_path)
+    monkeypatch.setattr(contract, "ASSIGNED_WORKSPACE", tmp_path)
     return module, contract, identity
 
 
@@ -160,6 +161,8 @@ def test_real_installed_identity_preparation_without_child_secret_or_http(tmp_pa
             raise
         module = None
     assert module is not None, "Tiny preparation API is missing"
+    if not Path(module.__file__).resolve().is_relative_to(Path(__import__("sys").prefix).resolve()):
+        pytest.skip("Requires an installed devharness wheel rather than checkout imports")
     from devbench.study import rna_hosted_exporter
     def denied(*args, **kwargs):
         pytest.fail("Preparation attempted child, credential resolution, or network")
@@ -170,7 +173,9 @@ def test_real_installed_identity_preparation_without_child_secret_or_http(tmp_pa
     monkeypatch.setattr(rna_hosted_exporter, "_resolve_keychain_credential", denied)
     identity = module.connection_identity()
     assert Path(module.__file__).is_relative_to(Path(__import__("sys").prefix))
-    assert tmp_path.is_relative_to(module.ASSIGNED_WORKSPACE)
+    from devbench.study import rna_hosted_connection_contract
+    monkeypatch.setattr(module, "ASSIGNED_WORKSPACE", tmp_path)
+    monkeypatch.setattr(rna_hosted_connection_contract, "ASSIGNED_WORKSPACE", tmp_path)
     output = tmp_path / "real-installed-prepared"
     module.prepare_connection_test(output_path=output)
     review = _read(output, "review.json")

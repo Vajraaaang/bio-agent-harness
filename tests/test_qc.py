@@ -23,6 +23,23 @@ def codes(result):
     return {row["code"] for row in result["diagnostics"]}
 
 
+def test_qc_depth_only_counts_have_no_variable_geometry(tmp_path):
+    from devharness_server.tools_qc import audit_expression_quality
+
+    depth = np.arange(1, 17)
+    counts, metadata, _ = cohort(tmp_path, np.array([2, 4, 9])[:, None] * depth)
+    count_report = audit_expression_quality(counts, metadata)
+    assert count_report["metrics"]["library_size_summary"]["maximum"] == 15 * depth[-1]
+    assert count_report["metrics"]["raw_representation_rank"] == 0
+    assert count_report["provenance"]["geometry_selected_genes"] == []
+    assert "expression_geometry_collapse" in codes(count_report)
+
+    continuous = audit_expression_quality(counts, metadata, data_type="continuous")
+    assert continuous["metrics"]["library_size_summary"] is None
+    assert continuous["metrics"]["raw_representation_rank"] > 0
+    assert "expression_geometry_collapse" not in codes(continuous)
+
+
 def test_qc_counts_dropout_and_repeated_specimens(tmp_path):
     from devharness_server.tools_qc import audit_expression_quality
     rng = np.random.default_rng(1)
@@ -36,6 +53,28 @@ def test_qc_counts_dropout_and_repeated_specimens(tmp_path):
     assert result["metrics"]["nonnegative_integer_expression"]
     assert result["metrics"]["zero_fraction"] > .6
     json.dumps(result, allow_nan=False)
+
+
+def test_qc_reports_nonzero_counts_for_all_samples_without_timing(tmp_path):
+    from devharness_server.tools_qc import audit_expression_quality
+
+    values = np.array([
+        [0, -1.5, 2, 0, 3, 0],
+        [0, 2, 0, 1, -7, 0],
+        [0, 0, 0, -1, 0, 1],
+    ])
+    counts, metadata, samples = cohort(tmp_path, values)
+    pd.DataFrame({"sample_id": samples[::-1]}).to_csv(metadata, index=False)
+
+    report = audit_expression_quality(
+        counts, metadata, time_col=None, data_type="continuous", max_cells=4,
+    )
+    assert report["metrics"]["nonzero_per_sample"] == dict(
+        zip(samples, np.count_nonzero(values, axis=0).tolist(), strict=True)
+    )
+    assert report["metrics"]["zero_expression_samples"] == 1
+    assert report["provenance"]["geometry_subsampled"]
+    assert "missing_time_metadata" not in codes(report)
 
 
 def test_qc_all_zero_and_nonfinite_data_fail_explicitly(tmp_path):

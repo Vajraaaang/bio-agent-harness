@@ -4,12 +4,15 @@ No scientific fixture/source/validator is imported, evaluated or replayed here.
 """
 import hashlib
 import importlib.metadata
-import json
 from pathlib import Path
 
 import pytest
 
-REPO = Path('/Users/vajraang/Documents/ChatGPT/bio-agent-harness')
+from tests.test_workflow_protocol_qualification import engineering_candidate_validator as _engineering_candidate_validator
+
+engineering_candidate_validator = _engineering_candidate_validator
+
+REPO = Path(__file__).resolve().parents[1]
 ROOT = REPO / 'reports/rna-colab-integration/2026-10-22-v1/candidate'
 
 from devbench.analysis import colab_workflow as adapter
@@ -20,7 +23,6 @@ from devbench.analysis.workflow_operations import WorkflowOperationLedger
 from devbench.analysis.workflow_actions import create_rna_workflow
 from devbench.analysis.workflow_protocol_qualification import ProtocolQualificationProfile
 from devbench.analysis.checkpoints import digest
-from tests.test_workflow_protocol_qualification import engineering_candidate_validator
 
 
 def source_ref(path):
@@ -31,11 +33,16 @@ def source_ref(path):
 def prepared(tmp_path):
     service = MethodService(tmp_path / 'workspace')
     # Source assets are opaque bytes; no import, fit, verifier or plot executes.
-    source = tmp_path / 'source.py'; source.write_bytes((ROOT/'qualification/method.py').read_bytes())
-    lock = tmp_path / 'lock.json'; lock.write_bytes((ROOT/'qualification/environment-lock.json').read_bytes())
-    fixture = tmp_path / 'input.json'; fixture.write_bytes((ROOT/'qualification/fixture.json').read_bytes())
-    verifier = tmp_path / 'verifier.py'; verifier.write_bytes((ROOT/'qualification/verifier.py').read_bytes())
-    expectations = tmp_path / 'expectations.json'; expectations.write_bytes((ROOT/'qualification/expected_values.json').read_bytes())
+    source = tmp_path / 'source.py'
+    source.write_bytes((ROOT/'qualification/method.py').read_bytes())
+    lock = tmp_path / 'lock.json'
+    lock.write_bytes((ROOT/'qualification/environment-lock.json').read_bytes())
+    fixture = tmp_path / 'input.json'
+    fixture.write_bytes((ROOT/'qualification/fixture.json').read_bytes())
+    verifier = tmp_path / 'verifier.py'
+    verifier.write_bytes((ROOT/'qualification/verifier.py').read_bytes())
+    expectations = tmp_path / 'expectations.json'
+    expectations.write_bytes((ROOT/'qualification/expected_values.json').read_bytes())
     art = service.import_artifact(fixture, artifact_type='json', actor='test')
     contract = {'format':'devharness.method/1', 'method_id':'colab_workflow_metadata_test',
         'name':'Inert workflow fixture', 'lifecycle':'custom','implementation_trust':'unreviewed',
@@ -59,7 +66,9 @@ def prepared(tmp_path):
     # constructor, dispatch or credentials are touched by metadata fixtures.
     authority = object.__new__(AuthenticatedTrialAuthority)
     transport = object.__new__(OfficialColabTransport)
-    transport.service = service; transport.state = 'new'; transport.cleanup = {'stop_requested':False,'presence':'unknown'}
+    transport.service = service
+    transport.state = 'new'
+    transport.cleanup = {'stop_requested':False,'presence':'unknown'}
     execution = adapter.ColabQualificationExecution(service=service, authority=authority, transport=transport,
         job=job, request={}, grant={}, export_directory=tmp_path / 'export')
     plan = adapter.ColabQualificationPlan(execution=execution, actor='test')
@@ -97,7 +106,7 @@ def test_current_graph_dependency_versions_are_exact():
     for distribution, version in expected.items():
         assert importlib.metadata.version(distribution) == version
     import devbench.analysis.langgraph_workflow as graph
-    assert Path(graph.__file__).resolve() == REPO / 'devbench/analysis/langgraph_workflow.py'
+    assert Path(graph.__file__).resolve() == REPO / 'src/devbench/platform/langgraph_workflow.py'
 
 
 def test_actual_current_graph_requires_all_protocol_reviews_before_separate_execution_approval(tmp_path, monkeypatch):
@@ -126,7 +135,8 @@ def test_generic_controller_selector_and_model_permission_rejected(tmp_path):
         adapter.create_colab_qualification_workflow(actions=object(), checkpoint_path=tmp_path/'checkpoint.sqlite')
     state = actions.create_state(plan.session_id)
     actions.allow_model_execution = True
-    with pytest.raises(PermissionError, match='forbidden'): actions.check(state)
+    with pytest.raises(PermissionError, match='forbidden'):
+        actions.check(state)
 
 
 def test_job_mutation_before_audit_cannot_dispatch(tmp_path):
@@ -146,7 +156,8 @@ def test_controller_is_one_use_and_sanitizes_provider_failure(tmp_path, monkeypa
     with pytest.raises(RuntimeError, match='no redispatch') as captured:
         plan.execution.execute_once()
     assert 'secret' not in str(captured.value)
-    with pytest.raises(PermissionError, match='spent'): plan.execution.execute_once()
+    with pytest.raises(PermissionError, match='spent'):
+        plan.execution.execute_once()
     assert service.list_records('run') == []
 
 
@@ -156,18 +167,27 @@ def test_controller_actual_interface_order_with_fake_channels_only(tmp_path, mon
     monkeypatch.setattr(adapter, '_require_graph_run_context', lambda execution: None)
     calls = []
     def reserve(self, job, **kwargs):
-        calls.append('reserve'); assert kwargs['authority'] is plan.execution.authority
+        calls.append('reserve')
+        assert kwargs['authority'] is plan.execution.authority
     def export(self, job_id, destination, **kwargs):
-        calls.append('export'); assert job_id == plan.execution.job['job_id']
-    def dispatch(self, job_id): calls.append('dispatch'); return 'fake-dispatch'
+        calls.append('export')
+        assert job_id == plan.execution.job['job_id']
+    def dispatch(self, job_id):
+        calls.append('dispatch')
+        return 'fake-dispatch'
     def record(self, job_id, observation, **kwargs):
-        calls.append('record'); assert observation == 'fake-dispatch'
+        calls.append('record')
+        assert observation == 'fake-dispatch'
     class SoftwareOnlyReturnedObservation:
         def verify(self, **kwargs):
-            calls.append('verify-return'); return {'expected_root_sha256':'a'*64}
-    def collect(self): calls.append('collect'); return tmp_path/'fake.zip', SoftwareOnlyReturnedObservation()
+            calls.append('verify-return')
+            return {'expected_root_sha256':'a'*64}
+    def collect(self):
+        calls.append('collect')
+        return tmp_path/'fake.zip', SoftwareOnlyReturnedObservation()
     def import_result(self, job_id, archive, expected_root, **kwargs):
-        calls.append('import'); assert expected_root == 'a'*64
+        calls.append('import')
+        assert expected_root == 'a'*64
         return {'software_fixture_only':True}
     monkeypatch.setattr(MethodService, 'reserve_remote_step', reserve)
     monkeypatch.setattr(MethodService, 'export_remote_job', export)
@@ -177,7 +197,8 @@ def test_controller_actual_interface_order_with_fake_channels_only(tmp_path, mon
     monkeypatch.setattr(OfficialColabTransport, 'collect', collect)
     assert plan.execution.execute_once() == {'software_fixture_only':True}
     assert calls == ['reserve','export','dispatch','record','collect','verify-return','import']
-    with pytest.raises(PermissionError): plan.execution.execute_once()
+    with pytest.raises(PermissionError):
+        plan.execution.execute_once()
 
 
 def test_all_sixteen_nodes_and_checkpoint_resume_with_software_receipts_only(tmp_path, monkeypatch):

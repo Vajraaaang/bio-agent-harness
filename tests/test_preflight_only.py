@@ -234,7 +234,8 @@ def prepared_fixtures():
 def offline_controls(prepared_fixtures, monkeypatch):
     """Replace only runtime/process/provider control; retain real data and staging."""
     from devbench import staging
-    from devbench.study import adapter, broker, cli_identity, execution, exec_preflight, permissions, transport
+    from devbench.engine import workspace as runtime_workspace
+    from devbench.study import adapter, broker, cli_identity, exec_preflight, permissions, transport
     from devbench_engine.adapters import CodexCLIAdapter
 
     forbidden = {name: Mock(side_effect=AssertionError(f"Forbidden scored action: {name}"))
@@ -256,10 +257,11 @@ def offline_controls(prepared_fixtures, monkeypatch):
         return {"python": str(binary), "linked_dependency_entries": [], "runtime_source_hashes": {}}
 
     monkeypatch.setattr(staging, "stage_python", stage_runtime)
-    monkeypatch.setattr(execution, "_runtime_roots", lambda *a: (prepared_fixtures.runtime,))
+    monkeypatch.setattr(runtime_workspace, "runtime_read_roots", lambda *a: (prepared_fixtures.runtime,))
     monkeypatch.setattr(permissions, "probe_boundary", lambda boundary, *a, **k:
                         {"verified": True, "configuration": boundary.config_overrides()})
-    monkeypatch.setattr(cli_identity, "_output", lambda *a: "codex-cli 0.0.0\n")
+    supported_version = ".".join(map(str, cli_identity.COMPATIBLE_CODEX_CLI[0]))
+    monkeypatch.setattr(cli_identity, "_output", lambda *a: f"codex-cli {supported_version}\n")
 
     transports = []
 
@@ -365,8 +367,8 @@ def test_actual_workers_never_cross_preflight_only_boundary(
                          private, source_hash, None, executable)
             _public_attempt_worker(arguments, preflight_only=True, allow_data_execution=True)
         assert_no_scored_work(offline_controls, output)
-        assert offline_controls.probes == [(condition, output / "exec-preflight")]
         result = json.loads((output / "probe_result.json").read_text())
+        assert offline_controls.probes == [(condition, output / "exec-preflight")], result["exec_preflight"]
         assert result["preflight_only"] is True and result["condition"] == condition
         assert result["verified"] is (outcome == "verified")
         assert result["status"] == outcome
@@ -399,6 +401,146 @@ def synchronous_supervisor(monkeypatch, *, failure_kind=None, interrupted=False)
 
     monkeypatch.setattr(supervision, "supervise_coordinator", supervise)
     return calls
+
+
+def _offline_biology_reference(value):
+    reference = SimpleNamespace(
+        task_id=value["task_id"],
+        input_sha256=value["input_sha256"],
+        gene_universe_sha256=value["gene_universe_sha256"],
+        thresholds_sha256=value["reference_availability"]["thresholds_sha256"],
+    )
+    return reference, value
+
+
+@pytest.mark.parametrize("track,preflight_only", [
+    ("classic", False), ("biology", False), ("public", False), ("classic", True),
+], ids=["classic", "biology", "public", "preflight-only"])
+def test_executor_relocates_long_socket_paths(
+    track, preflight_only, workspace_tmp_path, monkeypatch
+):
+    from devbench.engine import workspace as runtime
+    from devbench.study import cli_identity, execution, supervision
+    from devbench.study.preflight_only import finish_probe_worker
+
+    root = workspace_tmp_path
+    workspace_parent = root / "tmp" / ("é" * 32)
+    runs_root = root.parent / ".runs"
+    monkeypatch.setenv("DEVBENCH_RUNS_ROOT", str(runs_root))
+    module = importlib.import_module("devbench.study." + MODULES[track])
+    monkeypatch.setattr(module, "_REPOSITORY", root)
+    monkeypatch.setattr(execution, "_source_identity", lambda: "a" * 64)
+    executable = root / "codex"
+    executable.touch(mode=0o700)
+    version = ".".join(map(str, cli_identity.COMPATIBLE_CODEX_CLI[0]))
+    monkeypatch.setattr(cli_identity, "_output", lambda *args: f"codex-cli {version}\n")
+    plan, bundles = configuration(track, root / "bundles", repetitions=1)
+    attempts = attempts_for(track, plan)
+
+    relocated = {}
+    bound_socket = runtime.bounded_unix_socket
+
+    def record_socket(preferred):
+        socket = bound_socket(preferred)
+        assert len(os.fsencode(preferred)) > runtime.UNIX_SOCKET_PATH_MAX
+        assert len(os.fsencode(socket)) <= runtime.UNIX_SOCKET_PATH_MAX
+        digest = hashlib.sha256(os.fsencode(preferred)).hexdigest()[:12]
+        assert socket == runs_root / "s" / digest / "s"
+        relocated[preferred.parent.parent] = socket
+        return socket
+
+    monkeypatch.setattr(runtime, "bounded_unix_socket", record_socket)
+
+    def completed(initial):
+        return initial.model_copy(update={
+            "attempted": True,
+            "completion_status": "completed",
+            "integrity_status": "verified",
+        }), False, {"gene_row_count": 0, "safe_row_count": 0, "safe_scalar_count": 0}
+
+    if preflight_only:
+        def probe(arguments, *_args, allow_data_execution):
+            _, slot, _, _, actor, output, *_ = arguments
+            assert allow_data_execution is True and actor in relocated
+            assert actor.name.startswith("f-")
+            (output / "exec-preflight").mkdir()
+            (output / "exec-preflight/evidence.json").write_text(
+                json.dumps({"inference_dispatch_attempted": True}))
+            finish_probe_worker(
+                output, slot.condition, {"exec_preflight": {"verified": True}},
+                runtime_sha256="b" * 64,
+            )
+
+        monkeypatch.setattr(execution, "_attempt_worker", probe)
+        synchronous_supervisor(monkeypatch)
+    elif track == "classic":
+        def run_attempt(_plan, _slot, initial, _bundle, actor, *_args, **_kwargs):
+            assert actor in relocated
+            return completed(initial)
+
+        monkeypatch.setattr(execution, "_run_owned_attempt", run_attempt)
+    else:
+        def supervise(worker, worker_args, _output, _budget, *, allow_data_execution):
+            assert allow_data_execution is True
+            arguments, = worker_args
+            result = SimpleNamespace(
+                exitcode=0, failure_kind=None, interrupted=False, as_dict=lambda: {},
+            )
+            if track == "biology" and worker is module._biology_reference_worker:
+                from devbench.study.contracts import content_sha256
+
+                _, _, bundle, task_id, _, source_hash = arguments
+                result.prepared = {
+                    "task_id": task_id,
+                    "input_sha256": bundle.input_sha256,
+                    "source_sha256": source_hash,
+                    "gene_universe_sha256": "c" * 64, "artifacts": {},
+                    "reference_availability": {
+                        "thresholds_sha256": content_sha256(
+                            plan.thresholds.model_dump(mode="json")
+                        ),
+                        "reference_availability_sha256": "d" * 64,
+                    },
+                }
+            else:
+                assert arguments[6 if track == "biology" else 4] in relocated
+            return result
+
+        monkeypatch.setattr(supervision, "supervise_coordinator", supervise)
+        monkeypatch.setattr(
+            module, "_collect_attempt", lambda _result, args: completed(args[2]),
+        )
+        if track == "biology":
+            monkeypatch.setattr(
+                module, "_validated_worker_result", lambda result, _: result.prepared,
+            )
+            monkeypatch.setattr(module, "_read_preparation", _offline_biology_reference)
+        else:
+            from devbench.study import public_study
+
+            monkeypatch.setattr(
+                public_study, "verify_public_task", lambda *_args, **_kwargs: None,
+            )
+            monkeypatch.setattr(module, "_load_reference", lambda bundle: {
+                "record_format": "devbench.public-reference/1",
+                "kind": "developmental_observation",
+                "task_id": bundle.task_id,
+                "input_sha256": bundle.input_sha256,
+                "source_id": bundle.source_id,
+                "complete_biological_truth": False, "gene_ids": ["g1"],
+            })
+
+    workspace_arg = "workspace_parent" if track == "classic" else "workspace_root"
+    result = getattr(module, EXECUTORS[track])(
+        plan, bundles, root / "output",
+        codex_executable=str(executable), preflight_only=preflight_only,
+        allow_exec_preflight=True, allow_data_execution=not preflight_only,
+        max_provider_sessions=2 * len(attempts), **{workspace_arg: workspace_parent},
+    )
+    expected_status = "verified" if preflight_only else "finished"
+    assert result["status"] == expected_status, result["errors"]
+    assert len(relocated) == (3 if preflight_only else len(attempts))
+    assert all(actor.parent == workspace_parent for actor in relocated)
 
 
 @pytest.mark.parametrize("track", TRACKS)

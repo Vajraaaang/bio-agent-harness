@@ -1,0 +1,204 @@
+{
+  "workflow_sha256": "b568da47a515e9984418ce21620cddabec2de74027656911e4a62a1b46733c76",
+  "workflow_manifest_ref": {
+    "path": "/Users/vajraang/Documents/ChatGPT/bio-agent-harness/methods/airway-2015/compiled-v3/workflow-manifest.json",
+    "sha256": "b568da47a515e9984418ce21620cddabec2de74027656911e4a62a1b46733c76",
+    "size_bytes": 97176
+  },
+  "expected_plots": {
+    "c016-sumexp": {
+      "kind": "conceptual_diagram",
+      "source_chunk_id": "c016-sumexp",
+      "source_chunk_sha256": "15518910277e587a780971e47a5b6164b384918d4a9f5527ee60ab1211790c8d",
+      "hypothesis_id": "none",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c035-rldplot": {
+      "kind": "rlog_scatter",
+      "source_chunk_id": "c035-rldplot",
+      "source_chunk_sha256": "d7024d9a52f16beae36e1f11d3a9ebcf0b156a1050bac378239a572b018051eb",
+      "hypothesis_id": "none",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c038-distheatmap": {
+      "kind": "sample_distance_heatmap",
+      "source_chunk_id": "c038-distheatmap",
+      "source_chunk_sha256": "dd1593b005e9aa44332c9a6cee45860fa4fbb6c0ac4a97c90a1d25eb1704c990",
+      "hypothesis_id": "none",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c040-poisdistheatmap": {
+      "kind": "poisson_distance_heatmap",
+      "source_chunk_id": "c040-poisdistheatmap",
+      "source_chunk_sha256": "5d7e2764c45608e2bed06fe0543e68b58e06fd8c87644e3b9de00c96f6bd47b8",
+      "hypothesis_id": "none",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c041-plotpca": {
+      "kind": "pca",
+      "source_chunk_id": "c041-plotpca",
+      "source_chunk_sha256": "7d22bf41b231711b2c139376599d028b9db6594520877029345e53121dba033c",
+      "hypothesis_id": "none",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c044-ggplotpca": {
+      "kind": "pca",
+      "source_chunk_id": "c044-ggplotpca",
+      "source_chunk_sha256": "bbb39689ca00d35ae24938382fe29e9509a0a1f67453421a5ecf62a6d6bba83a",
+      "hypothesis_id": "none",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c045-mdsrlog": {
+      "kind": "mds",
+      "source_chunk_id": "c045-mdsrlog",
+      "source_chunk_sha256": "d613be1d8f940f32bc4a98cf1f318422f53e6bf738ebc77737be1c94b033143c",
+      "hypothesis_id": "none",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c046-mdspois": {
+      "kind": "mds",
+      "source_chunk_id": "c046-mdspois",
+      "source_chunk_sha256": "f4f81004221c7c12f4abc84e271b6687390721af3cad7f1b86b4bb82249b4eb6",
+      "hypothesis_id": "none",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c058-plotcounts": {
+      "kind": "gene_counts",
+      "source_chunk_id": "c058-plotcounts",
+      "source_chunk_sha256": "4fb6dfa40cc6cc1995fb0a13067d89eba5df13dc1eb982a738e2c76704631935",
+      "hypothesis_id": "dex-default",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c059-ggplotcountsjitter": {
+      "kind": "gene_counts",
+      "source_chunk_id": "c059-ggplotcountsjitter",
+      "source_chunk_sha256": "d2f115f9ff09f4908addc86c15681ed82049e53b61605a52f0475f49ff348b82",
+      "hypothesis_id": "dex-default",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c060-ggplotcountsdot": {
+      "kind": "gene_counts",
+      "source_chunk_id": "c060-ggplotcountsdot",
+      "source_chunk_sha256": "c26c98d142230156dd6d8594f811c0094b3e874f31e01fce9bc10317fbb34e10",
+      "hypothesis_id": "dex-default",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c061-ggplotcountsgroup": {
+      "kind": "gene_counts",
+      "source_chunk_id": "c061-ggplotcountsgroup",
+      "source_chunk_sha256": "37ad81ec3333055a1e518d7ce30ff348b0ead7fa34227f3a1ffcafff36aff947",
+      "hypothesis_id": "dex-default",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c062-plotma": {
+      "kind": "ma",
+      "source_chunk_id": "c062-plotma",
+      "source_chunk_sha256": "108968aa2cb73b2c8f7f356f51fef631be5aa2eb6fca6849a10d3580a9c230c6",
+      "hypothesis_id": "dex-default",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c063-plotmalabel": {
+      "kind": "ma",
+      "source_chunk_id": "c063-plotmalabel",
+      "source_chunk_sha256": "1e84b6e427d29eab802ab3c530edc60f6db33085d2953855c85ad61932031bda",
+      "hypothesis_id": "dex-lfc1",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c064-histpvalue2": {
+      "kind": "pvalue_histogram",
+      "source_chunk_id": "c064-histpvalue2",
+      "source_chunk_sha256": "b70c3f021adc1b2bf71197ee8257b18049f902fd128f31fde16aec075c682446",
+      "hypothesis_id": "dex-default",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c066-genescluster": {
+      "kind": "gene_clustering_heatmap",
+      "source_chunk_id": "c066-genescluster",
+      "source_chunk_sha256": "fa69be81c888246d59bc120ee5fc63bc4b92fcc6c216d5f6d55cce38b56895ff",
+      "hypothesis_id": "none",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c067-sensitivityovermean": {
+      "kind": "pvalue_sensitivity",
+      "source_chunk_id": "c067-sensitivityovermean",
+      "source_chunk_sha256": "efd67a3a30af53636e60bcfce700c080ad20516465484faaad8c162f5f854e2f",
+      "hypothesis_id": "dex-lfc1",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c079-gvizplot": {
+      "kind": "genomic_fold_change",
+      "source_chunk_id": "c079-gvizplot",
+      "source_chunk_sha256": "4d70ffc5ee02cadc51c7dc1fde048f4fa38ed2cf1bf3b8188cc28af1d9b35d2b",
+      "hypothesis_id": "dex-lfc1",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    },
+    "c082-svaplot": {
+      "kind": "sva_surrogates",
+      "source_chunk_id": "c082-svaplot",
+      "source_chunk_sha256": "cceb7a8ed0c8ec60a113bd1c8006f6a83b35144214d0e4da61bec936e6e33597",
+      "hypothesis_id": "sva-illustration",
+      "sample_universe_id": "airway2015-eight-libraries",
+      "sample_universe_sha256": "5ef6044e840d4f34a070d6401b8adffc05a92c7c31a0be1df1a950677a6d089b",
+      "gene_universe_id": "airway2015-original-input-genes",
+      "gene_universe_sha256": "e971ede345d58fe04ea340321c4ac585f3b3e9ae1fe5810846bdd8c7404f64a9"
+    }
+  },
+  "required_image_formats": [
+    "png",
+    "pdf"
+  ]
+}

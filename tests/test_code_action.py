@@ -1,6 +1,5 @@
 """Actual local Python execution plus fake-CLI transport contracts; no inference."""
 import json
-from pathlib import Path
 import shlex
 import subprocess
 import shutil
@@ -42,6 +41,52 @@ def test_staged_interpreter_excludes_coordinator_and_editable_hooks(workspace):
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert str(workspace) in result.stdout
+
+
+def test_staged_sdk_supervises_without_coordinator_imports(workspace):
+    script = workspace / "probe_runtime.py"
+    script.write_text("""
+import importlib.util
+import sys
+
+import devharness
+from devharness_core.methods import MethodContract
+from devharness_core.provenance import canonical_json
+from devharness_core.watchdog import run_sandboxed
+from devharness_server.dispatcher import ToolDispatcher
+from devharness_server.method_adapter import dispatcher_contract
+from devharness_server.tools_bulk import validate_bulk_contrast_parameters
+from devharness_server.tools_scrna_population import scrna_population_audit
+
+
+def multiply(a, b):
+    return a * b
+
+
+if __name__ == "__main__":
+    assert canonical_json({"b": 2, "a": 1}) == b'{"a":1,"b":2}'
+    assert MethodContract.__module__ == "devharness_core.methods"
+    assert run_sandboxed(multiply, (6, 7), timeout_sec=15, max_mem_mb=512) == 42
+    assert len(ToolDispatcher().get_schemas()) == 10
+    for call, args in (
+        (dispatcher_contract, ("fit_temporal_trajectory",)),
+        (validate_bulk_contrast_parameters, ({}, {})),
+        (scrna_population_audit, ("unused", {})),
+    ):
+        try:
+            call(*args)
+        except PermissionError:
+            pass
+        else:
+            raise AssertionError("coordinator-only API unexpectedly admitted")
+    for name in ("devbench", "devbench_engine", "devharness_controlled", "benchmarks", "scripts"):
+        assert importlib.util.find_spec(name) is None
+        assert all(key != name and not key.startswith(name + ".") for key in sys.modules)
+""")
+    # Spawn needs to import the script as __mp_main__, as real participants do.
+    result = subprocess.run([str(workspace / ".venv/bin/python"), "-I", str(script)],
+                            cwd=workspace, capture_output=True, text=True, timeout=35)
+    assert result.returncode == 0, result.stderr
 
 
 def test_real_solve_script_runs_and_evidence_is_observed(tmp_path, workspace):
@@ -127,7 +172,8 @@ def test_explicit_mathematical_gates():
 def test_runner_retains_failed_artifacts_and_rejects_private_staging(tmp_path, monkeypatch):
     spec = {"task_id":"private", "instruction":"private task", "metadata":{"source_kind":"private"},
             "grader":{"type":"equals","field":"ok","expected":True}}
-    file = tmp_path / "task.json"; file.write_text(json.dumps(spec))
+    file = tmp_path / "task.json"
+    file.write_text(json.dumps(spec))
     runner = CodeActionRunner(file)
     class Adapter:
         timeout_sec = 60
@@ -158,7 +204,8 @@ def test_runner_grades_an_executed_script_and_retains_audited_exports(tmp_path):
     spec = {"task_id":"local_execution_control", "instruction":"Compute an increasing stage order", "metadata":{"source_kind":"synthetic"},
             "answer_schema":{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"]},
             "grader":{"type":"equals","field":"ok","expected":True}}
-    path = tmp_path / "task.json"; path.write_text(json.dumps(spec))
+    path = tmp_path / "task.json"
+    path.write_text(json.dumps(spec))
     executable = fake_cli(tmp_path, '''
 (work/'solve.py').write_text("import devharness as dh\\nif __name__ == '__main__':\\n    dh.save_discovery(ok=True)\\n")
 cmd=[str(work/'.venv/bin/python'),str(work/'solve.py')]
@@ -177,7 +224,8 @@ print(json.dumps({'type':'item.completed','item':{'type':'command_execution','co
 def test_declared_input_mutation_is_preserved_and_rejected(tmp_path):
     spec = {"task_id":"input_mutation_control", "instruction":"Preserve inputs", "metadata":{"source_kind":"synthetic"},
             "grader":{"type":"equals","field":"ok","expected":True}}
-    path = tmp_path / "task.json";path.write_text(json.dumps(spec))
+    path = tmp_path / "task.json"
+    path.write_text(json.dumps(spec))
     executable = fake_cli(tmp_path, '''
 (work/'solve.py').write_text("import json\\nfrom pathlib import Path\\nPath('answer_schema.json').write_text('{}')\\nPath('final_discovery.json').write_text('{\\\"ok\\\":true}')\\n")
 cmd=[str(work/'.venv/bin/python'),str(work/'solve.py')]

@@ -11,9 +11,7 @@ import argparse
 import json
 from pathlib import Path
 
-from devbench.analysis.methods import MethodService
-from devbench.analysis.method_planner import ScientificMethodPlanner
-from devbench.analysis.rna_scientific_trial import load_trial, prepare_trial
+from devbench.analysis.rna_release_evaluation import add_release_arguments, dispatch_release_cli
 from devbench.study.evidence import _read, decode_json
 
 
@@ -22,14 +20,23 @@ def main(argv=None):
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument("--prepare", action="store_true")
     modes.add_argument("--validate", action="store_true")
+    add_release_arguments(parser, modes, has_workspace=True)
     parser.add_argument("--workspace", required=True, help="Absolute assigned evidence workspace")
-    parser.add_argument("--method-workspace", required=True, help="Existing absolute governed method workspace")
+    parser.add_argument("--method-workspace", help="Existing absolute governed method workspace")
     parser.add_argument("--request", help="Closed bounded local JSON request for preparation")
     parser.add_argument("--output", help="Fresh absolute evidence directory inside the assigned workspace")
     parser.add_argument("--manifest", help="Retained preparation manifest for validation")
     parser.add_argument("--expected-root", help="Separately retained manifest root")
     parser.add_argument("--purpose", choices=("workflow_generation", "trial_execution"), default="trial_execution")
     args = parser.parse_args(argv)
+    release_result = dispatch_release_cli(args, parser)
+    if release_result is not None:
+        return release_result
+    if not args.method_workspace:
+        parser.error("Historical trial modes require --method-workspace")
+    from devbench.analysis.methods import MethodService
+    from devbench.analysis.method_planner import ScientificMethodPlanner
+    from devbench.analysis.rna_scientific_trial import load_trial, prepare_trial
     workspace = Path(args.workspace)
     method_workspace = Path(args.method_workspace)
     if not workspace.is_absolute() or not method_workspace.is_absolute() or not method_workspace.resolve().is_relative_to(workspace.resolve()):

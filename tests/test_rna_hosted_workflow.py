@@ -31,7 +31,7 @@ def test_readback_engine_denies_parent_before_descriptor_files_or_secrets(tmp_pa
     assert calls == [] and list(tmp_path.iterdir()) == []
 
 
-def test_readback_current_reader_preserves_expired_historical_producer_and_open_revisions(tmp_path, monkeypatch):
+def test_readback_current_reader_preserves_expired_historical_producer_and_open_revisions(tmp_path, monkeypatch, installed_hosted_wheel):
     from tests.test_rna_hosted_exporter_isolation import _readback_fixture
     fixture = _readback_fixture(tmp_path, monkeypatch)
     before = fixture.snapshot()
@@ -54,7 +54,7 @@ def test_readback_current_reader_preserves_expired_historical_producer_and_open_
 
 @pytest.mark.parametrize('seal_format', ['devbench.rna-context-history-seal/1',
     'devbench.rna-nonmodel-v3-attempt-failure-seal/1'])
-def test_readback_neutral_and_legacy_seals_keep_checkpoint_opaque(tmp_path, monkeypatch, seal_format):
+def test_readback_neutral_and_legacy_seals_keep_checkpoint_opaque(tmp_path, monkeypatch, seal_format, installed_hosted_wheel):
     from tests.test_rna_hosted_exporter_isolation import _readback_fixture
     opaque = b'\x00original-checkpoint-is-evidence-not-current-authority\xff'
     fixture = _readback_fixture(tmp_path, monkeypatch, seal_format=seal_format, checkpoint_bytes=opaque)
@@ -70,7 +70,7 @@ def test_readback_neutral_and_legacy_seals_keep_checkpoint_opaque(tmp_path, monk
     assert Path(fixture.packet['history']['checkpoint']['path']).read_bytes() == opaque
 
 
-def test_readback_latest_ack_start_does_not_settle_later_unacknowledged_finish(tmp_path, monkeypatch):
+def test_readback_latest_ack_start_does_not_settle_later_unacknowledged_finish(tmp_path, monkeypatch, installed_hosted_wheel):
     import json
     import sqlite3
     from pathlib import Path
@@ -103,7 +103,7 @@ def test_readback_latest_ack_start_does_not_settle_later_unacknowledged_finish(t
     assert fixture.snapshot() == before and retained_finish() == original
 
 
-def test_readback_repeated_context_slots_use_parent_and_projected_source_proofs(tmp_path, monkeypatch):
+def test_readback_repeated_context_slots_use_parent_and_projected_source_proofs(tmp_path, monkeypatch, installed_hosted_wheel):
     from collections import Counter
     from tests.test_rna_hosted_exporter_isolation import _readback_fixture
     fixture = _readback_fixture(tmp_path, monkeypatch, duplicate_slots=True)
@@ -129,11 +129,11 @@ def test_readback_repeated_context_slots_use_parent_and_projected_source_proofs(
     assert fixture.snapshot() == before
 
 
-def test_readback_one_verify_intent_survives_reopen_and_never_polls(tmp_path, monkeypatch):
+def test_readback_one_verify_intent_survives_reopen_and_never_polls(tmp_path, monkeypatch, installed_hosted_wheel):
     from tests.test_rna_hosted_exporter_isolation import _readback_fixture
     fixture = _readback_fixture(tmp_path, monkeypatch)
     with fixture.channel() as channel:
-        first = channel.request({'command':'verify'})
+        channel.request({'command':'verify'})
         before = fixture.rows()
         try:
             repeated = channel.request({'command':'verify'})
@@ -152,7 +152,7 @@ def test_readback_one_verify_intent_survives_reopen_and_never_polls(tmp_path, mo
     assert fixture.rows() == before
 
 
-def test_readback_credential_process_crash_consumes_intent_before_any_get(tmp_path, monkeypatch):
+def test_readback_credential_process_crash_consumes_intent_before_any_get(tmp_path, monkeypatch, installed_hosted_wheel):
     from pathlib import Path
     from tests.test_rna_hosted_exporter_isolation import _readback_fixture
     fixture = _readback_fixture(tmp_path, monkeypatch, mode='credential_crash')
@@ -172,7 +172,7 @@ def test_readback_credential_process_crash_consumes_intent_before_any_get(tmp_pa
     assert fixture.rows() == rows and fixture.snapshot() == before
 
 
-def test_readback_concurrent_original_children_reserve_only_one_intent(tmp_path, monkeypatch):
+def test_readback_concurrent_original_children_reserve_only_one_intent(tmp_path, monkeypatch, installed_hosted_wheel):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
     from tests.test_rna_hosted_exporter_isolation import _readback_fixture
@@ -196,7 +196,7 @@ def test_readback_concurrent_original_children_reserve_only_one_intent(tmp_path,
     assert sum(row['kind'] == 'http' for row in rows) == 4
 
 
-def test_readback_real_approval_expiry_clips_transport_and_ipc_deadline(tmp_path, monkeypatch):
+def test_readback_real_approval_expiry_clips_transport_and_ipc_deadline(tmp_path, monkeypatch, installed_hosted_wheel):
     import time
     from tests.test_rna_hosted_exporter_isolation import _readback_fixture
     fixture = _readback_fixture(tmp_path, monkeypatch, mode='project_deadline', lifetime_seconds=3)
@@ -212,7 +212,7 @@ def test_readback_real_approval_expiry_clips_transport_and_ipc_deadline(tmp_path
 
 @pytest.mark.parametrize('mode', ['status_mismatch', 'incomplete', 'oversized', 'partial_error',
     'transport_timeout', 'http_error', 'http_error_incomplete', 'http_error_ambiguous'])
-def test_readback_bounded_transport_failures_never_retry_or_leak_provider_data(tmp_path, monkeypatch, mode):
+def test_readback_bounded_transport_failures_never_retry_or_leak_provider_data(tmp_path, monkeypatch, mode, installed_hosted_wheel):
     from pathlib import Path
     from tests.test_rna_hosted_exporter_isolation import _readback_fixture
     fixture = _readback_fixture(tmp_path, monkeypatch, mode=mode)
@@ -247,8 +247,10 @@ def test_readback_bounded_transport_failures_never_retry_or_leak_provider_data(t
         if mode == 'status_mismatch':
             assert all(row['actual_provider_status'] == 'unrecognized' for row in result['diagnostics'])
         audit = fixture.rows()
-        try: channel.request({'command':'verify'})
-        except (ValueError, PermissionError): pass
+        try:
+            channel.request({'command':'verify'})
+        except (ValueError, PermissionError):
+            pass
         assert fixture.rows() == audit
     assert fixture.snapshot() == before
     root = Path(fixture.packet['evidence_path'])
@@ -394,10 +396,12 @@ def _engine(tmp_path, monkeypatch, *, mutation_status=202, lost_response=False):
             if method in ('POST', 'PATCH'):
                 payload = json.loads(request.data)
                 remote[payload['id']] = payload
-                if lost_response: raise TimeoutError('PRIVATE_PROVIDER_CANARY')
+                if lost_response:
+                    raise TimeoutError('PRIVATE_PROVIDER_CANARY')
                 return Response(mutation_status, {'private': 'PRIVATE_PROVIDER_CANARY'})
             body = remote.get(path.rsplit('/', 1)[1])
-            if body is None: return Response(404, {})
+            if body is None:
+                return Response(404, {})
             body = deepcopy(body)
             body.pop('session_name', None)
             body.update(status='success' if 'end_time' in body else 'pending', app_path='/synthetic-run')
@@ -502,7 +506,8 @@ def test_live_engine_refuses_duplicate_acknowledged_or_unapproved_changed_operat
             engine.emit(fixture.operations[0])
         changed = deepcopy(fixture.operations[1])
         changed['payload']['extra']['metadata']['role'] = 'review'
-        with pytest.raises(ValueError): engine.emit(changed)
+        with pytest.raises(ValueError):
+            engine.emit(changed)
         assert fixture.calls == before
     finally:
         engine.close()
@@ -513,7 +518,8 @@ def test_live_engine_consumes_packet_before_credential_failure_and_cannot_reopen
     from devbench.study import rna_hosted_exporter as exporter
     def unavailable(): raise RuntimeError('PRIVATE_CREDENTIAL_CANARY')
     monkeypatch.setattr(exporter, '_resolve_keychain_credential', unavailable)
-    with pytest.raises(RuntimeError): fixture.api.HostedWorkflow(fixture.descriptor)
+    with pytest.raises(RuntimeError):
+        fixture.api.HostedWorkflow(fixture.descriptor)
     assert (tmp_path / 'evidence' / 'connection.sqlite').is_file()
     before = list(fixture.calls)
     replay = fixture.api.HostedWorkflow(fixture.descriptor)
@@ -527,12 +533,15 @@ def test_live_engine_rechecks_immutable_inputs_before_every_http(tmp_path, monke
     fixture = _engine(tmp_path, monkeypatch)
     engine = fixture.api.HostedWorkflow(fixture.descriptor)
     try:
-        if drift == 'packet': engine.packet['target']['project_name'] = 'changed'
+        if drift == 'packet':
+            engine.packet['target']['project_name'] = 'changed'
         elif drift == 'handle':
             from pathlib import Path
             Path(fixture.approvals['target_read']['path']).write_text('{}')
-        elif drift == 'identity': monkeypatch.setattr(fixture.api, 'workflow_identity', lambda: {})
-        else: monkeypatch.setattr(engine, '_now', lambda: datetime.now(timezone.utc) + timedelta(minutes=10))
+        elif drift == 'identity':
+            monkeypatch.setattr(fixture.api, 'workflow_identity', lambda: {})
+        else:
+            monkeypatch.setattr(engine, '_now', lambda: datetime.now(timezone.utc) + timedelta(minutes=10))
         before = list(fixture.calls)
         with pytest.raises((ValueError, PermissionError, TimeoutError)):
             engine.emit(fixture.operations[0])
@@ -819,10 +828,12 @@ def _context_engine(tmp_path, monkeypatch, *, mutation_status=202, lost_response
             if method in ('POST', 'PATCH'):
                 payload = json.loads(request.data)
                 remote[payload['id']] = payload
-                if lost_response: raise TimeoutError('PRIVATE_CONTEXT_PROVIDER_CANARY')
+                if lost_response:
+                    raise TimeoutError('PRIVATE_CONTEXT_PROVIDER_CANARY')
                 return Response(mutation_status, {'private': 'PRIVATE_CONTEXT_PROVIDER_CANARY'})
             body = remote.get(path.rsplit('/', 1)[1])
-            if body is None: return Response(404, {})
+            if body is None:
+                return Response(404, {})
             body = deepcopy(body)
             body.pop('session_name', None)
             body.update(status='error' if 'error' in body else 'success' if 'end_time' in body else 'pending',
@@ -908,9 +919,12 @@ def test_v4_engine_rejects_unapproved_or_changed_context_operation_before_http(t
     engine = fixture.api.HostedContextObservation(fixture.descriptor)
     try:
         item = deepcopy(fixture.operations[0])
-        if mutation == 'unknown': item['payload']['prompt'] = 'PRIVATE_CONTEXT_CANARY'
-        elif mutation == 'parent': item['payload']['parent_run_id'] = str(uuid4())
-        elif mutation == 'sequence': item['payload']['extra']['metadata']['source_sequence'] = 99
+        if mutation == 'unknown':
+            item['payload']['prompt'] = 'PRIVATE_CONTEXT_CANARY'
+        elif mutation == 'parent':
+            item['payload']['parent_run_id'] = str(uuid4())
+        elif mutation == 'sequence':
+            item['payload']['extra']['metadata']['source_sequence'] = 99
         else:
             item['operation'].update(operation='finish', revision=1)
             item['payload']['end_time'] = item['payload']['start_time']
@@ -946,7 +960,8 @@ def test_v4_packet_reservation_survives_credential_failure_and_replay_stays_clos
     from devbench.study import rna_hosted_exporter as exporter
     def unavailable(): raise RuntimeError('PRIVATE_CONTEXT_KEY_CANARY')
     monkeypatch.setattr(exporter, '_resolve_keychain_credential', unavailable)
-    with pytest.raises(RuntimeError): fixture.api.HostedContextObservation(fixture.descriptor)
+    with pytest.raises(RuntimeError):
+        fixture.api.HostedContextObservation(fixture.descriptor)
     assert (tmp_path / 'context-evidence' / 'connection.sqlite').is_file()
     before = list(fixture.calls)
     replay = fixture.api.HostedContextObservation(fixture.descriptor)
@@ -994,7 +1009,8 @@ def test_v4_exporter_parent_rejects_private_operation_before_ipc(tmp_path, monke
     assert calls == []
 
 
-def test_v4_isolated_original_exporter_entry_observes_open_root_without_real_network(tmp_path, monkeypatch):
+def test_v4_isolated_original_exporter_entry_observes_open_root_without_real_network(
+        tmp_path, monkeypatch, installed_hosted_wheel):
     import json
     import sys
     from pathlib import Path

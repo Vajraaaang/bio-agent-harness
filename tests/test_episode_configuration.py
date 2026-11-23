@@ -47,8 +47,8 @@ def test_normalized_fields_match_the_existing_episode_configuration_contract():
     assert result["public_task"]["questions"][0]["measurement_units"] == "declared input units"
     assert "units" not in result["public_task"]["questions"][0]
     assert result["fixed_options"] == {
-        "validate_design_matrix": {"condition_col": "condition"},
-        "mean_condition_analysis": {"condition_col": "condition"}}
+        "validate_design_matrix": {"condition_col": "condition", "batch_cols": []},
+        "mean_condition_analysis": {"condition_col": "condition", "batch_cols": []}}
     assert json.loads(json.dumps(result, allow_nan=False)) == result
     assert task == original
     repeated = dict(result, limits=episodes.EpisodeLimits(**result["limits"]))
@@ -128,13 +128,28 @@ def test_private_fields_are_rejected_at_any_nested_level(location, key):
         normalize(**specification(public_task=task), fixed_options=options)
 
 
-@pytest.mark.parametrize("genes", [None, [], "g1", ["g1", "g1"], [f"g{i}" for i in range(5001)]])
+@pytest.mark.parametrize("genes", [None, [], "g1", ["g1", "g1"]])
 def test_existing_bounded_feature_family_gate_is_preserved(genes):
     _, normalize = api()
     task = public_task()
     task["gene_ids"] = genes
     with pytest.raises(ValueError, match="bounded feature universe"):
         normalize(**specification(public_task=task))
+
+
+@pytest.mark.parametrize("assay", ["bulk", "scrna"])
+def test_feature_family_uses_the_registered_assay_bound(assay):
+    from devbench.study.biology_input_limits import PUBLIC_MAX_BULK_FEATURES, PUBLIC_MAX_FEATURES
+
+    _, normalize = api()
+    maximum = PUBLIC_MAX_BULK_FEATURES if assay == "bulk" else PUBLIC_MAX_FEATURES
+    task = public_task(cellular=assay == "scrna")
+    task["gene_ids"] = [f"g{i}" for i in range(maximum)]
+    config = normalize(**specification(assay=assay, public_task=task))
+    assert config["public_task"]["gene_ids"] == task["gene_ids"]
+    task["gene_ids"].append("one-over-the-bound")
+    with pytest.raises(ValueError, match="bounded feature universe"):
+        normalize(**specification(assay=assay, public_task=task))
 
 
 @pytest.mark.parametrize("limits", [{"max_steps": 2}, 1])

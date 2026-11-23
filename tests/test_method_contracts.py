@@ -283,7 +283,10 @@ def test_all_live_registered_tools_have_shared_contracts():
         assert data["implementation"]["tool_name"] == name
         assert data["environment"]["runtime"] == "trusted_dispatcher"
         assert data["lifecycle"] == "registered"
-        assert data["outputs"] == {"result": {"artifact_type": "json", "path": "/outputs/result.json", "required": True}}
+        ports = {"result": {"artifact_type": "json", "path": "/outputs/result.json", "required": True}}
+        if name == "scrna_population_contrast":
+            ports["summary"] = {"artifact_type": "json", "path": "/outputs/summary.json", "required": True}
+        assert data["outputs"] == ports
         source = dispatcher_source(name)
         assert source.is_absolute() and source.is_file()
         assert data["implementation"]["source_sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()

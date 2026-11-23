@@ -15,6 +15,20 @@ from devbench.analysis.scientific_judgment import (
 )
 
 
+def test_active_workflow_review_type_hints_resolve():
+    from typing import get_type_hints
+
+    from devbench.analysis.evidence_access import EvidenceBroker
+    from devbench.analysis.scientific_review import ActiveReviewPacket
+    from devbench.analysis.scientific_review_holds import ReviewHoldLifecycle
+    from devbench.analysis.workflow_scientific_reviews import ActiveWorkflowReview
+
+    hints = get_type_hints(ActiveWorkflowReview)
+    assert hints["packet"] is ActiveReviewPacket
+    assert hints["lifecycle"] is ReviewHoldLifecycle
+    assert hints["broker"] is EvidenceBroker
+
+
 class Planner:
     def __init__(self, root):
         self.methods = MethodService(root)
@@ -98,6 +112,44 @@ def test_one_actual_combined_dispatch_retains_advisory_and_claim_record(workspac
     assert record["independence_verified"] is False and record["qualification_status"] == "not_established"
     assert not any(record[key] for key in ("model_execution_granted", "data_execution_granted", "canonical_change_granted", "promotion_granted"))
     assert "claim_review" in selector.context
+
+
+def test_real_codex_selector_gets_fresh_review_scope_without_mutating_planner(workspace, monkeypatch):
+    from devbench.analysis.episode_codex import CodexActionSelector
+    from devbench.analysis.workflow_scientific_reviews import review, verify_review
+    planner, adapter, scripted, _ = setup(workspace)
+    planner.state['data_classification'] = 'synthetic'
+    private = planner.methods.root.parent
+    previous_actor = workspace / 'previous-analyst-actor'
+    previous_actor.mkdir()
+    denied = workspace / 'original-denied-root'
+    denied.mkdir()
+    prototype = CodexActionSelector(requested_model='dispatch-stub-no-provider', workspace_parent=workspace / 'actors',
+        private_root=private, denied_roots=(denied,), memory_mb=512, max_context_bytes=120000)
+    prototype.workspaces = [previous_actor]
+    adapter.selector = prototype
+    calls = []
+    def dispatch_stub(selector, context, output, **kwargs):
+        assert selector is not prototype
+        assert selector.private_root == output.parent
+        assert selector.private_root.name == 'request'
+        assert private in selector.denied_roots and denied in selector.denied_roots
+        assert previous_actor in selector.workspaces
+        assert selector.workspace_parent == prototype.workspace_parent
+        assert selector.requested_model == prototype.requested_model
+        assert selector.memory_mb == prototype.memory_mb
+        assert selector.max_context_bytes == prototype.max_context_bytes
+        assert kwargs['allow_model_execution'] is True
+        calls.append(selector.private_root)
+        return scripted.select(context, output, **kwargs)
+    monkeypatch.setattr(CodexActionSelector, 'select', dispatch_stub)
+    for stage in ('candidate_suitability', 'comparison_design'):
+        evidence = review(planner, 'synthetic-session', stage=stage, reviewer=adapter, policy={}, actor='fixture',
+            allow_model_execution=True)
+        assert evidence['status'] == 'accepted'
+        assert verify_review(planner, 'synthetic-session', stage, evidence, policy={})['status'] == 'accepted'
+    assert len(set(calls)) == 2
+    assert prototype.private_root == private and prototype.workspaces == [previous_actor]
 
 
 def test_numeric_forgery_cannot_become_acceptance(workspace):
@@ -282,3 +334,40 @@ def test_design_material_ignores_only_recomputed_candidate_eligibility(workspace
     candidate["method_version_id"] = "frozen-version"
     candidate["assumptions"][0]["expected"] = False
     assert stage_material(planner.state, "comparison_design") != before
+
+
+@pytest.mark.parametrize("relation,reassess", [("RetractionOf", False), ("ErratumFor", False), ("ErratumFor", True)])
+def test_current_active_review_rechecks_cross_article_notice_basis(workspace, monkeypatch, relation, reassess):
+    from devbench.analysis import workflow_scientific_reviews as workflow
+    from tests.test_literature_claim_support import active_fixture, LiteratureSelector, retrieve_cross_article_notice, api
+    planner, previous, _, _ = setup(workspace)
+    lifecycle, broker, numerical, packet, handles, _ = active_fixture(workspace / "active", monkeypatch,
+        scientific_obligations=True)
+    packet = packet.model_copy(update={"workflow_material_sha256": digest(workflow.review_material(
+        planner, "synthetic-session", "results_conclusions"))})
+    active = workflow.ActiveWorkflowReview(packet=packet, lifecycle=lifecycle, broker=broker,
+        context_id="ctx", reveal_context_id="reveal", controller_context_id="controller",
+        query_handles=(numerical,), literature_handles=handles)
+    policy = EvaluationPolicy(policy_id="synthetic-policy", version="1",
+        independent_reviewer_ids=("challenger", "second"), adjudicator_id="third")
+    adapter = workflow.WorkflowScientificReviewAdapter(output_root=previous.output_root,
+        selector=LiteratureSelector(handles[0].bindings[0]), claim_packet_builder=previous.claim_packet_builder,
+        reviewer_label="challenger", evaluation_policy=policy, expected_policy_sha256=policy_sha256(policy),
+        active_review_builder=lambda *_: active)
+    evidence = adapter.review(planner, "synthetic-session", stage="results_conclusions", policy={}, actor="fixture")
+    assert evidence["status"] == "accepted"
+    current = workflow.verify_review(planner, "synthetic-session", "results_conclusions", evidence, active_review=active)
+    snapshots = [item["snapshot_id"] for item in current["active_review"]["literature_receipts"]]
+    retrieve_cross_article_notice(handles[0].service, handles[0].bindings[0], lifecycle, monkeypatch, relation=relation)
+    # The original query and article bytes remain current; the cross-article notice invalidates the claim use.
+    for snapshot_id in snapshots:
+        handles[0].service.replay(snapshot_id, require_current=True)
+    assert not api().literature_use_current(lifecycle, "claim", packet.binding.sha256())
+    if reassess:
+        handles[0].assess(current["active_review"]["literature_assessments"][0]["assessment"],
+            claim=packet.claims[0], context_id="reveal")
+        assert api().literature_use_current(lifecycle, "claim", packet.binding.sha256())
+    with pytest.raises(ValueError, match="Literature"):
+        workflow.verify_review(planner, "synthetic-session", "results_conclusions", evidence, active_review=active)
+    assert workflow.verify_review(planner, "synthetic-session", "results_conclusions", evidence,
+        current_relevance=False)["status"] == "accepted"

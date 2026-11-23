@@ -137,7 +137,7 @@ def serve(root, port):
     app.results(evidence["completed_job"])
     server = make_server(app, port=port)
     # The session credential is deliberately terminal-only, never retained in a report.
-    print(f"Open http://127.0.0.1:{server.server_address[1]}/#{app.token}", flush=True)
+    print(f"Open http://127.0.0.1:{server.server_address[1]}/", flush=True)
     print("Synthetic verification workspace only. No model selector, network discovery or cloud route configured.", flush=True)
     try:
         server.serve_forever()

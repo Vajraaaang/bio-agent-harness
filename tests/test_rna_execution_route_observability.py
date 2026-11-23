@@ -184,7 +184,7 @@ def test_projection_is_closed_readonly_and_preserves_unknown_usage(tmp_path):
     assert observer.read_events(identity) == events
 
 
-def test_actual_generation_and_denied_trial_share_observer_without_tool_dispatch(tmp_path):
+def test_actual_generation_and_denied_trial_share_observer_without_tool_dispatch(tmp_path, installed_hosted_wheel):
     from devbench.analysis import rna_scientific_trial as trial_api
     from tests.test_rna_execution_route_qualification import _case
     from tests.test_rna_scientific_trial import NOW

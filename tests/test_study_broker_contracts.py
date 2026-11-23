@@ -32,6 +32,19 @@ def test_design_path_alias_matches_shared_participant_contract():
     assert "metadata_path" not in args
 
 
+@pytest.mark.parametrize("requested", [None, "auto", "counts", "continuous"])
+def test_enforced_quality_audit_uses_protected_measurement(requested):
+    broker = ToolBroker.__new__(ToolBroker)
+    broker.aliases = {}
+    broker.policy = policy()
+    inputs = {} if requested is None else {"data_type": requested}
+    if requested == "continuous":
+        with pytest.raises(ValueError, match="quality audit measurement"):
+            broker._quality_audit_arguments(inputs)
+    else:
+        assert broker._quality_audit_arguments(inputs)["data_type"] == "counts"
+
+
 @pytest.mark.parametrize("change", [{"time_col": "nonexistent"}, {"biological_unit_column": "sample_id"}])
 def test_admission_rejects_alternative_columns_before_reading(change):
     broker = ToolBroker.__new__(ToolBroker)

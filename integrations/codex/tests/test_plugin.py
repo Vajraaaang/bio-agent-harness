@@ -1,90 +1,231 @@
-"""Local packaging tests; these do not install into Codex or run model sessions."""
+"""Verify the portable local package without using the user's Codex state."""
+
+import asyncio
 import importlib.util
 import json
-from pathlib import Path
+import shutil
+import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
-
 SOURCE = Path(__file__).resolve().parents[1] / "devharness"
+REFERENCES = Path("skills", "rna-workbench", "references")
 
 
 def api():
-    script = SOURCE / "scripts" / "configure.py"
-    assert script.is_file(), "Plugin runtime configuration helper is missing"
-    spec = importlib.util.spec_from_file_location("devharness_plugin_configure", script)
+    spec = importlib.util.spec_from_file_location(
+        "devharness_plugin_configure", SOURCE / "scripts" / "configure.py"
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_template_contains_a_real_rna_skill_and_no_machine_specific_mcp_connection():
+@pytest.fixture
+def paths(tmp_path):
+    inputs, workspace = tmp_path / "inputs", tmp_path / "workspace"
+    inputs.mkdir()
+    workspace.mkdir()
+    return inputs, workspace, tmp_path / "marketplace" / "devharness"
+
+
+def test_manifest_and_inactive_template():
     manifest = json.loads((SOURCE / ".codex-plugin" / "plugin.json").read_text())
     assert manifest["name"] == SOURCE.name == "devharness"
-    assert "mcpServers" not in manifest
-    skill = (SOURCE / "skills" / "rna-workbench" / "SKILL.md").read_text()
-    assert "count" in skill and "donor" in skill and "refuse" in skill
+    assert manifest["version"] == "0.2.0"
+    assert manifest["mcpServers"] == "./.mcp.json"
+    assert manifest["skills"] == "./skills/"
+    assert manifest["interface"]["displayName"] == "DevHarness RNA Research"
+    assert json.loads((SOURCE / ".mcp.json").read_text()) == {"mcpServers": {}}
 
 
-@pytest.mark.parametrize("workspace", [Path("relative-data"), Path("/"), Path.home()])
-def test_workspace_scope_is_explicit_and_not_the_whole_host(tmp_path, workspace):
-    module = api()
+@pytest.mark.parametrize(
+    "overlap", ["relative", "root", "home", "plugin", "input", "descendant"]
+)
+def test_workspace_scope_is_explicit(paths, overlap):
+    inputs, workspace, output = paths
+    descendant = inputs / "workspace"
+    descendant.mkdir()
+    override = {
+        "relative": Path("relative-data"),
+        "root": Path("/"),
+        "home": Path.home(),
+        "plugin": SOURCE,
+        "input": inputs,
+        "descendant": descendant,
+    }
     with pytest.raises(ValueError):
-        module.configure(Path(sys.executable), workspace, tmp_path / "devharness")
-    assert not (tmp_path / "devharness").exists()
+        api().configure(Path(sys.executable), inputs, override[overlap], output)
+    assert not output.exists()
 
 
-def test_missing_runtime_does_not_write_a_half_configured_plugin(tmp_path):
-    module = api()
-    data = tmp_path / "analysis"
-    data.mkdir()
-    with pytest.raises(ValueError):
-        module.configure(tmp_path / "missing-python", data, tmp_path / "devharness")
-    assert not (tmp_path / "devharness").exists()
+def test_missing_runtime_preserves_destination(paths):
+    inputs, workspace, output = paths
+    with pytest.raises(ValueError, match="executable"):
+        api().configure(inputs / "missing-python", inputs, workspace, output)
+    assert not output.exists()
 
 
-def test_configured_copy_uses_absolute_runtime_and_workspace_without_changing_template(tmp_path):
-    module = api()
-    data = tmp_path / "analysis"
-    data.mkdir()
-    original = (SOURCE / ".codex-plugin" / "plugin.json").read_bytes()
-    output = tmp_path / "configured" / "devharness"
-    result = module.configure(Path(sys.executable), data, output)
-    manifest = json.loads((output / ".codex-plugin" / "plugin.json").read_text())
-    server = manifest["mcpServers"]["devharness"]
-    assert Path(server["command"]).is_absolute()
-    assert server["command"] == str(Path(sys.executable).absolute())
-    assert server["cwd"] == str(data.resolve())
-    assert server["args"] == ["-I", "-B", "-m", "devharness_server.server"]
-    assert all(value == "1" for value in server["env"].values())
-    assert (SOURCE / ".codex-plugin" / "plugin.json").read_bytes() == original
-    assert result["runtime"]["backend_version"]
+def test_backend_version_mismatch_preserves_destination(paths):
+    inputs, workspace, output = paths
+    with pytest.raises(ValueError, match="version"):
+        api().configure(
+            Path(sys.executable), inputs, workspace, output, expected_version="unknown"
+        )
+    assert not output.exists()
+
+
+def test_configured_plugin_uses_governed_stdio_and_keeps_template(paths):
+    inputs, workspace, output = paths
+    original = (SOURCE / ".mcp.json").read_bytes()
+    result = api().configure(Path(sys.executable), inputs, workspace, output)
+    mcp = json.loads((output / ".mcp.json").read_text())
+    server = mcp["mcpServers"]["devharness"]
+    assert server["command"] == sys.executable
+    assert server["cwd"] == str(workspace)
+    assert server["args"][:8] == [
+        "-I",
+        "-B",
+        "-m",
+        "devbench.platform.plugin_mcp",
+        "--input-root",
+        str(inputs),
+        "--workspace",
+        str(workspace),
+    ]
+    assert all(server["env"][key] == value for key, value in api().THREADS.items())
+    assert (SOURCE / ".mcp.json").read_bytes() == original
+    reference = REFERENCES / "mcp-payload-contracts.md"
+    assert (output / reference).read_bytes() == (SOURCE / reference).read_bytes()
+    assert result["runtime"]["sqlite_version"]
+    assert tuple(map(int, result["runtime"]["python_version"].split(".")[:2])) >= (
+        3,
+        13,
+    )
     assert result["installed_into_codex"] is False
 
 
-def test_existing_destination_is_preserved(tmp_path):
+@pytest.mark.parametrize("link", ["directory", "file", "dangling"])
+def test_package_rejects_symlink_references(tmp_path, monkeypatch, link):
     module = api()
-    data, output = tmp_path / "analysis", tmp_path / "devharness"
-    data.mkdir()
-    output.mkdir()
+    source = tmp_path / "source"
+    shutil.copytree(SOURCE, source)
+    references = source / REFERENCES
+    external = tmp_path / "external"
+    external.mkdir()
+    outside = external / "outside.md"
+    outside.write_text("Outside the plugin")
+    if link == "directory":
+        shutil.rmtree(references)
+        references.symlink_to(external, target_is_directory=True)
+    else:
+        target = outside if link == "file" else external / "missing.md"
+        (references / "linked.md").symlink_to(target)
+    monkeypatch.setattr(module, "PLUGIN_ROOT", source)
+    with pytest.raises(ValueError, match="reference"):
+        module._source_package()
+
+
+def test_existing_destination_is_preserved(paths):
+    inputs, workspace, output = paths
+    output.mkdir(parents=True)
     marker = output / "keep.txt"
     marker.write_text("keep")
     with pytest.raises(ValueError, match="new"):
-        module.configure(Path(sys.executable), data, output)
+        api().configure(Path(sys.executable), inputs, workspace, output)
     assert marker.read_text() == "keep"
 
 
-def test_plugin_cannot_be_configured_to_serve_its_own_package(tmp_path):
+def test_unpatched_runtime_is_refused_and_darwin_can_retry(paths, monkeypatch):
+    inputs, workspace, output = paths
     module = api()
-    with pytest.raises(ValueError, match="workspace"):
-        module.configure(Path(sys.executable), SOURCE, tmp_path / "devharness")
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(kwargs["env"])
+        return subprocess.CompletedProcess(
+            command, 1, "", "Scientific WAL requires patched SQLite"
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(module, "_SQLITE_LIB", inputs)
+    monkeypatch.setattr(module.sys, "platform", "darwin")
+    with pytest.raises(ValueError, match="patched SQLite"):
+        module.configure(Path(sys.executable), inputs, workspace, output)
+    assert calls[-1]["DYLD_LIBRARY_PATH"] == str(inputs)
+    assert not output.exists()
 
 
-def test_backend_version_mismatch_requires_an_explicit_package_choice(tmp_path):
-    module = api()
-    data = tmp_path / "analysis"
-    data.mkdir()
-    with pytest.raises(ValueError, match="version"):
-        module.configure(Path(sys.executable), data, tmp_path / "devharness", expected_version="not-installed")
-    assert not (tmp_path / "devharness").exists()
+def test_marketplace_can_be_registered_in_isolated_codex_home(
+    paths, tmp_path, monkeypatch
+):
+    inputs, workspace, output = paths
+    codex = shutil.which("codex")
+    if not codex:
+        pytest.skip("Codex CLI unavailable")
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    result = api().configure(
+        Path(sys.executable), inputs, workspace, output, write_marketplace=output.parent
+    )
+    manifest = Path(result["marketplace"])
+    assert manifest == output.parent / ".agents" / "plugins" / "marketplace.json"
+    added = subprocess.run(
+        [codex, "plugin", "marketplace", "add", str(output.parent), "--json"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert json.loads(added.stdout)["marketplaceName"] == "devharness-local"
+    assert (output / REFERENCES / "mcp-payload-contracts.md").is_file()
+
+
+def test_configured_server_round_trips_over_real_stdio(paths):
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    inputs, workspace, output = paths
+    api().configure(Path(sys.executable), inputs, workspace, output)
+    server = json.loads((output / ".mcp.json").read_text())["mcpServers"]["devharness"]
+
+    async def exercise():
+        async with (
+            asyncio.timeout(25),
+            stdio_client(StdioServerParameters(**server)) as (read, write),
+        ):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                assert {tool.name for tool in (await session.list_tools()).tools} == {
+                    "inspect_rna_inputs",
+                    "check_answerability",
+                    "plan_rna_workflow",
+                    "execute_reviewed_plan",
+                    "get_run_status",
+                    "get_execution_receipt",
+                    "manage_research_aim",
+                }
+                rejected = await session.call_tool(
+                    "get_run_status", {"session_id": "0" * 32, "run_id": "1" * 32}
+                )
+                assert rejected.isError is True
+                assert rejected.structuredContent == {
+                    "error": "OperationBlocked",
+                    "reason": "plan_identity_mismatch",
+                }
+                resources = {
+                    str(resource.uri)
+                    for resource in (await session.list_resources()).resources
+                }
+                assert resources == {
+                    f"ui://devharness/{kind}-card"
+                    for kind in ("plan", "run", "receipt")
+                }
+                card = await session.read_resource("ui://devharness/plan-card")
+                assert card.contents[0].mimeType == "text/html;profile=mcp-app"
+
+    asyncio.run(exercise())
