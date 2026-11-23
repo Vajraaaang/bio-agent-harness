@@ -378,6 +378,7 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             10,
             (("cell_type_expression",), ("ligand_receptor_reference",)),
             assays=(*_CELLS, *_SPATIAL),
+            curated_operation="scrna_ccc",
         ),
         "perturbation_response": QuestionContract(
             11,

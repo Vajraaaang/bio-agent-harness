@@ -354,6 +354,27 @@ def test_curated_route_keeps_scientific_review_gate():
     assert result.design_receipt_sha256 == _RECEIPT
 
 
+def test_cell_communication_admits_curated_route_with_explicit_reference():
+    request = _request(10, "cell_communication", entry_point="normalized_expression")
+    runtime = RuntimeEvidence(
+        question=request.question,
+        tier="tier_a",
+        operation_id="scrna_ccc",
+        runtime_sha256=_RUNTIME,
+    )
+    expression = _measurement("cell_type_expression")
+    reference = _measurement("ligand_receptor_reference", value="a" * 64)
+    complete = assess_answerability(
+        request,
+        measurements=(expression, reference),
+        runtime=runtime,
+    )
+    assert (complete.status, complete.execution_route) == ("ready", "tier_a")
+    assert complete.claim_scope == "requires_scientific_review"
+    missing = assess_answerability(request, measurements=(expression,), runtime=runtime)
+    assert missing.missing_measurements == (("ligand_receptor_reference",),)
+
+
 def test_raw_read_archive_download_is_refused_even_with_local_metadata():
     request = _request(
         5,
