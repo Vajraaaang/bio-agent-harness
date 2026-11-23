@@ -41,6 +41,7 @@ jobs:
       - name: Verify pure-Python RNA solver behavior
         run: |
           .venv/bin/python -m pytest -q \
+            tests/test_scientific_core_boundary.py \
             tests/test_scrna_ccc.py \
             tests/test_scrna_neighborhood_da.py \
             tests/test_bulk_deconvolution.py \

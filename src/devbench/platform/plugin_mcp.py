@@ -1055,7 +1055,7 @@ def _h5ad_measurements(
             "counts" if "counts" in profile["observed"]["layers"] else "X"
         )
         slots = (slot,)
-    from devbench.analysis.plot_adapters_spatial import PHYSICAL_UNITS
+    from devbench.core.scientific_types import PHYSICAL_UNITS
 
     extra_columns = {
         "cell_communication": ("cell_type", "donor_id"),

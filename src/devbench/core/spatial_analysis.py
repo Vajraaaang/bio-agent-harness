@@ -13,7 +13,6 @@ from scipy.spatial import cKDTree
 
 from rna_kernels.normalization import log1p_counts_per_10k
 
-from ..analysis.scientific_plot_images import PHYSICAL_UNITS
 from ._rna_solver_inputs import (
     Label,
     adjust_probabilities,
@@ -22,7 +21,7 @@ from ._rna_solver_inputs import (
     require_labels,
     solver_receipt,
 )
-from .scientific_types import FrozenContract, Sha256
+from .scientific_types import PHYSICAL_UNITS, FrozenContract, Sha256
 
 _Floats = NDArray[np.float64]
 _Ints = NDArray[np.intp]
