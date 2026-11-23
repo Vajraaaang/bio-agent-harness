@@ -9,9 +9,10 @@
   "historical_publication_manifest": "The manifest at base_commit records the preceding public snapshot and its source hashes.",
   "publication_changes_sha256": {
     ".github/workflows/ci.yml": "d9891d743a6c86495422d2a7baf76b8999071c6df7b613307eb3be6ccc00cccf",
+    ".github/workflows/pages.yml": "46a3325b5cb6f9a217b93f21fa75889e016498a6e31d3a05519c84316e2dbf0f",
     ".gitignore": "89e43e09244227152b002351c74cdea933a299a64ab69faaaaf8f439964445fa",
     "Makefile": "1afa26eb2c9c4e2c9ad484e1c7a20f4973b09ba31fb6854e0bdd336422a75470",
-    "README.md": "50dd705e45044b08d43bf94080d67b95a1cfc51fc59fa9fc3a834ed22daabcd9",
+    "README.md": "bca307af33d810d735ed26fb7ac7e3763b611c693c5e5a59ccf05f9c532f0fb9",
     "RELEASE_READINESS.md": "cf10c88c3909f243adb630511a4c2b455d10816995a12cc8a438d0521ccea7d5",
     "containers/erql-1.1/Dockerfile": "ef4d82f787f102ab786c133658297ee7b238a2e487de1eca9f0b4cdd214b6960",
     "containers/erql-1.1/install-packages.R": "ddf0c8c7f77d639ae0e1828ef71c951e83fe68ba8f746c21022cfc31a7495f4b",
@@ -97,6 +98,7 @@
     "devharness_server/tools_stat.py": "3238c2de5207b59506cb61d74f10e47def958fc2876535c05c9a65b7eeec9684",
     "docs/agentic-rna-v24-evaluation-protocol.md": "80aa71749e7f861835711472f9e1be0e5d51d3a82b373629d1c572ff4e775d6c",
     "docs/assets/companion-studio.png": "b8d9dba3cc89da30f9921a64f9bae7ea8b65f739e0dd30f1ff4db39fd3db865c",
+    "docs/index.html": "6cda833d0682b82fdec001fe4f1dfe800d3f93eb4f88bed26d3b305b12138abf",
     "docs/scientific-method-planner.md": "e233acfc9537c4d9cacb2a6d72e5a717718f0860c2e8156e85bd3814e5fc1dee",
     "docs/workbench-ui.md": "4db307c17c71400a7068fe3bcf18af0e4a33312a50680a33a082474c79bfa9b5",
     "integrations/codex/devharness/.codex-plugin/plugin.json": "b749c68b25aff854c3688eb8b80c149f25be61f0f5ee00e4484b5873f4121c13",
@@ -941,5 +943,11 @@
     "Private grading materials and blinded review packets",
     "Local render verification ledger with machine-specific paths",
     "Unpublished historical trials, local-only tests, and validation outputs"
-  ]
+  ],
+  "studio_showcase": {
+    "entry_point": "docs/index.html",
+    "url": "https://vajraaaang.github.io/bio-agent-harness/",
+    "scope": "Standalone public presentation with illustrative charts and receipt examples. The demo does not execute a model or contain the underlying research data.",
+    "documentation_source_commit": "0f2a2a3"
+  }
 }
