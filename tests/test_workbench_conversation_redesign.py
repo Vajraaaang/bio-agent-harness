@@ -31,6 +31,49 @@ def test_empty_state_distinguishes_operator_and_live_agent_access():
     """)
 
 
+def test_bulk_declarations_remain_nested_and_active_episode_handoff_is_inline():
+    run_js(r"""
+    class Node {constructor(tag){this.tagName=tag;this.children=[];this.attrs={};this.value='';}append(...n){this.children.push(...n);}replaceChildren(...n){this.children=n;}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,f){this[k]=f;}}
+    globalThis.document={createElement:tag=>new Node(tag)};const container=new Node('div'),actions=[];
+    const investigation={id:'i',revision:2,status:'awaiting_information',sources:['expression.csv','metadata.csv'],scientific_context:{bulk_episode_declarations:{condition_key:'group'}},clarification_fields:[{scope:'bulk_episode_declarations',field:'condition_key',label:'Condition column',type:'text',required:true}],turns:[]};
+    api.renderInvestigation(container,{investigation,onAction:a=>actions.push(a)});const walk=n=>[n,...n.children.flatMap(walk)];let nodes=walk(container);
+    const field=nodes.find(n=>n.attrs.name==='condition_key');assert.equal(field.value,'group');field.value='condition';field.input();nodes.find(n=>n.tagName==='form').submit({preventDefault(){}});
+    assert.deepEqual(actions[0].scientificContext.bulk_episode_declarations,{condition_key:'condition'});assert.ok(!actions[0].declarations?.condition_key);
+    const active={id:'i',revision:3,status:'awaiting_information',analyst_profile:'analyst_v1',sources:['expression.csv'],job_id:'j',job_state:{operation_kind:'agentic_episode',status:'awaiting_information',information_request:{message:'Confirm the sample exclusions from laboratory records.'}},turns:[]};
+    api.renderInvestigation(container,{investigation:active,onAction:a=>actions.push(a)});nodes=walk(container);assert.ok(nodes.some(n=>n.textContent==='Confirm the sample exclusions from laboratory records.'));
+    const answer=nodes.find(n=>n.attrs.name==='episode_answer');assert.ok(answer);answer.value='No exclusions were declared';answer.input();const checkbox=nodes.find(n=>n.attrs.name==='preserves_frozen_inputs_and_settings');checkbox.checked=true;
+    nodes.find(n=>n.tagName==='form').submit({preventDefault(){}});assert.equal(actions.at(-1).type,'clarify_episode');assert.equal(actions.at(-1).response.message,'No exclusions were declared');
+    """)
+
+
+@pytest.mark.parametrize('turn_kind', ['analyst_action', 'analyst_query'])
+def test_analyst_query_turns_and_typed_findings_show_readable_exact_evidence(turn_kind):
+    run_js(r"""
+    class Node {constructor(tag){this.tagName=tag;this.children=[];this.attrs={};}append(...n){this.children.push(...n);}replaceChildren(...n){this.children=n;}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,f){this[k]=f;}}
+    globalThis.document={createElement:tag=>new Node(tag)};const container=new Node('div');
+    const investigation={id:'i',revision:3,analyst_profile:'analyst_v1',status:'running',job_id:'j',job_state:{operation_kind:'agentic_episode',status:'running'},turns:[{id:'t',kind:'analyst_action',step:4,content:{selection:{kind:'query',query:{kind:'gene_evidence',gene_ids:['G1']}},result:{columns:['gene_id','p_value','q_value'],rows:[{gene_id:'<script>G1</script>',p_value:0,q_value:null}]}}}],synthesis:{findings:[{target_id:'contrast-A',estimate:{gene_id:'G1',effect:1.2,p_value:0,q_value:null},source:{receipt_id:'receipt-exact',artifact:'output.json'},replication:{independent_units:4}}],evidence:{status:'verified',scope:'recorded_execution_consistency_not_biological_correctness'}}};
+    const before=JSON.stringify(investigation);api.renderInvestigation(container,{investigation});const walk=n=>[n,...n.children.flatMap(walk)],nodes=walk(container);
+    assert.ok(nodes.some(n=>n.textContent==='Exact analyst action evidence'));
+    assert.ok(nodes.some(n=>n.tagName==='table'));assert.ok(nodes.some(n=>n.textContent==='<script>G1</script>'));assert.ok(nodes.some(n=>n.textContent==='receipt-exact'));assert.ok(nodes.some(n=>n.textContent==='G1'));assert.ok(nodes.every(n=>n.innerHTML===undefined));assert.equal(JSON.stringify(investigation),before);
+    """.replace("kind:'analyst_action'", "kind:" + json.dumps(turn_kind)))
+
+
+def test_episode_attribution_describes_retained_actions_without_proposal_only_claim():
+    run_js("""
+    const model=api.buildInvestigationModel({id:'i',analyst_profile:'analyst_v1',job_state:{operation_kind:'agentic_episode',status:'running'}},{model_access:true});
+    assert.equal(model.mode,'Scientific analyst');assert.match(model.scope,/recorded.*actions/);assert.ok(!model.scope.includes('bounded proposal'));
+    """)
+
+
+def test_episode_proposal_review_shows_bulk_design_and_resource_facts():
+    run_js("""
+    const metrics=api.planSummary({proposal:{format:'devbench.episode-proposal/1',configuration:{assay:'bulk',public_task:{gene_ids:['g1','g2'],measurement:'raw_counts',context:{dependence:'paired'},questions:[{contrast:'B minus A'}]},limits:{timeout_seconds:600,memory_mb:2048}}}});
+    const values=metrics.map(x=>x.value).join(' ');
+    assert.match(values,/2 genes/);assert.match(values,/paired/);assert.match(values,/B minus A/);assert.match(values,/600/);assert.match(values,/2,048/);
+    assert.ok(!values.includes('Not recorded'));
+    """)
+
+
 def test_failure_summary_keeps_traceback_in_evidence_only():
     run_js(r"""
     const failure='ValueError: data_sha256_mismatch: expected 000\nTraceback (most recent call last):\n  private scientific implementation details';
@@ -43,14 +86,15 @@ def test_failure_summary_keeps_traceback_in_evidence_only():
     """)
 
 
-def test_only_recorded_lifecycle_events_and_actual_planner_reason_are_present():
+def test_only_recorded_lifecycle_events_and_public_planning_kind_are_present():
     run_js("""
     const state={id:'a'.repeat(32),status:'awaiting_information',question:'Inspect quality',plan_author:'codex_agent',planning_result:{status:'awaiting_information',decision:{kind:'request_information',message:'Which column identifies capture units?'}},state_history:[{from:'queued',to:'inspecting',at:'2026-10-28T14:00:00Z'},{from:'inspecting',to:'awaiting_information',at:'2026-10-28T14:01:00Z'}]};
     const before=JSON.stringify(state),model=api.buildModel(state,{model_access:true});
     assert.equal(model.events.length,2);
     assert.deepEqual(model.events.map(e=>e.status),['inspecting','awaiting_information']);
     assert.equal(model.events[0].at,'2026-10-28T14:00:00Z');
-    assert.ok(model.records.some(r=>r.body==='Which column identifies capture units?'));
+    assert.ok(model.records.some(r=>r.body==='Request information'));
+    assert.ok(!JSON.stringify(model).includes('Which column identifies capture units?'));
     assert.equal(JSON.stringify(state),before);
     assert.equal(model.primaryAction.view,'review');
     assert.ok(!model.events.some(e=>e.status==='running'));
@@ -143,7 +187,7 @@ def test_structured_disclosures_keep_raw_json_secondary_and_copy_fallback_access
     """)
 
 
-def test_disclosure_structuring_is_bounded_and_does_not_modify_source_records():
+def test_planner_disclosure_only_renders_public_metadata_without_modifying_source_records():
     run_js("""
     class Node {constructor(tag){this.tagName=tag;this.children=[];this.attrs={};}append(...nodes){this.children.push(...nodes);}replaceChildren(...nodes){this.children=nodes;}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,f){this[k]=f;} }
     globalThis.document={createElement:tag=>new Node(tag),createElementNS:(ns,tag)=>new Node(tag)};
@@ -153,7 +197,7 @@ def test_disclosure_structuring_is_bounded_and_does_not_modify_source_records():
     api.render(container,{state,config:{}});
     const walk=n=>[n,...n.children.flatMap(walk)],nodes=walk(container);
     assert.ok(nodes.filter(n=>n.tagName==='dt').length<=160);
-    assert.ok(nodes.some(n=>(n.textContent||'').includes('Additional fields')));
+    assert.ok(!nodes.some(n=>/(Recorded rationale|field_0|truth)/.test(n.textContent||'')));
     assert.equal(JSON.stringify(state),before);
     """)
 
@@ -349,7 +393,7 @@ def test_data_audit_is_compact_with_four_closed_structured_scope_accordions():
     const walk=n=>[n,...n.children.flatMap(walk)],nodes=walk(container),grid=nodes.find(n=>(n.className||'').split(' ').includes('wc-audit-grid'));
     assert.equal(grid.children.length,4);
     assert.ok(grid.children.every(n=>n.tagName==='details'&&n.open===false&&(n.className||'').includes('wc-disclosure')));
-    assert.ok(nodes.some(n=>n.textContent==='actual.h5ad · 80 cells × 60 genes'));
+    assert.ok(nodes.some(n=>n.textContent==='actual.h5ad · 80 observations × 60 features'));
     assert.ok(walk(grid).some(n=>n.tagName==='dl'&&(n.className||'').includes('wc-kv-grid')));
     assert.ok(!walk(grid).some(n=>n.tagName==='pre'));
     """)
@@ -521,4 +565,28 @@ def test_scientific_synthesis_prioritizes_actual_trial_metrics_and_keeps_ledgers
       assert.ok(all(card).some(n=>n.tagName==='details'&&all(n.children[0]).some(child=>child.textContent==='Comparison evidence')));
       assert.equal(JSON.stringify(investigation),before);
     }
+    """)
+
+
+def test_analyst_synthesis_exposes_terminal_assessments_and_unexecuted_proposals():
+    run_js(r"""
+    class Node {constructor(tag){this.tagName=tag;this.children=[];this.attrs={};}append(...n){this.children.push(...n);}replaceChildren(...n){this.children=n;}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,f){this[k]=f;}}
+    globalThis.document={createElement:tag=>new Node(tag)};const container=new Node('div');
+    const synthesis={findings:[],analyst:{disposition:'exploratory',stopping_reason:'No supported differential expression; equivalence is not established.',proposal_scope:'unexecuted_no_authorization',followup_proposals:[{question:'Validate boundary behavior',candidate_procedure:'Independent procedure',desired_evidence:'Convergence diagnostics',status:'proposed'}]},analyst_findings:[{gene_id:'<script>gene1</script>',disposition:'condition_restricted_candidate',qualification:'Zero reference counts prevent finite paired ratios.',qualification_origin:'agent_selected_not_independent_review',reporting_scope:'exploratory_description_no_significance_or_discovery_claim',evidence_refs:['query:5'],observations:[{field_ref:'query:5/query_result/p_value',value:0.9985}]},{gene_id:'gene23',disposition:'not_assessable',qualification:'All counts are zero; no effect or equivalence conclusion.'}]};
+    const investigation={id:'i',revision:3,synthesis,turns:[{id:'a',kind:'analyst_action',step:4,content:{action:{kind:'query_evidence'},decision_record:{concern:'Boundary uncertainty',expected_discriminating_observation:'Inspect paired counts'}}}]},before=JSON.stringify(investigation);
+    api.renderInvestigation(container,{investigation});const visible=n=>[n,...(n.tagName==='details'&&!n.open?n.children.slice(0,1):n.children).flatMap(visible)],nodes=visible(container),words=nodes.map(n=>n.textContent||'').join(' ');
+    for(const phrase of ['Exploratory','No supported differential expression','<script>gene1</script>','Condition restricted candidate','Zero reference counts','gene23','Not assessable','query:5','0.9985','Validate boundary behavior','Proposed follow-ups · not executed'])assert.ok(words.includes(phrase),phrase);
+    const all=n=>[n,...n.children.flatMap(all)],actionCard=all(container).find(n=>n.attrs['data-turn-id']==='a'),actionWords=visible(actionCard).map(n=>n.textContent||'').join(' ');assert.ok(actionWords.includes('Boundary uncertainty'));assert.ok(actionWords.includes('Inspect paired counts'));
+    assert.ok(!words.includes('No supported numerical findings were retained.'));assert.ok(nodes.every(n=>n.innerHTML===undefined));assert.equal(JSON.stringify(investigation),before);
+    assert.ok(!nodes.some(n=>n.tagName==='button'&&n.textContent==='Validate boundary behavior'));
+    """)
+
+
+def test_cancelled_episode_handoff_keeps_answer_and_draft_available():
+    run_js(r"""
+    class Node {constructor(tag){this.tagName=tag;this.children=[];this.attrs={};}append(...n){this.children.push(...n);}replaceChildren(...n){this.children=n;}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,f){this[k]=f;}}
+    globalThis.document={createElement:tag=>new Node(tag)};const container=new Node('div'),walk=n=>[n,...n.children.flatMap(walk)];
+    const investigation={id:'i',revision:2,status:'awaiting_information',job_id:'j',job_state:{operation_kind:'agentic_episode',status:'awaiting_information',information_request:{message:'Confirm exclusions'},handoff:{root_hash:'r'}}};
+    api.renderInvestigation(container,{investigation});let answer=walk(container).find(n=>n.attrs.name==='episode_answer');answer.value='No exclusions';answer.input();
+    investigation.job_state.status='cancelled';investigation.status='cancelled';const model=api.renderInvestigation(container,{investigation});assert.equal(model.inlineGate.kind,'episode_clarification');answer=walk(container).find(n=>n.attrs.name==='episode_answer');assert.equal(answer.value,'No exclusions');
     """)

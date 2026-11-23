@@ -3,12 +3,11 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
-import tempfile
 
 import pytest
 
 from devbench.analysis.fastq_planner_binding import (
-    build_fastq_manifest, register_fastq_input, load_fastq_manifest, validate_fastq_manifest,
+    build_fastq_manifest, register_fastq_input, load_fastq_manifest,
 )
 from devbench.analysis.method_planner import ScientificMethodPlanner
 from devbench.analysis.method_planner_cli import main as planner_cli
@@ -29,10 +28,8 @@ def explicit_fake_nextflow_pin(monkeypatch):
 
 
 @pytest.fixture
-def workspace():
-    parent = Path(__file__).resolve().parents[1] / 'reports' / 'rna-agentic-integration-2026-10-28'
-    parent.mkdir(exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix='fastq-workflow-', dir=parent))
+def workspace(workspace_tmp_path):
+    return workspace_tmp_path
 
 
 def fixture_manifest(root, mutate=None):

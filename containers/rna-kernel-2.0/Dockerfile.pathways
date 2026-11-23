@@ -1,0 +1,49 @@
+# Resolve each local tag to the locked image ID for the selected architecture.
+ARG M2_IMAGE=devbench-rna-kernel:2.0-p32-sccoda-r3-arm64
+ARG PATHWAY_R_IMAGE=devbench-rna-kernel:thesis-m3-pathway-verification-arm64
+
+# Reproduce the separate R package layer from verified public archives.
+FROM ${M2_IMAGE} AS fetch-pathway-archives
+USER 0:0
+COPY containers/rna-kernel-2.0/r-pathway-sources.lock.json \
+    containers/rna-kernel-2.0/install-pathway-packages.R /tmp/
+RUN Rscript --vanilla /tmp/install-pathway-packages.R fetch
+
+FROM scratch AS archives
+COPY --from=fetch-pathway-archives /tmp/rna-pathway-sources/ /
+
+FROM ${M2_IMAGE} AS pathway-packages
+USER 0:0
+ENV MAKEFLAGS=-j2
+COPY containers/rna-kernel-2.0/r-pathway-sources.lock.json \
+    containers/rna-kernel-2.0/install-pathway-packages.R /tmp/
+RUN --network=none \
+    --mount=from=pathway-sources,source=/,target=/tmp/rna-pathway-sources,readonly \
+    Rscript --vanilla /tmp/install-pathway-packages.R install
+
+# Only the admitted library and its build lock enter the final runtime.
+FROM ${PATHWAY_R_IMAGE} AS retained-pathway-packages
+FROM ${M2_IMAGE} AS runtime
+COPY --from=retained-pathway-packages /opt/rna/pathway-R-library /opt/rna/pathway-R-library
+COPY --from=retained-pathway-packages /tmp/r-pathway-sources.lock.json \
+    /opt/rna/pathway-package-build.lock.json
+COPY containers/rna-kernel-2.0/r-pathway-sources.lock.json /opt/rna/
+COPY src/devbench/core/publication_families.py src/devbench/core/rna_pathway_analysis.py \
+    src/devbench/core/scientific_types.py \
+    /opt/rna/runtime/devbench/core/
+COPY devharness_server/__init__.py devharness_server/tools_rna_pathways.py \
+    /opt/rna/runtime/devharness_server/
+COPY devharness_server/r/rna_pathways.R /opt/rna/runtime/devharness_server/r/
+ENV R_LIBS_USER=/opt/rna/pathway-R-library:${R_LIBS_USER}
+RUN --network=none --mount=type=tmpfs,target=/tmp \
+    cmp /opt/rna/pathway-package-build.lock.json /opt/rna/r-pathway-sources.lock.json \
+ && Rscript --vanilla \
+    -e 'lock <- jsonlite::read_json("/opt/rna/r-pathway-sources.lock.json")' \
+    -e 'stopifnot(as.character(getRversion()) == lock$R)' \
+    -e 'for (item in lock$packages) stopifnot(utils::packageDescription(item$package, fields="Version") == item$version)' \
+    -e 'for (pkg in names(lock$base_packages)) stopifnot(utils::packageDescription(pkg, fields="Version") == lock$base_packages[[pkg]])' \
+    -e 'for (pkg in c("limma", unlist(lock$targets))) stopifnot(requireNamespace(pkg, quietly=TRUE))' \
+ && python3.13 -m rna_kernels.mounted_bulk --help > /dev/null \
+ && python3.13 -m rna_kernels.mounted_scrna --help > /dev/null \
+ && python3.13 -m devharness_server.tools_scrna_composition --help > /dev/null \
+ && python3.13 -m devharness_server.tools_rna_pathways --help > /dev/null

@@ -3,9 +3,11 @@ from copy import deepcopy
 
 import pytest
 
-from tests.test_scientific_workspace import tmp_path, action, settled
+from tests.test_scientific_workspace import action, settled, tmp_path as tmp_path
 from tests.test_langgraph_workflow import executable_rna
 from tests.support.workflow_science_fixtures import RecordingScientificRuntime
+
+__all__ = ['tmp_path']
 
 
 def advance(planner, plan, selector, method, **options):
@@ -194,6 +196,40 @@ def test_workspace_campaign_is_idempotent_and_never_accepts_data_grants(tmp_path
         assert not app.scientific.catalog()["runs"]
     finally:
         app.close()
+
+
+def test_population_advance_rejects_request_grant_without_startup_authority(tmp_path, monkeypatch):
+    app, plan, _, _ = rna_workspace(tmp_path)
+    try:
+        monkeypatch.setattr(app.scientific, "_plan", lambda _: {"scrna_population_input": {}})
+        monkeypatch.setattr(app.scientific, "_queue", lambda *a, **kw: pytest.fail("Unauthorized queue submission"))
+        app.allow_data_execution = False
+        with pytest.raises(PermissionError, match="startup data-execution permission"):
+            action(app, "advance_to_gate", session_id=plan["session_id"], idempotency_key="no-startup-grant",
+                   allow_data_execution=True)
+    finally:
+        app.close()
+
+
+@pytest.mark.parametrize("next_node,expected", [("verify", "active"), (None, "blocked"), ("unknown", "blocked")])
+def test_active_synthesis_uses_only_known_public_continuation_nodes(monkeypatch, next_node, expected):
+    from types import SimpleNamespace
+
+    from devbench.platform.scientific_workspace import ScientificWorkspace
+    from devbench.platform.workbench_investigations import InvestigationService
+
+    service = object.__new__(InvestigationService)
+    service.app = SimpleNamespace(scientific=object())
+    monkeypatch.setattr(service, "_synthesis_runtime", lambda _: ("synthetic", False, False))
+    record = {"id": "i", "revision": 1, "scientific_session_id": "session", "scientific_operations": [],
+              "scientific_plan": {"experiments": [{"status": "completed"}]}}
+    binding = {"investigation_id": "i", "next_node": next_node, "authorization": "retained-only"}
+    operation = ScientificWorkspace._operation_view({"status": "running", "operation_id": "op",
+        "created_at": "2026-01-01", "request": {"session_id": "session", "investigation_synthesis": binding}})
+    assert "authorization" not in operation["request"]["investigation_synthesis"]
+    result = service._synthesis_descriptor(record, catalog={"operations": [operation], "workflow_steps": []})
+    assert result["status"] == expected
+    assert result.get("next_node") == ("verify" if expected == "active" else None)
 
 
 def test_cancellation_and_missing_selector_stop_without_fabricated_stages(tmp_path):

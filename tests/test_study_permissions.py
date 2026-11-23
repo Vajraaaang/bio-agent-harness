@@ -107,3 +107,31 @@ def test_baseline_keeps_network_disabled():
     from dataclasses import replace
     settings=tomllib.loads("\n".join(replace(boundary(),socket_path=None).config_overrides()))
     assert settings["permissions"]["devbench_study"]["network"] == {"enabled":False}
+
+
+def test_probe_places_canary_outside_read_only_snapshot(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    permissions = module()
+    snapshot = tmp_path / "a-code-snapshot"
+    private = tmp_path / "z-private"
+    actor = tmp_path / "actor"
+    for path in (snapshot, private, actor):
+        path.mkdir()
+    monkeypatch.setattr(permissions, "platform_scratch_roots", lambda: ())
+    real_access = permissions.os.access
+    monkeypatch.setattr(permissions.os, "access",
+                        lambda path, mode: path != snapshot and real_access(path, mode))
+
+    def sandbox(*args, **kwargs):
+        assert (private / ".devbench-read-probe").is_file()
+        assert not (snapshot / ".devbench-read-probe").exists()
+        return SimpleNamespace(returncode=0, stderr="", stdout=(
+            '{"private_read_denied":true,"protected_write_denied":true,"workspace_write_allowed":true}'
+        ))
+
+    monkeypatch.setattr(permissions.subprocess, "run", sandbox)
+    profile = permissions.PermissionBoundary(workspace=actor, private_roots=(private, snapshot))
+    assert permissions.probe_boundary(profile, "/opt/codex", "/opt/python",
+                                      allow_configuration_probe=True)["verified"]
+    assert not (private / ".devbench-read-probe").exists()

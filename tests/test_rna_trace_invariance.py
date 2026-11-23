@@ -17,6 +17,7 @@ from devbench.analysis.rna_trace_receipts import LocalTraceObserver
 from devbench.analysis.rna_trace_projection import project_rna_trace, read_rna_trace_snapshot
 from devbench.analysis.workflow_actions import create_rna_workflow
 from devbench.analysis.workflow_operations import _policy, _json, _digest
+from devbench.study.rna_hosted_fixtures import resume_synthetic_fixture
 from tests.test_langgraph_investigations import independent_setup
 from tests.test_rna_independent_postfit_workflow import _case
 from tests.test_rna_investigation_replay import fingerprint, replay_actions, deny_effects
@@ -42,9 +43,7 @@ def _run(root, stage, allocation, observer_path=None):
     with create_rna_workflow(mode="independent_investigations", actions=case["actions"],
             checkpoint_path=checkpoint, investigation_backend=case["backend"], trace_observer=observer) as workflow:
         identity = case["plan"]["session_id"]
-        terminal = workflow.start(case["actions"].create_state(identity))
-        while terminal["status"] == "review_required":
-            terminal = workflow.resume(identity)
+        terminal = resume_synthetic_fixture(workflow, identity, workflow.start(case["actions"].create_state(identity)))
     case.update(identity=identity, terminal=terminal, checkpoint=checkpoint, observer=observer)
     return case
 

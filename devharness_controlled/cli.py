@@ -36,12 +36,15 @@ def _authority_export_targets(destinations, store_root):
 def _write_authority_export(target,value):
     from .contracts import canonical_json_bytes
     path,parent=target
-    pinned=os.fstat(parent); current=path.parent.stat()
+    pinned=os.fstat(parent)
+    current=path.parent.stat()
     if path.parent.resolve()!=path.parent or (pinned.st_dev,pinned.st_ino)!=(current.st_dev,current.st_ino):
         raise ValueError("Authority export parent changed")
     descriptor=os.open(path.name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o600,dir_fd=parent)
     with os.fdopen(descriptor,"wb") as handle:
-        handle.write(canonical_json_bytes(value));handle.flush();os.fsync(handle.fileno())
+        handle.write(canonical_json_bytes(value))
+        handle.flush()
+        os.fsync(handle.fileno())
     os.fsync(parent)
 
 
@@ -67,6 +70,9 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("identity", help="Print code/environment hashes for a new plan")
     commands.add_parser("native-identity", help="Print installed native candidate/container identities; does not download images")
+    erql = commands.add_parser("execute-erql", help="Execute a signed synthetic ERQL request in the pinned local image")
+    for option in ("plan", "approvals", "trust-registry", "request", "output"):
+        erql.add_argument("--" + option, type=Path, required=True)
     execute = commands.add_parser("execute", help="Execute an already signed synthetic/public plan")
     for option in ("plan", "approvals", "trust-registry", "counts", "metadata", "output"):
         execute.add_argument("--" + option, type=Path, required=True)
@@ -125,15 +131,25 @@ def main():
     try:
         authority_arguments={}
         if args.command in {"execute-native","submit-native"}:
-            if args.authority_store is not None:authority_arguments["authority_store_dir"]=args.authority_store.absolute()
-            if args.authority_administrators is not None:authority_arguments["authority_administrators"]=_json_file(args.authority_administrators,max_bytes=65536)
-            if args.authority_checkpoint is not None:authority_arguments["authority_checkpoint"]=_json_file(args.authority_checkpoint,checkpoint=True)
+            if args.authority_store is not None:
+                authority_arguments["authority_store_dir"]=args.authority_store.absolute()
+            if args.authority_administrators is not None:
+                authority_arguments["authority_administrators"]=_json_file(args.authority_administrators,max_bytes=65536)
+            if args.authority_checkpoint is not None:
+                authority_arguments["authority_checkpoint"]=_json_file(args.authority_checkpoint,checkpoint=True)
         if args.command == "identity":
             result = execution_identity()
             success = True
         elif args.command == "native-identity":
             from .native_runtime import native_identity
             result, success = native_identity(), True
+        elif args.command == "execute-erql":
+            from .erql_contracts import parse_erql_plan
+            from .native_executor import execute_erql_plan
+            plan = parse_erql_plan(_json_file(args.plan, checkpoint=True, max_bytes=8*1024**2))
+            result = execute_erql_plan(plan, _json_file(args.approvals), _json_file(args.trust_registry),
+                                       request_path=args.request, output_dir=args.output)
+            success = result["status"] == "analysis_complete_pending_review"
         elif args.command == "execute-native":
             from .native_contracts import load_native_plan
             from .native_executor import execute_native_plan
@@ -190,7 +206,8 @@ def main():
                 store=AuthorityStore(args.registry.absolute())
                 administrators=_json_file(args.administrators,max_bytes=65536)
                 destinations=[args.output.absolute()]
-                if args.command=="authority-export":destinations.append(args.checkpoint_output.absolute())
+                if args.command=="authority-export":
+                    destinations.append(args.checkpoint_output.absolute())
                 with _authority_export_targets(destinations,store.root) as targets:
                     if args.command=="authority-publish":
                         from .contracts import canonical_json_bytes
@@ -200,7 +217,8 @@ def main():
                         published_checkpoint=result
                         _write_authority_export(targets[0],result)
                     else:
-                        snapshot=store.capture();result=verify_authority_snapshot(snapshot,administrators)
+                        snapshot=store.capture()
+                        result=verify_authority_snapshot(snapshot,administrators)
                         _write_authority_export(targets[0],snapshot)
                         _write_authority_export(targets[1],_checkpoint(snapshot))
             success=True
@@ -220,7 +238,7 @@ def main():
             success = result["status"] == "analysis_complete_pending_review"
     except (ValueError, TypeError, OSError, KeyError, RuntimeError, sqlite3.Error) as error:
         result, success = {"status": "operation_failed", "error": str(error),
-                           "execution_may_have_started": args.command in {"execute", "execute-native", "submit-native", "recover-native"},
+                           "execution_may_have_started": args.command in {"execute", "execute-native", "execute-erql", "submit-native", "recover-native"},
                            "clinical_release_allowed": False}, False
         if args.command=="authority-publish":
             result["publication_may_have_committed"]=publication_started

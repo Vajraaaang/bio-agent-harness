@@ -319,7 +319,7 @@ def test_prelaunch_save_failure_counts_reservation_without_claiming_provider_act
         return save(*args, **kwargs)
     monkeypatch.setattr(backend.ledger, "reserve_model_call", retain_reservation)
     monkeypatch.setattr(planner, "_save", fail_before_activation)
-    with pytest.raises(OSError, match="synthetic-prelaunch-save-failure"):
+    with pytest.raises(ValueError, match=r"no automatic redispatch\. OSError: synthetic-prelaunch-save-failure"):
         generate(tmp_path, values)
     assert calls == [] and len(reservations) == 1
     row = backend.ledger.get_model_reservation(reservations[0])

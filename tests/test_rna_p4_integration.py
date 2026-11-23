@@ -4,6 +4,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import zipfile
@@ -165,7 +166,8 @@ def test_retained_coordinator_handoff_does_not_forward_new_flags(tmp_path, monke
     assert len(calls) == 1
     assert calls[0][0][0] == [sys.executable, '-m', 'devbench.analysis.workbench', *argv]
     assert calls[0][1]['cwd'] == original / 'source'
-    assert calls[0][1]['env']['PYTHONPATH'] == str(original / 'source')
+    assert calls[0][1]['env']['PYTHONPATH'].split(os.pathsep) == [
+        str(original / 'source/src'), str(original / 'source')]
 
 
 def test_replay_cli_retains_runtime_failure_before_any_execution(tmp_path, monkeypatch):
@@ -198,7 +200,8 @@ def test_replay_cli_reports_equivalence_separately_after_bound_preparation(tmp_p
     from devbench.analysis.bundles import seal_bundle, verify_bundle
     _statistics(original, declared, rows())
     original_root = seal_bundle(original, status='completed_review_passed')['manifest_sha256']
-    monkeypatch.setattr(workbench, '__file__', str(original / 'source/devbench/analysis/workbench.py'))
+    # Simulate entering the retained coordinator after the source-bound handoff.
+    monkeypatch.setattr(workbench, 'PROJECT_ROOT', original / 'source')
     def execute(root):
         _statistics(root, declared, list(reversed(rows())), pretty=True)
         result = seal_bundle(root, status='completed_review_passed')

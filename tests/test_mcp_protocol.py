@@ -1,6 +1,7 @@
 """Real local stdio contract checks; no model participant or clinical inputs."""
 import asyncio
 import json
+import subprocess
 import sys
 from datetime import timedelta
 
@@ -35,9 +36,13 @@ def test_stdio_declares_strict_inputs_and_structured_outputs(tmp_path):
     async def check(session):
         actual = {tool.name: tool for tool in (await session.list_tools()).tools}
         expected = {tool["name"]: tool for tool in ToolDispatcher().get_schemas()}
-        assert set(actual) == set(expected) and len(actual) == 11
+        assert set(actual) == set(expected) and len(actual) == 15
+        assert {"scrna_population_audit", "scrna_population_design",
+                "scrna_population_pseudobulk", "scrna_population_contrast"} <= set(actual)
         assert set(actual["bulk_condition_contrast"].inputSchema["required"]) == {
             "counts_path", "metadata_path", "public_task", "options"}
+        compact = actual["compact_temporal_state"].inputSchema["properties"]["data_type"]
+        assert compact["default"] == "auto" and set(compact["enum"]) == {"auto", "counts", "continuous"}
         for name, tool in actual.items():
             assert tool.inputSchema.get("additionalProperties") is False, name
             assert tool.inputSchema["required"] == expected[name]["inputSchema"]["required"]
@@ -133,3 +138,44 @@ def test_raw_dispatcher_failures_and_success_remain_captured():
         assert events[0]["succeeded"] is False
         assert events[1]["succeeded"] is True
     asyncio.run(asyncio.wait_for(check(), timeout=30))
+
+
+def test_staged_sdk_explicitly_refuses_coordinator_tools(workspace_tmp_path):
+    from devbench.staging import stage_python
+
+    runtime = stage_python(workspace_tmp_path)
+    probe = '''
+from devharness_server.dispatcher import ToolDispatcher, capture_tool_events
+
+dispatcher = ToolDispatcher()
+assert len(dispatcher.get_schemas()) == 10
+with capture_tool_events() as events:
+    try:
+        dispatcher.execute("bulk_condition_contrast", {})
+    except PermissionError as error:
+        assert "governed coordinator runtime" in str(error)
+    else:
+        raise AssertionError("Coordinator tool was admitted")
+    assert events[0]["succeeded"] is False
+    assert events[0]["error"].startswith("PermissionError:")
+
+try:
+    dispatcher.register(lambda: {}, name="custom_tool")
+except PermissionError:
+    pass
+else:
+    raise AssertionError("Unregistered participant implementation was admitted")
+assert len(dispatcher.get_schemas()) == 10
+dispatcher.tools["bulk_condition_contrast"] = lambda: {"unsafe": True}
+try:
+    dispatcher.execute("bulk_condition_contrast", {})
+except PermissionError:
+    del dispatcher.tools["bulk_condition_contrast"]
+else:
+    raise AssertionError("Registry table alone conferred admission")
+assert '"direction":"increasing"' in dispatcher.execute(
+    "calculate_temporal_monotonicity", {"stage_values": {"E8.5": 1, "E10.5": 2}})
+'''
+    result = subprocess.run([runtime["python"], "-I", "-c", probe], cwd=workspace_tmp_path,
+                            capture_output=True, text=True, timeout=25)
+    assert result.returncode == 0, result.stderr

@@ -128,6 +128,54 @@ def test_fixed_dispersion_nb_matches_closed_form_likelihood_and_contrast(fit_pat
     assert reverse_p == pytest.approx(p_value)
 
 
+def test_exploratory_nb_uses_residual_df_t_reference():
+    from scipy.stats import t
+
+    from devbench.study.biology_tools_bulk import _fit_given_calibration, _linear_estimate
+
+    values = np.array([8, 12, 36, 44, 16, 24, 76, 84])
+    factors = np.array([0.5, 0.5, 2, 2] * 2)
+    design = np.column_stack([np.ones(8), np.repeat([0, 1], 4)])
+    fit = _fit_given_calibration(values, design, alpha=0.2, offset=np.log(factors))
+    effect, intervals, p_value = _linear_estimate(fit, [0, 1], discrete=True, count_reference="residual_df")
+    se = math.sqrt(9 / 140 + 17 / 296) / math.log(2)
+    half_width = t.ppf(0.975, 6) * se
+    assert effect == pytest.approx([1.0])
+    assert p_value == pytest.approx(2 * t.sf(1 / se, 6))
+    assert intervals[0]["lower"] == pytest.approx(1 - half_width)
+    assert intervals[0]["upper"] == pytest.approx(1 + half_width)
+
+
+def test_streamed_count_calibration_has_one_reference_across_blocks():
+    from rna_kernels.normalization import calibrate_count_family, calibrate_counts
+
+    rng = np.random.default_rng(1284)
+    means = rng.uniform(30, 200, size=(25, 1)) * np.linspace(.8, 1.2, 18)
+    values = rng.negative_binomial(5, 5 / (5 + means))
+    values[-1] = [1, *([0] * 17)]
+    names = [f"g{index}" for index in range(len(values))]
+    metadata = pd.DataFrame({"condition": np.repeat(["A", "B"], 9)},
+                            index=[f"sample{index}" for index in range(18)])
+    design = pd.DataFrame({"Intercept": 1, "B": metadata["condition"] == "B"}, dtype=float)
+    panel = {"gene_ids": names[:20], "panel_gene_count": 20, "total_gene_count": len(names)}
+    reference = calibrate_counts(values[:20], panel, metadata, design, strict=False)
+    outputs = []
+    for block_size in (3, 7):
+        blocks = ((names[i:i + block_size], values[i:i + block_size])
+                  for i in range(0, len(values), block_size))
+        outputs.append(calibrate_count_family(blocks, reference, metadata, design, strict=False))
+    for adjusted in outputs:
+        calibration, _, _, filtered = adjusted
+        assert calibration["prior_log_dispersion_variance"] == reference[2]["prior_log_dispersion_variance"]
+        assert calibration["panel_gene_count"] == 20
+        assert set(filtered) == {"g24"}
+        assert calibration["gene_estimates"]["g23"]["dispersion_converged"] is True
+        assert calibration["gene_estimates"]["g23"]["dispersion_alpha"] > 0
+    for field in ("genewise_dispersion", "dispersion_alpha", "trend_dispersion"):
+        assert outputs[0][0]["gene_estimates"]["g23"][field] == pytest.approx(
+            outputs[1][0]["gene_estimates"]["g23"][field])
+
+
 def _observed(values, records, *, measurement="umi_counts"):
     """Only literal in-memory inputs; no loader, annotations or data acquisition."""
     metadata = pd.DataFrame(records)
@@ -145,6 +193,66 @@ def _observed(values, records, *, measurement="umi_counts"):
         unit_hierarchy={"population_unit": "donor", "population_unit_label": "donor_id",
                         "specimen_label": "specimen_id", "library_label": "library_id",
                         "identity_status": "declared_synthetic"})
+
+
+def test_bulk_family_uses_bounded_calibration_when_above_panel_byte_ceiling(monkeypatch):
+    from devbench.core.family_fitting import _fit_family
+    from rna_kernels import normalization
+
+    rng = np.random.default_rng(1411)
+    values = rng.negative_binomial(5, .055, size=(25, 18))
+    values[-1] = [1, *([0] * 17)]
+    data = _observed(values, [{"condition": "A" if i < 9 else "B"} for i in range(18)])
+    design = pd.DataFrame({"Intercept": 1, "condition_B": data.metadata["condition"] == "B"}, dtype=float)
+    monkeypatch.setattr(normalization, "MAX_PANEL_BYTES", 20 * 18 * 8)
+    monkeypatch.setattr(normalization, "MAX_BLOCK_BYTES", 6 * 18 * 8)
+    diagnostics = {}
+    fits, failures = _fit_family(data, design, diagnostics)
+    calibration = diagnostics["calibration"]
+    assert calibration["panel_gene_count"] == 20
+    assert calibration["calibration_scope"] == "one_reference_for_all_gene_blocks"
+    assert failures["g24"] == "independent_low_count_filter"
+    assert "g24" not in fits
+    assert set(fits) | set(failures) == set(data.gene_ids)
+    assert set(fits) - set(calibration["gene_ids"])
+    assert diagnostics["normalization"]["library_size_gene_count"] == len(data.gene_ids)
+
+
+@pytest.mark.parametrize(("extra_specimen", "extra_library", "source_sample_id", "error"), [
+    ("different-A-specimen", "another-library", "c4", "paired_fixed_block_requires_one_specimen_per_unit_condition"),
+    ("d0-A", "another-library", "c0", "paired_fixed_block_requires_unique_source_observations"),
+    ("d0-A", " library-d1-A ", "c4", "library_crosses_specimens"),
+    ("d0-A", "library-d0-A", "c4", None),
+    ("d0-A", " library-d0-A ", "c4", None),
+    ("d0-A", "another-library", "c4", None),
+])
+def test_paired_bulk_combines_distinct_source_observations_from_one_specimen(extra_specimen, extra_library, source_sample_id, error):
+    from devbench.study.biology_tools_bulk import _independent_view
+
+    records = [dict(donor_id=unit, condition=condition, specimen_id=f"{unit}-{condition}",
+                    library_id=f"library-{unit}-{condition}")
+               for unit in ("d0", "d1") for condition in ("A", "B")]
+    records.append(dict(donor_id="d0", condition="A", specimen_id=extra_specimen, library_id=extra_library))
+    data = _observed([[10, 20, 30, 40, 5]], records, measurement="raw_counts")
+    metadata = data.metadata.copy()
+    metadata.loc["c4", "sample_id"] = source_sample_id
+    metadata = metadata.set_index("sample_id", drop=False)
+    data = replace(data, metadata=metadata, sample_ids=tuple(metadata.index))
+    settings = {"block_cols": ["donor_id"], "reference_condition": "A", "comparison_condition": "B"}
+    if error:
+        with pytest.raises(ValueError, match=error):
+            _independent_view(data, ["condition"], settings=settings)
+        return
+    view, audit = _independent_view(data, ["condition"], settings=settings)
+    np.testing.assert_array_equal(view.expression, [[15, 20, 30, 40]])
+    np.testing.assert_array_equal(data.expression, [[10, 20, 30, 40, 5]])
+    assert list(view.metadata["condition"]) == ["A", "B", "A", "B"]
+    assert audit["analysis_unit_count"] == 2
+    assert audit["analysis_observation_count"] == 4
+    assert audit["library_count"] == (4 if extra_library.strip() == "library-d0-A" else 5)
+    assert audit["technical_combination_basis"] == "declared_specimen_and_library_memberships"
+    assert audit["technical_combinations"] == [{"analysis_observation_id": "c0", "specimen_id": "d0-A",
+        "source_sample_ids": ["c0", "c4"], "library_ids": ["library-d0-A", extra_library]}]
 
 
 def test_pseudobulk_matches_exact_unequal_cell_and_specimen_sums():

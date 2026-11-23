@@ -1,11 +1,30 @@
 import hashlib
+import subprocess
+import sys
 
-import anndata as ad
 import h5py
 import numpy as np
-import pandas as pd
 import pytest
 from scipy import sparse
+
+
+def test_thread_configuration_preserves_initialized_numba_pool(monkeypatch):
+    pytest.importorskip("numba")
+    monkeypatch.setenv("NUMBA_NUM_THREADS", "2")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import numba, os\n"
+            "from devbench.analysis.resources import configure_threads\n"
+            "assert numba.get_num_threads() == 2\n"
+            "configure_threads()\n"
+            "numba.core.config.reload_config()\n"
+            "assert os.environ['NUMBA_NUM_THREADS'] == '2'",
+        ],
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def write_tenx(path, data=None, *, antibody=True):
@@ -18,7 +37,9 @@ def write_tenx(path, data=None, *, antibody=True):
     kinds = ['Gene Expression']*len(genes)
     if antibody:
         matrix = sparse.hstack([matrix, np.full((data.n_obs,1), 10000)], format='csr')
-        genes.append('Antibody-id'); symbols.append('Cd3d'); kinds.append('Antibody Capture')
+        genes.append('Antibody-id')
+        symbols.append('Cd3d')
+        kinds.append('Antibody Capture')
     with h5py.File(path,'w') as handle:
         group=handle.create_group('matrix')
         group.create_dataset('shape',data=np.array(matrix.shape[::-1],dtype=np.uint64))
@@ -81,7 +102,8 @@ def test_tenx_gene_ids_and_barcodes_must_be_unique(tmp_path):
 def test_tenx_QC_uses_only_RNA_library_counts(tmp_path):
     from devbench.analysis.checkpoints import CheckpointStore,sha256
     from devbench.analysis.streaming import stream_qc,read_table
-    path=tmp_path/'counts.h5';original=write_tenx(path)
+    path = tmp_path / 'counts.h5'
+    original = write_tenx(path)
     store=CheckpointStore(tmp_path/'checkpoints',{'data':sha256(path)})
     stream_qc(path,store,layer='counts',batch_key='batch',min_genes=3,mad_limit=None)
     metrics=read_table(store.path('qc')/'metrics.csv')
@@ -95,9 +117,11 @@ def test_single_library_does_not_pretend_to_run_Harmony(tmp_path):
     from tests.test_analysis_singlecell import counts_fixture
     import scanpy as sc
     import json
-    data=counts_fixture();data.obs['batch']='one'
+    data = counts_fixture()
+    data.obs['batch'] = 'one'
     data.layers['counts']=data.X.copy()
-    sc.pp.normalize_total(data,target_sum=1e4);sc.pp.log1p(data)
+    sc.pp.normalize_total(data, target_sum=1e4)
+    sc.pp.log1p(data)
     store=CheckpointStore(tmp_path/'checkpoints',{})
     store.run('selected',lambda folder:data.write_h5ad(folder/'selected.h5ad'))
     conditions=run_embedding_stages(store,batch_key='batch',seed=128,correction='harmony',n_pcs=8)
@@ -114,7 +138,7 @@ def test_tenx_notebook_produces_reviewed_annotations_without_fabricated_batch_ru
     source=tmp_path/'counts.h5'
     write_tenx(source)
     parameters=default_parameters(data_sha256=sha256(source),min_genes=3,mad_limit=None,
-        n_top_genes=30,n_pcs=8,seed=128,
+        n_top_genes=30,n_pcs=8,seed=128,correction='harmony',
         markers={'T cell':['Cd3d','Cd3e','Trac','Il7r'], 'B cell':['Ms4a1','Cd79a','Cd79b','Cd19']})
     root=tmp_path/'bundle'
     prepare_bundle(source,root,parameters)

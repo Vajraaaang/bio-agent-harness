@@ -175,7 +175,7 @@ def test_within_pair_nuisance_disagreement_is_not_hidden_by_aggregation():
     assert 'repeated_units_across_design_coordinates_require_cluster_model' in audit['blockers']
 
 
-def test_paired_design_reaches_existing_durable_workflow_and_registered_core():
+def test_paired_design_reaches_existing_durable_workflow_and_registered_core(workspace_tmp_path):
     """The future authorized route is executable today with offline synthetic decisions."""
     from devbench.analysis.method_planner import ScientificMethodPlanner
     from devbench.analysis.rna_execution_inputs import load_execution_inputs
@@ -185,8 +185,7 @@ def test_paired_design_reaches_existing_durable_workflow_and_registered_core():
     from tests.support.workflow_science_fixtures import RecordingScientificRuntime
     from devharness_core.provenance import canonical_json
 
-    evidence_root = Path(__file__).resolve().parents[1] / 'reports' / 'rna-process-2026-10-28'
-    root = Path(tempfile.mkdtemp(prefix='paired-workflow-', dir=evidence_root))
+    root = workspace_tmp_path
     methods, binding, declaration, parameters, _ = _inputs(root, continuous=False)
     def pair(document):
         for i, row in enumerate(document['samples']):

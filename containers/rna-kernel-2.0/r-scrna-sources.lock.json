@@ -1,0 +1,390 @@
+{
+  "format": "devbench.rna-kernel-scrna-r-sources/1",
+  "R": "4.6.1",
+  "BiocVersion": "3.23.1",
+  "base_lock_sha256": "a2d4fd4dd204f4d371f78d63896ceaa053af784b930e457b8aca7ee8a389df5d",
+  "targets": [
+    "DropletUtils",
+    "scran"
+  ],
+  "base_packages": {
+    "BH": "1.90.0-1",
+    "BiocGenerics": "0.58.1",
+    "BiocParallel": "1.46.0",
+    "DelayedArray": "0.38.2",
+    "GenomicRanges": "1.64.0",
+    "IRanges": "2.46.0",
+    "Matrix": "1.7-6",
+    "MatrixGenerics": "1.24.0",
+    "R.utils": "2.13.0",
+    "Rcpp": "1.1.2",
+    "Rhdf5lib": "2.0.0",
+    "S4Arrays": "1.12.1",
+    "S4Vectors": "0.50.3",
+    "SparseArray": "1.12.3",
+    "SummarizedExperiment": "1.42.0",
+    "cli": "3.6.6",
+    "cluster": "2.1.8.3",
+    "cpp11": "0.5.5",
+    "edgeR": "4.10.7",
+    "grDevices": "4.6.1",
+    "graphics": "4.6.1",
+    "irlba": "2.4.1",
+    "lifecycle": "1.0.5",
+    "limma": "3.68.5",
+    "magrittr": "2.0.5",
+    "matrixStats": "1.5.0",
+    "methods": "4.6.1",
+    "pkgconfig": "2.0.3",
+    "rhdf5": "2.56.1",
+    "rhdf5filters": "1.24.1",
+    "rlang": "1.3.0",
+    "statmod": "1.5.2",
+    "stats": "4.6.1",
+    "tools": "4.6.1",
+    "utils": "4.6.1",
+    "vctrs": "0.7.3"
+  },
+  "packages": [
+    {
+      "package": "BiocNeighbors",
+      "version": "2.6.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "Rcpp",
+        "assorthead",
+        "beachmat",
+        "methods"
+      ],
+      "sha256": "2a6dbae3f7877777730c4377eedfadfafbf597d5aef378a2eb8f3155c645f98d",
+      "size": 344668
+    },
+    {
+      "package": "BiocSingular",
+      "version": "1.28.1",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "BiocParallel",
+        "DelayedArray",
+        "Matrix",
+        "Rcpp",
+        "S4Vectors",
+        "ScaledMatrix",
+        "assorthead",
+        "beachmat",
+        "irlba",
+        "methods",
+        "rsvd",
+        "utils"
+      ],
+      "sha256": "deb8071b167bb359328433639cb6e5f0269ec924aa4e5c4977f90ea6f91e9612",
+      "size": 617213
+    },
+    {
+      "package": "DelayedMatrixStats",
+      "version": "1.34.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "DelayedArray",
+        "IRanges",
+        "Matrix",
+        "MatrixGenerics",
+        "S4Vectors",
+        "SparseArray",
+        "methods",
+        "sparseMatrixStats"
+      ],
+      "sha256": "038e347153cd0ecc3800ac131918928224a011767434256ff6a80ffc476d0d1c",
+      "size": 270714
+    },
+    {
+      "package": "DropletUtils",
+      "version": "1.32.1",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BH",
+        "BiocGenerics",
+        "BiocParallel",
+        "DelayedArray",
+        "DelayedMatrixStats",
+        "GenomicRanges",
+        "HDF5Array",
+        "IRanges",
+        "Matrix",
+        "R.utils",
+        "Rcpp",
+        "Rhdf5lib",
+        "S4Vectors",
+        "SingleCellExperiment",
+        "SparseArray",
+        "SummarizedExperiment",
+        "assorthead",
+        "beachmat",
+        "dqrng",
+        "edgeR",
+        "methods",
+        "rhdf5",
+        "scuttle",
+        "stats",
+        "utils"
+      ],
+      "sha256": "7eb51272528522fcd23ea142f6642cb27794c79632e7a7f58f77b572cd809a7c",
+      "size": 606936
+    },
+    {
+      "package": "HDF5Array",
+      "version": "1.40.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "DelayedArray",
+        "IRanges",
+        "Matrix",
+        "S4Arrays",
+        "S4Vectors",
+        "SparseArray",
+        "h5mread",
+        "methods",
+        "rhdf5",
+        "stats",
+        "tools",
+        "utils"
+      ],
+      "sha256": "6ae65928e411a751f0ca3331c1ba20feca39389bcde08b3a4542dbbee5f12dcf",
+      "size": 8354728
+    },
+    {
+      "package": "ScaledMatrix",
+      "version": "1.20.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "DelayedArray",
+        "Matrix",
+        "S4Vectors",
+        "methods"
+      ],
+      "sha256": "d3c5248484dd00044a462672636e6a4b729cdf37b472d6a899138e8ccb60350e",
+      "size": 313745
+    },
+    {
+      "package": "SingleCellExperiment",
+      "version": "1.34.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "DelayedArray",
+        "GenomicRanges",
+        "S4Vectors",
+        "SummarizedExperiment",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "sha256": "08641f36f0cf6085cd91ac6087c1a5ff872bd0cf13bd1e354c5b6f2c47e44a91",
+      "size": 986276
+    },
+    {
+      "package": "assorthead",
+      "version": "1.6.4",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [],
+      "sha256": "a0ef3e48a205c6e70294dda8c113eda0e349db546946a5581c71e84b0d67444d",
+      "size": 2160747
+    },
+    {
+      "package": "beachmat",
+      "version": "2.28.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "DelayedArray",
+        "Matrix",
+        "Rcpp",
+        "SparseArray",
+        "assorthead",
+        "methods"
+      ],
+      "sha256": "2b320384995defad9929f26a81a3d152aec4e26ac3813833c591b33939c4453b",
+      "size": 381270
+    },
+    {
+      "package": "bluster",
+      "version": "1.22.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocNeighbors",
+        "BiocParallel",
+        "Matrix",
+        "Rcpp",
+        "S4Vectors",
+        "assorthead",
+        "cluster",
+        "igraph",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "sha256": "2d900372822e338b74c8dccc93a3a6879f5e116399c77ce86e2251124be6c038",
+      "size": 3205768
+    },
+    {
+      "package": "dqrng",
+      "version": "0.4.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "BH",
+        "Rcpp",
+        "sitmo"
+      ],
+      "sha256": "3d9df935020c3c2538bc712456079925c4b379d67407c83fbc008340e353288f",
+      "size": 267023
+    },
+    {
+      "package": "h5mread",
+      "version": "1.4.1",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "IRanges",
+        "Rhdf5lib",
+        "S4Arrays",
+        "S4Vectors",
+        "SparseArray",
+        "methods",
+        "rhdf5",
+        "rhdf5filters",
+        "stats",
+        "tools"
+      ],
+      "sha256": "855891f46162f3ece2917b5b3e601310dc284d4a42e29f5f991cf43961009580",
+      "size": 2484060
+    },
+    {
+      "package": "igraph",
+      "version": "2.3.4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Matrix",
+        "cli",
+        "cpp11",
+        "grDevices",
+        "graphics",
+        "lifecycle",
+        "magrittr",
+        "methods",
+        "pkgconfig",
+        "rlang",
+        "stats",
+        "utils",
+        "vctrs"
+      ],
+      "sha256": "38b114f4ebc9b61af6c29a56d72a2329cd08191e4b3612df4f184c519ee60740",
+      "size": 5052645
+    },
+    {
+      "package": "metapod",
+      "version": "1.20.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "Rcpp"
+      ],
+      "sha256": "eb828d663770dfd8820c7966f55b65ccb35c78bfc9fbd76a0c63a658238c7087",
+      "size": 332289
+    },
+    {
+      "package": "rsvd",
+      "version": "2.0.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Matrix",
+        "methods"
+      ],
+      "sha256": "975d0a33073b7eb865c36044c3414e4eb6bb61ee63064784657169c5fa5a2229",
+      "size": 5931162
+    },
+    {
+      "package": "scran",
+      "version": "1.40.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BH",
+        "BiocGenerics",
+        "BiocParallel",
+        "BiocSingular",
+        "DelayedArray",
+        "Matrix",
+        "MatrixGenerics",
+        "Rcpp",
+        "S4Arrays",
+        "S4Vectors",
+        "SingleCellExperiment",
+        "SummarizedExperiment",
+        "beachmat",
+        "bluster",
+        "dqrng",
+        "edgeR",
+        "igraph",
+        "limma",
+        "metapod",
+        "methods",
+        "scuttle",
+        "statmod",
+        "stats",
+        "utils"
+      ],
+      "sha256": "23dafecbdb5d8abc019756aa1747cf1e6a3617be2f6a15392ddd93c95e56746d",
+      "size": 821164
+    },
+    {
+      "package": "scuttle",
+      "version": "1.22.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "BiocParallel",
+        "DelayedArray",
+        "GenomicRanges",
+        "Matrix",
+        "MatrixGenerics",
+        "Rcpp",
+        "S4Arrays",
+        "S4Vectors",
+        "SingleCellExperiment",
+        "SparseArray",
+        "SummarizedExperiment",
+        "assorthead",
+        "beachmat",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "sha256": "b0c39e22d3386b227b4e24f34fcea4838192fc4474b93c85c7866713853d7b90",
+      "size": 432325
+    },
+    {
+      "package": "sitmo",
+      "version": "2.0.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Rcpp"
+      ],
+      "sha256": "448ef8d56e36783354011845daf33f1efb83ea3b9685eea75eaf5134e24fa8c2",
+      "size": 132964
+    },
+    {
+      "package": "sparseMatrixStats",
+      "version": "1.24.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "Matrix",
+        "MatrixGenerics",
+        "Rcpp",
+        "matrixStats",
+        "methods"
+      ],
+      "sha256": "4ca8dc253f0630eb4d85a8ba850aa3f3cbb885f3493971a435241d464cfa2564",
+      "size": 704209
+    }
+  ]
+}

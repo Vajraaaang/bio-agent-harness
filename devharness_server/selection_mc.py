@@ -377,7 +377,7 @@ class GaussianSelectionMC:
             self._reference_hash = reference_hash
             self._reference_probabilities = reference
             self._reference_status = "completed"
-        except BaseException as error:
+        except (Exception, KeyboardInterrupt, SystemExit, GeneratorExit) as error:
             self._reference_probabilities = None
             self._reference_hash = None
             self._reference_status = "failed"

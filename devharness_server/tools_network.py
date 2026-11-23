@@ -7,15 +7,27 @@ import csv
 import math
 from numbers import Real
 from pathlib import Path
-from typing import List
+from typing import List, Literal, Optional, TypedDict
 
 import numpy as np
 
+from devharness_core.normalization import count_like, log1p_counts_per_10k
 from devharness_core.stages import parse_stages
 from devharness_core.storage import ChunkedExpressionStore
+from devharness_core.units import BIOLOGICAL_UNIT_COLUMNS, biological_identity_audit, declared_unit_counts
 from devharness_core.watchdog import run_sandboxed
 from devharness_server.tools_lineage import _bounded_int, _bounded_metadata, _file_sha256, _matrix_sha256
 from devharness_server.tools_stat import _diagnostics, bh_adjust
+
+_REPLICATE_IDENTITY_COLUMNS = frozenset((*BIOLOGICAL_UNIT_COLUMNS, "donor", "subject"))
+
+
+class _NetworkEdge(TypedDict):
+    tf: str
+    target: str
+    score: float
+    coefficient: float
+    sign: int
 
 
 def _genes(values: List[str], name: str, maximum: int = 100000) -> List[str]:
@@ -28,13 +40,76 @@ def _genes(values: List[str], name: str, maximum: int = 100000) -> List[str]:
     return values
 
 
+def _count_library_sizes(store: ChunkedExpressionStore, data_type: str) -> Optional[np.ndarray]:
+    if data_type == "continuous":
+        return None
+    totals = np.zeros(store.shape[1], dtype=float)
+    for _, values in store.iter_gene_chunks(128):
+        if not np.isfinite(values).all():
+            raise ValueError("Expression used to assess count library sizes must be finite")
+        if not count_like(values):
+            if data_type == "counts":
+                raise ValueError("declared counts require nonnegative integer-valued expression")
+            return None
+        with np.errstate(over="ignore"):
+            totals += values.sum(axis=0, dtype=float)
+    if not np.isfinite(totals).all() or np.any(totals <= 0):
+        raise ValueError("Count network inference requires finite positive library sizes for all samples")
+    return totals
+
+
+def _require_replicate_identity_column(column: Optional[str]) -> None:
+    if not isinstance(column, str) or column.casefold() not in _REPLICATE_IDENTITY_COLUMNS:
+        supported = ", ".join(sorted(_REPLICATE_IDENTITY_COLUMNS))
+        raise ValueError("replicate_col requires one of these biological identity columns (" + supported + ")")
+
+
+def _replicate_pairs(expression, metadata, replicate_col, times, stages, lag):
+    _require_replicate_identity_column(replicate_col)
+    if replicate_col not in metadata:
+        raise ValueError("replicate_col must identify a declared biological identity column")
+    units = metadata[replicate_col].astype("string").str.strip()
+    identity = biological_identity_audit(
+        metadata.assign(**{replicate_col: units}).to_dict(orient="records"), replicate_col,
+    )
+    if identity["problems"]:
+        raise ValueError("Incomplete or split biological identities: " + ", ".join(identity["problems"]))
+
+    past, future, weights = [], [], []
+    unit_ids = units.to_numpy()
+    positions = np.searchsorted(stages, times)
+    unique_units = sorted(set(unit_ids))
+    for unit in unique_units:
+        included = unit_ids == unit
+        observed = np.unique(positions[included])
+        means = {stage: expression[:, included & (positions == stage)].mean(axis=1) for stage in observed}
+        pairs = [(means[stage], means[stage + lag]) for stage in observed if stage + lag in means]
+        # A single lagged pair cannot identify variation within a unit.
+        if len(pairs) < 2:
+            continue
+        x, y = map(np.asarray, zip(*pairs))
+        past.append(x - x.mean(axis=0))
+        future.append(y - y.mean(axis=0))
+        weights.append(np.full(len(pairs), 1 / len(pairs)))
+    if len(past) < 2:
+        raise ValueError("Replicate-aware association requires two declared units with at least two lagged pairs each")
+    return np.concatenate(past), np.concatenate(future), np.concatenate(weights), {
+        "replicate_col": replicate_col,
+        "participating_replicates": len(past),
+        "replicates_excluded_for_insufficient_pairs": len(unique_units) - len(past),
+        "replicate_weighting": "equal_total_weight_per_declared_unit",
+        "same_unit_and_time_summary": "mean_log_expression",
+    }
+
+
 def _network_worker(counts_path: str, metadata_path: str, candidate_tfs: List[str],
                     target_genes: List[str], time_col: str, lag: int, alpha: float,
-                    max_cells: int, max_edges: int) -> dict:
+                    max_cells: int, max_edges: int, data_type: str = "auto",
+                    aggregation: str = "time_mean", replicate_col: Optional[str] = None) -> dict:
     from sklearn.linear_model import Ridge
     from sklearn.preprocessing import StandardScaler
 
-    metadata = _bounded_metadata(metadata_path)
+    metadata = _bounded_metadata(metadata_path, (replicate_col,) if replicate_col else ())
     if time_col not in metadata:
         raise ValueError("Metadata is missing requested time_col: " + time_col)
     genes = list(dict.fromkeys(candidate_tfs + target_genes))
@@ -48,47 +123,68 @@ def _network_worker(counts_path: str, metadata_path: str, candidate_tfs: List[st
         missing = sorted(set(genes) - lookup.keys())
         if missing:
             raise ValueError("Unknown gene: " + ", ".join(missing[:10]))
+        library_sizes = _count_library_sizes(store, data_type)
         expression = np.asarray(store.get_chunk([lookup[gene] for gene in genes], slice(None)), dtype=float)
-    if not np.isfinite(expression).all():
-        raise ValueError("Requested expression must contain finite values")
+    if not np.isfinite(expression).all() or (library_sizes is not None and not count_like(expression)):
+        raise ValueError("Requested expression must contain finite values consistent with the resolved scale")
     metadata = metadata.set_index("sample_id").loc[samples]
     times = parse_stages(metadata[time_col])
     stages = np.unique(times)
     if len(stages) < lag + 3:
         raise ValueError("Lagged association requires at least three time pairs after the requested lag")
-    is_counts = bool(np.all(expression >= 0) and np.all(expression == np.floor(expression)))
     selected_hash = _matrix_sha256(expression, genes, samples)
-    transformed = np.log1p(expression) if is_counts else expression
-    # Replicates are independent samples, not paired cell trajectories. Average
-    # within observed time, then associate previous-time TF means with later
-    # target means. Lag counts observed intervals, not equal physical durations.
-    means = np.asarray([transformed[:, times == stage].mean(axis=1) for stage in stages])
-    if not np.isfinite(means).all():
+    transformed = log1p_counts_per_10k(expression, library_sizes) if library_sizes is not None else expression
+    unit_counts, incomplete_units = declared_unit_counts(metadata)
+    weights, replicate_provenance = None, {}
+    if aggregation == "replicate":
+        past, future, weights, replicate_provenance = _replicate_pairs(
+            transformed, metadata, replicate_col, times, stages, lag,
+        )
+    else:
+        if aggregation == "sample":
+            if len(stages) != len(samples):
+                raise ValueError("Sample ordering requires unique time or pseudotime coordinates")
+            if any(count < len(samples) for count in unit_counts.values()):
+                raise ValueError("Sample ordering crosses repeated biological identities; use replicate aggregation")
+            ordered = transformed[:, np.argsort(times)].T
+        else:
+            # This legacy summary weights observed profiles by stage without an
+            # independence claim or a pairing across unrelated samples.
+            ordered = np.asarray([transformed[:, times == stage].mean(axis=1) for stage in stages])
+        past, future = ordered[:-lag], ordered[lag:]
+    if not np.isfinite(past).all() or not np.isfinite(future).all():
         raise ValueError("Temporal aggregation overflowed; rescale expression")
     gene_index = {gene: i for i, gene in enumerate(genes)}
-    edges, constant_targets, constant_tfs, diagnostics = [], [], [], {}
+    edges: list[_NetworkEdge] = []
+    constant_targets: list[str] = []
+    constant_tfs: list[str] = []
+    diagnostics = {}
     for target in target_genes:
         tfs = [tf for tf in candidate_tfs if tf != target]
         if not tfs:
             continue
-        x = means[:-lag, [gene_index[tf] for tf in tfs]]
-        y = means[lag:, gene_index[target]]
-        variable = np.std(x, axis=0) > 1e-12
+        x = past[:, [gene_index[tf] for tf in tfs]]
+        y = future[:, gene_index[target]].reshape(-1, 1)
+        scaler_x = StandardScaler().fit(x, sample_weight=weights)
+        scaler_y = StandardScaler().fit(y, sample_weight=weights)
+        variable = scaler_x.var_ > 1e-24
         constant_tfs.extend(tf for tf, varies in zip(tfs, variable) if not varies)
         coefficients = np.zeros(len(tfs))
-        standardized_x = StandardScaler().fit_transform(x)
+        standardized_x = scaler_x.transform(x)
         design = np.column_stack([np.ones(len(x)), standardized_x])
+        if weights is not None:
+            design *= np.sqrt(weights)[:, None]
         diagnostic = _diagnostics(design, ["Intercept"] + tfs)
         if diagnostic["condition_number"] is not None and not math.isfinite(diagnostic["condition_number"]):
             diagnostic["condition_number"] = None
         diagnostic["regularized"] = True
         diagnostics[target] = diagnostic
-        if np.std(y) <= 1e-12:
+        if scaler_y.var_[0] <= 1e-24:
             constant_targets.append(target)
         elif variable.any():
-            standardized_y = StandardScaler().fit_transform(y.reshape(-1, 1))[:, 0]
+            standardized_y = scaler_y.transform(y)[:, 0]
             coefficients[variable] = Ridge(alpha=alpha, fit_intercept=True, solver="svd").fit(
-                standardized_x[:, variable], standardized_y).coef_
+                standardized_x[:, variable], standardized_y, sample_weight=weights).coef_
         if not np.isfinite(coefficients).all():
             raise ValueError("Regularized association returned nonfinite coefficients")
         for tf, coefficient in zip(tfs, coefficients):
@@ -96,22 +192,44 @@ def _network_worker(counts_path: str, metadata_path: str, candidate_tfs: List[st
                           "coefficient": float(coefficient), "sign": int(np.sign(coefficient))})
     edges.sort(key=lambda edge: (-edge["score"], edge["tf"], edge["target"]))
     candidates = [{"tf": tf, "target": target} for tf in candidate_tfs for target in target_genes if tf != target]
+    algorithm = {
+        "time_mean": "lagged time-mean multivariable ridge association",
+        "sample": "lagged sample-order multivariable ridge association",
+        "replicate": "lagged within-replicate multivariable ridge association",
+    }[aggregation]
+    pairing_scope = {
+        "time_mean": "Stage means weight measured profiles equally. No pairing or independent-replicate inference is performed.",
+        "sample": "Pairs follow a unique declared ordering of measured profiles. Pseudotime is an inferred coordinate.",
+        "replicate": "Pairs match a common ordered time grid within declared identities and are centered within identity.",
+    }[aggregation]
     return {"edges": edges[:max_edges], "candidate_universe": candidates,
-        "provenance": {"algorithm": "lagged time-mean multivariable ridge association",
+        "provenance": {"algorithm": algorithm,
+            "aggregation": aggregation, **replicate_provenance,
             "interpretation": "associative temporal prediction; no direct or causal regulatory claim",
             "counts_path": counts_path, "metadata_path": metadata_path, "time_col": time_col,
             "metadata_sha256": metadata.attrs["source_sha256"], "selected_expression_sha256": selected_hash,
             "hash_scope": "requested numeric expression and ordered gene/sample IDs; complete metadata file",
-            "time_points": len(stages), "time_pairs": len(stages) - lag, "lag_observed_intervals": lag,
+            "time_points": len(stages), "time_pairs": len(past), "lag_observed_intervals": lag,
             "time_range": [float(stages[0]), float(stages[-1])], "sample_count": len(samples),
-            "alpha": alpha, "transform": "log1p counts then z-score" if is_counts else "continuous expression z-score",
+            "declared_unit_counts": unit_counts, "incomplete_unit_columns": incomplete_units,
+            "independence_established": False,
+            "requested_data_type": data_type,
+            "resolved_data_type": "counts" if library_sizes is not None else "continuous",
+            "measurement_declaration": ("legacy_auto_unverified" if data_type == "auto"
+                                        else "explicit_caller_declaration_not_experimental_provenance"),
+            "alpha": alpha,
+            "transform": ("counts per 10,000, log1p and z-score" if library_sizes is not None
+                          else "continuous expression z-score"),
+            "library_sizes_sha256": (_matrix_sha256(library_sizes[None, :], ["library_size"], samples)
+                                     if library_sizes is not None else None),
+            "library_size_scope": "all input genes" if library_sizes is not None else None,
             "candidate_edge_count": len(candidates), "returned_edge_count": min(max_edges, len(edges)),
             "truncated": len(edges) > max_edges, "constant_targets": constant_targets,
             "constant_tfs": sorted(set(constant_tfs)), "design_diagnostics": diagnostics,
             "score": "absolute standardized ridge coefficient; not a probability",
             "candidate_universe_scope": "measured requested pairs; absence of a curated reference edge does not certify a negative"},
         "limitations": ["Lagged association is not direct binding or causal TF regulation; shared time trends, confounding and reverse regulation can produce edges.",
-            "Time means mix cell states; no paired cell histories or cross-sectional causal identification are available.",
+            pairing_scope,
             "Regularized coefficients have no reported frequentist p-values or q-values; ranking is exploratory, not clinical biomarker validation.",
             "Ridge stabilizes collinear designs but does not identify distinct causal effects of aliased TFs; rank diagnostics are reported before fitting.",
             "Zero coefficients have sign 0 (undetermined), and lag counts observed intervals even when time spacing is unequal."]}
@@ -120,11 +238,20 @@ def _network_worker(counts_path: str, metadata_path: str, candidate_tfs: List[st
 def infer_regulatory_network(counts_path: str, metadata_path: str, candidate_tfs: List[str],
                               target_genes: List[str], time_col: str = "embryonic_age",
                               lag: int = 1, alpha: float = 1.0, max_cells: int = 2000,
-                              max_edges: int = 1000) -> dict:
+                              max_edges: int = 1000,
+                              data_type: Literal["counts", "continuous", "auto"] = "auto",
+                              aggregation: Literal["time_mean", "sample", "replicate"] = "time_mean",
+                              replicate_col: Optional[str] = None) -> dict:
     """Rank measured TF-target pairs by regularized lagged temporal association.
 
     TFs and targets must be explicit. Fits run in a supervised spawned worker;
-    the finite returned scores are exploratory associations, never causal edges.
+    the finite scores are exploratory. The default uses observed stage means.
+    Sample aggregation requires unique time or pseudotime coordinates.
+    Replicate aggregation requires a declared biological identity column and
+    fits within-identity lagged associations on aligned observed coordinates.
+    Supported columns are biological_unit_id, donor_id, subject_id, specimen_id,
+    donor and subject. Metadata declarations leave independence unverified.
+    Use continuous for reviewed normalized expression, including integral values.
     """
     _genes(candidate_tfs, "candidate_tfs", 100)
     _genes(target_genes, "target_genes", 100)
@@ -139,9 +266,18 @@ def infer_regulatory_network(counts_path: str, metadata_path: str, candidate_tfs
         raise ValueError("alpha must be finite and positive")
     if not isinstance(time_col, str) or not time_col:
         raise ValueError("time_col must be nonempty")
+    if not isinstance(data_type, str) or data_type not in {"counts", "continuous", "auto"}:
+        raise ValueError("data_type must be counts, continuous or auto")
+    if not isinstance(aggregation, str) or aggregation not in {"time_mean", "sample", "replicate"}:
+        raise ValueError("aggregation must be time_mean, sample or replicate")
+    if aggregation == "replicate":
+        _require_replicate_identity_column(replicate_col)
+    elif replicate_col is not None:
+        raise ValueError("replicate_col requires replicate aggregation")
     return run_sandboxed(_network_worker, (str(Path(counts_path).expanduser().resolve()),
         str(Path(metadata_path).expanduser().resolve()), candidate_tfs, target_genes, time_col,
-        lag, float(alpha), max_cells, max_edges), max_mem_mb=2000, timeout_sec=120)
+        lag, float(alpha), max_cells, max_edges, data_type, aggregation, replicate_col),
+        max_mem_mb=2000, timeout_sec=120)
 
 
 def _validate_enrichment(selected: List[str], background: List[str], max_results: int) -> None:
@@ -189,7 +325,10 @@ def _enrichment_rows(selected: set, background: set, gene_sets: dict, field: str
 def _enrichment_worker(selected_genes: List[str], background_genes: List[str], path: str,
                         kind: str, max_results: int) -> dict:
     selected, background = set(selected_genes), set(background_genes)
-    sets, outside, seen, statuses = {}, set(), {}, {}
+    sets: dict[str, set[str]] = {}
+    outside: set[str] = set()
+    seen: dict[str, set[str]] = {}
+    statuses: dict[tuple[str, str], bool] = {}
     required = {"tf", "target"} if kind == "regulon" else {"gene", "motif", "hit"}
     for row in _table_rows(path, required):
         label = row["tf"] if kind == "regulon" else row["motif"]

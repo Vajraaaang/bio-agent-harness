@@ -190,6 +190,78 @@ def test_network_refuses_missing_genes_and_nonfinite_inputs(tmp_path):
         infer_regulatory_network(counts, meta, ["g0"], ["g1"], alpha=float("nan"))
 
 
+def test_count_network_uses_complete_library_totals(tmp_path):
+    from devharness_server.tools_network import infer_regulatory_network
+
+    samples = [f"s{i}" for i in range(8)]
+    tf = np.array([5, 7, 10, 9, 15, 5, 8, 6])
+    target = np.roll(tf, 1)
+    expression = pd.DataFrame(
+        [tf, target, 1500 - tf - target],
+        index=["TF", "target", "background"], columns=samples,
+    )
+    counts, metadata = tmp_path / "counts.csv", tmp_path / "metadata.csv"
+    pd.DataFrame({"sample_id": samples, "pseudotime": np.arange(len(samples)) / 2}).to_csv(metadata, index=False)
+    expression.to_csv(counts)
+    options = {"time_col": "pseudotime", "aggregation": "sample", "data_type": "counts"}
+    base = infer_regulatory_network(counts, metadata, ["TF"], ["target"], **options)
+    (expression * 2 ** np.arange(len(samples))).to_csv(counts)
+    scaled = infer_regulatory_network(counts, metadata, ["TF"], ["target"], **options)
+    assert base["edges"][0]["coefficient"] == pytest.approx(7 / 8)
+    assert base["edges"][0]["coefficient"] == pytest.approx(scaled["edges"][0]["coefficient"])
+    assert base["provenance"]["library_sizes_sha256"] != scaled["provenance"]["library_sizes_sha256"]
+    assert scaled["provenance"]["aggregation"] == "sample"
+
+
+def test_network_replicates_use_within_unit_pairs(tmp_path):
+    from devharness_server.tools_network import infer_regulatory_network
+
+    signal = np.array([-3, 1, 5, -1, -2])
+    lagged = np.roll(signal, 1)
+    samples = [f"s{i}" for i in range(10)]
+    counts, metadata = tmp_path / "counts.csv", tmp_path / "metadata.csv"
+    pd.DataFrame(
+        [10 + np.r_[signal, -signal], 10 + np.r_[lagged, -lagged]],
+        index=["TF", "target"], columns=samples,
+    ).to_csv(counts)
+    pd.DataFrame({"sample_id": samples, "age": np.tile(np.arange(5), 2),
+                  "donor_id": np.repeat(["one", "two"], 5)}).to_csv(metadata, index=False)
+    pooled = infer_regulatory_network(counts, metadata, ["TF"], ["target"], time_col="age",
+                                      data_type="continuous")
+    assert pooled["edges"][0]["coefficient"] == 0
+    paired = infer_regulatory_network(counts, metadata, ["TF"], ["target"], time_col="age",
+                                      data_type="continuous", aggregation="replicate", replicate_col="donor_id",
+                                      alpha=.1)
+    assert paired["provenance"]["participating_replicates"] == 2
+    assert paired["provenance"]["time_pairs"] == 8
+    assert paired["edges"][0]["coefficient"] > .8
+    with pytest.raises(Exception, match="biological identit"):
+        infer_regulatory_network(counts, metadata, ["TF"], ["target"], time_col="age",
+                                 data_type="continuous", aggregation="replicate", replicate_col="sample_id")
+
+
+@pytest.mark.parametrize(("replicate_col", "donors"), [
+    ("library_id", ("one", "two")),
+    ("track_id", None),
+    ("specimen_id", ("shared", "shared")),
+])
+def test_network_requires_biological_identity_for_replicate_aggregation(tmp_path, replicate_col, donors):
+    from devharness_server.tools_network import infer_regulatory_network
+
+    samples = [f"s{i}" for i in range(10)]
+    counts, metadata = tmp_path / "counts.csv", tmp_path / "metadata.csv"
+    pd.DataFrame([np.arange(10), np.arange(10) ** 2],
+                 index=["TF", "target"], columns=samples).to_csv(counts)
+    frame = pd.DataFrame({"sample_id": samples, "age": np.tile(np.arange(5), 2),
+                          replicate_col: np.repeat(["first", "second"], 5)})
+    if donors:
+        frame["donor_id"] = np.repeat(donors, 5)
+    frame.to_csv(metadata, index=False)
+    with pytest.raises(Exception, match="biological identit"):
+        infer_regulatory_network(counts, metadata, ["TF"], ["target"], time_col="age",
+                                 data_type="continuous", aggregation="replicate", replicate_col=replicate_col)
+
+
 def test_network_reports_rank_deficiency_without_infinite_json(tmp_path):
     from devharness_server.tools_network import infer_regulatory_network
     counts, meta, _ = branching_dataset(tmp_path)

@@ -10,29 +10,142 @@ runtime. A valid plan alone neither verifies that runtime nor authorizes a
 clinical release. The signed implementation and package-lock digests bind the
 version policy alongside the input specification.
 """
+
 import os
-from pathlib import Path
 import stat
+from pathlib import Path
 from typing import Annotated, Final, Literal
 
-from pydantic import Field, StrictFloat, StrictInt, StringConstraints, field_validator, model_validator
+from pydantic import (
+    Field,
+    StrictFloat,
+    StrictInt,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
-from .contracts import Digest, FrozenContract, JSON_LIMIT_BYTES, NonemptyText, Revision, parse_json_bytes
+from .contracts import (
+    JSON_LIMIT_BYTES,
+    Digest,
+    FrozenContract,
+    NonemptyText,
+    Revision,
+    parse_json_bytes,
+)
 from .normalization_reference import NormalizationReference, reference_genes_for_panel
-
 
 EXPECTED_R_VERSION: Final[str] = "4.6.1"
 EXPECTED_EDGER_VERSION: Final[str] = "4.10.5"
 EXPECTED_DESEQ2_VERSION: Final[str] = "1.52.0"
+KERNEL_LOCK = Path(__file__).resolve().with_name("native-kernel-runtime.lock.json")
+try:
+    _KERNEL = parse_json_bytes(KERNEL_LOCK.read_bytes())
+except FileNotFoundError:
+    # The byte-frozen historical Colab bundle predates the mounted kernel
+    # manifest. It cannot select a new native runtime.
+    _KERNEL = {"image_ids": {}, "versions": {}}
+KERNEL_IMAGES = _KERNEL["image_ids"]
+MOUNTED_KERNEL_IMAGES = _KERNEL.get("mounted_image_ids", KERNEL_IMAGES)
+SCRNA_KERNEL_IMAGES = _KERNEL.get("scrna_image_ids", {})
+SCCODA_KERNEL_IMAGES = _KERNEL.get("sccoda_image_ids", {})
+SCCODA_VERSIONS = _KERNEL.get("sccoda_versions", {})
+PATHWAY_KERNEL_IMAGES = _KERNEL.get("pathway_image_ids", {})
+THESIS_KERNEL_IMAGES = _KERNEL.get("thesis_image_ids", {})
+NB_COUNTSPLIT_KERNEL_IMAGES = _KERNEL.get("nb_countsplit_image_ids", {})
+NB_MARKER_KERNEL_IMAGES = _KERNEL.get("nb_marker_image_ids", {})
+NB_PSEUDOBULK_KERNEL_IMAGES = _KERNEL.get("nb_pseudobulk_image_ids", {})
+NB_FIT_KERNEL_IMAGES = _KERNEL.get("nb_fit_image_ids", {})
+TRAJECTORY_KERNEL_IMAGES = _KERNEL.get("trajectory_image_ids", {})
+REVIEWED_TRAJECTORY_KERNEL_IMAGES = _KERNEL.get("reviewed_trajectory_image_ids", {})
+LIMMA_VOOM_KERNEL_IMAGES = _KERNEL.get("limma_voom_image_ids", {})
+KERNEL_VERSIONS = _KERNEL["versions"]
 
-RuntimeImageID = Annotated[str, StringConstraints(strict=True, pattern=r"^sha256:[0-9a-f]{64}$")]
+
+def sccoda_kernel_images() -> frozenset[str]:
+    return frozenset(SCCODA_KERNEL_IMAGES.values()) | pathway_kernel_images()
+
+
+def pathway_kernel_images() -> frozenset[str]:
+    return frozenset(
+        (*PATHWAY_KERNEL_IMAGES.values(), *THESIS_KERNEL_IMAGES.values())
+    ) | nb_countsplit_kernel_images()
+
+
+def nb_countsplit_kernel_images() -> frozenset[str]:
+    return frozenset(NB_COUNTSPLIT_KERNEL_IMAGES.values()) | nb_marker_kernel_images()
+
+
+def nb_marker_kernel_images() -> frozenset[str]:
+    return frozenset(NB_MARKER_KERNEL_IMAGES.values()) | nb_pseudobulk_kernel_images()
+
+
+def nb_pseudobulk_kernel_images() -> frozenset[str]:
+    return frozenset(NB_PSEUDOBULK_KERNEL_IMAGES.values()) | nb_fit_kernel_images()
+
+
+def nb_fit_kernel_images() -> frozenset[str]:
+    return frozenset(NB_FIT_KERNEL_IMAGES.values()) | trajectory_kernel_images()
+
+
+def trajectory_kernel_images() -> frozenset[str]:
+    older = frozenset(TRAJECTORY_KERNEL_IMAGES.values())
+    return older | reviewed_trajectory_kernel_images()
+
+
+def reviewed_trajectory_kernel_images() -> frozenset[str]:
+    reviewed = frozenset(REVIEWED_TRAJECTORY_KERNEL_IMAGES.values())
+    return reviewed | limma_voom_kernel_images()
+
+
+def limma_voom_kernel_images() -> frozenset[str]:
+    return frozenset(LIMMA_VOOM_KERNEL_IMAGES.values())
+
+
+def single_cell_kernel_images() -> frozenset[str]:
+    return frozenset(SCRNA_KERNEL_IMAGES.values()) | sccoda_kernel_images()
+
+
+def kernel_test_platform(image_id: str) -> str | None:
+    """Resolve a verified local bulk or additive RNA kernel for OCI tests."""
+    profiles = (
+        LIMMA_VOOM_KERNEL_IMAGES,
+        REVIEWED_TRAJECTORY_KERNEL_IMAGES,
+        TRAJECTORY_KERNEL_IMAGES,
+        NB_FIT_KERNEL_IMAGES,
+        NB_PSEUDOBULK_KERNEL_IMAGES,
+        NB_MARKER_KERNEL_IMAGES,
+        NB_COUNTSPLIT_KERNEL_IMAGES,
+        THESIS_KERNEL_IMAGES,
+        PATHWAY_KERNEL_IMAGES,
+        SCCODA_KERNEL_IMAGES,
+        MOUNTED_KERNEL_IMAGES,
+        SCRNA_KERNEL_IMAGES,
+        KERNEL_IMAGES,
+    )
+    return next(
+        (
+            arch
+            for pins in profiles
+            for arch, image in pins.items()
+            if image == image_id
+        ),
+        None,
+    )
+
+
+RuntimeImageID = Annotated[
+    str, StringConstraints(strict=True, pattern=r"^sha256:[0-9a-f]{64}$")
+]
 TemporalColumn = Annotated[StrictInt, Field(ge=2)]
 
 
 class NativeAnalysisPlan(FrozenContract):
     """Immutable native count-analysis specification with no inferred study defaults."""
 
-    schema_version: Literal["controlled_native_analysis/1"] = "controlled_native_analysis/1"
+    schema_version: Literal["controlled_native_analysis/1"] = (
+        "controlled_native_analysis/1"
+    )
     plan_id: NonemptyText
     revision: Revision
     intended_use_ref: NonemptyText
@@ -41,10 +154,16 @@ class NativeAnalysisPlan(FrozenContract):
     engine: Literal["edger_qlf", "deseq2_lrt"]
     normalization: Literal["rle"]
     deseq2_fit_type: Literal["parametric", "mean"] | None = None
-    hypothesis_genes: Annotated[tuple[NonemptyText, ...], Field(min_length=1, max_length=100)]
-    panel_genes: Annotated[tuple[NonemptyText, ...], Field(min_length=1, max_length=5000)]
+    hypothesis_genes: Annotated[
+        tuple[NonemptyText, ...], Field(min_length=1, max_length=100)
+    ]
+    panel_genes: Annotated[
+        tuple[NonemptyText, ...], Field(min_length=1, max_length=5000)
+    ]
     sample_ids: Annotated[tuple[NonemptyText, ...], Field(min_length=3, max_length=512)]
-    temporal_columns: Annotated[tuple[TemporalColumn, ...], Field(min_length=1, max_length=5)]
+    temporal_columns: Annotated[
+        tuple[TemporalColumn, ...], Field(min_length=1, max_length=5)
+    ]
     time_unit: NonemptyText
     basis_definition_ref: NonemptyText
     counts_sha256: Digest
@@ -56,7 +175,7 @@ class NativeAnalysisPlan(FrozenContract):
     implementation_sha256: Digest
     environment_sha256: Digest
     runtime_image_id: RuntimeImageID
-    platform: Literal["linux/amd64"]
+    platform: Literal["linux/amd64", "linux/arm64"]
     max_memory_mb: Annotated[StrictInt, Field(ge=128, le=65536)]
     timeout_sec: Annotated[StrictInt, Field(ge=1, le=86400)]
     max_cpus: Annotated[StrictInt, Field(ge=1, le=8)]
@@ -73,7 +192,7 @@ class NativeAnalysisPlan(FrozenContract):
     @field_validator("temporal_columns")
     @classmethod
     def increasing_temporal_columns(cls, value):
-        if any(left >= right for left, right in zip(value, value[1:])):
+        if any(left >= right for left, right in zip(value, value[1:], strict=False)):
             raise ValueError("Temporal column indices must be strictly increasing")
         return value
 
@@ -85,30 +204,46 @@ class NativeAnalysisPlan(FrozenContract):
             raise ValueError("DESeq2 requires an explicit dispersion fit type")
         if self.engine == "edger_qlf" and self.deseq2_fit_type is not None:
             raise ValueError("DESeq2 dispersion fit type is not applicable to edgeR")
+        if (
+            self.platform == "linux/arm64"
+            or self.runtime_image_id in KERNEL_IMAGES.values()
+        ) and self.runtime_image_id != KERNEL_IMAGES.get(self.platform):
+            raise ValueError("The RNA kernel image must match the pinned platform")
         return self
 
 
 class NativeEffectPlan(NativeAnalysisPlan):
     """One prespecified fitted-mean contrast, separate from primary LRT inference."""
 
-    schema_version: Literal["controlled_native_analysis/2"] = "controlled_native_analysis/2"
+    # The frozen subclass uses its own exact wire discriminator.
+    schema_version: Literal["controlled_native_analysis/2"] = (
+        "controlled_native_analysis/2"  # type: ignore[assignment]
+    )
     engine: Literal["deseq2_lrt"]
     effect_name: NonemptyText
     effect_reference_sample_id: NonemptyText
     effect_comparison_sample_id: NonemptyText
-    effect_confidence_level: Annotated[StrictFloat, Field(gt=0, lt=1, allow_inf_nan=False)]
+    effect_confidence_level: Annotated[
+        StrictFloat, Field(gt=0, lt=1, allow_inf_nan=False)
+    ]
 
     @model_validator(mode="after")
     def observed_distinct_effect_rows(self):
-        if (self.effect_reference_sample_id == self.effect_comparison_sample_id
-                or self.effect_reference_sample_id not in self.sample_ids
-                or self.effect_comparison_sample_id not in self.sample_ids):
+        if (
+            self.effect_reference_sample_id == self.effect_comparison_sample_id
+            or self.effect_reference_sample_id not in self.sample_ids
+            or self.effect_comparison_sample_id not in self.sample_ids
+        ):
             raise ValueError("Effect references must be distinct signed sample rows")
         return self
 
     def primary_plan(self) -> NativeAnalysisPlan:
         """Shared numerical validation only; never a replacement signed plan."""
-        values = {key: value for key, value in self.model_dump().items() if key in NativeAnalysisPlan.model_fields}
+        values = {
+            key: value
+            for key, value in self.model_dump().items()
+            if key in NativeAnalysisPlan.model_fields
+        }
         values["schema_version"] = "controlled_native_analysis/1"
         return NativeAnalysisPlan(**values)
 
@@ -116,21 +251,29 @@ class NativeEffectPlan(NativeAnalysisPlan):
 class GovernedNativePlan(NativeAnalysisPlan):
     """Native analysis bound to an explicit signed authority-history tip."""
 
-    schema_version: Literal["controlled_native_analysis/3"] = "controlled_native_analysis/3"
+    schema_version: Literal["controlled_native_analysis/3"] = (
+        "controlled_native_analysis/3"  # type: ignore[assignment]
+    )
     authority_id: NonemptyText
     authority_tip_sha256: Digest
 
     def primary_plan(self) -> NativeAnalysisPlan:
         """Shared numerical validation only; never a replacement signed plan."""
-        values={key:value for key,value in self.model_dump().items() if key in NativeAnalysisPlan.model_fields}
-        values["schema_version"]="controlled_native_analysis/1"
+        values = {
+            key: value
+            for key, value in self.model_dump().items()
+            if key in NativeAnalysisPlan.model_fields
+        }
+        values["schema_version"] = "controlled_native_analysis/1"
         return NativeAnalysisPlan(**values)
 
 
 class GovernedNativeEffectPlan(NativeEffectPlan):
     """Prespecified effects with the same explicit authority binding."""
 
-    schema_version: Literal["controlled_native_analysis/4"] = "controlled_native_analysis/4"
+    schema_version: Literal["controlled_native_analysis/4"] = (
+        "controlled_native_analysis/4"  # type: ignore[assignment]
+    )
     authority_id: NonemptyText
     authority_tip_sha256: Digest
 
@@ -138,13 +281,19 @@ class GovernedNativeEffectPlan(NativeEffectPlan):
 class ReferenceNativePlan(GovernedNativePlan):
     """Governed DESeq2 analysis using only prespecified positive references."""
 
-    schema_version: Literal["controlled_native_analysis/5"] = "controlled_native_analysis/5"
+    schema_version: Literal["controlled_native_analysis/5"] = (
+        "controlled_native_analysis/5"  # type: ignore[assignment]
+    )
     engine: Literal["deseq2_lrt"]
     normalization_reference: NormalizationReference
 
     @model_validator(mode="after")
     def coherent_reference(self):
-        reference_genes_for_panel(self.normalization_reference, study_id=self.study_id, panel_genes=self.panel_genes)
+        reference_genes_for_panel(
+            self.normalization_reference,
+            study_id=self.study_id,
+            panel_genes=self.panel_genes,
+        )
         return self
 
     def primary_plan(self):
@@ -155,21 +304,31 @@ class ReferenceNativePlan(GovernedNativePlan):
 class ReferenceNativeEffectPlan(GovernedNativeEffectPlan):
     """Governed reference-normalized endpoint effect; interval remains unqualified."""
 
-    schema_version: Literal["controlled_native_analysis/6"] = "controlled_native_analysis/6"
+    schema_version: Literal["controlled_native_analysis/6"] = (
+        "controlled_native_analysis/6"  # type: ignore[assignment]
+    )
     normalization_reference: NormalizationReference
 
     @model_validator(mode="after")
     def coherent_reference(self):
-        reference_genes_for_panel(self.normalization_reference, study_id=self.study_id, panel_genes=self.panel_genes)
+        reference_genes_for_panel(
+            self.normalization_reference,
+            study_id=self.study_id,
+            panel_genes=self.panel_genes,
+        )
         return self
 
     def primary_plan(self) -> ReferenceNativePlan:
-        values = {key: value for key, value in self.model_dump().items() if key in ReferenceNativePlan.model_fields}
+        values = {
+            key: value
+            for key, value in self.model_dump().items()
+            if key in ReferenceNativePlan.model_fields
+        }
         values["schema_version"] = "controlled_native_analysis/5"
         return ReferenceNativePlan(**values)
 
 
-NATIVE_PLAN_MODELS = {
+NATIVE_PLAN_MODELS: dict[str, type[NativeAnalysisPlan]] = {
     "controlled_native_analysis/1": NativeAnalysisPlan,
     "controlled_native_analysis/2": NativeEffectPlan,
     "controlled_native_analysis/3": GovernedNativePlan,
@@ -190,7 +349,12 @@ def is_governed_plan(plan):
 def parse_native_plan_bytes(raw: bytes) -> NativeAnalysisPlan:
     """Reject duplicate/nonfinite JSON before the strict array-to-tuple boundary."""
     value = parse_json_bytes(raw)
-    model = NATIVE_PLAN_MODELS.get(value.get("schema_version"), NativeAnalysisPlan) if type(value) is dict else NativeAnalysisPlan
+    identity = value.get("schema_version") if type(value) is dict else None
+    model = (
+        NATIVE_PLAN_MODELS.get(identity, NativeAnalysisPlan)
+        if isinstance(identity, str)
+        else NativeAnalysisPlan
+    )
     return model.model_validate_json(raw)
 
 

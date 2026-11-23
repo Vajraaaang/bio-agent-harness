@@ -21,58 +21,101 @@ _DRAFT = "https://json-schema.org/draft/2020-12/schema"
 _NAME = {"type": "string", "pattern": r"^[A-Za-z][A-Za-z0-9_-]{0,63}$"}
 _TEXT = {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": r"^[^\x00]+$"}
 _HASH = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+OCI_BINARY_TRANSPORT = "devbench.oci-binary-artifacts/1"
 _ARTIFACT = {"enum": ["anndata", "json", "table", "file"]}
 INVARIANTS = (
-    "observation_ids_unique", "retained_observation_ids_subset_of_input",
-    "variables_unchanged", "retained_count_matrix_unchanged",
+    "observation_ids_unique",
+    "retained_observation_ids_subset_of_input",
+    "variables_unchanged",
+    "retained_count_matrix_unchanged",
 )
 OBSERVATION_SELECTION_INVARIANTS = (
-    "observation_ids_unique", "retained_observation_ids_unique",
-    "retained_observation_ids_subset_of_input", "retained_observation_ids_in_input_order",
+    "observation_ids_unique",
+    "retained_observation_ids_unique",
+    "retained_observation_ids_subset_of_input",
+    "retained_observation_ids_in_input_order",
     "immutable_observation_rows_selected",
 )
 _ALL_INVARIANTS = tuple(dict.fromkeys((*INVARIANTS, *OBSERVATION_SELECTION_INVARIANTS)))
 ACTION_SCOPE_FORMAT = "devbench.method-action/1"
 DIAGNOSTIC_OUTPUT_FORMAT = "devbench.observation-diagnostics/1"
 DIAGNOSTIC_PROFILE_OUTPUT_FORMAT = "devbench.observation-diagnostics/2"
-DIAGNOSTIC_INVARIANTS = (*OBSERVATION_SELECTION_INVARIANTS, "full_observation_coverage", "full_retention")
+DIAGNOSTIC_INVARIANTS = (
+    *OBSERVATION_SELECTION_INVARIANTS,
+    "full_observation_coverage",
+    "full_retention",
+)
 DIAGNOSTIC_REASONS = {
-    "numerical_atypicality": {"flagged": ("Unusual under the supplied representation",),
-                             "not_flagged": ("Within reference",)},
-    "qc_review": {"flagged": ("Warrants QC review",),
-                  "not_flagged": ("No QC review flag under the supplied reference",)},
+    "numerical_atypicality": {
+        "flagged": ("Unusual under the supplied representation",),
+        "not_flagged": ("Within reference",),
+    },
+    "qc_review": {
+        "flagged": ("Warrants QC review",),
+        "not_flagged": ("No QC review flag under the supplied reference",),
+    },
 }
-_UNAVAILABLE_DIAGNOSTIC_REASONS = ("Reference unavailable", "Measurement unavailable", "Score unavailable", "Insufficient evidence")
+_UNAVAILABLE_DIAGNOSTIC_REASONS = (
+    "Reference unavailable",
+    "Measurement unavailable",
+    "Score unavailable",
+    "Insufficient evidence",
+)
 
 
 def diagnostic_reasons(interpretation, status):
     """Coordinator-admitted language; candidate explanations cannot widen scope."""
-    if interpretation not in DIAGNOSTIC_REASONS or status not in {"flagged", "not_flagged", "unavailable"}:
+    if interpretation not in DIAGNOSTIC_REASONS or status not in {
+        "flagged",
+        "not_flagged",
+        "unavailable",
+    }:
         raise ValueError("Unknown diagnostic interpretation or status")
-    return _UNAVAILABLE_DIAGNOSTIC_REASONS if status == "unavailable" else DIAGNOSTIC_REASONS[interpretation][status]
+    return (
+        _UNAVAILABLE_DIAGNOSTIC_REASONS
+        if status == "unavailable"
+        else DIAGNOSTIC_REASONS[interpretation][status]
+    )
 
 
 _ALL_INVARIANTS = tuple(dict.fromkeys((*_ALL_INVARIANTS, *DIAGNOSTIC_INVARIANTS)))
 
 
 def _object(properties, required=None):
-    return {"type": "object", "additionalProperties": False, "properties": properties,
-            "required": list(properties) if required is None else required}
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": properties,
+        "required": list(properties) if required is None else required,
+    }
 
 
-_ACTION_SCOPE = _object({
-    "format": {"const": ACTION_SCOPE_FORMAT},
-    "intent": {"enum": ["retain", "diagnostic_flagging", "exclude", "infer"]},
-    "interpretation": {"enum": ["none", "numerical_atypicality", "qc_review"]},
-    "exclusions": {"type": "boolean"},
-})
-_ACTION_SCOPE["allOf"] = [{
-    "if": {"properties": {"intent": {"enum": ["retain", "diagnostic_flagging"]}}},
-    "then": {"properties": {"exclusions": {"const": False}}},
-}, {"if": {"properties": {"intent": {"const": "diagnostic_flagging"}}},
-    "then": {"properties": {"interpretation": {"enum": ["numerical_atypicality", "qc_review"]}}}},
-    {"if": {"properties": {"intent": {"const": "exclude"}}},
-     "then": {"properties": {"exclusions": {"const": True}}}}]
+_ACTION_SCOPE = _object(
+    {
+        "format": {"const": ACTION_SCOPE_FORMAT},
+        "intent": {"enum": ["retain", "diagnostic_flagging", "exclude", "infer"]},
+        "interpretation": {"enum": ["none", "numerical_atypicality", "qc_review"]},
+        "exclusions": {"type": "boolean"},
+    }
+)
+_ACTION_SCOPE["allOf"] = [
+    {
+        "if": {"properties": {"intent": {"enum": ["retain", "diagnostic_flagging"]}}},
+        "then": {"properties": {"exclusions": {"const": False}}},
+    },
+    {
+        "if": {"properties": {"intent": {"const": "diagnostic_flagging"}}},
+        "then": {
+            "properties": {
+                "interpretation": {"enum": ["numerical_atypicality", "qc_review"]}
+            }
+        },
+    },
+    {
+        "if": {"properties": {"intent": {"const": "exclude"}}},
+        "then": {"properties": {"exclusions": {"const": True}}},
+    },
+]
 
 
 def action_scope_schema():
@@ -85,69 +128,303 @@ def validate_action_scope(value):
     return copied
 
 
-_DIAGNOSTIC_POLICY = _object({
-    "format": {"const": "devbench.diagnostic-policy/1"},
-    "interpretation": {"enum": ["numerical_atypicality", "qc_review"]},
-    "measurement_semantics": {"type": "object", "maxProperties": 128,
-                              "additionalProperties": _TEXT},
-})
+_DIAGNOSTIC_POLICY = _object(
+    {
+        "format": {"const": "devbench.diagnostic-policy/1"},
+        "interpretation": {"enum": ["numerical_atypicality", "qc_review"]},
+        "measurement_semantics": {
+            "type": "object",
+            "maxProperties": 128,
+            "additionalProperties": _TEXT,
+        },
+    }
+)
 
 
 def diagnostic_profile_schema(*, implemented=False):
     """Scientific descriptions stay open to families unavailable to the executor."""
-    return _object({
-        "family": {**({"enum": ["absolute_mad", "empirical_two_tail"]} if implemented else dict(_TEXT)),
-                   "description": "Mathematical identifiers, not a preferred-method or availability list: "
-                   "absolute_mad is abs(x - median(reference)) / median(abs(reference - median(reference))), "
-                   "using unscaled median absolute deviation (no 1.4826 factor); zero scale leaves the score unavailable. "
-                   "empirical_two_tail is 1 - 2*min(midrank, 1-midrank), where midrank = "
-                   "(number of reference values < x + number <= x)/(2*n), with ties half weighted and x included "
-                   "in its declared reference group. Other scientific families remain expressible before binding."},
-        "measurements": {"type": "array", "minItems": 1, "maxItems": 128, "uniqueItems": True, "items": _TEXT},
-        "group_by": {"type": "array", "maxItems": 2, "uniqueItems": True, "items": _TEXT},
-        "aggregate": {**({"const": "max"} if implemented else dict(_TEXT)),
-                      "description": "max is the maximum across the declared measurement scores; "
-                      "the aggregate is null when any measurement score is unavailable. "
-                      "Other scientific aggregations remain expressible before binding."},
-        "flag_threshold": {"type": ["number", "null"], **({"minimum": 0} if implemented else {})},
-    })
+    return _object(
+        {
+            "family": {
+                **(
+                    {"enum": ["absolute_mad", "empirical_two_tail"]}
+                    if implemented
+                    else dict(_TEXT)
+                ),
+                "description": (
+                    "Mathematical identifiers, not a preferred-method or "
+                    "availability list: absolute_mad is abs(x - "
+                    "median(reference)) / median(abs(reference - "
+                    "median(reference))), using unscaled median absolute "
+                    "deviation (no 1.4826 factor); zero scale leaves the score "
+                    "unavailable. empirical_two_tail is 1 - 2*min(midrank, "
+                    "1-midrank), where midrank = (number of reference values < x"
+                    " + number <= x)/(2*n), with ties half weighted and x "
+                    "included in its declared reference group. Other scientific "
+                    "families remain expressible before binding."
+                ),
+            },
+            "measurements": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 128,
+                "uniqueItems": True,
+                "items": _TEXT,
+            },
+            "group_by": {
+                "type": "array",
+                "maxItems": 2,
+                "uniqueItems": True,
+                "items": _TEXT,
+            },
+            "aggregate": {
+                **({"const": "max"} if implemented else dict(_TEXT)),
+                "description": (
+                    "max is the maximum across the declared measurement scores; "
+                    "the aggregate is null when any measurement score is "
+                    "unavailable. Other scientific aggregations remain "
+                    "expressible before binding."
+                ),
+            },
+            "flag_threshold": {
+                "type": ["number", "null"],
+                **({"minimum": 0} if implemented else {}),
+            },
+        }
+    )
 
 
-_DIAGNOSTIC_POLICY_V2 = _object({
-    **_DIAGNOSTIC_POLICY["properties"], "format": {"const": "devbench.diagnostic-policy/2"},
-    "profile": diagnostic_profile_schema(implemented=True),
-})
+_DIAGNOSTIC_POLICY_V2 = _object(
+    {
+        **_DIAGNOSTIC_POLICY["properties"],
+        "format": {"const": "devbench.diagnostic-policy/2"},
+        "profile": diagnostic_profile_schema(implemented=True),
+    }
+)
 _DIAGNOSTIC_POLICIES = {"oneOf": [_DIAGNOSTIC_POLICY, _DIAGNOSTIC_POLICY_V2]}
+
+
+def rna_diagnostic_policy_schema():
+    """Complete policy registration metadata; no JSON value grants qualification.
+
+    This is separate from observation-profile method execution: an RNA policy
+    cannot be substituted for a version 1/2 observation comparator contract.
+    """
+
+    def strings(*, minimum=1, maximum=32, items=_TEXT):
+        return {
+            "type": "array",
+            "minItems": minimum,
+            "maxItems": maximum,
+            "uniqueItems": True,
+            "items": items,
+        }
+
+    return _object(
+        {
+            "format": {"const": "devbench.rna-diagnostic-policy/1"},
+            "policy_id": _NAME,
+            "version": _TEXT,
+            "family": {
+                "enum": ["Q-DESIGN", "Q-INFLUENCE", "Q-QL", "Q-REFERENCE", "Q-GRAPH"]
+            },
+            "envelope": _object(
+                {
+                    "assays": strings(items={"enum": ["bulk_rna", "single_cell_rna"]}),
+                    "designs": strings(
+                        items={"enum": ["B-I", "B-P", "S-I", "S-P", "P-P"]}
+                    ),
+                    "label_provenance": strings(
+                        items={
+                            "enum": [
+                                "declared",
+                                "independent",
+                                "rna_derived",
+                                "unknown",
+                            ]
+                        }
+                    ),
+                    "coverage": strings(
+                        items={"enum": ["complete", "partial", "unknown"]}
+                    ),
+                }
+            ),
+            "required_inputs": {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 16,
+                "additionalProperties": _object({"unit": _TEXT, "source": _TEXT}),
+            },
+            "optional_inputs": {
+                "type": "object",
+                "maxProperties": 16,
+                "additionalProperties": _object({"unit": _TEXT, "source": _TEXT}),
+            },
+            "calculation": _object(
+                {"implementation": _TEXT, "formula": _TEXT, "missingness": _TEXT}
+            ),
+            "access": _object(
+                {
+                    "exposure": {
+                        "enum": ["structural", "diagnostic", "target_outcome"]
+                    },
+                    "recipients": strings(
+                        items={"enum": ["controller", "challenger", "operator"]}
+                    ),
+                    "rule": _TEXT,
+                }
+            ),
+            "trigger": _object(
+                {
+                    "kind": {"enum": ["unresolved", "metric_comparison"]},
+                    "metric": {"type": ["string", "null"], "maxLength": 128},
+                    "operator": {"enum": [None, "gt", "ge", "lt", "le", "eq"]},
+                    "threshold": {"type": ["number", "boolean", "null"]},
+                    "action_id": _TEXT,
+                }
+            ),
+            "actions": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": _object(
+                    {
+                        "action_id": _TEXT,
+                        "operation_id": _TEXT,
+                        "kind": {"enum": ["read_only", "bounded_branch"]},
+                        "inferential_status": {
+                            "enum": ["exploratory", "qualified_only_with_whole_policy"]
+                        },
+                    }
+                ),
+            },
+            "obligations": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": _object(
+                    {
+                        "obligation_id": _TEXT,
+                        "threat": _TEXT,
+                        "required_views": strings(maximum=16),
+                    }
+                ),
+            },
+            "budget": _object(
+                {
+                    "max_checks": {"type": "integer", "minimum": 1, "maximum": 32},
+                    "max_branch_steps": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 32,
+                    },
+                    "max_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+                    "stopping": {
+                        "const": (
+                            "terminate_unresolved_when_completed_infeasible_or_e"
+                            "xhausted"
+                        )
+                    },
+                }
+            ),
+            "qualification": _object(
+                {
+                    "status": {"const": "unqualified"},
+                    "required_evaluations": {"const": ["X3", "X4", "X6"]},
+                    "evidence_refs": strings(minimum=0),
+                    "scope": _TEXT,
+                }
+            ),
+        }
+    )
 
 
 def validate_diagnostic_policy(value):
     copied = json.loads(canonical_json(value))
+    if (
+        type(copied) is dict
+        and copied.get("format") == "devbench.rna-diagnostic-policy/1"
+    ):
+        _validate(rna_diagnostic_policy_schema(), copied, "RNA diagnostic policy")
+        trigger = copied["trigger"]
+        if (
+            trigger["kind"] == "unresolved"
+            and any(
+                trigger[name] is not None
+                for name in ("metric", "operator", "threshold")
+            )
+            or trigger["kind"] == "metric_comparison"
+            and any(
+                trigger[name] is None for name in ("metric", "operator", "threshold")
+            )
+        ):
+            raise ValueError(
+                "RNA diagnostic trigger must be either unresolved or an "
+                "exact complete rule"
+            )
+        ids = [item["action_id"] for item in copied["actions"]]
+        if len(set(ids)) != len(ids) or trigger["action_id"] not in ids:
+            raise ValueError(
+                "RNA diagnostic trigger requires a unique registered action"
+            )
+        obligations = [item["obligation_id"] for item in copied["obligations"]]
+        if len(set(obligations)) != len(obligations):
+            raise ValueError("RNA diagnostic obligations must be distinct")
+        return copied
     _validate(_DIAGNOSTIC_POLICIES, copied, "diagnostic policy")
     return copied
 
 
-_PRECONDITION = _object({
-    "fact": {"type": "string", "pattern": r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$"},
-    "operator": {"enum": ["equals", "at_least"]},
-    "value": {"type": ["string", "number", "boolean"], "maxLength": 4096},
-    "rationale": _TEXT,
-})
-_PRECONDITION["allOf"] = [{
-    "if": {"properties": {"operator": {"const": "at_least"}}},
-    "then": {"properties": {"value": {"type": "number"}}},
-}]
-_SCIENTIFIC_SCHEMA = _object({
-    "tasks": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": True, "items": _TEXT},
-    "assumptions": {"type": "array", "maxItems": 32, "items": _TEXT},
-    "preconditions": {"type": "array", "maxItems": 32, "items": _PRECONDITION},
-    "output_semantics": _TEXT,
-    "implementation_origin": {"enum": ["official", "generated", "adapted"]},
-    "references": {"type": "array", "maxItems": 32, "items": _object({
-        "url": {"type": "string", "maxLength": 4096, "pattern": r"^https?://[^\s]+$"},
-        "kind": {"enum": ["primary_paper", "official_docs", "official_repository"]},
-        "version": _TEXT,
-    })},
-})
+_PRECONDITION = _object(
+    {
+        "fact": {"type": "string", "pattern": r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$"},
+        "operator": {"enum": ["equals", "at_least"]},
+        "value": {"type": ["string", "number", "boolean"], "maxLength": 4096},
+        "rationale": _TEXT,
+    }
+)
+_PRECONDITION["allOf"] = [
+    {
+        "if": {"properties": {"operator": {"const": "at_least"}}},
+        "then": {"properties": {"value": {"type": "number"}}},
+    }
+]
+_SCIENTIFIC_SCHEMA = _object(
+    {
+        "tasks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": True,
+            "items": _TEXT,
+        },
+        "assumptions": {"type": "array", "maxItems": 32, "items": _TEXT},
+        "preconditions": {"type": "array", "maxItems": 32, "items": _PRECONDITION},
+        "output_semantics": _TEXT,
+        "implementation_origin": {"enum": ["official", "generated", "adapted"]},
+        "references": {
+            "type": "array",
+            "maxItems": 32,
+            "items": _object(
+                {
+                    "url": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "pattern": r"^https?://[^\s]+$",
+                    },
+                    "kind": {
+                        "enum": [
+                            "primary_paper",
+                            "official_docs",
+                            "official_repository",
+                        ]
+                    },
+                    "version": _TEXT,
+                }
+            ),
+        },
+    }
+)
 
 
 def scientific_metadata_schema():
@@ -155,66 +432,161 @@ def scientific_metadata_schema():
     return json.loads(canonical_json(_SCIENTIFIC_SCHEMA))
 
 
-_INPUT = _object({"artifact_type": _ARTIFACT, "required": {"type": "boolean"}, "parameter": _NAME},
-                 ["artifact_type", "required"])
-_OUTPUT = _object({"artifact_type": _ARTIFACT, "path": _TEXT, "required": {"type": "boolean"}})
-_SCHEMA = _object({
-    "format": {"const": METHOD_FORMAT},
-    "method_id": {"type": "string", "pattern": r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
-    "name": {**_TEXT, "maxLength": 200},
-    "lifecycle": {"enum": ["custom", "registered"]},
-    "implementation_trust": {"enum": ["unreviewed", "reviewed"]},
-    "inputs": {"type": "object", "maxProperties": 16, "propertyNames": _NAME, "additionalProperties": _INPUT},
-    "parameters": {"type": "object"},
-    "outputs": {"type": "object", "minProperties": 1, "maxProperties": 16,
-                "propertyNames": _NAME, "additionalProperties": _OUTPUT},
-    "implementation": {"oneOf": [
-        _object({"kind": {"const": "colab"}, "source_sha256": _HASH,
-                 "entrypoint": {"type": "array", "minItems": 1, "maxItems": 64, "items": _TEXT}}),
-        _object({"kind": {"const": "oci"}, "source_sha256": _HASH,
-                 "entrypoint": {"type": "array", "minItems": 1, "maxItems": 64, "items": _TEXT}}),
-        _object({"kind": {"const": "dispatcher"}, "source_sha256": _HASH, "tool_name": _NAME}),
-        _object({"kind": {"const": "trusted_fastq"}, "source_sha256": _HASH,
-                 "execution_binding": {"type": "object"}}),
-    ]},
-    "environment": {"type": "object"},
-    "execution": _object({
-        "cpu": {"type": "number", "exclusiveMinimum": 0, "maximum": 16},
-        "memory_mb": {"type": "integer", "minimum": 1, "maximum": 65536},
-        "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 3600},
-        "pids": {"type": "integer", "minimum": 1, "maximum": 1024},
-        "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 100_000_000},
-        "network": {"enum": ["deny", "allow"]},
-    }),
-    "validation": _object({
-        "comparator": {"enum": ["single_cell_qc", "observation_selection", "observation_diagnostic", "json", "file"]},
-        "invariants": {"type": "array", "uniqueItems": True, "maxItems": len(_ALL_INVARIANTS),
-                       "items": {"enum": list(_ALL_INVARIANTS)}},
-        "counts_layer": _TEXT,
-        "sample_key": _TEXT,
-        "qc_metrics": {"type": "array", "maxItems": 128, "uniqueItems": True, "items": _TEXT},
-        "diagnostic_policy": _DIAGNOSTIC_POLICIES,
-    }, ["comparator", "invariants", "counts_layer", "qc_metrics"]),
-    "provenance": _object({
-        "origin": _TEXT,
-        "source_conversation_id": _TEXT,
-        "source_message_id": _TEXT,
-        "source_plan_revision": _TEXT,
-        "citations": {"type": "array", "maxItems": 100, "items": _TEXT},
-    }, ["origin"]),
-})
+_INPUT = _object(
+    {"artifact_type": _ARTIFACT, "required": {"type": "boolean"}, "parameter": _NAME},
+    ["artifact_type", "required"],
+)
+_OUTPUT = _object(
+    {"artifact_type": _ARTIFACT, "path": _TEXT, "required": {"type": "boolean"}}
+)
+_SCHEMA = _object(
+    {
+        "format": {"const": METHOD_FORMAT},
+        "method_id": {
+            "type": "string",
+            "pattern": r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+        },
+        "name": {**_TEXT, "maxLength": 200},
+        "lifecycle": {"enum": ["custom", "registered"]},
+        "implementation_trust": {"enum": ["unreviewed", "reviewed"]},
+        "inputs": {
+            "type": "object",
+            "maxProperties": 16,
+            "propertyNames": _NAME,
+            "additionalProperties": _INPUT,
+        },
+        "parameters": {"type": "object"},
+        "outputs": {
+            "type": "object",
+            "minProperties": 1,
+            "maxProperties": 16,
+            "propertyNames": _NAME,
+            "additionalProperties": _OUTPUT,
+        },
+        "implementation": {
+            "oneOf": [
+                _object(
+                    {
+                        "kind": {"const": "colab"},
+                        "source_sha256": _HASH,
+                        "entrypoint": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 64,
+                            "items": _TEXT,
+                        },
+                    }
+                ),
+                _object(
+                    {
+                        "kind": {"const": "oci"},
+                        "source_sha256": _HASH,
+                        "entrypoint": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 64,
+                            "items": _TEXT,
+                        },
+                    }
+                ),
+                _object(
+                    {
+                        "kind": {"const": "dispatcher"},
+                        "source_sha256": _HASH,
+                        "tool_name": _NAME,
+                    }
+                ),
+                _object(
+                    {
+                        "kind": {"const": "trusted_fastq"},
+                        "source_sha256": _HASH,
+                        "execution_binding": {"type": "object"},
+                    }
+                ),
+            ]
+        },
+        "environment": {"type": "object"},
+        "execution": _object(
+            {
+                "cpu": {"type": "number", "exclusiveMinimum": 0, "maximum": 16},
+                "memory_mb": {"type": "integer", "minimum": 1, "maximum": 65536},
+                "timeout_seconds": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 3600,
+                },
+                "pids": {"type": "integer", "minimum": 1, "maximum": 1024},
+                "max_output_bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100_000_000,
+                },
+                "network": {"enum": ["deny", "allow"]},
+            }
+        ),
+        "validation": _object(
+            {
+                "comparator": {
+                    "enum": [
+                        "single_cell_qc",
+                        "observation_selection",
+                        "observation_diagnostic",
+                        "json",
+                        "file",
+                    ]
+                },
+                "invariants": {
+                    "type": "array",
+                    "uniqueItems": True,
+                    "maxItems": len(_ALL_INVARIANTS),
+                    "items": {"enum": list(_ALL_INVARIANTS)},
+                },
+                "counts_layer": _TEXT,
+                "sample_key": _TEXT,
+                "qc_metrics": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "uniqueItems": True,
+                    "items": _TEXT,
+                },
+                "diagnostic_policy": _DIAGNOSTIC_POLICIES,
+            },
+            ["comparator", "invariants", "counts_layer", "qc_metrics"],
+        ),
+        "provenance": _object(
+            {
+                "origin": _TEXT,
+                "source_conversation_id": _TEXT,
+                "source_message_id": _TEXT,
+                "source_plan_revision": _TEXT,
+                "citations": {"type": "array", "maxItems": 100, "items": _TEXT},
+            },
+            ["origin"],
+        ),
+    }
+)
 # Optional metadata must not insert defaults or alter existing version identities.
+_SCHEMA["properties"]["binary_transport"] = {"const": OCI_BINARY_TRANSPORT}
 _SCHEMA["properties"]["scientific"] = _SCIENTIFIC_SCHEMA
 _SCHEMA["properties"]["action_scope"] = _ACTION_SCOPE
 _ENVIRONMENTS = {
     "colab": _object({"runtime": {"const": "google_colab"}, "lock_sha256": _HASH}),
-    "oci": _object({
-        "image": {"type": "string", "maxLength": 512,
-                  "pattern": r"^[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}$"},
-        "lock_sha256": _HASH,
-    }),
-    "dispatcher": _object({"runtime": {"const": "trusted_dispatcher"}, "identity_sha256": _HASH}),
-    "trusted_fastq": _object({"runtime": {"const": "trusted_fastq"}, "identity_sha256": _HASH}),
+    "oci": _object(
+        {
+            "image": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": r"^[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}$",
+            },
+            "lock_sha256": _HASH,
+        }
+    ),
+    "dispatcher": _object(
+        {"runtime": {"const": "trusted_dispatcher"}, "identity_sha256": _HASH}
+    ),
+    "trusted_fastq": _object(
+        {"runtime": {"const": "trusted_fastq"}, "identity_sha256": _HASH}
+    ),
 }
 
 
@@ -245,17 +617,22 @@ def validate_scientific_metadata(value):
         try:
             url = urlsplit(reference["url"])
             valid = url.scheme in {"http", "https"} and bool(url.hostname)
-            url.port  # Validate a declared port, if any.
+            _ = url.port  # Validate a declared port, if any.
         except ValueError as error:
-            raise ValueError("Scientific references require an HTTP(S) URL with a host") from error
+            raise ValueError(
+                "Scientific references require an HTTP(S) URL with a host"
+            ) from error
         if not valid:
             raise ValueError("Scientific references require an HTTP(S) URL with a host")
     return copied
 
 
 def _check_parameter_schema(schema):
-    if (schema.get("type") != "object" or schema.get("additionalProperties") is not False
-            or "patternProperties" in schema):
+    if (
+        schema.get("type") != "object"
+        or schema.get("additionalProperties") is not False
+        or "patternProperties" in schema
+    ):
         raise ValueError("Parameters must declare a closed object schema")
     if schema.get("$schema", _DRAFT) != _DRAFT:
         raise ValueError("Parameters must use JSON Schema Draft 2020-12")
@@ -264,63 +641,128 @@ def _check_parameter_schema(schema):
     except SchemaError as error:
         raise ValueError(f"Invalid parameter schema: {error.message}") from error
 
-    def visit(node):
-        if isinstance(node, dict):
-            if "$id" in node:
-                raise ValueError("Parameter schemas may not change reference resolution with $id")
-            for keyword in ("$ref", "$dynamicRef"):
-                if keyword in node:
-                    reference = node[keyword]
-                    if not isinstance(reference, str) or not reference.startswith("#/"):
-                        raise ValueError("Only local JSON pointer schema references are permitted")
-                    target = schema
-                    try:
-                        for key in reference[2:].split("/"):
-                            target = target[key.replace("~1", "/").replace("~0", "~")]
-                    except (KeyError, TypeError, IndexError) as error:
-                        raise ValueError("Unresolved local parameter schema reference") from error
-                    if not isinstance(target, (dict, bool)):
-                        raise ValueError("Parameter schema reference must identify a schema")
-            for value in node.values():
-                visit(value)
-        elif isinstance(node, list):
-            for value in node:
-                visit(value)
+    _visit_parameter_schema(schema, schema)
 
-    visit(schema)
+
+def _visit_parameter_schema(node, schema):
+    if isinstance(node, dict):
+        if "$id" in node:
+            raise ValueError(
+                "Parameter schemas may not change reference resolution with $id"
+            )
+        for keyword in ("$ref", "$dynamicRef"):
+            if keyword in node:
+                _check_schema_reference(node[keyword], schema)
+        for value in node.values():
+            _visit_parameter_schema(value, schema)
+    elif isinstance(node, list):
+        for value in node:
+            _visit_parameter_schema(value, schema)
+
+
+def _check_schema_reference(reference, schema):
+    if not isinstance(reference, str) or not reference.startswith("#/"):
+        raise ValueError("Only local JSON pointer schema references are permitted")
+    target = schema
+    try:
+        for key in reference[2:].split("/"):
+            target = target[key.replace("~1", "/").replace("~0", "~")]
+    except (KeyError, TypeError, IndexError) as error:
+        raise ValueError("Unresolved local parameter schema reference") from error
+    if not isinstance(target, (dict, bool)):
+        raise ValueError("Parameter schema reference must identify a schema")
+
+
+def binary_oci_transport(value):
+    format_name = value.get("binary_transport")
+    if format_name is None:
+        return False
+    outputs = value["outputs"]
+    manifest = outputs.get("manifest")
+    if (
+        format_name != OCI_BINARY_TRANSPORT
+        or value["implementation"]["kind"] != "oci"
+        or value["validation"]["comparator"] != "file"
+        or manifest
+        != {"artifact_type": "json", "path": "/outputs/manifest.json", "required": True}
+        or len(outputs) < 2
+        or any(
+            spec["artifact_type"] != "file" or not spec["path"].endswith(".parquet")
+            for name, spec in outputs.items()
+            if name != "manifest"
+        )
+    ):
+        raise ValueError(
+            "OCI binary transport requires a closed manifest and declared "
+            "Parquet outputs"
+        )
+    return True
 
 
 def _validate_contract(value):
     _validate(_SCHEMA, value, "method contract")
+    binary_oci_transport(value)
     if "scientific" in value:
         validate_scientific_metadata(value["scientific"])
     kind = value["implementation"]["kind"]
-    if kind not in {"colab", "trusted_fastq"} and value["execution"]["network"] != "deny":
-        raise ValueError("Only explicit Colab qualification can declare unproven network confinement")
+    _validate_execution(value, kind)
+    _validate_ports(value, kind)
+    policy = value["validation"]
+    _validate_action_scope(value, policy)
+    _validate_comparator(value, policy)
+
+
+def _validate_execution(value, kind):
+    if (
+        kind not in {"colab", "trusted_fastq"}
+        and value["execution"]["network"] != "deny"
+    ):
+        raise ValueError(
+            "Only explicit Colab qualification can declare unproven network confinement"
+        )
     _validate(_ENVIRONMENTS[kind], value["environment"], "method environment")
     for key in ("memory_mb", "pids", "max_output_bytes"):
         if type(value["execution"][key]) is not int:
             raise ValueError(f"Execution {key} must be a JSON integer")
     if value["lifecycle"] == "custom" and value["implementation_trust"] != "unreviewed":
         raise ValueError("Custom methods must remain unreviewed")
-    if kind == "dispatcher" and (value["lifecycle"] != "registered" or value["implementation_trust"] != "reviewed"):
+    if kind == "dispatcher" and (
+        value["lifecycle"] != "registered"
+        or value["implementation_trust"] != "reviewed"
+    ):
         raise ValueError("Dispatcher contracts are reserved for registered methods")
     if kind == "trusted_fastq":
-        if (value["lifecycle"] != "registered" or value["implementation_trust"] != "reviewed"
-                or value["execution"]["network"] != "allow"
-                or value["inputs"] != {"manifest": {"artifact_type": "json", "required": True}}):
-            raise ValueError("Trusted FASTQ requires a registered exact manifest and explicit network allowance")
+        if (
+            value["lifecycle"] != "registered"
+            or value["implementation_trust"] != "reviewed"
+            or value["execution"]["network"] != "allow"
+            or value["inputs"]
+            != {"manifest": {"artifact_type": "json", "required": True}}
+        ):
+            raise ValueError(
+                "Trusted FASTQ requires a registered exact manifest and "
+                "explicit network allowance"
+            )
+
+
+def _validate_ports(value, kind):
     paths = []
     for output in value["outputs"].values():
         path = PurePosixPath(output["path"])
-        if (not re.fullmatch(r"/outputs/[A-Za-z0-9][A-Za-z0-9_.-]{0,199}", output["path"])
-                or str(path) != output["path"]):
+        if (
+            not re.fullmatch(
+                r"/outputs/[A-Za-z0-9][A-Za-z0-9_.-]{0,199}", output["path"]
+            )
+            or str(path) != output["path"]
+        ):
             raise ValueError("Output paths must be canonical /outputs/<filename> paths")
         paths.append(output["path"])
     if len(set(paths)) != len(paths):
         raise ValueError("Output paths must be distinct")
     _check_parameter_schema(value["parameters"])
-    bound = [spec["parameter"] for spec in value["inputs"].values() if "parameter" in spec]
+    bound = [
+        spec["parameter"] for spec in value["inputs"].values() if "parameter" in spec
+    ]
     if len(set(bound)) != len(bound):
         raise ValueError("Input parameter bindings must be distinct")
     if set(bound) & set(value["parameters"].get("properties", {})):
@@ -329,56 +771,134 @@ def _validate_contract(value):
         raise ValueError("Only dispatcher inputs declare parameter bindings")
     if kind == "dispatcher" and len(bound) != len(value["inputs"]):
         raise ValueError("Every dispatcher input requires a parameter binding")
-    policy = value["validation"]
+
+
+def _validate_action_scope(value, policy):
     scope = value.get("action_scope")
-    if scope and scope["intent"] in {"retain", "diagnostic_flagging"} and set(value["outputs"]) != {"dataset"}:
-        raise ValueError("Non-exclusion retention/diagnostic actions require exactly the validated dataset output port")
-    if scope and (scope["intent"] in {"retain", "exclude", "diagnostic_flagging"}
-                  or scope["exclusions"] or "dataset" in value["outputs"]):
-        if policy["comparator"] not in {"observation_selection", "single_cell_qc", "observation_diagnostic"}:
-            raise ValueError("Action scope requires an actual observation-effect validator")
-        if scope["intent"] == "diagnostic_flagging" and policy["comparator"] != "observation_diagnostic":
-            raise ValueError("Diagnostic action scope requires diagnostic output validation")
-    if "diagnostic_policy" in policy and policy["comparator"] != "observation_diagnostic":
+    if (
+        scope
+        and scope["intent"] in {"retain", "diagnostic_flagging"}
+        and set(value["outputs"]) != {"dataset"}
+    ):
+        raise ValueError(
+            "Non-exclusion retention/diagnostic actions require exactly the "
+            "validated dataset output port"
+        )
+    if scope and (
+        scope["intent"] in {"retain", "exclude", "diagnostic_flagging"}
+        or scope["exclusions"]
+        or "dataset" in value["outputs"]
+    ):
+        if policy["comparator"] not in {
+            "observation_selection",
+            "single_cell_qc",
+            "observation_diagnostic",
+        }:
+            raise ValueError(
+                "Action scope requires an actual observation-effect validator"
+            )
+        if (
+            scope["intent"] == "diagnostic_flagging"
+            and policy["comparator"] != "observation_diagnostic"
+        ):
+            raise ValueError(
+                "Diagnostic action scope requires diagnostic output validation"
+            )
+    if (
+        "diagnostic_policy" in policy
+        and policy["comparator"] != "observation_diagnostic"
+    ):
         raise ValueError("Diagnostic policy requires the diagnostic comparator")
+
+
+def _validate_comparator(value, policy):
     if policy["comparator"] in {"observation_selection", "observation_diagnostic"}:
-        diagnostic = policy["comparator"] == "observation_diagnostic"
-        allowed = DIAGNOSTIC_INVARIANTS if diagnostic else OBSERVATION_SELECTION_INVARIANTS
-        if any(name not in allowed for name in policy["invariants"]):
-            raise ValueError("Observation selection requires observation-row invariants")
-        if (not policy["qc_metrics"] or set(policy["qc_metrics"]) & {"cell_id", "sample", policy.get("sample_key")}
-                or policy.get("sample_key") == "cell_id"):
-            raise ValueError("Observation selection requires numeric QC measurement columns")
-        for section in ("inputs", "outputs"):
-            dataset = value[section].get("dataset", {})
-            if dataset.get("artifact_type") != "json" or dataset.get("required") is not True:
-                raise ValueError("Observation selection requires named, required JSON dataset inputs and outputs")
-        if diagnostic:
-            scope = value.get("action_scope", {})
-            declared = policy.get("diagnostic_policy", {})
-            if (scope.get("intent") != "diagnostic_flagging" or scope.get("exclusions") is not False
-                    or declared.get("interpretation") != scope.get("interpretation")):
-                raise ValueError("Diagnostic output requires matching explicit non-exclusion action and policy")
-            if declared["interpretation"] == "qc_review" and (not set(policy["qc_metrics"]) <= declared["measurement_semantics"].keys()
-                    or any(not declared["measurement_semantics"].get(name, "").strip() for name in policy["qc_metrics"])):
-                raise ValueError("QC review requires declared measurement semantics")
-            if declared["format"] == "devbench.diagnostic-policy/2":
-                profile = declared["profile"]
-                if profile["measurements"] != policy["qc_metrics"]:
-                    raise ValueError("Diagnostic profile measurements must match the frozen validation measurements")
-                if not set(profile["group_by"]) <= {"sample", "group", policy.get("sample_key")}:
-                    raise ValueError("Diagnostic profile reference groups require declared metadata roles")
-        elif value.get("action_scope", {}).get("intent") == "diagnostic_flagging":
-            raise ValueError("Diagnostic flagging cannot use a retention-only output")
+        _validate_observation_policy(value, policy)
     elif policy["invariants"] and policy["comparator"] != "single_cell_qc":
         raise ValueError("Single-cell invariants require the single_cell_qc comparator")
     if policy["comparator"] == "single_cell_qc":
-        if any(name not in INVARIANTS for name in policy["invariants"]):
-            raise ValueError("Single-cell comparison requires single-cell invariants")
-        for section in ("inputs", "outputs"):
-            dataset = value[section].get("dataset", {})
-            if dataset.get("artifact_type") != "anndata" or dataset.get("required") is not True:
-                raise ValueError("Single-cell comparison requires named, required anndata dataset inputs and outputs")
+        _validate_single_cell_policy(value, policy)
+
+
+def _validate_observation_policy(value, policy):
+    diagnostic = policy["comparator"] == "observation_diagnostic"
+    allowed = DIAGNOSTIC_INVARIANTS if diagnostic else OBSERVATION_SELECTION_INVARIANTS
+    if any(name not in allowed for name in policy["invariants"]):
+        raise ValueError("Observation selection requires observation-row invariants")
+    if (
+        not policy["qc_metrics"]
+        or set(policy["qc_metrics"]) & {"cell_id", "sample", policy.get("sample_key")}
+        or policy.get("sample_key") == "cell_id"
+    ):
+        raise ValueError(
+            "Observation selection requires numeric QC measurement columns"
+        )
+    for section in ("inputs", "outputs"):
+        dataset = value[section].get("dataset", {})
+        if (
+            dataset.get("artifact_type") != "json"
+            or dataset.get("required") is not True
+        ):
+            raise ValueError(
+                "Observation selection requires named, required JSON "
+                "dataset inputs and outputs"
+            )
+    if diagnostic:
+        _validate_diagnostic_policy(value, policy)
+    elif value.get("action_scope", {}).get("intent") == "diagnostic_flagging":
+        raise ValueError("Diagnostic flagging cannot use a retention-only output")
+
+
+def _validate_diagnostic_policy(value, policy):
+    scope = value.get("action_scope", {})
+    declared = policy.get("diagnostic_policy", {})
+    if (
+        scope.get("intent") != "diagnostic_flagging"
+        or scope.get("exclusions") is not False
+        or declared.get("interpretation") != scope.get("interpretation")
+    ):
+        raise ValueError(
+            "Diagnostic output requires matching explicit non-"
+            "exclusion action and policy"
+        )
+    if declared["interpretation"] == "qc_review" and (
+        not set(policy["qc_metrics"]) <= declared["measurement_semantics"].keys()
+        or any(
+            not declared["measurement_semantics"].get(name, "").strip()
+            for name in policy["qc_metrics"]
+        )
+    ):
+        raise ValueError("QC review requires declared measurement semantics")
+    if declared["format"] == "devbench.diagnostic-policy/2":
+        profile = declared["profile"]
+        if profile["measurements"] != policy["qc_metrics"]:
+            raise ValueError(
+                "Diagnostic profile measurements must match the "
+                "frozen validation measurements"
+            )
+        if not set(profile["group_by"]) <= {
+            "sample",
+            "group",
+            policy.get("sample_key"),
+        }:
+            raise ValueError(
+                "Diagnostic profile reference groups require declared metadata roles"
+            )
+
+
+def _validate_single_cell_policy(value, policy):
+    if any(name not in INVARIANTS for name in policy["invariants"]):
+        raise ValueError("Single-cell comparison requires single-cell invariants")
+    for section in ("inputs", "outputs"):
+        dataset = value[section].get("dataset", {})
+        if (
+            dataset.get("artifact_type") != "anndata"
+            or dataset.get("required") is not True
+        ):
+            raise ValueError(
+                "Single-cell comparison requires named, required anndata"
+                " dataset inputs and outputs"
+            )
 
 
 @dataclass(frozen=True, init=False)

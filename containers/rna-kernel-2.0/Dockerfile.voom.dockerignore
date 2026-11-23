@@ -1,0 +1,11 @@
+**
+!containers/
+!containers/rna-kernel-2.0/
+!containers/rna-kernel-2.0/Dockerfile.voom
+!devharness_server/
+!devharness_server/r/
+!devharness_server/r/bulk_voom_sensitivity.R
+!devharness_server/r/mounted_general.R
+!rna_kernels/
+!rna_kernels/bulk_solver_policy.py
+!rna_kernels/mounted_model.py

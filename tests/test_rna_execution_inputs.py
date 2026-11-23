@@ -1,23 +1,20 @@
 """Synthetic custody/format checks; these fixtures select no scientific method."""
-from copy import deepcopy
 import csv
 import json
-from pathlib import Path
-import tempfile
+from copy import deepcopy
 
 import pytest
 
 from devbench.analysis.methods import MethodService
-from devbench.analysis.rna_execution_inputs import prepare_execution_inputs, load_execution_inputs
+from devbench.analysis.rna_execution_inputs import (
+    load_execution_inputs,
+    prepare_execution_inputs,
+)
 
 
 @pytest.fixture
-def protected_workspace():
-    # Sealed evidence must remain outside platform scratch. Scope the fixture
-    # explicitly; do not change TMPDIR or weaken the protected-storage check.
-    root = Path(__file__).resolve().parents[1] / "reports" / "local-rna-analyst-2026-10-28" / "increment-02" / "test-workspaces"
-    root.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix="execution-inputs-", dir=root))
+def protected_workspace(workspace_tmp_path):
+    return workspace_tmp_path
 
 
 def inputs(tmp_path, *, representation="normalized_expression", metadata=None, matrix=None):
@@ -156,6 +153,7 @@ def test_registered_hdf5_preserves_raw_integer_count_types_and_values(protected_
 def test_hdf5_schema_bounds_reject_tiny_file_with_unsafe_logical_allocation_before_read(tmp_path, monkeypatch, attack):
     import h5py
     import numpy as np
+
     from devbench.analysis.rna_execution_inputs import _check_hdf5
     matrix = {"gene_ids": ["g1", "g2"], "sample_ids": ["s1", "s2", "s3", "s4"],
               "matrix": [[1, 2, 3, 4], [4, 3, 2, 1]]}
@@ -179,6 +177,7 @@ def test_hdf5_schema_bounds_reject_tiny_file_with_unsafe_logical_allocation_befo
 def test_shared_vlen_utf8_heap_is_refused_before_any_label_materialization(tmp_path, monkeypatch):
     import h5py
     import numpy as np
+
     from devbench.analysis.rna_execution_inputs import _check_hdf5
     matrix = {"gene_ids": ["g1", "g2"], "sample_ids": ["s1", "s2"], "matrix": [[1.0, 2.0], [3.0, 4.0]]}
     path = tmp_path / "tiny-shared-vlen-heap.h5"
@@ -201,6 +200,7 @@ def test_shared_vlen_utf8_heap_is_refused_before_any_label_materialization(tmp_p
 def test_registered_hdf5_bridge_uses_fixed_width_utf8_and_preserves_gene_sample_ids(protected_workspace):
     tmp_path = protected_workspace
     import h5py
+
     from devharness_core.storage import ChunkedExpressionStore
     genes, samples = ["001λ", "NA🧬", "🧬" * 200], ["001λ", "NA🧬", "s3é", "s4"]
     matrix = {"gene_ids": genes, "sample_ids": samples,
@@ -229,7 +229,8 @@ def test_registered_hdf5_bridge_uses_fixed_width_utf8_and_preserves_gene_sample_
 
 def test_reviewed_hdf5_label_reads_are_bounded_and_preserve_utf8_ids(tmp_path, monkeypatch):
     import h5py
-    from devbench.analysis.rna_execution_inputs import _write_hdf5, _check_hdf5
+
+    from devbench.analysis.rna_execution_inputs import _check_hdf5, _write_hdf5
     matrix = {"gene_ids": ["g" + str(i) + "λ" for i in range(70)], "sample_ids": ["s1", "s2"],
               "matrix": [[float(i), float(i + 1)] for i in range(70)]}
     path = tmp_path / "bounded-labels.h5"
@@ -251,9 +252,12 @@ def test_reviewed_hdf5_label_reads_are_bounded_and_preserve_utf8_ids(tmp_path, m
 def test_unique_specimens_cannot_hide_unknown_or_dependent_biological_units(tmp_path, attack):
     rows = [{"sample_id": "s" + str(i), "unit": "specimen" + str(i), "group": "A" if i < 3 else "B",
              "batch": "b" + str(i % 2), "donor_id": "donor" + str(i)} for i in range(1, 5)]
-    if attack == "unknown_unit_label": rows[0]["unit"] = "unknown"
-    elif attack == "repeated_donor": rows[1]["donor_id"] = rows[0]["donor_id"]
-    else: rows[1]["donor_id"] = None
+    if attack == "unknown_unit_label":
+        rows[0]["unit"] = "unknown"
+    elif attack == "repeated_donor":
+        rows[1]["donor_id"] = rows[0]["donor_id"]
+    else:
+        rows[1]["donor_id"] = None
     service, binding, _, _ = inputs(tmp_path, metadata=rows)
     with pytest.raises(ValueError, match="precondition|biological|unknown|repeated"):
         prepare_execution_inputs(binding, ports(infer=True), artifact_service=service, output=tmp_path / "bridge")
@@ -292,6 +296,51 @@ def auto_reader_ports(service, *, encoding="hdf5"):
     return selected
 
 
+def test_batch_reader_rejects_explicit_counts_for_normalized_expression(
+    protected_workspace,
+):
+    service, binding, _, _ = inputs(protected_workspace)
+    selected = auto_reader_ports(service)
+    selected["parameters"].update(time_col=None, data_type="counts")
+    with pytest.raises(ValueError, match="data_type.*representation"):
+        prepare_execution_inputs(
+            binding, selected, artifact_service=service,
+            output=protected_workspace / "bridge",
+        )
+
+
+def test_batch_reader_preserves_explicit_text_roles_and_continuous_scale(
+    protected_workspace,
+):
+    rows = [
+        {"sample_id": f"s{i}", "unit": f"u{i}", "group": "01" if i < 3 else "02",
+         "site": "01" if i % 2 else "02"}
+        for i in range(1, 5)
+    ]
+    service, binding, _, _ = inputs(protected_workspace, metadata=rows)
+    binding["declarations"]["metadata_roles"]["batch"] = "site"
+    selected = auto_reader_ports(service)
+    selected["parameters"].update(
+        time_col=None, batch_col="site", condition_col="group", data_type="continuous",
+    )
+    selected["string_columns"] = ["sample_id", "site", "group"]
+    reference = prepare_execution_inputs(
+        binding, selected, artifact_service=service,
+        output=protected_workspace / "bridge",
+    )
+    retained = load_execution_inputs(reference, artifact_service=service)
+    receipt_path = protected_workspace / "bridge" / "transformation-receipt.json"
+    receipt = json.loads(receipt_path.read_text())
+    assert receipt["reader_contract"]["measurement_interpretation"] == {
+        "mode": "continuous", "data_type": "continuous",
+        "declared_representation": "normalized_expression",
+    }
+    metadata_ref = retained["execution_refs"]["metadata"]["artifact_id"]
+    metadata = service.artifact_path(metadata_ref)
+    with metadata.open(newline="") as stream:
+        assert list(csv.DictReader(stream)) == rows
+
+
 @pytest.mark.parametrize("representation,numeric_type,observed", [
     ("normalized_expression", int, "counts"),
     ("raw_counts", float, "continuous"),
@@ -299,6 +348,7 @@ def auto_reader_ports(service, *, encoding="hdf5"):
 def test_actual_auto_reader_refuses_conflicting_declared_hdf5_representation(tmp_path, representation, numeric_type, observed):
     import h5py
     import numpy as np
+
     from devharness_core.storage import ChunkedExpressionStore
     from devharness_server.normalization import expression_summary
     matrix = {"gene_ids": ["g1", "g2"], "sample_ids": ["s1", "s2", "s3", "s4"],
@@ -334,12 +384,18 @@ def test_invalid_or_unsupported_inputs_are_rejected_before_derivation(tmp_path, 
     matrix = {"gene_ids": ["g1", "g2"], "sample_ids": ["s1", "s2", "s3", "s4"], "matrix": [[1.0, 2.25, 3.5, 4.0], [5, 6, 7, 8]]}
     rows = [{"sample_id": "s" + str(i), "group": "A", "unit": "u" + str(i), "batch": "b"} for i in range(1, 5)]
     representation = "normalized_expression"
-    if attack == "duplicate_gene": matrix["gene_ids"] = ["g1", "g1"]
-    elif attack == "duplicate_sample": matrix["sample_ids"][1] = "s1"
-    elif attack == "duplicate_metadata": rows[1]["sample_id"] = "s1"
-    elif attack == "nonfinite": matrix["matrix"][0][1] = float("nan")
-    elif attack == "unknown_representation": representation = None
-    else: representation = "raw_counts"
+    if attack == "duplicate_gene":
+        matrix["gene_ids"] = ["g1", "g1"]
+    elif attack == "duplicate_sample":
+        matrix["sample_ids"][1] = "s1"
+    elif attack == "duplicate_metadata":
+        rows[1]["sample_id"] = "s1"
+    elif attack == "nonfinite":
+        matrix["matrix"][0][1] = float("nan")
+    elif attack == "unknown_representation":
+        representation = None
+    else:
+        representation = "raw_counts"
     service, binding, _, _ = inputs(tmp_path, matrix=matrix, metadata=rows, representation=representation)
     with pytest.raises(ValueError):
         prepare_execution_inputs(binding, ports(), artifact_service=service, output=tmp_path / "bridge")
@@ -350,15 +406,20 @@ def test_invalid_or_unsupported_inputs_are_rejected_before_derivation(tmp_path, 
 def test_inference_preconditions_block_before_derivation(tmp_path, attack):
     service, binding, _, rows = inputs(tmp_path)
     requested = ports(infer=True)
-    if attack == "unit_unknown": binding["declarations"]["biological_independence"] = None
-    elif attack == "invalid_contrast": requested["design"]["contrasts"][0]["target"] = "absent"
+    if attack == "unit_unknown":
+        binding["declarations"]["biological_independence"] = None
+    elif attack == "invalid_contrast":
+        requested["design"]["contrasts"][0]["target"] = "absent"
     elif attack == "rank_deficient":
         requested["design"]["covariates"] = ["duplicate_group"]
-        for row in rows: row["duplicate_group"] = row["group"]
+        for row in rows:
+            row["duplicate_group"] = row["group"]
     if attack in {"unit_repeated", "confounded", "rank_deficient"}:
-        if attack == "unit_repeated": rows[1]["unit"] = rows[0]["unit"]
+        if attack == "unit_repeated":
+            rows[1]["unit"] = rows[0]["unit"]
         elif attack == "confounded":
-            for row in rows: row["batch"] = row["group"]
+            for row in rows:
+                row["batch"] = row["group"]
         path = tmp_path / "changed-metadata.json"
         path.write_text(json.dumps({"samples": rows}))
         binding["metadata_artifact_id"] = service.import_artifact(path, artifact_type="json", actor="synthetic-test")["artifact_id"]

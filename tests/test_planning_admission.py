@@ -5,8 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_analysis_episodes import workspace
+from tests.test_analysis_episodes import workspace as workspace
 from tests.test_episode_planning import Selector, dataset
+
+__all__ = ['workspace']
 
 
 def rewrite_metadata(data, transform):

@@ -1,14 +1,13 @@
 """Durable investigation context without new scientific or execution authority."""
-from copy import deepcopy
 import hashlib
 import json
-from pathlib import Path
 import uuid
+from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
-from devbench.analysis.workbench_investigations import InvestigationService, classify_question
-
+from devbench.analysis.workbench_investigations import InvestigationService
 
 DECLARATIONS = {"assay": "scrna", "measurement": "umi_counts", "count_provenance": "Synthetic integer counts",
     "capture_unit_key": "batch", "capture_units_confirmed": True, "annotation_provenance": "Unavailable in this synthetic fixture"}
@@ -124,6 +123,19 @@ def create(service, app, **extra):
 
 def action(service, record, name, **extra):
     return service.action(record["id"], {"action": name, "expected_revision": record["revision"], **extra})
+
+
+def test_unchanged_open_ended_question_does_not_record_another_confirmation(setup):
+    app, inputs, service = setup
+    question = "Please tell me what is changing from days 9-11"
+    record = create(service, app, question=question)
+    assert record["required_action"] == "clarify_intent"
+    scans = list(inputs.calls)
+    repeated = action(service, record, "clarify", question=question, declarations={})
+    assert repeated["revision"] == record["revision"]
+    assert repeated["turns"] == record["turns"]
+    assert inputs.calls == scans
+    assert not app.registered
 
 
 def test_missing_context_is_a_durable_observed_profile_not_a_guessed_declaration(setup):
@@ -275,6 +287,112 @@ def test_symlink_records_and_tampered_ancestry_fail_closed(setup, tmp_path):
         service.get(record["id"])
 
 
+@pytest.mark.wal
+def test_governed_investigation_seeds_adaptive_and_disclosure_in_one_ledger(
+    workspace_tmp_path,
+):
+    from devbench.analysis.evidence_access import EvidenceBroker
+    from devbench.engine.workflow_operations import (
+        LEDGER_NAME,
+        OperationBlocked,
+        WorkflowOperationLedger,
+    )
+    from devbench.platform.adaptive_workflow import AdaptiveWorkflow
+    from tests.test_investigation_invalidation import digest, step
+
+    app = App(workspace_tmp_path)
+    _use_governed_ledger(app)
+    inputs = Inputs(app.source)
+    service = InvestigationService(app, inputs)
+    record = create(service, app, declarations=DECLARATIONS)
+    identity = record["id"]
+    lineage = record["adaptive_lineage"]
+    ledger_path = app.scientific.root / LEDGER_NAME
+    assert lineage["lineage_id"] == identity
+    assert lineage["mode"] == "adaptive/1"
+    assert not service._path(identity).exists()
+
+    ledger = WorkflowOperationLedger(ledger_path)
+    binding = ledger.scientific.get(identity, lineage["binding_id"])
+    assert binding["record"]["cohort_sha256"] == record["profile"]["sha256"]
+    assert (
+        binding["record"]["exposure_basis_sha256"] == lineage["exposure_basis_sha256"]
+    )
+    broker = EvidenceBroker(ledger.scientific)
+    reserved = broker.reservation(lineage["disclosure_reservation_id"])
+    assert reserved["state"] == "delivery_attempted"
+    assert reserved["context_id"] == lineage["context_id"]
+    assert reserved["source_id"] == lineage["source_id"]
+    with pytest.raises(OperationBlocked, match="scientific_execution_unavailable"):
+        ledger.scientific.execution(identity)
+
+    flow = AdaptiveWorkflow(ledger, identity)
+    flow.insert(step("descriptive-plan"))
+    flow.hold("descriptive-plan", "operator_review", evidence_sha256=digest("hold"))
+    reopened = InvestigationService(app, inputs)
+    assert reopened.get(identity)["adaptive_lineage"] == lineage
+    assert reopened.list()["investigations"][0]["id"] == identity
+    with ledger._database() as db:
+        assert "descriptive-plan" in flow._state(db).holds
+    assert list(app.workspace.rglob(LEDGER_NAME)) == [ledger_path]
+
+
+@pytest.mark.wal
+def test_governed_legacy_investigation_advances_from_ledger_after_migration(
+    workspace_tmp_path,
+):
+    from devbench.engine.workflow_operations import LEDGER_NAME, OperationConflict
+
+    app = App(workspace_tmp_path)
+    inputs = Inputs(app.source)
+    service = InvestigationService(app, inputs)
+    prior = create(service, app)
+    old_path = service._path(prior["id"])
+    historical = old_path.read_bytes()
+    _use_governed_ledger(app)
+    governed = InvestigationService(app, inputs)
+    revised = action(governed, prior, "clarify", declarations=DECLARATIONS)
+    assert revised["revision"] > prior["revision"]
+    assert revised["adaptive_lineage"]["lineage_id"] == prior["id"]
+    assert old_path.read_bytes() == historical
+    assert governed.get(prior["id"])["revision"] == revised["revision"]
+
+    ledger_path = app.scientific.root / LEDGER_NAME
+    ledger_path.rename(ledger_path.with_suffix(".retained"))
+    with pytest.raises(OperationConflict, match="Workbench investigation ledger"):
+        InvestigationService(app, inputs)
+
+
+@pytest.mark.wal
+def test_denied_intake_keeps_observed_metadata_out_of_workbench_records(
+    workspace_tmp_path, monkeypatch,
+):
+    from devbench.analysis.evidence_access import AccessDenied, EvidenceBroker
+
+    app = App(workspace_tmp_path)
+    _use_governed_ledger(app)
+    service = InvestigationService(app, Inputs(app.source))
+
+    def deny(*args):
+        raise AccessDenied("Protected evaluation custody denies evidence delivery")
+
+    monkeypatch.setattr(EvidenceBroker, "_source", deny)
+    result = create(service, app)
+    assert result["status"] == "operation_failed"
+    assert result["profile"] is None
+    assert all(turn["kind"] != "data_audit" for turn in result["turns"])
+    assert service.get(result["id"])["profile"] is None
+    assert service.list()["investigations"][0]["cells"] is None
+
+
+def _use_governed_ledger(app):
+    from devbench.platform.scientific_workspace import ScientificWorkspace
+
+    # The remaining coordinator interface is mocked by App.register.
+    app.scientific = object.__new__(ScientificWorkspace)
+    app.scientific.root = app.workspace / "methods"
+
+
 def test_inspection_failure_is_preserved_without_registration(setup):
     app, inputs, service = setup
     def fail(_):
@@ -330,6 +448,7 @@ class Scientific:
         self.mode, self.configured = "disabled", False
         self.scientific_workflow, self.selector = None, None
         self.artifact_records = {}
+        self.runs = {}
 
     def configuration(self):
         return {"planning_mode": self.mode, "scientific_workflow_configured": self.configured,
@@ -361,12 +480,17 @@ class Scientific:
     def get(self, kind, identity):
         if kind == "dataset":
             return deepcopy(self.logical_datasets[identity])
+        if kind == "run":
+            return deepcopy(self.runs[identity])
         assert kind == "artifact"
         if identity in self.artifact_records:
             return deepcopy(self.artifact_records[identity])
         return {"sha256": hashlib.sha256(self.app.source.read_bytes()).hexdigest()}
 
     def download(self, identity):
+        raise PermissionError("restricted_audit_entitlement_required")
+
+    def _linked_artifact(self, identity):
         if identity not in self.artifact_records:
             raise KeyError("Artifact is not linked to a scientific record in this project")
         return self.app.workspace / "scientific-output.json", "application/json", identity + ".json"
@@ -457,7 +581,6 @@ def test_explicit_offline_campaign_syncs_actual_steps_and_stops_at_review(setup)
     assert record["scientific_operations"] and not app.started
     sent = next(row for row in app.scientific.calls if row["action"] == "advance_to_gate")
     assert sent["allow_model_execution"] is False
-    identity = record["scientific_operations"][0]
     app.scientific.steps = [{"session_id": record["scientific_session_id"], "node": "audit", "attempt": 0, "status": "active"}]
     app.scientific.operations[0]["status"] = "running"
     active = service.get(record["id"])
@@ -492,7 +615,7 @@ def test_scientific_model_grant_cannot_override_private_input_scope(setup):
             "expected_revision": app.scientific.revision, "allow_model_execution": True})
 
 
-def test_post_execution_synthesis_requires_its_own_current_campaign_grant_and_readiness(setup, monkeypatch):
+def test_polling_never_dispatches_automatic_synthesis(setup, monkeypatch):
     from devbench.analysis import workflow_entrypoints
     app, _, service = setup
     app.scientific = Scientific(app)
@@ -506,12 +629,8 @@ def test_post_execution_synthesis_requires_its_own_current_campaign_grant_and_re
     assert not first.get("auto_synthesis_requested")
     assert len(app.scientific.operations) == 1
     ready[0] = True  # The separately tested read-only validator reports complete verified trials.
-    advanced = service.get(record["id"])
-    assert advanced["auto_synthesis_requested"] is True
-    synthesis_calls = [row for row in app.scientific.calls if row.get("phase") == "synthesis"]
-    assert len(synthesis_calls) == 1 and synthesis_calls[0]["allow_model_execution"] is False
-    service.get(record["id"])
-    assert len([row for row in app.scientific.calls if row.get("phase") == "synthesis"]) == 1
+    assert not service.get(record["id"]).get("auto_synthesis_requested")
+    assert len(app.scientific.operations) == 1
 
 
 def test_restart_does_not_renew_a_retained_synthesis_model_or_campaign_grant(setup, monkeypatch):
@@ -524,7 +643,7 @@ def test_restart_does_not_renew_a_retained_synthesis_model_or_campaign_grant(set
         "scientific_context": {"counts_layer": "X", "data_classification": "synthetic", "auto_advance": True, "auto_synthesis": True}})
     app.scientific.operations[0].update(status="completed", value={"status": "awaiting_operator_review", "gate": "review", "requested_phase": "planning"})
     reopened = InvestigationService(app, inputs).get(record["id"])
-    assert reopened["required_action"] == "renew_synthesis_authorization"
+    assert reopened["synthesis_continuation"] is None
     assert not reopened.get("auto_synthesis_requested") and len(app.scientific.operations) == 1
 
 
@@ -558,11 +677,13 @@ def test_scientific_published_artifacts_are_bound_and_unavailable_links_are_expl
     run_id = "c" * 32
     app.scientific.versions[ref["version_id"]] = {"run_id": run_id, "attempt_id": "b" * 32, "validation_id": "a" * 32,
         "artifact_ids": [identity, absent], "review": {"review_status": "candidate"},
-        "run": {"trigger": {"kind": "run_trial", "request": {"session_id": session}}}}
+        "run": {"trigger": {"kind": "run_trial"}}}
+    app.scientific.runs[run_id] = {"trigger": {"kind": "run_trial", "request": {"session_id": session}}}
     app.scientific.operations[0].update(status="completed", value={"run_id": run_id, "results": [{"ref": ref}], "unavailable": []})
     value = service.get(record["id"])
     assert value["artifacts"][0]["artifact_id"] == identity
     assert value["artifacts"][0]["download_path"] == "/api/scientific/artifacts/" + identity
+    assert value["artifacts"][0]["download_status"] == "restricted_audit_entitlement_required"
     assert value["artifacts"][0]["scientific_session_id"] == session
     assert value["scientific_results"][0]["ref"] == ref
     assert value["artifact_unavailable"][0]["artifact_id"] == absent
@@ -576,7 +697,8 @@ def test_scientific_published_result_cannot_cross_thread_sessions(setup):
     record = service.create({"question": "Which method is best?", "source": str(app.source), "declarations": DECLARATIONS,
         "scientific_context": {"counts_layer": "X", "data_classification": "synthetic", "auto_advance": True}})
     ref = {"object_type": "result", "object_id": "e" * 32, "version_id": "e" * 64}
-    app.scientific.versions[ref["version_id"]] = {"run": {"trigger": {"kind": "run_trial", "request": {"session_id": "f" * 32}}}}
+    app.scientific.versions[ref["version_id"]] = {"run_id": "c" * 32, "run": {"trigger": {"kind": "run_trial"}}}
+    app.scientific.runs["c" * 32] = {"trigger": {"kind": "run_trial", "request": {"session_id": "f" * 32}}}
     app.scientific.operations[0].update(status="completed", value={"run_id": "c" * 32, "results": [{"ref": ref}]})
     value = service.get(record["id"])
     assert not value["artifacts"] and "another scientific planner" in value["artifact_unavailable"][0]["reason"]
@@ -636,6 +758,47 @@ def test_unknown_or_failed_scientific_cursor_cannot_offer_a_submittable_gate(set
     assert internal["gate_options"]["can_submit"] is False
 
 
+def test_pre_dispatch_review_isolation_failure_has_public_message_and_retains_details(setup):
+    app, _, service = setup
+    app.scientific = Scientific(app)
+    initial = service.create({'question': 'Which method is best?', 'source': str(app.source),
+        'declarations': DECLARATIONS, 'scientific_context': {'counts_layer': 'X'}})
+    record = service._load(initial['id'])
+    identity = 'e' * 32
+    record['scientific_operations'] = [identity]
+    service._save(record)
+    reason = 'Operation effects are uncertain; no automatic redispatch. ValueError: Reviewer selector private storage must match its fresh run'
+    app.scientific.operations = [{'operation_id': identity, 'action': 'advance_to_gate', 'status': 'completed',
+        'value': {'status': 'recovery_required', 'phase': 'candidate_review',
+            'required_action': 'inspect_and_reconcile', 'reason': reason}}]
+    failed = service.get(record['id'])
+    assert failed['status'] == 'recovery_required'
+    assert 'could not start' in failed['error']['message']
+    assert 'workspace isolation' in failed['error']['message']
+    assert failed['error']['review_model_sessions_attempted'] == 0
+    assert failed['error']['numerical_fit_started'] is False
+    assert failed['error']['technical_details'] == reason
+    assert failed['scientific_blocker_reason'] == reason
+    errors = [turn for turn in failed['turns'] if turn['kind'] == 'error']
+    assert errors[-1]['content']['operation_id'] == identity
+    again = service.get(record['id'])
+    assert len([turn for turn in again['turns'] if turn['kind'] == 'error']) == len(errors)
+
+
+def test_preliminary_explanation_projection_uses_named_public_structured_field(setup):
+    app, _, service = setup
+    app.scientific = Scientific(app)
+    record = service.create({'question': 'Which method is best?', 'source': str(app.source),
+        'declarations': DECLARATIONS, 'scientific_context': {'counts_layer': 'X'}})
+    plan = app.scientific.plans[record['scientific_session_id']]
+    plan['preliminary_explanation'] = {'hypotheses': [], 'uncertainty': ['Synthetic missing evidence.']}
+    plan['selection_history'] = [{'private_transport_capture': 'must not project'}]
+    current = service._load(record['id'])
+    service._project_scientific_plan(current)
+    assert current['scientific_plan']['preliminary_explanation'] == plan['preliminary_explanation']
+    assert 'selection_history' not in current['scientific_plan']
+
+
 @pytest.mark.parametrize("startup_permission,startup_scope,declared_scope", [
     (True, "synthetic", "public"), (True, "public", "synthetic"), (False, "public", "public")])
 def test_scientific_model_campaign_and_direct_actions_require_exact_current_startup_scope(
@@ -676,8 +839,8 @@ def test_scientific_model_campaign_with_exact_current_startup_scope_can_advance(
     (".json", '{"samples":["s1","s2"],"metadata":{"assay":"unknown"}}'),
     (".csv", "sample,condition\ns1,A\ns2,B\n")])
 def test_real_service_accepts_discovered_generic_scientific_inputs_without_weakening_native_h5ad_boundary(suffix, contents):
-    from devbench.analysis.workbench_ui import WorkbenchService
     from devbench.analysis.workbench_inputs import InputDiscovery
+    from devbench.analysis.workbench_ui import WorkbenchService
     base = Path(__file__).resolve().parents[1] / "reports/investigation-input-admission" / uuid.uuid4().hex
     inputs = base / "inputs"
     inputs.mkdir(parents=True)
@@ -813,3 +976,27 @@ def test_scientific_followup_recovers_binding_from_parent_plan_request_without_r
     assert "plan_request" not in child["scientific_context"] and "advance_request" not in child["scientific_context"]
     assert "data_classification" in child["context_inheritance"]["overridden_fields"]
     assert "data_classification" not in child["context_inheritance"]["inherited_fields"]
+
+
+def test_descriptive_question_is_answered_directly_without_clarification_gate(setup):
+    app, inputs, service = setup
+    record = service.create({"question": "how many genes are in this dataset", "source": str(app.source)})
+    assert record["status"] == "completed"
+    assert record["clarification_fields"] == []
+    answer_turn = next(turn for turn in record["turns"] if turn["kind"] == "dataset_answer")
+    assert "3 features" in answer_turn["content"]["message"] and "2 observations" in answer_turn["content"]["message"]
+    conclusion_turn = next(turn for turn in record["turns"] if turn["kind"] == "conclusion")
+    assert conclusion_turn["step"] == 5
+    assert record["synthesis"] is not None
+    assert record["synthesis"]["supported_findings"]["features"] == 3
+
+
+def test_subpopulation_question_is_routed_to_description_and_answered(setup):
+    app, inputs, service = setup
+    record = service.create({"question": "give me more detail about subpopulations", "source": str(app.source)})
+    assert record["status"] == "awaiting_information"
+    assert record["clarification_fields"] == []
+    answer_turn = next(turn for turn in record["turns"] if turn["kind"] == "dataset_answer")
+    assert "Dataset" in answer_turn["content"]["message"]
+    assert answer_turn['content']['completion'] == 'unavailable'
+    assert record["synthesis"] is None

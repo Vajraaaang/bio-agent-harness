@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 
 import pytest
 
@@ -22,10 +21,8 @@ def api():
 
 
 @pytest.fixture
-def workspace():
-    parent = Path(__file__).resolve().parents[1] / "reports/completed-scientific-review/2026-09-22/workspaces"
-    parent.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix="handoff-", dir=parent))
+def workspace(workspace_tmp_path):
+    return workspace_tmp_path
 
 
 @pytest.mark.parametrize("route", ["bulk_continuous", "bulk_counts", "cellular_counts", "backed_scrna"])
@@ -140,7 +137,8 @@ def test_completed_analysis_reaches_reviewer_with_bound_proposal_evidence(worksp
     with pytest.raises(ValueError, match="proposal"):
         prepare(workspace / "wrong-kind", **wrong)
     from tests.test_scientific_review import packet as other_packet
-    other = workspace / "other"; other.mkdir()
+    other = workspace / "other"
+    other.mkdir()
     foreign, _ = other_packet(other)
     wrong = {**kwargs, "proposal_packet_manifest": foreign["manifest_path"],
              "expected_proposal_packet_root": foreign["root_hash"]}

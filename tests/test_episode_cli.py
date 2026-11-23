@@ -1,10 +1,11 @@
 """Runnable coordinator entry point; does not invoke Codex/model participants."""
 import json
-from pathlib import Path
 import subprocess
 import sys
 
-from tests.test_analysis_episodes import api, create, inputs, run_contrast, workspace
+from tests.test_analysis_episodes import api, create, inputs, run_contrast, workspace as _workspace
+
+workspace = _workspace
 
 
 def test_cli_denies_before_reading_configuration(workspace):
@@ -17,7 +18,9 @@ def test_cli_denies_before_reading_configuration(workspace):
     assert not output.exists()
 
 
-def test_cli_executes_real_bulk_flow_without_model_backend(workspace):
+def test_cli_executes_real_bulk_flow_without_model_backend(workspace, monkeypatch):
+    runs = workspace / ".runs"
+    monkeypatch.setenv("DEVBENCH_RUNS_ROOT", str(runs))
     task, paths = inputs(workspace)
     spec = {"question": "Estimate B minus A", "assay": "bulk", "public_task": task,
             "inputs": {name: str(path.relative_to(workspace)) for name, path in paths.items()}}
@@ -37,6 +40,24 @@ def test_cli_executes_real_bulk_flow_without_model_backend(workspace):
     assert (output / "summary.md").is_file()
     _, _, verify = api()
     assert verify(output, record["receipt"]["root_hash"])["valid"]
+    binding = json.loads((output / "execution-code.json").read_text())
+    assert (runs / binding["run_id"] / "code_snapshot" / "snapshot-manifest.json").is_file()
+    replay = workspace / "retained-replay"
+    replayed = subprocess.run([sys.executable, "-m", "devbench.analysis.episode_cli",
+        "--replay", str(output), "--expected-root", record["receipt"]["root_hash"],
+        "--output", str(replay), "--allow-data-execution"], capture_output=True, text=True, timeout=90)
+    assert replayed.returncode == 0, replayed.stderr
+    assert json.loads((replay / "execution-code.json").read_text()) == binding
+    bundle_output = workspace / "bundle-replay"
+    bundle_replay = subprocess.run(
+        [sys.executable, "-P", str(output / "replay_bundle/replay.py"),
+         "--expected-root", record["receipt"]["root_hash"],
+         "--output", str(bundle_output), "--allow-data-execution"],
+        capture_output=True, text=True, timeout=90,
+    )
+    assert bundle_replay.returncode == 0, bundle_replay.stderr
+    assert json.loads(bundle_replay.stdout)["exact_target_hash_match"] is True
+    assert json.loads((bundle_output / "execution-code.json").read_text()) == binding
 
 
 def test_replay_can_start_from_saved_artifacts_without_original_object(workspace):
@@ -80,8 +101,12 @@ def test_cli_codex_route_connects_selector_to_real_numerical_tools(workspace, mo
     class FixtureSelector(ScriptedSelector):
         def __init__(self, **kwargs):
             super().__init__(sequence())
+        def episode_lease(self):
+            from contextlib import nullcontext
+            return nullcontext()
+
         def select(self, context, output, **kwargs):
-            assert kwargs.pop("allow_model_execution") is True
+            assert kwargs.pop("allow_model_execution") is False
             return super().select(context, output, **kwargs)
     monkeypatch.setattr(episode_codex, "CodexActionSelector", FixtureSelector)
     task, paths = inputs(workspace)
@@ -97,3 +122,34 @@ def test_cli_codex_route_connects_selector_to_real_numerical_tools(workspace, mo
     assert result["observation"]["outcome"] == "completed"
     assert result["observation"]["agent_execution"]["model_sessions_attempted"] == 0
     assert api()[2](output, result["receipt"]["root_hash"])["valid"]
+
+
+def test_cli_resumes_authenticated_snapshot_handoff(workspace, monkeypatch):
+    monkeypatch.setenv("DEVBENCH_RUNS_ROOT", str(workspace / ".runs"))
+    task, paths = inputs(workspace)
+    spec = workspace / "spec.json"
+    spec.write_text(json.dumps({"question": "Estimate B minus A", "assay": "bulk",
+                                "public_task": task, "inputs": {name: str(path) for name, path in paths.items()}}))
+    actions = workspace / "actions.json"
+    actions.write_text(json.dumps([{"kind": "tool", "tool": "audit_expression_quality"},
+                                   {"kind": "request_information", "message": "Confirm interpretation"}]))
+    output = workspace / "cli-handoff"
+    command = [sys.executable, "-m", "devbench.analysis.episode_cli",
+               "--output", str(output), "--allow-data-execution"]
+    paused = subprocess.run([*command, "--spec", str(spec), "--actions", str(actions)],
+                            capture_output=True, text=True, timeout=90)
+    assert paused.returncode == 5, paused.stderr
+    receipt = json.loads(paused.stdout)["handoff"]
+    binding = (output / "execution-code.json").read_bytes()
+    response = workspace / "response.json"
+    response.write_text(json.dumps({"message": "Continue with the declared design.",
+                                    "preserves_frozen_inputs_and_settings": True}))
+    actions.write_text(json.dumps([{"kind": "tool", "tool": name} for name in
+                                   ("validate_biological_units", "validate_design_matrix", "mean_condition_analysis")]
+                                  + [{"kind": "finish"}]))
+    resumed = subprocess.run([*command, "--resume", receipt["manifest_path"], "--expected-root", receipt["root_hash"],
+                              "--response", str(response), "--actions", str(actions)],
+                             capture_output=True, text=True, timeout=90)
+    assert resumed.returncode == 0, resumed.stderr
+    assert (output / "execution-code.json").read_bytes() == binding
+    assert json.loads(resumed.stdout)["observation"]["outcome"] == "completed"

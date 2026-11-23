@@ -290,7 +290,8 @@ def _memory_chart(metadata):
         completeness = "complete" if sampling.get("complete") is True else "incomplete" if sampling.get("complete") is False else "completeness unreported"
         thinning = f' · retained stride {_h(sampling.get("retained_stride"))}' if sampling.get("retained_stride") is not None else ''
         total = f' · {_fmt(sampling.get("successful_sample_count"), 0)} successful polls' if sampling.get("successful_sample_count") is not None else ''
-        return (chart + f'<p class="caption">{len(points)} recorded samples · {_h(unit)} · elapsed seconds. '
+        return (chart + f'<p class="caption">{len(points)} recorded samples of {len(samples)} supplied · {_h(unit)} · elapsed seconds. '
+                f'Legacy preview omits {len(samples) - len(points)} invalid, differently unit-labelled, or over-budget samples. '
                 f'Sampling: {scope} · {interval} s interval · {completeness}{thinning}{total}. '
                 'Lines connect observed samples; gaps between samples are unmeasured. '
                 'Summed process RSS can double-count shared pages and miss between-poll peaks.</p>')
@@ -392,9 +393,11 @@ def _science_panels(metadata, source_path):
             return '<p class="empty">Optional scientific artifact unavailable or outside the results directory.</p>'
     artifacts = _map(artifacts)
     result = []
-    for curve in _items(artifacts.get("expression_curves"))[:12]:
+    supplied_curves = _items(artifacts.get("expression_curves"))
+    for curve in supplied_curves[:12]:
         curve = _map(curve)
-        raw = _items(curve.get("points"))[:2000]
+        supplied_points = _items(curve.get("points"))
+        raw = supplied_points[:2000]
         points = [p for p in raw if isinstance(p, dict) and _number(p.get("x")) is not None
                   and _number(p.get("prediction")) is not None]
         if len(points) < 2:
@@ -417,8 +420,14 @@ def _science_panels(metadata, source_path):
         chart += '<polyline class="prediction-line" points="' + ' '.join(xy(p["x"], p["prediction"]) for p in points) + '"/>'
         chart += f'<text x="50" y="22">{_h(curve.get("y_label") or "Expression units unspecified")}</text><text x="50" y="190">{_fmt(lo_x)}</text><text x="630" y="190">{_fmt(hi_x)}</text><text x="360" y="214" text-anchor="middle">{_h(curve.get("x_label") or "Recorded x coordinate")}</text></svg>'
         note = ' Supplied confidence limits shown; coverage level is ' + _text(curve.get("confidence_level") or "unspecified") + '.' if has_band else ' Confidence interval unavailable.'
-        result.append('<section class="panel"><h3>' + _h(curve.get("gene") or "Recorded expression") + '</h3>' + chart + '<p class="caption">Predictions supplied in report_artifacts. No fit performed by this report.' + _h(note) + '</p></section>')
+        result.append('<section class="panel"><h3>' + _h(curve.get("gene") or "Recorded expression") + '</h3>' + chart
+            + '<p class="caption">Legacy static preview: ' + str(len(points)) + ' of ' + str(len(supplied_points))
+            + ' supplied points; invalid or over-budget points are omitted. Predictions supplied in report_artifacts. No fit performed by this report.'
+            + _h(note) + '</p></section>')
     curve_count = len(result)
+    if supplied_curves and curve_count != len(supplied_curves):
+        result.append('<p class="caption">Legacy static preview displays ' + str(curve_count) + ' of '
+            + str(len(supplied_curves)) + ' supplied curves; omitted curves exceed the preview limit or lack two finite points.</p>')
     lineage_available = False
     lineage = _map(artifacts.get("lineage"))
     nodes = [n for n in _items(lineage.get("nodes")) if isinstance(n, dict) and isinstance(n.get("id"), str)]
@@ -427,15 +436,20 @@ def _science_panels(metadata, source_path):
         height = max(200, math.ceil(len(nodes) / 4) * 90)
         positions = {n["id"]: (90 + (i % 4) * 180, 50 + (i // 4) * 90) for i, n in enumerate(nodes)}
         chart = _svg_start("Supplied lineage graph; layout does not encode pseudotime", 720, height, "lineage-chart")
+        displayed_edges = 0
         for edge in edges:
             if edge.get("source") in positions and edge.get("target") in positions:
+                displayed_edges += 1
                 x1, y1 = positions[edge["source"]]
                 x2, y2 = positions[edge["target"]]
                 chart += f'<path class="dag-edge" d="M{x1} {y1}L{x2} {y2}"><title>{_h(edge["source"])} → {_h(edge["target"])}</title></path>'
         for node in nodes:
             x, y = positions[node["id"]]
             chart += f'<circle class="sample-dot" cx="{x}" cy="{y}" r="8"/><text x="{x}" y="{y+26}" text-anchor="middle">{_h(node.get("label") or node["id"], 22)}</text>'
-        result.append('<section class="panel"><h3>Recorded lineage graph</h3>' + chart + '</svg><p class="caption">Supplied nodes and edges only. Layout is schematic; pseudotime is an inferred ordering and does not establish causal lineage.</p></section>')
+        result.append('<section class="panel"><h3>Recorded lineage graph</h3>' + chart + '</svg><p class="caption">Legacy static preview: '
+            + str(len(nodes)) + ' nodes and ' + str(displayed_edges) + ' of ' + str(len(_items(lineage.get("edges"))))
+            + ' supplied edges. Invalid or over-budget edges are omitted. Supplied nodes and edges only. Layout is schematic; '
+            'pseudotime is an inferred ordering and does not establish causal lineage.</p></section>')
         lineage_available = True
     missing = []
     if not curve_count:
@@ -446,6 +460,56 @@ def _science_panels(metadata, source_path):
         result.append('<section class="panel"><h3>Scientific artifact availability</h3><p class="caption">'
                       + ' '.join(missing) + ' No usable artifacts were supplied for these panels.</p></section>')
     return ''.join(result)
+
+
+def _typed_evidence_panel(run, metadata, audit, source_path, index):
+    """Project named saved objects for the same interactive renderer as Workbench.
+
+    The source hash covers exactly the supplied plotting objects below. This
+    does not authenticate an original artifact or promote legacy prose to data.
+    """
+    from devbench.analysis.scientific_plot_sources import prepare_report_plot_input, MissingSavedPlotInputs
+    from devbench.analysis.scientific_plot_suite import prepare_scientific_plot_workspace
+    from copy import deepcopy
+    selected = {key: deepcopy(metadata[key]) for key in ("report_artifacts", "memory_samples", "memory_unit") if key in metadata}
+    if isinstance(selected.get("report_artifacts"), str):
+        try:
+            selected["report_artifacts"] = _read_json(_local_reference(selected["report_artifacts"], source_path), MAX_ARTIFACT_BYTES)
+        except (ValueError, OSError, RuntimeError):
+            selected.pop("report_artifacts", None)
+    try:
+        packet = prepare_report_plot_input(selected, audit=audit)
+        source = {"sha256": _digest({"metadata": selected, "audit": audit}),
+            "run_id": _text(run.get("run_id") or metadata.get("session_id") or "supplied-report-entry-" + str(index)),
+            "kind": "retained", "scope": "supplied plotting objects; artifact bytes and scientific validity not independently verified",
+            "evidence_root": audit.get("root_hash"), "results_source": str(source_path) if source_path else None}
+        workspace = prepare_scientific_plot_workspace(packet, source=source)
+    except MissingSavedPlotInputs:
+        return ""
+    except (ValueError, TypeError, KeyError, OverflowError) as error:
+        return ('<section class="panel"><h3>Typed scientific evidence unavailable</h3><p class="caption">'
+                + _h(str(error), 400) + '. The saved source and legacy views are unchanged.</p></section>')
+    encoded = json.dumps(workspace, allow_nan=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    return ('<section class="panel engine-scientific"><h3>Explore saved plotting evidence</h3>'
+        '<p class="caption">' + str(len(workspace["panels"])) + ' typed panels · exact saved source values · source SHA-256 '
+        + _h(source["sha256"]) + '. Observed counts and execution geometry do not establish clinical validity.</p>'
+        '<div data-engine-scientific="' + str(index) + '"></div>'
+        '<script type="application/json" data-engine-workspace="' + str(index) + '">' + encoded + '</script></section>')
+
+
+def _scientific_assets():
+    """Read only fixed package assets; no caller-selected paths or network."""
+    base = Path(__file__).resolve().parents[1] / "devbench" / "analysis" / "assets"
+    css = (base / "bulk-scientific-figure.css").read_text(encoding="utf-8")
+    scripts = [(base / name).read_text(encoding="utf-8") for name in (
+        "scientific-palettes.js", "scientific-plot-panels.js", "bulk-scientific-figure.js", "scientific-plot-workbench.js")]
+    start = """(function(){function mountVisible(){document.querySelectorAll('[data-engine-scientific]').forEach(function(host){
+      if(host.dataset.mounted || host.closest('[hidden]'))return;
+      var source=document.querySelector('[data-engine-workspace="'+host.dataset.engineScientific+'"]');
+      try{BulkScientificFigure.mount(host,{scientificWorkspace:JSON.parse(source.textContent)});host.dataset.mounted='true';}
+      catch(error){host.textContent='Saved interactive evidence unavailable: '+error.message;}
+    });}document.querySelectorAll('[data-open]').forEach(function(button){button.addEventListener('click',mountVisible);});mountVisible();})();"""
+    return '<style>' + css + '</style>' + ''.join('<script>' + script.replace('</script', '<\\/script') + '</script>' for script in [*scripts, start])
 
 
 def _observation_panel(observation, source):
@@ -509,7 +573,8 @@ def _run_detail(run, index, audit, observation, source_path, observations_source
             f'<section class="panel"><h3>Tool execution</h3>{tools_html}</section>'
             f'<section class="panel audit-panel"><div class="panel-heading"><h3>Execution evidence</h3><span class="tag">{_h(audit["status"])}</span></div>'
             f'<p class="caption">{_h(audit["message"])}</p>{_dag_chart(audit, index)}{fingerprints}</section>'
-            + _observation_panel(observation, observations_source) + _science_panels(metadata, source_path))
+            + _observation_panel(observation, observations_source) + _science_panels(metadata, source_path)
+            + _typed_evidence_panel(run, metadata, audit, source_path, index))
 
 
 def render_report(results, source_path=None, *, session_observations=None,
@@ -611,6 +676,8 @@ def render_report(results, source_path=None, *, session_observations=None,
 <div class="table-scroll ledger-scroll" tabindex="0" aria-label="Scrollable run ledger"><table id="runs-table"><caption class="sr-only">Recorded runs, scientific scores, and runtime</caption><thead><tr><th scope="col">Task / track</th><th scope="col">Condition</th><th scope="col">Model identity</th><th scope="col">Outcome</th><th scope="col">Score</th><th scope="col">Runtime</th><th scope="col"><span class="sr-only">Details</span></th></tr></thead>{''.join(rows)}</table></div><p id="no-results" class="empty"{'' if not runs else ' hidden'}>{'No runs supplied. Add a results JSON file to inspect recorded evidence.' if not runs else 'No runs match the selected filters.'}</p></section>
 <section id="evidence-notes" class="evidence-notes" aria-labelledby="scope-title"><div><p class="eyebrow">02 / Evidence scope</p><h2 id="scope-title">Traceable does not<br>mean validated.</h2></div><div class="scope-copy"><p>The execution DAG is tamper-evident against an externally retained root. This report compares stored manifest and node hashes with the supplied receipt; it does not authenticate that receipt or verify artifact bytes. It is not a compliance certificate or an authenticated electronic signature.</p><p>Tool failure, missing telemetry, and absent grader output remain visible. An ungraded run may carry a raw score of zero in its source; its scientific score here is N/A. Supplemental session context does not overwrite run measurements.</p><p>Clinical release remains held pending qualified independent validation, authenticated approval, signature, and operational controls. Network associations, inferred lineage, and supplied prediction bands have only their stated evidence scope.</p></div></section>
 <footer><div><span class="brand-footer">DEV / BENCH</span><p>Self-contained HTML · system fonts · no network requests</p></div><dl><dt>Results source</dt><dd>{_h(source_name)}</dd><dt>Source file SHA-256</dt><dd>{_h(source_hash)}</dd></dl></footer></main><script>{_JS}</script></body></html>'''
+    if 'data-engine-workspace=' in body:
+        body = body.replace('</body>', _scientific_assets() + '</body>')
     return body
 
 

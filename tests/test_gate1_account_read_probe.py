@@ -69,7 +69,8 @@ def test_argv_and_environment_are_closed_and_no_endpoint_overrides():
         'CODEX_ACCESS_TOKEN', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'))
 
 
-@pytest.mark.skipif(not hasattr(api.os, 'waitid'), reason='Linux waitid WNOWAIT lifecycle is unavailable on this host')
+@pytest.mark.skipif(sys.platform != 'linux' or not hasattr(api.os, 'waitid'),
+                    reason='Requires the pinned Linux waitid WNOWAIT lifecycle')
 def test_fake_stdio_lifecycle_discards_rpc_email_and_never_calls_official_client(tmp_path, monkeypatch):
     fake = tmp_path / 'fake_rpc.py'
     fake.write_text('''import json,sys
@@ -84,7 +85,7 @@ assert sys.stdin.read()==''
     monkeypatch.setattr(api, 'WORKSPACE', tmp_path)
     monkeypatch.setattr(api, 'arguments', lambda: [sys.executable, '-I', str(fake)])
     result = api.run_probe()
-    assert result['accepted_account_plan_observation'] is True
+    assert result['accepted_account_plan_observation'] is True, result
     assert result['process_reaped'] is True
     assert result['official_cli_exit_code'] == 0
     assert result['process_group_cleanup_uncertain'] is False

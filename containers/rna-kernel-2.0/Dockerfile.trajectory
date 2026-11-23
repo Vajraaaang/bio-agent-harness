@@ -1,0 +1,17 @@
+# Add donor trajectory code over the exact per-architecture NB fit kernel.
+ARG KERNEL_IMAGE=devbench-rna-kernel:2.0-thesis-nb-fit-arm64
+FROM ${KERNEL_IMAGE}
+
+COPY src/devbench/core/design.py \
+    src/devbench/core/h5ad_gene_blocks.py \
+    src/devbench/core/input_files.py \
+    src/devbench/core/population_data.py \
+    src/devbench/core/scrna_donor_trajectory.py \
+    src/devbench/core/trajectory_evidence.py \
+    /opt/rna/runtime/devbench/core/
+COPY rna_kernels/mounted_scrna.py \
+    rna_kernels/scrna_upstream_contract.py \
+    /opt/rna/runtime/rna_kernels/
+
+RUN --network=none python3.13 -c \
+    'from devbench.core import input_files, scrna_donor_trajectory'

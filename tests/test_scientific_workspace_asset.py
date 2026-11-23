@@ -48,7 +48,7 @@ context.fetch=async(path,options)=>{
  return {ok:true,json:async()=>JSON.parse(JSON.stringify(value)),blob:async()=> 'fixture'};
 };
 const sciPosts=()=>calls.filter(call=>call.path==='/api/scientific'&&call.method==='POST');
-const connectScience=async()=>{elements.token.value='local-token';await elements.connect.onclick();assert.equal(elements['login-error'].textContent,'Restoring your local workspace…');};
+const connectScience=async()=>{await startWorkspace();assert.equal(elements.app.hidden,false,elements['startup-message'].textContent);};
 """
 
 
@@ -184,7 +184,7 @@ await connectScience();
 assert.ok(elements['scientific-dataset'].value.includes(linked.version_id));
 assert.equal(elements['scientific-analysis'].value,'');assert.equal(elements['scientific-plan'].value,'');
 const link=elements['scientific-exact-links'].children[0];
-assert.ok(link.href.includes(linked.version_id));assert.ok(!link.href.includes('local-token'));assert.ok(!link.href.includes('#'));
+assert.ok(link.href.includes(linked.version_id));assert.ok(!link.href.includes('#'));
 await elements['scientific-refresh'].onclick();
 assert.ok(elements['scientific-dataset'].value.includes(linked.version_id));assert.equal(sciPosts().length,0);
 """)
@@ -204,14 +204,14 @@ assert.equal(sciPosts().length,0);
 """)
 
 
-def test_verified_source_preview_is_rendered_as_inert_text():
+def test_method_identity_reports_restricted_source_custody_without_rendering_source():
     run_script(SETUP + r"""
-server.source={source_text:'<script>globalThis.executed=true</script>\nprint("draft")',source_sha256:'f'.repeat(64),source_scope:'Generated unexecuted source',source_truncated:false,execution_started:false};
+server.source={source_sha256:'f'.repeat(64),source_status:'restricted_audit_entitlement_required',execution_started:false};
 await connectScience();elements['scientific-method-source'].value='method-v1';elements['scientific-method-source'].onchange();
 await elements['scientific-source-preview'].onclick();
-assert.equal(elements['scientific-source-code'].textContent,server.source.source_text);
+assert.equal(elements['scientific-source-code'].textContent,'SHA-256 '+server.source.source_sha256);
 assert.equal(context.executed,undefined);assert.equal(sciPosts().length,0);
-assert.match(elements['scientific-source-message'].textContent,/No source execution was requested/);
+assert.match(elements['scientific-source-message'].textContent,/restricted audit entitlement/);
 """)
 
 
@@ -461,7 +461,7 @@ let artifactReads=0,cancelled=0;
 const beforeArtifactFetch=context.fetch;
 context.fetch=async(path,options)=>{
  if(!path.startsWith('/api/scientific/artifacts/'))return beforeArtifactFetch(path,options);
- artifactReads++;assert.equal(options.headers['X-Workbench-Token'],'local-token');
+ artifactReads++;assert.equal(options.credentials,'omit');
  let consumed=false;
  return {ok:true,headers:{get:()=>server.previewType},body:{cancel:async()=>cancelled++,getReader:()=>({read:async()=>consumed?{done:true}:(consumed=true,{done:false,value:server.previewBytes}),cancel:async()=>cancelled++})}};
 };

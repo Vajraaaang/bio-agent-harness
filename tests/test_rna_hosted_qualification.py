@@ -75,7 +75,7 @@ def _fault_controls_snapshot(root):
 
 
 @pytest.mark.parametrize('phase', ['before_persist', 'after_persist_before_send'])
-def test_fault_controls_persistence_crash_reuses_actual_fixture(tmp_path, phase):
+def test_fault_controls_persistence_crash_reuses_actual_fixture(tmp_path, phase, installed_hosted_wheel):
     import json
     from devbench.study.rna_hosted_qualification import (
         FakeExporterChannel, isolated_fixture_factory, prepare_fake_inputs)
@@ -115,7 +115,7 @@ def test_fault_controls_persistence_crash_reuses_actual_fixture(tmp_path, phase)
 
 
 @pytest.mark.parametrize('phase', ['accept_then_timeout', 'after_response_before_ack'])
-def test_fault_controls_accepted_crash_never_blindly_resends_or_reexecutes(tmp_path, phase):
+def test_fault_controls_accepted_crash_never_blindly_resends_or_reexecutes(tmp_path, phase, installed_hosted_wheel):
     import sqlite3
     import time
     from devbench.study.rna_hosted_qualification import (
@@ -411,4 +411,5 @@ def test_expiry_checked_before_recovering_or_producing_fixture(tmp_path,monkeypa
     driver=module.QualificationDriver(manifest=manifest,criteria=criteria,exporter_channel=Channel(),
         fixture_factory=lambda **kwargs:pytest.fail('Expired authorization launched fixture'))
     driver.started-=901
-    with pytest.raises(PermissionError):driver.drain()
+    with pytest.raises(PermissionError):
+        driver.drain()

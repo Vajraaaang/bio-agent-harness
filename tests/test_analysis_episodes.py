@@ -3,7 +3,6 @@ import csv
 import importlib.util
 import json
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -15,11 +14,8 @@ def api():
 
 
 @pytest.fixture
-def workspace():
-    # Broker evidence must be outside platform-wide scratch, even in fixtures.
-    base = Path(__file__).resolve().parents[1] / "reports" / "episode-verification" / "workspaces"
-    base.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix="fixture-", dir=base))
+def workspace(workspace_tmp_path):
+    return workspace_tmp_path
 
 
 def inputs(root, *, cellular=False, continuous=True, confounded=False):
@@ -85,10 +81,6 @@ def run_contrast(episode, cellular=False):
         observation = episode.step({"kind": "tool", "tool": tool})
         assert observation["status"] == "succeeded", observation
     return observation
-
-
-def test_episode_entrypoint_exists():
-    api()
 
 
 def test_default_denial_precedes_path_access():

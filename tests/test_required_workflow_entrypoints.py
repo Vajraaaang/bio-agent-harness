@@ -1,19 +1,13 @@
 """Mandatory RNA entrypoints use real graph checkpoints without extra authority."""
 from tests.support.workflow_science_fixtures import RecordingScientificRuntime
 import pytest
-from pathlib import Path
-import tempfile
 
 from tests.test_langgraph_workflow import executable_rna
 
 
 @pytest.fixture
-def protected_workspace():
-    # Protected evidence intentionally cannot live in platform scratch.
-    # Keep the production guard and global TMPDIR unchanged.
-    root = Path(__file__).resolve().parents[1] / "reports" / "local-rna-analyst-2026-10-28" / "test-workspaces"
-    root.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix="entrypoint-", dir=root))
+def protected_workspace(workspace_tmp_path):
+    return workspace_tmp_path
 
 
 @pytest.mark.parametrize("representation", ["raw_counts", "normalized_expression"])

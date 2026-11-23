@@ -21,16 +21,20 @@ from pathlib import Path
 from numbers import Real
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
-import psutil
+import psutil  # type: ignore[import-untyped]
 
 _MB = 1024.0 * 1024.0
 _INITIAL_CHILD_PID_CAPACITY = 64
 _MAX_DESCENDANT_PROCESSES = 4096
 THREAD_ENVIRONMENT_KEYS = ("VECLIB_MAXIMUM_THREADS", "OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")
-_WORKER_LIMITS = contextvars.ContextVar("coordinator_worker_limits", default=None)
-_WORKER_SCRATCH = contextvars.ContextVar("coordinator_worker_scratch", default=None)
-_WORKER_GROWTH_WINDOW = contextvars.ContextVar("coordinator_growth_window", default=None)
-_WORKER_CANCELLATION = contextvars.ContextVar("coordinator_cancellation", default=())
+_WORKER_LIMITS: contextvars.ContextVar[tuple[float, float, float] | None] = contextvars.ContextVar(
+    "coordinator_worker_limits", default=None)
+_WORKER_SCRATCH: contextvars.ContextVar[Path | None] = contextvars.ContextVar(
+    "coordinator_worker_scratch", default=None)
+_WORKER_GROWTH_WINDOW: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    "coordinator_growth_window", default=None)
+_WORKER_CANCELLATION: contextvars.ContextVar[tuple[tuple[threading.Event, dict[str, Any]], ...]] = (
+    contextvars.ContextVar("coordinator_cancellation", default=()))
 
 
 class WorkerCancelled(RuntimeError):
@@ -42,7 +46,7 @@ def cancel_workers_on(event):
     """Add a coordinator stop event without relaxing any parent resource policy."""
     if not isinstance(event, threading.Event):
         raise TypeError("Cancellation requires a coordinator threading.Event")
-    record = {"workers": []}
+    record: dict[str, Any] = {"workers": []}
     token = _WORKER_CANCELLATION.set((*_WORKER_CANCELLATION.get(), (event, record)))
     try:
         yield record
@@ -109,7 +113,7 @@ def worker_limits(*, deadline: float, max_mem_mb: float, max_growth_mb_per_sec: 
     growth_window = _effective_growth_window(growth_window_seconds)
     parent = _WORKER_LIMITS.get()
     if parent is not None:
-        limits = tuple(min(a, b) for a, b in zip(limits, parent))
+        limits = (min(limits[0], parent[0]), min(limits[1], parent[1]), min(limits[2], parent[2]))
     scratch = _WORKER_SCRATCH.get()
     if scratch_dir is not None:
         requested = Path(scratch_dir)
@@ -273,16 +277,16 @@ class MemoryWatchdog:
         self.max_growth_mb_per_sec = _positive_finite(max_growth_mb_per_sec, "max_growth_mb_per_sec")
         self.poll_interval = _positive_finite(poll_interval, "poll_interval")
         self.growth_window_seconds = _validated_growth_window(growth_window_seconds)
-        self._growth_history = deque()
+        self._growth_history: deque[tuple[float, float]] = deque()
         self.triggered = False
         self.reason = ""
         self.peak_rss_mb = 0.0
         self.sample_count = 0
         self.legacy_exceeding_intervals = 0
-        self.peak_legacy_growth = None
-        self.peak_active_growth = None
-        self._first_observed_time = None
-        self._recorded_samples = [] if record_samples else None
+        self.peak_legacy_growth: float | None = None
+        self.peak_active_growth: float | None = None
+        self._first_observed_time: float | None = None
+        self._recorded_samples: list[list[float]] | None = [] if record_samples else None
         self._trace_truncated = False
         self._previous: Optional[Tuple[float, float]] = None
         self._stop = threading.Event()
@@ -446,12 +450,12 @@ def _worker_entry(target_fn: Callable[..., Any], args: Tuple[Any, ...], kwargs: 
         try:
             with output.open("wb") as handle:
                 pickle.dump(("ok", value), handle, protocol=pickle.HIGHEST_PROTOCOL)
-        except BaseException as exc:
+        except Exception as exc:
             raise TypeError("Worker result could not be serialized: " + str(exc)) from exc
-    except BaseException as exc:
+    except Exception as exc:
         try:
             detail = str(exc)[:1000]
-        except BaseException:
+        except Exception:
             detail = "Exception message unavailable"
         record = (("resource", detail) if isinstance(exc, HarnessResourceInterrupt)
                   else ("error", type(exc).__name__, detail, traceback.format_exc(limit=12)[-4000:]))
@@ -476,7 +480,8 @@ def _worker_entry(target_fn: Callable[..., Any], args: Tuple[Any, ...], kwargs: 
 def run_sandboxed(target_fn: Callable[..., Any], args: Tuple[Any, ...] = (),
                   kwargs: Optional[Dict[str, Any]] = None, max_mem_mb: float = 8000,
                   timeout_sec: float = 300, max_growth_mb_per_sec: float = 1500,
-                  growth_window_seconds: float = 0, diagnostics: Optional[Dict[str, Any]] = None) -> Any:
+                  growth_window_seconds: float = 0, diagnostics: Optional[Dict[str, Any]] = None,
+                  *, _before_start: Callable[[], None] | None = None) -> Any:
     """Run an importable callable in a spawned child and return its result.
 
     A Queue carries a bounded result envelope; large serialized results use a
@@ -505,16 +510,21 @@ def run_sandboxed(target_fn: Callable[..., Any], args: Tuple[Any, ...] = (),
     monitor: Optional[MemoryWatchdog] = None
     started = time.monotonic()
     final_rss = None
-    scoped_worker = None
+    scoped_worker: dict[str, Any] | None = None
     try:
+        if _before_start is not None:
+            _raise_if_cancelled()
+            _before_start()
         worker.start()
         scoped_worker = {"pid": worker.pid, "cleanup": {"verified_stopped":False, "coverage":"not_observed"}}
         for _, scope in _WORKER_CANCELLATION.get():
             scope["workers"].append(scoped_worker)
-        monitor_options = ({"growth_window_seconds": growth_window_seconds} if growth_window_seconds else {})
-        if diagnostics is not None:
-            monitor_options["record_samples"] = True
-        monitor = MemoryWatchdog(worker.pid, max_mem_mb, max_growth_mb_per_sec, **monitor_options).start()
+        pid = worker.pid
+        if pid is None:
+            raise RemoteWorkerError("Started worker has no process identity")
+        monitor = MemoryWatchdog(pid, max_mem_mb, max_growth_mb_per_sec,
+                                 growth_window_seconds=growth_window_seconds,
+                                 record_samples=diagnostics is not None).start()
         message = None
         while message is None:
             if monitor.triggered:
@@ -549,7 +559,7 @@ def run_sandboxed(target_fn: Callable[..., Any], args: Tuple[Any, ...] = (),
             else:
                 with spool_path.open("rb") as handle:
                     record = pickle.load(handle)
-        except BaseException as exc:
+        except Exception as exc:
             raise RemoteWorkerError("Unable to deserialize worker result: " + str(exc)) from exc
         if record[0] == "resource":
             raise HarnessResourceInterrupt(record[1])
@@ -558,7 +568,7 @@ def run_sandboxed(target_fn: Callable[..., Any], args: Tuple[Any, ...] = (),
         if diagnostics is not None:
             diagnostics["supervisor_status"] = "completed"
         return record[1]
-    except BaseException as error:
+    except (Exception, KeyboardInterrupt, SystemExit, GeneratorExit) as error:
         if diagnostics is not None:
             diagnostics.update(supervisor_status="cancelled" if isinstance(error, WorkerCancelled) else "failed",
                                exception_type=type(error).__name__)

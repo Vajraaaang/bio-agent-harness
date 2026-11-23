@@ -7,7 +7,6 @@ that replacement. Actor labels are caller assertions, not authenticated identiti
 
 import hashlib
 import json
-import math
 import os
 import re
 import stat
@@ -18,11 +17,12 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Callable, Optional, Union
 
+from rna_kernels.canonical import MAX_JSON_BYTES as MAX_JSON_BYTES, canonical_json as canonical_json
+
 PathLike = Union[str, Path]
 SCHEMA_VERSION = "devharness.execution-dag/1"
 CANONICALIZATION = "devharness.canonical-json/1"
 ARTIFACT_VERSION = "devharness.directory-artifact/1"
-MAX_JSON_BYTES = 16_000_000
 CHUNK_BYTES = 1_048_576
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
@@ -35,41 +35,6 @@ def _limit(value, name):
     if value is not None and (type(value) is not int or value < 0):
         raise ValueError(name + " must be a nonnegative integer or None")
     return value
-
-
-def canonical_json(value) -> bytes:
-    """Encode strict, finite JSON deterministically; this is not RFC 8785 JCS.
-
-    The versioned contract uses Python's JSON number representation, sorted string
-    keys, compact separators and UTF-8 without Unicode normalization. Lists retain
-    their order. Non-string keys and implicit Python-to-JSON coercions are rejected.
-    """
-    def check(item):
-        if type(item) is float:
-            if not math.isfinite(item):
-                raise ValueError("Nonfinite JSON numbers are not permitted")
-        elif item is None or type(item) in (str, int, bool):
-            return
-        elif type(item) is list:
-            for child in item:
-                check(child)
-        elif type(item) is dict:
-            for key, child in item.items():
-                if type(key) is not str:
-                    raise TypeError("JSON object keys must be strings")
-                check(child)
-        else:
-            raise TypeError(f"Unsupported JSON value: {type(item).__name__}")
-
-    try:
-        check(value)
-        encoded = json.dumps(value, sort_keys=True, separators=(",", ":"),
-                             ensure_ascii=False, allow_nan=False).encode("utf-8")
-    except RecursionError as error:
-        raise ValueError("Cyclic or excessively nested JSON") from error
-    if len(encoded) > MAX_JSON_BYTES:
-        raise ValueError("JSON evidence exceeds the 16 MB bound")
-    return encoded
 
 
 def _digest(value) -> str:

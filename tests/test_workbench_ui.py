@@ -13,9 +13,6 @@ import urllib.request
 import pytest
 
 
-BASE = Path(__file__).resolve().parents[1] / "reports/workbench-ui/2026-09-22"
-
-
 def api():
     assert importlib.util.find_spec("devbench.analysis.workbench_ui") is not None, "Operational scRNA UI service is missing"
     from devbench.analysis import workbench_ui
@@ -23,14 +20,8 @@ def api():
 
 
 @pytest.fixture
-def root(request):
-    (BASE / "fixtures").mkdir(parents=True, exist_ok=True)
-    if request.node.name.startswith("test_real_small_fixture"):
-        # Retain real execution evidence, including the later intentional tamper.
-        yield Path(tempfile.mkdtemp(prefix="real-flow-", dir=BASE / "fixtures"))
-        return
-    with tempfile.TemporaryDirectory(prefix="controls-", dir=BASE / "fixtures") as path:
-        yield Path(path)
+def root(workspace_tmp_path):
+    return workspace_tmp_path
 
 
 def service(root, **kwargs):
@@ -58,8 +49,161 @@ def wait(app, job):
     pytest.fail("Bounded fixture service did not finish")
 
 
-def test_service_module_exists():
-    api()
+@pytest.mark.parametrize("auto_open", [False, True])
+def test_launcher_browser_open_is_opt_in_and_keeps_private_link_out_of_auto_logs(root, monkeypatch, capsys, auto_open):
+    module = api()
+    events, launches, configurations = [], [], []
+
+    class App:
+        def __init__(self, workspace, *args, **kwargs):
+            self.workspace = workspace
+            self.workspace.mkdir(mode=0o700)
+            self.offline_only = kwargs["offline_only"]
+            configurations.append(kwargs)
+        def configuration(self):
+            return {"proposal_selection": {"label": "fixture selector"}}
+        def close(self):
+            events.append("app_closed")
+
+    class Server:
+        server_address = ("127.0.0.1", 43210)
+        def serve_forever(self):
+            events.append("serving")
+        def server_close(self):
+            events.append("server_closed")
+
+    def bind(app, *, port):
+        events.append("bound")
+        assert port == 0
+        return Server()
+
+    def open_browser(url):
+        assert events == ["bound"]
+        launches.append(url)
+
+    monkeypatch.setattr(module, "WorkbenchService", App)
+    monkeypatch.setattr(module, "make_server", bind)
+    monkeypatch.setattr(module, "_open_browser_async", open_browser, raising=False)
+    args = ["--input-root", str(root / "inputs"), "--workspace", str(root / "workspace"), "--port", "0"]
+    if auto_open:
+        args.append("--open-browser")
+    module.main(args)
+    output = capsys.readouterr()
+    assert configurations[0]["allow_data_execution"] is False
+    assert configurations[0]["allow_model_execution"] is False
+    assert events == ["bound", "serving", "server_closed", "app_closed"]
+    link = "http://127.0.0.1:43210/"
+    if auto_open:
+        assert launches == [link]
+        assert link in output.out
+    else:
+        assert launches == []
+        assert "Open " + link in output.out
+
+
+def test_async_browser_opener_does_not_block_serving_and_connects_once(root, monkeypatch):
+    module = api()
+    assert callable(getattr(module, "_open_browser_async", None)), "Trusted browser launcher is missing"
+    app = service(root)
+    server = module.make_server(app, port=0)
+    serving = threading.Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    origin = "http://127.0.0.1:" + str(server.server_address[1])
+    entered, release = threading.Event(), threading.Event()
+    calls, failures = [], []
+
+    def fake_open(url):
+        calls.append(url)
+        entered.set()
+        if not release.wait(3):
+            failures.append("opener was not released")
+            return False
+        try:
+            request = url + "api/config"
+            with urllib.request.urlopen(request, timeout=3) as response:
+                assert json.load(response)["model_access"] is False
+        except Exception as error:
+            failures.append(type(error).__name__)
+            return False
+        return True
+
+    monkeypatch.setattr(module, "_open_system_browser", fake_open, raising=False)
+    try:
+        launch = module._open_browser_async(origin + "/")
+        assert entered.wait(3)
+        assert launch.is_alive(), "Browser opening must not block the server caller"
+        with urllib.request.urlopen(origin + "/", timeout=3) as response:
+            assert response.status == 200
+        with urllib.request.urlopen(origin + "/api/config", timeout=3) as response:
+            assert response.status == 200
+        release.set()
+        launch.join(3)
+        assert not launch.is_alive()
+        assert failures == []
+        assert calls == [origin + "/"]
+    finally:
+        release.set()
+        server.shutdown()
+        server.server_close()
+        serving.join(3)
+        app.close()
+
+
+@pytest.mark.parametrize("failure", ["false", "exception"])
+def test_browser_failure_message_directs_manual_open(monkeypatch, capsys, failure):
+    module = api()
+    assert callable(getattr(module, "_open_browser_async", None)), "Trusted browser launcher is missing"
+    link = "http://127.0.0.1:43210/"
+    def fail(url):
+        if failure == "exception":
+            raise RuntimeError("opener detail: " + url)
+        return False
+    monkeypatch.setattr(module, "_open_system_browser", fail, raising=False)
+    launch = module._open_browser_async(link)
+    launch.join(3)
+    assert not launch.is_alive()
+    output = "".join(capsys.readouterr())
+    assert "opener detail" not in output
+    assert "Open the displayed loopback URL manually." in output
+
+
+@pytest.mark.parametrize("platform,returncode", [("darwin", 0), ("darwin", 2), ("linux", 0)])
+def test_native_browser_command_is_bounded_quiet_and_ignores_browser_override(monkeypatch, platform, returncode):
+    module = api()
+    assert callable(getattr(module, "_open_system_browser", None)), "Native browser opener is missing"
+    import os
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(os, "environ", {"BROWSER": "untrusted-browser-override", "XDG_CURRENT_DESKTOP": "fixture-desktop"})
+    monkeypatch.setattr(module.shutil, "which", lambda executable, **kwargs: "/usr/bin/xdg-open")
+    calls = []
+    def run(command, **kwargs):
+        calls.append(command)
+        assert kwargs["stdin"] is subprocess.DEVNULL
+        assert kwargs["stdout"] is subprocess.DEVNULL
+        assert kwargs["stderr"] is subprocess.DEVNULL
+        assert kwargs["timeout"] == 10
+        assert kwargs.get("shell", False) is False
+        assert "BROWSER" not in kwargs["env"]
+        assert kwargs["env"]["XDG_CURRENT_DESKTOP"] == "fixture-desktop"
+        return subprocess.CompletedProcess(command, returncode)
+    monkeypatch.setattr(subprocess, "run", run)
+    link = "http://127.0.0.1:43210/#synthetic-native-launch-key"
+    assert module._open_system_browser(link) is (returncode == 0)
+    assert calls == [["/usr/bin/open" if platform == "darwin" else "/usr/bin/xdg-open", link]]
+
+
+def test_native_browser_timeout_and_unsupported_system_fail_closed(monkeypatch, capsys):
+    module = api()
+    assert callable(getattr(module, "_open_system_browser", None)), "Native browser opener is missing"
+    link = "http://127.0.0.1:43210/#synthetic-timeout-launch-key"
+    monkeypatch.setattr(sys, "platform", "darwin")
+    def timeout(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, 10, output=link, stderr=link)
+    monkeypatch.setattr(subprocess, "run", timeout)
+    assert module._open_system_browser(link) is False
+    monkeypatch.setattr(sys, "platform", "unsupported")
+    assert module._open_system_browser(link) is False
+    assert link not in "".join(capsys.readouterr())
 
 
 @pytest.mark.parametrize("body", [b'{"a":1,"a":2}', b'{"a":NaN}', b'[]', b'{', b'{"a":Infinity}'])
@@ -157,7 +301,7 @@ def test_preparation_failures_are_retained_without_success(root, monkeypatch, fa
     app.close()
 
 
-def test_restart_preserves_interrupted_evidence_and_rotates_token(root, monkeypatch):
+def test_restart_preserves_interrupted_evidence(root, monkeypatch):
     from devbench.analysis import workbench_proposals
     monkeypatch.setattr(workbench_proposals, "prepare_workbench_proposal",
         lambda *a, **kw: (_ for _ in ()).throw(InterruptedError("Fixture stop")))
@@ -169,10 +313,8 @@ def test_restart_preserves_interrupted_evidence_and_rotates_token(root, monkeypa
     app._update(job, status="running")  # An abruptly stopped service's persisted index.
     retained = app.workspace / "jobs" / job / "native-failure.json"
     retained.write_text('{"status":"unfinished"}')
-    token = app.token
     app.close()
     reopened = service(root)
-    assert reopened.token != token
     assert reopened.status(job)["status"] == "recovery_required"
     assert reopened.status(job)["worker_liveness"] == "unknown"
     assert reopened.status(job)["completed_analysis"] is False
@@ -273,7 +415,8 @@ def test_native_failure_status_is_preserved_and_export_denied(root, monkeypatch,
     app.run(job)
     state = wait(app, job)
     assert state["status"] == outcome and state["completed_analysis"] is False
-    assert state["execution"]["reason"] == "Retained native fixture failure"
+    assert state["execution"]["reason"] == outcome
+    assert "Retained native fixture failure" not in json.dumps(state)
     assert (app.workspace / "jobs" / job / "execution/result.json").is_file()
     with pytest.raises(RuntimeError, match="unavailable"):
         app.download(job, "archive")
@@ -282,7 +425,7 @@ def test_native_failure_status_is_preserved_and_export_denied(root, monkeypatch,
     app.close()
 
 
-def test_denied_unknown_routes_and_cross_origin_or_token_requests(root):
+def test_token_free_loopback_reads_keep_cross_origin_and_host_boundaries(root):
     app = service(root)
     server = api().make_server(app, port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -295,20 +438,19 @@ def test_denied_unknown_routes_and_cross_origin_or_token_requests(root):
         page, headers = call("/")
         assert b"__NONCE__" not in page
         assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
-        assert app.token.encode() not in page
-        for headers in ({}, {"X-Workbench-Token": "wrong"},
-                {"X-Workbench-Token": app.token, "Origin": "https://untrusted.invalid"},
-                {"X-Workbench-Token": app.token, "Host": "untrusted.invalid"}):
+        body, _ = call("/api/config")
+        assert json.loads(body)["model_access"] is False
+        for headers in ({"Origin": "https://untrusted.invalid"},
+                {"Host": "untrusted.invalid"}, {"Sec-Fetch-Site": "same-site"},
+                {"Sec-Fetch-Site": "cross-site"}):
             with pytest.raises(urllib.error.HTTPError) as error:
                 call("/api/config", **headers)
             assert error.value.code == 403
-        body, _ = call("/api/config", **{"X-Workbench-Token": app.token})
-        assert json.loads(body)["model_access"] is False
         for path in ("/api/unknown", "/api/config?extra=1", "/../../AGENTS.md"):
             with pytest.raises(urllib.error.HTTPError):
-                call(path, **{"X-Workbench-Token": app.token})
+                call(path)
         for origin_header in (None, "https://untrusted.invalid"):
-            headers = {"X-Workbench-Token": app.token, "Content-Type": "application/json"}
+            headers = {"Content-Type": "application/json"}
             if origin_header:
                 headers["Origin"] = origin_header
             mutation = urllib.request.Request(origin + "/api/jobs", data=b"{}", headers=headers, method="POST")
@@ -382,4 +524,63 @@ def test_real_small_fixture_flow_and_tamper_detection(root):
         with pytest.raises(ValueError, match="mismatch"):
             app.download(job, "archive")
     finally:
+        app.close()
+
+
+def test_investigation_events_endpoint_and_fallback_polling(root):
+    app = service(root)
+    server = api().make_server(app, port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    origin = "http://127.0.0.1:" + str(server.server_address[1])
+    try:
+        source = root / "inputs/cells.h5ad"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"h5ad fixture bytes")
+        inv = app.investigations.create({
+            "question": "Audit data quality",
+            "source": str(source),
+            "proposal_mode": "operator"
+        })
+        inv_id = inv["id"]
+        req = urllib.request.Request(f"{origin}/api/investigations/{inv_id}/events")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode())
+            assert data["format"] == "devbench.investigation-events/1"
+            assert "events" in data
+            assert data["phase"] == "Exploring"
+            assert data["total_events"] >= 0
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(3)
+        app.close()
+
+
+def test_investigation_events_sse_stream(root):
+    app = service(root)
+    server = api().make_server(app, port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    origin = "http://127.0.0.1:" + str(server.server_address[1])
+    try:
+        source = root / "inputs/cells.h5ad"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"h5ad fixture bytes")
+        inv = app.investigations.create({
+            "question": "Audit data quality",
+            "source": str(source),
+            "proposal_mode": "operator"
+        })
+        inv_id = inv["id"]
+        headers = {"Accept": "text/event-stream"}
+        req = urllib.request.Request(f"{origin}/api/investigations/{inv_id}/events", headers=headers)
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            assert resp.headers["Content-Type"] == "text/event-stream"
+            line = resp.readline().decode()
+            assert "event:" in line or line == "\n" or "data:" in line
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(3)
         app.close()

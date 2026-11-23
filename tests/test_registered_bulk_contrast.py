@@ -77,6 +77,51 @@ def test_failed_gene_keeps_nulls_and_bh_position_through_registered_result(tmp_p
     assert rows[0]["q_value"] == pytest.approx(expected_q)
 
 
+@pytest.mark.parametrize("paired", [False, True])
+def test_bulk_count_filter_reports_its_adjustment_family(tmp_path, paired):
+    from statsmodels.stats.multitest import multipletests
+
+    from devharness_server.tools_bulk import bulk_condition_contrast
+
+    task, paths, options = bulk_inputs(tmp_path, continuous=False)
+    if paired:
+        task["analysis_columns"]["blocking"] = options["block_cols"] = ["donor_id"]
+        with paths["metadata"].open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            fields, records = reader.fieldnames, list(reader)
+        for index, row in enumerate(records):
+            row["donor_id"] = f"donor{index % 4}"
+        with paths["metadata"].open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(records)
+    task["gene_ids"].append("low_count")
+    with paths["expression"].open("a", newline="") as handle:
+        csv.writer(handle).writerow(["low_count", 1, *([0] * 7)])
+    actual = bulk_condition_contrast(str(paths["expression"]), str(paths["metadata"]), task, options)
+    rows = actual["target_results"][0]["payload"]["gene_statistics"]
+    assert [row["gene_id"] for row in rows] == task["gene_ids"]
+    low = rows[-1]
+    assert low["estimate_status"] == "unavailable"
+    assert low["missing_reason"] == "independent_low_count_filter"
+    assert low["p_value"] is low["q_value"] is None
+    adjustment_rows = rows if paired else rows[:-1]
+    expected = multipletests([row["p_value"] if row["p_value"] is not None else 1 for row in adjustment_rows],
+                            method="fdr_bh")[1]
+    for row, q in zip(adjustment_rows, expected):
+        if row["p_value"] is not None:
+            assert row["q_value"] == pytest.approx(q)
+    diagnostics = actual["diagnostics"]
+    family = diagnostics["gene_test_adjustment_family"]
+    assert family["adjustment_family_count"] == (13 if paired else 12)
+    assert family["independently_filtered_count"] == 1
+    assert family["fitted_gene_count"] == sum(row["p_value"] is not None for row in rows)
+    assert family["adjustment"] == ("Benjamini_Hochberg_over_all_attempted_hypotheses" if paired
+                                    else "Benjamini_Hochberg_after_fixed_label_blind_count_filter")
+    assert diagnostics["independent_count_filter"]["filtered_gene_ids"] == ["low_count"]
+    assert diagnostics["count_test_reference"] == "approximate_t_or_F_conditional_on_fitted_dispersion_and_offsets"
+
+
 @pytest.mark.parametrize("defect", ["paired", "confounded"])
 def test_bad_design_refusal_uses_existing_core_without_fitting(tmp_path, monkeypatch, defect):
     from devharness_server.tools_bulk import bulk_condition_contrast

@@ -234,7 +234,7 @@ def test_bounded_nested_json_parse_failure_is_retained_before_scientific_selecti
                            actor="scientist", data_classification="synthetic")
     context = generate(planner, state)
     receipt = context["prerequisite_inspection"]
-    assert any("RecursionError" in failure for failure in receipt["failures"])
+    assert any("nested JSON" in failure for failure in receipt["failures"])
     assert receipt["observed"] == {}
     assert not UNIVERSAL & context["dataset_summary"]["observed"].keys()
     assert any(u["field"] == "coordinator_numeric_inspection" and u["blocking"]

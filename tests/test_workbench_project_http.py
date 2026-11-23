@@ -10,7 +10,7 @@ import tomllib
 import pytest
 
 from devbench.analysis.workbench_ui import make_server
-from tests.test_workbench_legacy_proxy import archive
+from tests.test_workbench_legacy_proxy import archive as archive  # noqa: F401
 
 
 A, B = "a" * 32, "b" * 32
@@ -57,7 +57,7 @@ class ScopedInputs:
 
 class App:
     def __init__(self, owner, job, investigation, artifact, directory):
-        self.owner, self.job, self.token = owner, job, "legacy-" + owner
+        self.owner, self.job = owner, job
         self.runs = 0
         evidence = directory / (owner + ".json")
         evidence.write_text(json.dumps({"owner": owner}))
@@ -85,7 +85,6 @@ class App:
 
 
 class Hub:
-    token = "synthetic-project-http-token"
 
     def __init__(self, apps):
         self.apps, self.resolutions, self.creates = apps, [], 0
@@ -133,17 +132,17 @@ def routing():
 
         port = start()
 
-        def request(path, *, project=None, method="GET", body=None, token=Hub.token,
+        def request(path, *, project=None, method="GET", body=None,
                     origin=None, duplicate=False, host=None, selected_port=port):
             connection = http.client.HTTPConnection("127.0.0.1", selected_port, timeout=5)
             headers = {"Host": host or "127.0.0.1:" + str(selected_port)}
-            if token is not None:
-                headers["X-Workbench-Token"] = token
             if project is not None:
                 headers["X-Workbench-Project"] = project
             if method == "POST":
-                headers.update({"Origin": origin or "http://127.0.0.1:" + str(selected_port),
-                                "Content-Type": "application/json"})
+                headers["Content-Type"] = "application/json"
+                origin = origin or "http://127.0.0.1:" + str(selected_port)
+            if origin is not None:
+                headers["Origin"] = origin
             payload = None if body is None else json.dumps(body)
             if duplicate:
                 connection.putrequest(method, path, skip_host=True)
@@ -237,10 +236,10 @@ def test_new_project_can_be_created_from_an_archived_project_view(routing):
     assert status == 200 and jobs["jobs"][0]["owner"] == A
 
 
-@pytest.mark.parametrize("options", [{"token": None}, {"token": "wrong"},
+@pytest.mark.parametrize("options", [{"origin": "https://example.invalid"},
     {"host": "localhost:1"}, {"method": "POST", "body": {"name": "Bad"},
                                 "origin": "https://example.invalid"}])
-def test_authentication_host_and_origin_fail_before_project_resolution(routing, options):
+def test_invalid_host_and_origin_fail_before_project_resolution(routing, options):
     _, hub, request, _ = routing
     status, _ = request("/api/projects", project=A, **options)
     assert status == 403 and hub.resolutions == [] and hub.creates == 0
@@ -258,9 +257,9 @@ def test_server_default_override_and_legacy_no_hub_boundary(routing):
     status, value = request("/api/jobs", selected_port=second)
     assert status == 200 and value["jobs"][0]["owner"] == B
     legacy = start(use_hub=False)
-    status, value = request("/api/jobs", token=apps[A].token, selected_port=legacy)
+    status, value = request("/api/jobs", selected_port=legacy)
     assert status == 200 and value["jobs"][0]["owner"] == A
-    status, _ = request("/api/jobs", token=apps[A].token, project=B, selected_port=legacy)
+    status, _ = request("/api/jobs", project=B, selected_port=legacy)
     assert status == 400
 
 
@@ -313,7 +312,7 @@ def test_archived_child_identity_drift_cannot_relabel_a_scoped_request(routing, 
     assert child.relay_calls == [] and child.config_calls == 0
 
 
-def test_parent_authentication_and_scope_precede_private_archive_relay(routing, archive):
+def test_parent_boundary_and_scope_precede_private_archive_relay(routing, archive):  # noqa: F811
     apps, hub, request, _ = routing
     proxy, child_requests, _, _ = archive
     apps[A] = proxy
@@ -322,15 +321,14 @@ def test_parent_authentication_and_scope_precede_private_archive_relay(routing, 
     assert config["project_catalog"]["read_only"] is True
     assert config["model_access"] is False and config["execution_allowed"] is False
     before = len(child_requests)
-    status, _ = request("/api/jobs/own/files", project=A, token="wrong-hub-token")
+    status, _ = request("/api/jobs/own/files", project=A, origin="https://example.invalid")
     assert status == 403 and len(child_requests) == before
     status, payload = request("/api/jobs/own/files", project=A)
-    assert status == 200 and payload == b"retained artifact bytes"
+    assert status == 403 and payload["error"] == "PermissionError"
     assert request("/api/jobs/foreign/files", project=A)[0] == 404
     for row in child_requests:
         headers = {key.lower(): value for key, value in row["headers"].items()}
         assert headers["x-workbench-token"] == "private-child-token"
-        assert headers["x-workbench-token"] != hub.token
         assert "x-workbench-project" not in headers
         assert headers["origin"] == "http://127.0.0.1:" + str(proxy._port)
     before = len(child_requests)
@@ -342,7 +340,7 @@ def test_parent_authentication_and_scope_precede_private_archive_relay(routing, 
     assert not any(row["method"] == "POST" for row in child_requests)
 
 
-def test_parent_relays_html_only_with_download_security_headers(routing):
+def test_parent_withholds_legacy_html_attachment(routing):
     apps, hub, _, start = routing
     payload = b'<!doctype html><script>throw new Error("download bytes only")</script>'
 
@@ -362,10 +360,10 @@ def test_parent_relays_html_only_with_download_security_headers(routing):
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         connection.request("GET", "/api/jobs/" + JA + "/artifact?name=notebook.html",
-            headers={"X-Workbench-Token": hub.token, "X-Workbench-Project": A})
+            headers={"X-Workbench-Project": A})
         response = connection.getresponse()
-        assert response.status == 200 and response.read() == payload
-        assert response.getheader("Content-Disposition") == 'attachment; filename="notebook.html"'
+        assert response.status == 403 and payload not in response.read()
+        assert response.getheader("Content-Disposition") is None
         assert response.getheader("X-Content-Type-Options") == "nosniff"
         assert response.getheader("X-Frame-Options") == "DENY"
         policy = response.getheader("Content-Security-Policy")

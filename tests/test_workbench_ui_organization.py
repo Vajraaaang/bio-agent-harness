@@ -28,7 +28,6 @@ def test_project_and_ui_state_survive_restart_without_changing_run_records(root,
                "search": "batch", "tab": "review", "zoom": "native"}})
     assert saved["revision"] == original["revision"] + 1
     assert app._path("jobs", job, "state.json").read_bytes() == before
-    assert app.token not in app._path("workspace.json").read_text()
     app.close()
     reopened = service(root)
     try:
@@ -111,17 +110,15 @@ def test_workspace_metadata_is_not_followed_through_a_symlink(root):
     assert json.loads(outside.read_text()) == {"preserve": True}
 
 
-def test_workspace_api_keeps_auth_origin_and_revision_boundaries(root):
+def test_workspace_api_keeps_origin_and_revision_boundaries(root):
     from devbench.analysis.workbench_ui import make_server
     app = service(root)
     server = make_server(app, port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     origin = "http://127.0.0.1:" + str(server.server_port)
-    def call(body=None, token=None, request_origin=None):
+    def call(body=None, request_origin=None):
         headers = {"Content-Type": "application/json"}
-        if token is not None:
-            headers["X-Workbench-Token"] = token
         if request_origin is not None:
             headers["Origin"] = request_origin
         request = urllib.request.Request(origin + "/api/workspace",
@@ -129,20 +126,17 @@ def test_workspace_api_keeps_auth_origin_and_revision_boundaries(root):
         with urllib.request.urlopen(request, timeout=3) as response:
             return json.load(response)
     try:
-        with pytest.raises(urllib.error.HTTPError) as error:
-            call()
-        assert error.value.code == 403
-        before = call(token=app.token)
+        before = call()
         for wrong_origin in (None, "https://untrusted.invalid"):
             with pytest.raises(urllib.error.HTTPError) as error:
-                call({"expected_revision": before["revision"], "ui": {"question_draft": "Denied"}}, app.token, wrong_origin)
+                call({"expected_revision": before["revision"], "ui": {"question_draft": "Denied"}}, wrong_origin)
             assert error.value.code == 403
-        saved = call({"expected_revision": before["revision"], "ui": {"question_draft": "Retained"}}, app.token, origin)
+        saved = call({"expected_revision": before["revision"], "ui": {"question_draft": "Retained"}}, origin)
         assert saved["ui"]["question_draft"] == "Retained"
         with pytest.raises(urllib.error.HTTPError) as error:
-            call({"expected_revision": before["revision"], "ui": {}}, app.token, origin)
+            call({"expected_revision": before["revision"], "ui": {}}, origin)
         assert error.value.code == 409
-        assert call(token=app.token) == saved
+        assert call() == saved
         assert app.jobs() == []
     finally:
         server.shutdown()

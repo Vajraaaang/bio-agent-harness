@@ -128,7 +128,7 @@ def _check_environment(plan, evidence):
     for name, digest in source.items():
         path = PurePosixPath(name)
         _require(not path.is_absolute() and name == path.as_posix() and ".." not in path.parts
-                 and path.parts[0] in {"devharness_controlled", "devharness_core", "devharness_server"}
+                 and path.parts[0] in {"devharness_controlled", "devharness_core", "devharness_server", "rna_kernels"}
                  and path.suffix == ".py", "Unsafe source identity path")
         _require(any(r["kind"] == "file" and r["name"] == path.name and r["sha256"] == digest
                      for r in evidence.references), "Source is not preserved: " + name)
@@ -236,7 +236,8 @@ def _check_statistics(plan, analysis, sample_count, design, formula):
                      and _finite(gene["dispersion_alpha"]) and gene["dispersion_alpha"] > 0, "Wrong NB reference/dispersion")
             expected_p = float(chi2.sf(stat, plan.spline_df))
         _require(math.isclose(p, expected_p, rel_tol=1e-8, abs_tol=1e-12), "p-value does not match recorded test")
-        p_values.append(p); q_values.append(q)
+        p_values.append(p)
+        q_values.append(q)
     # Recompute BH without relying on a supplied q>=p invariant alone.
     ordered = sorted(range(len(p_values)), key=p_values.__getitem__)
     minimum = 1.0

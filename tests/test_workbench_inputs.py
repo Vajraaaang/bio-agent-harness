@@ -25,9 +25,10 @@ def supervised(monkeypatch):
     calls = []
     def run(target, args=(), **kwargs):
         calls.append((target, args, kwargs))
-        value = target(*args)
-        kwargs["diagnostics"].update(cleanup={"verified_stopped": True})
-        return value
+        try:
+            return target(*args)
+        finally:
+            kwargs["diagnostics"].update(cleanup={"verified_stopped": True})
     monkeypatch.setattr(watchdog, "run_sandboxed", run)
     return calls
 
@@ -60,6 +61,37 @@ def test_discovery_finds_only_bounded_regular_supported_inputs(inputs):
     assert {row["filename"] for row in rows} == {"a.json", "b.csv"}
     assert all(Path(row["path"]).is_absolute() and row["source"] == row["path"] for row in rows)
     assert all(row["hash_status"] == "ready" and len(row["sha256"]) == 64 for row in rows)
+
+
+def test_10x_discovery_reports_bound_matrix_dimensions_and_companion_files(
+    inputs, supervised,
+):
+    import gzip
+
+    matrix = inputs / "matrix.mtx.gz"
+    files = {
+        matrix.name: (
+            "%%MatrixMarket matrix coordinate integer general\n"
+            "% fixture\n2 3 1\n1 1 5\n"
+        ),
+        "features.tsv.gz": "f1\tG1\tGene Expression\nf2\tG2\tGene Expression\n",
+        "barcodes.tsv.gz": "s1\ns2\ns3\n",
+    }
+    for name, payload in files.items():
+        (inputs / name).write_bytes(gzip.compress(payload.encode()))
+    (inputs / "unbound.fastq.gz").write_bytes(gzip.compress(b"ignored fixture"))
+    discovery = api().InputDiscovery([inputs])
+    assert {row["filename"] for row in discovery.list()["inputs"]} == set(files)
+    observed = discovery.inspect(matrix)["observed"]
+    assert (observed["genes"], observed["cells"]) == (2, 3)
+    assert observed["expression_values_read"] is False
+    profile = discovery.inspect(matrix)
+    described = discovery.describe(
+        matrix, expected_sha256=profile["sha256"], topics=["dimensions"],
+    )
+    assert described["completion"] == "completed"
+    facts = {fact["name"]: fact["value"] for fact in described["facts"]}
+    assert facts["observations"] == 3
 
 
 def test_symlink_roots_and_escape_paths_are_rejected(inputs, tmp_path):
@@ -272,6 +304,7 @@ def test_resource_interruption_is_an_explicit_service_error_without_cache(inputs
     source = inputs / "data.csv"
     source.write_text("sample,batch\na,A\n")
     def interrupt(*args, **kwargs):
+        kwargs['diagnostics']['cleanup'] = {'verified_stopped': True}
         raise watchdog.HarnessResourceInterrupt("Worker timed out after 20 seconds")
     monkeypatch.setattr(watchdog, "run_sandboxed", interrupt)
     discovery = api().InputDiscovery([inputs])

@@ -3,7 +3,6 @@
 These are offline software tests. Trusted local operator files establish an
 explicit integrity/trust assumption, not authenticated human approval.
 """
-from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -16,7 +15,14 @@ from uuid import uuid4
 import pytest
 
 
-def connection_fixture(tmp_path):
+@pytest.fixture(autouse=True)
+def assigned_test_workspace(tmp_path, monkeypatch):
+    from devbench.study import rna_hosted_connection_contract as contract
+
+    monkeypatch.setattr(contract, 'ASSIGNED_WORKSPACE', tmp_path)
+
+
+def connection_fixture(tmp_path, *, require_wheel=True):
     import importlib.util
     assert importlib.util.find_spec('devbench.study.rna_hosted_connection') is not None, 'Actual child connection engine absent'
     assert importlib.util.find_spec('devbench.study.rna_hosted_connection_contract') is not None, 'Closed connection contract absent'
@@ -26,7 +32,13 @@ def connection_fixture(tmp_path):
     from devbench.study.rna_hosted_connection_contract import prepare_connection_packet, TARGET
     from devbench.study.rna_langsmith_live import EVENT_FIELDS, sanitize_live_event
     from tests.test_rna_trace_contract import event
-    identity = connection_identity()
+    if require_wheel:
+        identity = connection_identity()
+    else:
+        from devbench.study.rna_hosted_connection_contract import _CRITERIA_DIGEST, _FIXTURE_DIGEST
+
+        identity = dict(source_digest='a' * 64, runtime_digest='b' * 64, policy_digest='c' * 64,
+                        criteria_digest=_CRITERIA_DIGEST, fixture_manifest_digest=_FIXTURE_DIGEST)
     now = datetime.now(timezone.utc)
     expiry = (now + timedelta(minutes=5)).isoformat()
     target = dict(TARGET)
@@ -109,6 +121,8 @@ from devbench.study import rna_hosted_qualification as driver
 from devbench.study import rna_hosted_exporter as exporter
 from devbench.study import rna_langsmith_live as live
 from devbench.study import rna_hosted_connection as connection
+from devbench.study import rna_hosted_connection_contract as contract
+contract.ASSIGNED_WORKSPACE = pathlib.Path(sys.argv[1]).resolve().parent
 def producer(command, **kwargs):
     assert command == exporter._native_credential_command()
     assert kwargs['env'] == exporter._native_credential_environment() and kwargs['close_fds']
@@ -193,7 +207,7 @@ def audit_rows(path):
     return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
 
-def test_connection_default_off_actual_entry_never_resolves_or_requests(tmp_path, monkeypatch):
+def test_connection_default_off_actual_entry_never_resolves_or_requests(tmp_path, monkeypatch, installed_hosted_wheel):
     with child_channel(tmp_path, monkeypatch, approved=False)[0] as channel:
         state = channel.request({'command':'status'})
         assert state['status'] == 'blocked' and state['credential_resolutions'] == 0
@@ -201,7 +215,7 @@ def test_connection_default_off_actual_entry_never_resolves_or_requests(tmp_path
     assert audit_rows(tmp_path / 'audit.jsonl') == []
 
 
-def test_connection_actual_entry_positive_exact_two_mutations_and_joined_read(tmp_path, monkeypatch):
+def test_connection_actual_entry_positive_exact_two_mutations_and_joined_read(tmp_path, monkeypatch, installed_hosted_wheel):
     import sqlite3
     channel, packet, audit = child_channel(tmp_path, monkeypatch)
     with channel:
@@ -228,7 +242,7 @@ def test_connection_actual_entry_positive_exact_two_mutations_and_joined_read(tm
 
 
 @pytest.mark.parametrize('changes', [dict(tenant_id=str(uuid4())),dict(id=str(uuid4())),dict(name='renamed')])
-def test_connection_wrong_project_blocks_mutations_after_bounded_project_read(tmp_path, monkeypatch, changes):
+def test_connection_wrong_project_blocks_mutations_after_bounded_project_read(tmp_path, monkeypatch, changes, installed_hosted_wheel):
     with pytest.raises(ValueError):
         child_channel(tmp_path, monkeypatch, project_changes=changes)
     rows=audit_rows(tmp_path / 'audit.jsonl')
@@ -236,7 +250,7 @@ def test_connection_wrong_project_blocks_mutations_after_bounded_project_read(tm
     assert not any(r['kind']=='forbidden' for r in rows)
 
 
-def test_connection_accepted_response_loss_is_not_resent_and_needs_review(tmp_path, monkeypatch):
+def test_connection_accepted_response_loss_is_not_resent_and_needs_review(tmp_path, monkeypatch, installed_hosted_wheel):
     channel, packet, audit=child_channel(tmp_path, monkeypatch, lost_response=True)
     with channel:
         channel.request({'command':'prepare'})
@@ -250,7 +264,8 @@ def test_connection_accepted_response_loss_is_not_resent_and_needs_review(tmp_pa
             json.dumps(receipt,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()).hexdigest(),
             'approved':True,'reviewer_alias':str(uuid4())}
         review_path=tmp_path / 'reviewed-reconciliation.json'
-        raw=json.dumps(review,sort_keys=True,separators=(',',':')).encode();review_path.write_bytes(raw)
+        raw=json.dumps(review,sort_keys=True,separators=(',',':')).encode()
+        review_path.write_bytes(raw)
         review_path.chmod(0o600)
         receipt['reviewer_approval_digest']=hashlib.sha256(raw).hexdigest()
         state=channel.request({'command':'reconcile','receipt':receipt,
@@ -264,20 +279,21 @@ def test_connection_accepted_response_loss_is_not_resent_and_needs_review(tmp_pa
     assert 'DUMMY-' not in json.dumps(state)
 
 
-def test_connection_closed_commands_cannot_replace_packet_operations(tmp_path, monkeypatch):
+def test_connection_closed_commands_cannot_replace_packet_operations(tmp_path, monkeypatch, installed_hosted_wheel):
     channel, _, _=child_channel(tmp_path, monkeypatch)
     with channel:
         for request in ({'command':'prepare','operations':[]},
                         {'command':'drain','api_key':'DUMMY-RAW'},
                         {'command':'verify','path':'/api/v1/runs/other'},
                         {'command':'fault','kind':'accept_then_timeout'}):
-            with pytest.raises(ValueError):channel.request(request)
+            with pytest.raises(ValueError):
+                channel.request(request)
         assert channel.request({'command':'status'})['counts']['mutation_requests']==0
 
 
 @pytest.mark.parametrize('status',[401,403])
 @pytest.mark.parametrize('method',['POST','PATCH','GET'])
-def test_connection_auth_denial_stops_all_later_http(tmp_path,monkeypatch,status,method):
+def test_connection_auth_denial_stops_all_later_http(tmp_path,monkeypatch,status,method, installed_hosted_wheel):
     channel,_,audit=child_channel(tmp_path,monkeypatch,auth_status=status,auth_method=method)
     with channel:
         channel.request({'command':'prepare'})
@@ -301,14 +317,15 @@ def test_connection_nested_secret_rejected_before_parent_ipc(monkeypatch,locatio
     monkeypatch.setattr(channel,'_exchange_bytes',lambda value:pytest.fail('malformed IPC sent'))
     request={'command':'reconcile','receipt':{},'approval_handle':{}}
     request[location]['api_key']='DUMMY-RAW-NEVER-IPC'
-    with pytest.raises(ValueError) as caught:channel.request(request)
+    with pytest.raises(ValueError) as caught:
+        channel.request(request)
     assert 'DUMMY-' not in str(caught.value)
 
 
 @pytest.mark.parametrize('location',['packet','session','payload'])
 def test_connection_nested_packet_secret_rejected_before_process_or_files(tmp_path,monkeypatch,location):
     from devbench.study import rna_hosted_exporter as exporter
-    packet=connection_fixture(tmp_path)
+    packet=connection_fixture(tmp_path, require_wheel=False)
     target={'packet':packet,'session':packet['session'],'payload':packet['operations'][0]['payload']}[location]
     target['api_key']='DUMMY-RAW-NEVER-SPAWN'
     handles=trusted_handles(tmp_path,packet)
@@ -323,7 +340,7 @@ def test_connection_nested_packet_secret_rejected_before_process_or_files(tmp_pa
 
 def test_connection_legacy_rest_still_rejects_v2_without_admission(tmp_path):
     from devbench.study.rna_langsmith_live import RESTLiveTransport
-    packet=connection_fixture(tmp_path)
+    packet=connection_fixture(tmp_path, require_wheel=False)
     with pytest.raises(PermissionError):
         RESTLiveTransport(authorized_session_manifest={**packet['session'],'authorize_upload':True},api_key='dummy')
 
@@ -332,13 +349,14 @@ def test_connection_legacy_rest_still_rejects_v2_without_admission(tmp_path):
     ('hold_credential',4,15,0,'initialization_failed'),
     ('hold_http_body',58,72,1,'budget_exhausted')])
 def test_connection_real_child_wall_bounds_dummy_producer_and_held_http_body(
-        tmp_path,hold,minimum,maximum,reads,reason):
+        tmp_path,hold,minimum,maximum,reads,reason, installed_hosted_wheel):
     """Controlled POSIX software deadline; no general OS preemption claim."""
     import sqlite3
     import subprocess
     from devbench.study.rna_hosted_exporter import keychain_credential_handle
     from devbench.study.rna_hosted_qualification import minimal_environment
-    packet=connection_fixture(tmp_path);handles=trusted_handles(tmp_path,packet)
+    packet=connection_fixture(tmp_path)
+    handles=trusted_handles(tmp_path,packet)
     config=tmp_path/'trusted-fixture.json'
     config.write_text(json.dumps({'target':packet['target'],hold:True}))
     audit=tmp_path/'audit.jsonl'
@@ -351,7 +369,9 @@ def test_connection_real_child_wall_bounds_dummy_producer_and_held_http_body(
     try:
         stdout,stderr=process.communicate(json.dumps(value).encode()+b'\n',timeout=75)
     finally:
-        if process.poll() is None:process.kill();process.wait(timeout=3)
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=3)
     elapsed=time.monotonic()-before
     assert minimum<=elapsed<=maximum
     assert process.returncode==0
@@ -371,12 +391,13 @@ def test_connection_real_child_wall_bounds_dummy_producer_and_held_http_body(
 
 
 @pytest.mark.parametrize('field', ['source_digest','runtime_digest','policy_digest','criteria_digest','fixture_manifest_digest'])
-def test_connection_source_drift_cannot_self_approve_or_resolve(tmp_path, monkeypatch, field):
+def test_connection_source_drift_cannot_self_approve_or_resolve(tmp_path, monkeypatch, field, installed_hosted_wheel):
     from devbench.study import rna_hosted_exporter as exporter
     packet=connection_fixture(tmp_path)
     packet['binding'][field]='e'*64
     handles=trusted_handles(tmp_path,packet)
-    config=tmp_path/'trusted-fixture.json';config.write_text(json.dumps({'target':packet['target']}))
+    config=tmp_path/'trusted-fixture.json'
+    config.write_text(json.dumps({'target':packet['target']}))
     audit=tmp_path/'audit.jsonl'
     monkeypatch.setattr(exporter,'_child_command',lambda:[sys.executable,'-I','-B','-c',
         TRUSTED_CHILD,str(config),str(audit)])
@@ -387,7 +408,7 @@ def test_connection_source_drift_cannot_self_approve_or_resolve(tmp_path, monkey
     assert audit_rows(audit)==[]
 
 
-def test_connection_consumed_packet_restart_cannot_resolve_again(tmp_path, monkeypatch):
+def test_connection_consumed_packet_restart_cannot_resolve_again(tmp_path, monkeypatch, installed_hosted_wheel):
     from devbench.study import rna_hosted_exporter as exporter
     channel,packet,audit=child_channel(tmp_path,monkeypatch,lost_response=True)
     with channel:
@@ -415,11 +436,16 @@ def _identity_fixture(tmp_path,monkeypatch):
     from importlib.metadata import PathDistribution
     from types import SimpleNamespace
     from devbench.study import rna_hosted_qualification as driver
-    prefix=tmp_path/'installed';prefix.mkdir()
-    metadata=prefix/'devharness-0.dist-info';metadata.mkdir()
-    package=prefix/'devbench'/'analysis';(package/'assets').mkdir(parents=True)
-    module=package/'__init__.py';module.write_bytes(b'')
-    archive=package/'assets'/'source-bundle.zip';archive.write_bytes(b'synthetic-resource')
+    prefix=tmp_path/'installed'
+    prefix.mkdir()
+    metadata=prefix/'devharness-0.dist-info'
+    metadata.mkdir()
+    package=prefix/'devbench'/'analysis'
+    (package/'assets').mkdir(parents=True)
+    module=package/'__init__.py'
+    module.write_bytes(b'')
+    archive=package/'assets'/'source-bundle.zip'
+    archive.write_bytes(b'synthetic-resource')
     record=metadata/'RECORD'
     encoded=base64.urlsafe_b64encode(hashlib.sha256(archive.read_bytes()).digest()).decode().rstrip('=')
     record.write_text('devbench/analysis/assets/source-bundle.zip,sha256='+encoded+',18\n')
@@ -442,13 +468,21 @@ def test_bounded_connection_identity_preserves_hashes_and_allows_installed_hardl
 @pytest.mark.parametrize('mutation',['record_oversize','record_symlink','archive_symlink','archive_fifo','archive_oversize'])
 def test_bounded_connection_identity_rejects_nonregular_or_oversized_inputs_before_reads(tmp_path,monkeypatch,mutation):
     driver,record,archive=_identity_fixture(tmp_path,monkeypatch)
-    if mutation=='record_oversize':record.write_bytes(b'x'*(2*1024*1024+1))
+    if mutation=='record_oversize':
+        record.write_bytes(b'x'*(2*1024*1024+1))
     elif mutation=='record_symlink':
-        target=record.with_name('private-fixture-record');record.rename(target);record.symlink_to(target)
+        target=record.with_name('private-fixture-record')
+        record.rename(target)
+        record.symlink_to(target)
     elif mutation=='archive_symlink':
-        target=archive.with_name('private-fixture-archive');archive.rename(target);archive.symlink_to(target)
-    elif mutation=='archive_fifo':archive.unlink();os.mkfifo(archive)
+        target=archive.with_name('private-fixture-archive')
+        archive.rename(target)
+        archive.symlink_to(target)
+    elif mutation=='archive_fifo':
+        archive.unlink()
+        os.mkfifo(archive)
     elif mutation=='archive_oversize':
-        with archive.open('wb') as stream:stream.truncate(64*1024*1024+1)
+        with archive.open('wb') as stream:
+            stream.truncate(64*1024*1024+1)
     with pytest.raises((ValueError,OSError)):
         driver.bounded_installed_identity()

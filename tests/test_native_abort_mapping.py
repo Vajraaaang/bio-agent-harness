@@ -2,10 +2,11 @@
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-ROOT = Path('/Users/vajraang/Documents/ChatGPT/bio-agent-harness')
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -53,7 +54,15 @@ def test_review_required_before_any_launch(runner, monkeypatch):
         runner.main([])
 
 
-def test_attempt_seal_blocks_retry_before_observer_or_child(runner, monkeypatch, tmp_path):
+@pytest.fixture
+def pinned_fixture_runtime(runner, monkeypatch):
+    # Admit the offline harness without changing process-wide interpreter flags.
+    monkeypatch.setattr(runner, "sys", SimpleNamespace(
+        platform="darwin", prefix=str(runner.ROOT / "r/s6"),
+        flags=SimpleNamespace(isolated=True, dont_write_bytecode=True)))
+
+
+def test_attempt_seal_blocks_retry_before_observer_or_child(runner, monkeypatch, tmp_path, pinned_fixture_runtime):
     attempt = tmp_path / 'attempt.json'
     attempt.write_text('{}')
     monkeypatch.setattr(runner, 'ATTEMPT', attempt)
@@ -63,7 +72,7 @@ def test_attempt_seal_blocks_retry_before_observer_or_child(runner, monkeypatch,
         runner.main(['--reviewed-sha256', reviewed])
 
 
-def test_one_fake_child_requires_seal_and_preserves_gate(runner, monkeypatch, tmp_path):
+def test_one_fake_child_requires_seal_and_preserves_gate(runner, monkeypatch, tmp_path, pinned_fixture_runtime):
     attempt, output = tmp_path / 'attempt.json', tmp_path / 'result.json'
     monkeypatch.setattr(runner, 'ATTEMPT', attempt)
     monkeypatch.setattr(runner, 'OUTPUT', output)

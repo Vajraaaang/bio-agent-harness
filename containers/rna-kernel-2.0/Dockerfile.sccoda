@@ -1,0 +1,30 @@
+# Use a locally verified single-cell runtime tag for the selected platform.
+ARG SCRNA_IMAGE=devbench-rna-kernel:2.0-scrna
+FROM ${SCRNA_IMAGE} AS fetch-sccoda
+USER 0:0
+COPY containers/rna-kernel-2.0/python-sccoda.lock /opt/rna/python-sccoda.lock
+RUN python3.13 -m pip --no-cache-dir download --no-deps --no-build-isolation \
+    --require-hashes --dest /archives -r /opt/rna/python-sccoda.lock
+
+# Export the verified prerequisite archives to a separate named build context.
+FROM scratch AS archives
+COPY --from=fetch-sccoda /archives/ /
+
+FROM ${SCRNA_IMAGE} AS runtime
+USER 0:0
+COPY containers/rna-kernel-2.0/python-sccoda.lock /opt/rna/python-sccoda.lock
+RUN --network=none --mount=from=sccoda-sources,source=/,target=/archives,readonly \
+    python3.13 -m pip --no-cache-dir install --no-index --no-deps --no-build-isolation \
+    --require-hashes --find-links=/archives --target=/opt/rna/sccoda-python \
+    -r /opt/rna/python-sccoda.lock
+ENV PYTHONPATH=/opt/rna/sccoda-python:${PYTHONPATH} JAX_PLATFORMS=cpu
+COPY src/devbench/core/scientific_types.py src/devbench/core/scrna_composition.py \
+    src/devbench/core/scrna_composition_solver.py /opt/rna/runtime/devbench/core/
+COPY src/devbench/engine/__init__.py src/devbench/engine/runtime_contracts.py \
+    /opt/rna/runtime/devbench/engine/
+COPY devharness_server/tools_scrna_composition.py /opt/rna/runtime/devharness_server/
+USER 65532:65532
+RUN --network=none --mount=type=tmpfs,target=/tmp \
+    python3.13 -m pip --no-cache-dir check \
+ && python3.13 -c 'from pertpy.tools import Sccoda; import jax; assert Sccoda and jax.default_backend() == "cpu"' \
+ && python3.13 -m devharness_server.tools_scrna_composition --help > /dev/null

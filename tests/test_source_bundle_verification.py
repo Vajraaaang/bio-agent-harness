@@ -1,16 +1,15 @@
 """Notebook postflight checks must never repair missing or changed source."""
-import os
 import ast
 import base64
 import hashlib
 import io
-from pathlib import Path
-from pathlib import PurePosixPath
+import os
 import shutil
 import stat
 import subprocess
 import sys
 import zipfile
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -29,6 +28,44 @@ def _fixture(tmp_path):
     return bundle, output
 
 
+def test_checkout_and_wheel_stage_share_the_git_source_inventory(tmp_path):
+    from scripts.verify_wheel_custody import _copy_sources
+
+    project = tmp_path / "checkout"
+    (project / "scripts").mkdir(parents=True)
+    (project / "benchmarks").mkdir()
+    (project / "pyproject.toml").write_text("[project]\nname='synthetic-source'\nversion='1'\n")
+    (project / "README.md").write_text("Synthetic source verification fixture.\n")
+    (project / "scripts/colab_run.py").write_text("print('x')\n")
+    subprocess.run(["git", "init", "--quiet", str(project)], check=True)
+    (project / ".git/info/exclude").write_text("/benchmarks/planted_discovery.py\n")
+    (project / "benchmarks/planted_discovery.py").write_text("# ignored local fixture\n")
+    (project / "benchmarks/visible.py").write_text("# eligible source\n")
+    (project / "benchmarks/credential_sample.py").write_text("# denied synthetic fixture\n")
+
+    staging = tmp_path / "stage"
+    _copy_sources(project, staging)
+    checkout = build_source_bundle(project)
+    assert "benchmarks/planted_discovery.py" not in checkout["files"]
+    assert "benchmarks/credential_sample.py" not in checkout["files"]
+    assert "benchmarks/visible.py" in checkout["files"]
+    assert checkout == build_source_bundle(staging)
+
+
+def test_source_resource_consistency_check_preserves_existing_bytes(tmp_path):
+    from scripts.build_source_resource import build_source_resource
+
+    _fixture(tmp_path)
+    project = tmp_path / "original"
+    built = build_source_resource(project)
+    assert build_source_resource(project, check=True) == built
+    asset = Path(built["path"])
+    asset.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="does not match"):
+        build_source_resource(project, check=True)
+    assert asset.read_bytes() == b"changed"
+
+
 def _state(path):
     if not path.exists(): return None
     result = {}
@@ -41,6 +78,7 @@ def _state(path):
 def _wheel_resource_fixture(tmp_path):
     from importlib.metadata import PackagePath
     from types import SimpleNamespace
+
     from scripts.build_source_resource import build_source_resource
     project = tmp_path / "epoch"
     (project / "scripts").mkdir(parents=True)
@@ -92,8 +130,9 @@ def test_wheel_resource_rejects_missing_tampered_or_mixed_epoch(tmp_path, mutati
 
 def test_default_installed_identity_uses_verified_resource_and_explicit_root_stays_explicit(tmp_path, monkeypatch):
     from importlib import metadata, resources
-    from scripts import build_colab_notebook as builder
+
     from devbench.analysis.workbench_proposals import _source_identity
+    from scripts import build_colab_notebook as builder
     project, asset, _, distribution = _wheel_resource_fixture(tmp_path)
     monkeypatch.setattr(builder, "__file__", str(asset.parents[3] / "scripts/build_colab_notebook.py"))
     monkeypatch.setattr(metadata, "distribution", lambda name: distribution)
@@ -106,10 +145,57 @@ def test_default_installed_identity_uses_verified_resource_and_explicit_root_sta
         builder.default_source_bundle(tmp_path / "absent-checkout")
 
 
+def test_runtime_asset_must_match_checkout_bytes(tmp_path, monkeypatch):
+    from devbench import _layout
+
+    path = "docs/agentic-rna-v24-evaluation-protocol.md"
+    checkout = tmp_path / "checkout"
+    assets = tmp_path / "devbench" / "analysis" / "assets"
+    (checkout / ".git").mkdir(parents=True)
+    (checkout / "docs").mkdir()
+    assets.mkdir(parents=True)
+    reference = checkout / path
+    packaged = assets / Path(path).name
+    reference.write_bytes(b"frozen protocol\n")
+    packaged.write_bytes(reference.read_bytes())
+    monkeypatch.setattr(_layout, "PROJECT_ROOT", checkout)
+    monkeypatch.setattr(_layout, "ANALYSIS_ASSETS", assets)
+
+    assert _layout.resolve_analysis_asset(path).read_bytes() == reference.read_bytes()
+    reference.write_bytes(b"frozen protocol\r\n")
+    with pytest.raises(ValueError, match="does not match"):
+        _layout.resolve_analysis_asset(path)
+    reference.unlink()
+    with pytest.raises(FileNotFoundError):
+        _layout.resolve_analysis_asset(path)
+
+    monkeypatch.setattr(_layout, "PROJECT_ROOT", assets.parent.parent.parent)
+    assert _layout.resolve_analysis_asset(path) == packaged
+
+
+def test_ignored_report_mirror_works_in_clean_checkout(tmp_path, monkeypatch):
+    from devbench import _layout
+
+    (tmp_path / ".git").mkdir()
+    assets = tmp_path / "src" / "devbench" / "analysis" / "assets"
+    assets.mkdir(parents=True)
+    mirror = assets / "owned-host-sentinel.txt"
+    mirror.write_bytes(b"synthetic sentinel\n")
+    reference = tmp_path / "reports" / mirror.name
+    monkeypatch.setattr(_layout, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(_layout, "ANALYSIS_ASSETS", assets)
+    assert _layout.resolve_analysis_asset("reports/" + mirror.name) == mirror
+    reference.parent.mkdir()
+    reference.write_bytes(b"drift\n")
+    with pytest.raises(ValueError, match="does not match"):
+        _layout.resolve_analysis_asset("reports/" + mirror.name)
+
+
 def test_default_preparation_retains_verified_wheel_source_and_environment_lock(tmp_path, monkeypatch):
     from importlib import metadata, resources
+
+    from devbench.analysis import runtime, workbench
     from scripts import build_colab_notebook as builder
-    from devbench.analysis import workbench, runtime
     project, asset, _, distribution = _wheel_resource_fixture(tmp_path)
     monkeypatch.setattr(builder, "__file__", str(asset.parents[3] / "scripts/build_colab_notebook.py"))
     monkeypatch.setattr(metadata, "distribution", lambda name: distribution)
@@ -154,10 +240,19 @@ def test_generated_bootstrap_source_verifier_runs_without_repository_imports(tmp
     module = build_colab_notebook if kind == "agent" else build_controlled_notebook
     notebook = module.build_notebook(tmp_path / "original")
     code = next("".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code")
-    definitions = [node for node in ast.parse(code).body if isinstance(node, ast.FunctionDef)]
+    definitions = [
+        node for node in ast.parse(code).body
+        if isinstance(node, ast.FunctionDef)
+        or (
+            isinstance(node, ast.Assign)
+            and ast.unparse(node.targets[0]) == "SOURCE_BUNDLE_MAX_FILES"
+        )
+    ]
     namespace = {"os":os, "stat":stat, "Path":Path, "PurePosixPath":PurePosixPath,
                  "base64":base64, "hashlib":hashlib, "io":io, "zipfile":zipfile}
     exec(compile(ast.Module(body=definitions, type_ignores=[]), "embedded-functions", "exec"), namespace)
+    limit = build_colab_notebook.SOURCE_BUNDLE_MAX_FILES
+    assert namespace["SOURCE_BUNDLE_MAX_FILES"] == limit
     verify = namespace["extract_source_bundle"]
     assert verify(bundle["base64"], output, bundle["sha256"], verify_only=True) == output
     (output / "scripts/colab_run.py").unlink()

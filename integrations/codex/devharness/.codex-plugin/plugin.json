@@ -1,31 +1,25 @@
 {
   "name": "devharness",
-  "version": "0.1.0",
-  "description": "Local RNA-seq research workflows using the existing DevHarness scientific tools.",
+  "version": "0.2.0",
+  "description": "Governed local single-cell, bulk and staged FASTQ research via DevHarness.",
   "author": {
     "name": "DevHarness contributors"
   },
   "license": "MIT",
-  "keywords": [
-    "rna-seq",
-    "scrna-seq",
-    "transcriptomics",
-    "research"
-  ],
+  "keywords": ["rna-seq", "scrna-seq", "transcriptomics", "research"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "DevHarness",
-    "shortDescription": "RNA-seq research through Codex.",
-    "longDescription": "Guide supported RNA-seq workflows, run installed scientific tools, and review numerical evidence. Research software; not clinically qualified.",
+    "displayName": "DevHarness RNA Research",
+    "shortDescription": "Inspect RNA inputs and run reviewed research workflows.",
+    "longDescription": "Plan and run local RNA-seq research with reviewed execution and evidence receipts. Continue visual and private-data work in Companion Studio.",
     "developerName": "DevHarness contributors",
-    "category": "Productivity",
-    "capabilities": [
-      "Read",
-      "Write"
-    ],
+    "category": "Education & Research",
+    "capabilities": ["Read", "Write"],
     "defaultPrompt": [
-      "Inspect my RNA-seq input and metadata.",
-      "Propose a supported RNA-seq analysis.",
-      "Review my analysis results and evidence."
+      "Inspect my single-cell RNA-seq input and donor metadata.",
+      "Check whether my bulk RNA-seq design supports the intended contrast.",
+      "Plan a Salmon workflow for my locally staged FASTQ."
     ]
   }
 }

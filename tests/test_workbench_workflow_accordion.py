@@ -20,6 +20,47 @@ const render=investigation=>api.renderInvestigation(container,{investigation,con
 """
 
 
+def test_workbench_stage_buttons_show_primary_content_and_keep_history_out_of_chat():
+    run_js(SETUP+r"""
+const stageBar=new Node('nav'),stageButtons=Array.from({length:5},(_,index)=>Object.assign(new Node('button'),{
+  id:'wc-stage-pill-'+(index+1),closest:()=>stageBar,focus(){this.focused=true;},click(){this.onclick();},
+})),historyContainer=new Node('div');
+const record={id:'chat',revision:1,status:'awaiting_information',question:'Compare groups',turns:[
+  {id:'audit',kind:'data_audit',step:1,content:{observed:{cells:80,genes:60}}},
+  {id:'audit-history',kind:'scientific_step',step:1,content:{step:{node:'audit',status:'completed'}}},
+  {id:'scope',kind:'question_scope',step:2,title:'Question scope',content:{summary:'Compare A and B'}},
+  {id:'plan',kind:'plan_review',step:3,title:'Recorded plan',content:{}},
+  {id:'result',kind:'singlecell_evidence',step:4,content:{tool_name:'scrna_population_contrast',status:'completed'}},
+],synthesis_continuation:{status:'review_required',eligible:false,population_evidence:{
+  direct_answer:'Retained contrast answer',structured_findings:[],trials:[],
+}}};
+const display=value=>api.renderInvestigation(container,{investigation:value,stageButtons,historyContainer,
+  onAction:action=>actions.push(action)});
+display(record);
+const panels=()=>byClass(container,'wc-stage-content');
+const shown=()=>panels().filter(node=>!node.hidden);
+assert.equal(byClass(container,'wc-workflow-card').length,0);
+assert.equal(stageBar.attrs.role,'tablist');
+assert.ok(walk(historyContainer).some(node=>node.attrs['data-turn-id']==='audit-history'));
+assert.equal(shown()[0].attrs.id,'wc-stage-content-5');
+assert.ok(walk(shown()[0]).some(node=>node.textContent==='Retained contrast answer'));
+for (const [index,id] of ['audit','scope','plan','result'].entries()){
+  stageButtons[index].onclick();
+  assert.equal(shown().length,1);
+  assert.ok(walk(shown()[0]).some(node=>node.attrs['data-turn-id']===id));
+  assert.equal(stageButtons[index].attrs['aria-selected'],'true');
+  assert.equal(stageButtons[index].tabIndex,0);
+  assert.equal(shown()[0].attrs['aria-labelledby'],stageButtons[index].id);
+  assert.deepEqual(actions.at(-1),{type:'navigate',view:'results',workflowStage:index+1});
+}
+display({...record,revision:2});
+assert.equal(shown()[0].attrs.id,'wc-stage-content-4');
+stageButtons[3].onkeydown({key:'ArrowRight',preventDefault(){}});
+assert.equal(stageButtons[4].focused,true);
+assert.deepEqual(actions.at(-1),{type:'navigate',view:'evidence',workflowStage:5});
+""")
+
+
 def test_one_compact_card_has_five_ordered_questions_without_fabricated_steps():
     run_js(SETUP+r"""
 const investigation={id:'chat',revision:1,status:'awaiting_information',question:'Inspect the input',turns:[{id:'q',kind:'user_question',role:'user',step:2,content:{question:'Inspect the input'}},{id:'a',kind:'data_audit',step:1,content:{observed:{cells:80},declarations:{},inferred:{},unknowns:[]}}]};
@@ -89,11 +130,13 @@ def test_only_the_actual_active_lifecycle_section_spins_and_terminal_states_stop
 const active = {queued:1,inspecting:1,planning:3,recording_review:3,preparing:4,running:4,cancel_requested:4,finalizing:4};
 for (const [status,step] of Object.entries(active)) {
   render({id:'chat',revision:1,status,turns:[{id:'old',kind:'data_audit',step:1,content:{observed:{cells:80}}}]});
-  const busy=byClass(container,'is-running');assert.equal(busy.length,1,status);
+  const kind=status==='queued'?'queued':status==='cancel_requested'?'attention':'running';
+  const busy=byClass(container,'is-'+kind);assert.equal(busy.length,1,status);
   assert.equal(busy[0].attrs['data-scientific-step'],String(step),status);
-  assert.equal(busy[0].attrs['data-workflow-state'],'running');
+  assert.equal(busy[0].attrs['data-workflow-state'],kind);
   assert.ok(busy[0].children[0].attrs['aria-label'].includes(api.buildModel({status},{}).summary.title));
-  assert.equal(byClass(container,'is-attention').length,0);
+  if(kind!=='running')assert.equal(byClass(container,'is-running').length,0);
+  if(kind!=='attention')assert.equal(byClass(container,'is-attention').length,0);
 }
 for(const status of ['completed_review_passed','completed_presentation','completed','abstained','', 'ready']) {
   render({id:'chat',revision:2,status,...(status.startsWith('completed') || status==='abstained' ? {scientific_session_id:'s',gate:'review'} : {}),turns:[{id:'done',kind:'scientific_operation',step:4,content:{operation:{status:'running',action:'run_trial'}}}]});
@@ -155,7 +198,7 @@ def test_monochrome_activity_motion_is_disabled_for_reduced_motion():
     reduced = [tinycss2.serialize(rule.content) for rule in rules if rule.type == 'at-rule' and rule.lower_at_keyword == 'media' and 'prefers-reduced-motion:reduce' in tinycss2.serialize(rule.prelude)]
     assert any('.wc-workflow-section .wc-workflow-marker' in rule and 'animation:none!important' in rule for rule in reduced)
     assert 'wc-workflow-spin 1.6s linear infinite' in theme
-    assert 'wc-workflow-attention 2.4s ease-in-out infinite' in theme
+    assert '.wc-workflow-section.is-attention>.wc-workflow-tab .wc-workflow-marker { animation:none; }' in theme
 
 
 def test_unknown_worker_liveness_never_claims_to_be_running():

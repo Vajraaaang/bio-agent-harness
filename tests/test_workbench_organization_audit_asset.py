@@ -11,7 +11,7 @@ server.jobs=[
 ];
 server.revision={id:'revision-fixture',figure_id:'qc',status:'completed_presentation',request:{display_options:{point_size:12}}};
 server.figures.revisions=[server.revision];
-await elements.connect.onclick();
+await startWorkspace();
 assert.equal(elements.jobs.children.length,2);
 assert.equal(elements.jobs.children[0].children[0].textContent,'Presentation');
 assert.equal(elements.jobs.children[1].children[0].textContent,'Analysis request');
@@ -30,7 +30,7 @@ server.jobs=[
  {id:'three',question:'Replacement content',status:'approved',input:{path:'/inputs/first.h5ad',sha256:'b'.repeat(64)}},
  {id:'four',question:'Inspection pending',status:'awaiting_information',input:{path:'/inputs/uninspected.h5ad'}}
 ];
-await elements.connect.onclick();elements['nav-data'].onclick();
+await startWorkspace();elements['nav-data'].onclick();
 assert.equal(elements['workspace-title'].textContent,'Inputs');
 assert.equal(elements['data-list'].children.length,3);
 const content=elements['data-list'].children.find(row=>row.textContent.includes('a'.repeat(64)));
@@ -45,7 +45,7 @@ def test_recovery_notice_is_visible_and_does_not_turn_state_into_authorization()
     run("""
 server.workspace.recovery_notice='Recovered the previous saved location and question draft.';
 server.workspace.ui={view:'overview',question_draft:'Recovered question'};
-await elements.connect.onclick();
+await startWorkspace();
 assert.match(elements['workspace-message'].textContent,/Recovered/);
 assert.equal(elements.question.value,'Recovered question');
 assert.equal(elements['run-button'].disabled,true);

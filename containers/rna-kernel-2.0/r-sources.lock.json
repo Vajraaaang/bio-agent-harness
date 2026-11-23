@@ -1,0 +1,2141 @@
+{
+  "format": "devbench.rna-kernel-r-sources/1",
+  "R": "4.6.1",
+  "BiocVersion": "3.23.1",
+  "targets": [
+    "edgeR",
+    "limma",
+    "DESeq2",
+    "apeglm",
+    "ashr",
+    "tximport",
+    "sva",
+    "RUVSeq",
+    "variancePartition",
+    "rhdf5",
+    "statmod",
+    "jsonlite"
+  ],
+  "packages": [
+    {
+      "package": "abind",
+      "version": "1.4-8",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "264a051b523ceae1795a0879e7768949ea55c586ac8db0adf1f5ebeddd2623e1",
+      "size": 21974
+    },
+    {
+      "package": "annotate",
+      "version": "1.90.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "AnnotationDbi",
+        "XML",
+        "Biobase",
+        "DBI",
+        "xtable",
+        "BiocGenerics",
+        "httr"
+      ],
+      "sha256": "537332db612cee45c678ef4d15794087c4b13f1c5c3560dc7cfea067bf157b34",
+      "size": 1872879
+    },
+    {
+      "package": "AnnotationDbi",
+      "version": "1.74.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "Biobase",
+        "IRanges",
+        "DBI",
+        "RSQLite",
+        "S4Vectors",
+        "KEGGREST"
+      ],
+      "sha256": "5651082d913b064708c1a965ecc8d53116000d4630c00d0ea061f954bd4c1350",
+      "size": 4150760
+    },
+    {
+      "package": "aod",
+      "version": "1.3.3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "b7245e8abf7d78cdfa7f74f6d90f79a418b883058aa3edd5977a60bdbed4087e",
+      "size": 58304
+    },
+    {
+      "package": "apeglm",
+      "version": "1.34.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "emdbook",
+        "SummarizedExperiment",
+        "GenomicRanges",
+        "Rcpp",
+        "RcppEigen",
+        "RcppNumerical"
+      ],
+      "sha256": "78aae4deb507580a491204f5a9462dc154d48e96899c4f1a55a9205aea6d481a",
+      "size": 1261877
+    },
+    {
+      "package": "aroma.light",
+      "version": "3.42.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "R.methodsS3",
+        "R.oo",
+        "R.utils",
+        "matrixStats"
+      ],
+      "sha256": "90ff27f55c5f45f13442a710c2cf80da3ae26ce60807c690f444b3043425f338",
+      "size": 388384
+    },
+    {
+      "package": "ashr",
+      "version": "2.2-63",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Matrix",
+        "Rcpp",
+        "truncnorm",
+        "mixsqp",
+        "SQUAREM",
+        "etrunct",
+        "invgamma"
+      ],
+      "sha256": "7fa1957ed3cf0f1f20939b6ebf71fc04ab983ca77616f7b80ce9e9e6fad457c9",
+      "size": 935117
+    },
+    {
+      "package": "askpass",
+      "version": "1.2.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "sys"
+      ],
+      "sha256": "6c2106a74c44a748f2cea795d9686e27a0058a90debcfd8558b62b06aec0c7dd",
+      "size": 6058
+    },
+    {
+      "package": "backports",
+      "version": "1.5.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "b8eeeabe3c27e1486f43e0b18dae57f0e870dd7c6979d3668df76bf0d4735bad",
+      "size": 30108
+    },
+    {
+      "package": "bbmle",
+      "version": "1.0.26",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "numDeriv",
+        "lattice",
+        "MASS",
+        "bdsmatrix",
+        "Matrix",
+        "mvtnorm"
+      ],
+      "sha256": "886589af4a6f161992a3605f2312589a00598435a7c78de7a128e0134bc44e2c",
+      "size": 541347
+    },
+    {
+      "package": "bdsmatrix",
+      "version": "1.3-7",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "c3505e5ac06d5e01b3a6bad94177f8375cd9867bb0146cc9c63d92424ecb7922",
+      "size": 48027
+    },
+    {
+      "package": "BH",
+      "version": "1.90.0-1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "2e1fafb05938e81073561ae4892dc543ef15807e375e0ea8fa75e3ab79f0281b",
+      "size": 14307014
+    },
+    {
+      "package": "Biobase",
+      "version": "2.72.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics"
+      ],
+      "sha256": "d04af4c5850352f96a966285ea771b15777d2f009f7b86fa4b702de13f31bbdd",
+      "size": 1977228
+    },
+    {
+      "package": "BiocFileCache",
+      "version": "3.2.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "dbplyr",
+        "dplyr",
+        "RSQLite",
+        "DBI",
+        "filelock",
+        "curl",
+        "httr2"
+      ],
+      "sha256": "a6fd5964a2847e71413a0a9b8a4b8d9d93f64eb9a753be08d1d21de23facc13d",
+      "size": 743147
+    },
+    {
+      "package": "BiocGenerics",
+      "version": "0.58.1",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "generics"
+      ],
+      "sha256": "6911559f0b2b5a07081cd21b6738aa4c6048509b23425cc3ebafc0b4cb011a98",
+      "size": 57572
+    },
+    {
+      "package": "BiocIO",
+      "version": "1.22.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "S4Vectors"
+      ],
+      "sha256": "a6a3e618c7bf00cd9c77cf04326617b8dd97ce3783b1f742c9408a01f920c07b",
+      "size": 231885
+    },
+    {
+      "package": "biocmake",
+      "version": "1.4.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "dir.expiry"
+      ],
+      "sha256": "158c59fd65dca9b5e74e5c4f32a1fbe161e080d1278d99816a802980c653210d",
+      "size": 228676
+    },
+    {
+      "package": "BiocManager",
+      "version": "1.30.27",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "acbfdcf09602c8279085556ca54531c2ada0ac3c1775d54ce2c3b9a3dc03fbb5",
+      "size": 752490
+    },
+    {
+      "package": "BiocParallel",
+      "version": "1.46.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "futile.logger",
+        "snow",
+        "codetools",
+        "BH",
+        "cpp11"
+      ],
+      "sha256": "d06642f7b53517299a48ac68b074c28e03dd1de41159562fb8011117419e1038",
+      "size": 1102897
+    },
+    {
+      "package": "biomaRt",
+      "version": "2.68.6",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "AnnotationDbi",
+        "BiocFileCache",
+        "curl",
+        "httr2",
+        "progress",
+        "stringr",
+        "xml2"
+      ],
+      "sha256": "b4c58af1c7ec858359374bae5bdd8f8745e989425483b03a84bcb86ba6f491fa",
+      "size": 907155
+    },
+    {
+      "package": "Biostrings",
+      "version": "2.80.2",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges",
+        "XVector",
+        "Seqinfo",
+        "crayon"
+      ],
+      "sha256": "769b264c2110017581396e2487e274cfd93082cc79629571c52483c1f2ec8c14",
+      "size": 12811341
+    },
+    {
+      "package": "bit",
+      "version": "4.6.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "48fe21c5d04c7b724d695eeb60074395c0c631a7fb234e2075de92471445de08",
+      "size": 304585
+    },
+    {
+      "package": "bit64",
+      "version": "4.8.6",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "bit"
+      ],
+      "sha256": "a5fcec17ba772a561a7375ca8fd966bdd5f20dd4e89b4dae07d7da933d554b45",
+      "size": 179374
+    },
+    {
+      "package": "bitops",
+      "version": "1.1-0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "73f063f15c6334d769202a178f7dd5499bdd10044a4ffbef571be57cbcc68b22",
+      "size": 11019
+    },
+    {
+      "package": "blob",
+      "version": "1.3.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "rlang",
+        "vctrs"
+      ],
+      "sha256": "d4d2aeb8d17683bbfc256a7541e282af9663a752988a21a6ba72a4ab268c7331",
+      "size": 11157
+    },
+    {
+      "package": "boot",
+      "version": "1.3-32",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "3a05aced6fea42a5c310c5c6ab7a2019f69f757f5e77c4961183977747136c97",
+      "size": 238282
+    },
+    {
+      "package": "broom",
+      "version": "1.0.13",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "backports",
+        "cli",
+        "dplyr",
+        "generics",
+        "glue",
+        "lifecycle",
+        "purrr",
+        "rlang",
+        "stringr",
+        "tibble",
+        "tidyr"
+      ],
+      "sha256": "f946601f57b4d90e7d2ea88c55c1516dacb8220cb12a980ba1e0fa1832320f61",
+      "size": 466689
+    },
+    {
+      "package": "cachem",
+      "version": "1.1.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "rlang",
+        "fastmap"
+      ],
+      "sha256": "550839fc2ae5d865db475ba2c1714144f07fa0c052c72135b0e4a70287492e21",
+      "size": 27192
+    },
+    {
+      "package": "caTools",
+      "version": "1.18.4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "bitops"
+      ],
+      "sha256": "d4c511b7182d385635f9ac3f4f551e57eaa77a5d04e5156759744dfb875a88e6",
+      "size": 65987
+    },
+    {
+      "package": "cigarillo",
+      "version": "1.2.1",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges",
+        "Biostrings"
+      ],
+      "sha256": "38e618f95d321cc0b68b3aa65225384ee68ac8af51cc8cf3cf40bb878fd92c12",
+      "size": 257262
+    },
+    {
+      "package": "cli",
+      "version": "3.6.6",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "b2b58d6dd82f5798b335e39c00591686a01fd3e94399ef898e146173e36f18f9",
+      "size": 644134
+    },
+    {
+      "package": "coda",
+      "version": "0.19-4.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "lattice"
+      ],
+      "sha256": "f4b451d86fbb56ff9ade043ddd6b0944368c37d0dad12d02837750ecdc708ad6",
+      "size": 74301
+    },
+    {
+      "package": "codetools",
+      "version": "0.2-20",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "3be6f375ec178723ddfd559d1e8e85bfeee04a5fbaf9f53f2f844e1669fea863",
+      "size": 38683
+    },
+    {
+      "package": "colorspace",
+      "version": "2.1-4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "3bb168c19772bc3f11d15933da008d96505376eab31cb5b3106392a322e9c62c",
+      "size": 2149687
+    },
+    {
+      "package": "corpcor",
+      "version": "1.6.10",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "71a04c503c93ec95ddde09abe8c7ddeb36175b7da76365a14b27066383e10e09",
+      "size": 22678
+    },
+    {
+      "package": "cowplot",
+      "version": "1.2.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "ggplot2",
+        "gtable",
+        "rlang",
+        "scales"
+      ],
+      "sha256": "431d582a4fb68f005f45e0d963c19daad826289374b429b05fe168ef6f231aa1",
+      "size": 1638386
+    },
+    {
+      "package": "cpp11",
+      "version": "0.5.5",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "72486beb0605c1229bf3d422cd536224af8dc09bd389a3116f62f4c7705c62f4",
+      "size": 304823
+    },
+    {
+      "package": "crayon",
+      "version": "1.5.3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "3e74a0685541efb5ea763b92cfd5c859df71c46b0605967a0b5dbb7326e9da69",
+      "size": 40396
+    },
+    {
+      "package": "curl",
+      "version": "8.1.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "ab3907ac4f063d614c778b8540d7e2e7b108dc6ab82c42e471cff2a1ca21205b",
+      "size": 730855
+    },
+    {
+      "package": "DBI",
+      "version": "1.3.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "13def8e90cbe41205a0dfcf585a6a7ea79ce10d45969789e82613c7ce3d5fb18",
+      "size": 744704
+    },
+    {
+      "package": "dbplyr",
+      "version": "2.6.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "blob",
+        "cli",
+        "DBI",
+        "dplyr",
+        "glue",
+        "lifecycle",
+        "magrittr",
+        "pillar",
+        "purrr",
+        "R6",
+        "rlang",
+        "tibble",
+        "tidyr",
+        "tidyselect",
+        "vctrs",
+        "withr"
+      ],
+      "sha256": "3672daf73f7f0238a2c547dce5d4fb31e50235bca796c710d6f7caf49c212bd8",
+      "size": 611997
+    },
+    {
+      "package": "DelayedArray",
+      "version": "0.38.2",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "Matrix",
+        "BiocGenerics",
+        "MatrixGenerics",
+        "S4Vectors",
+        "IRanges",
+        "S4Arrays",
+        "SparseArray"
+      ],
+      "sha256": "d9d3195f8f8e3ddf4aa9a47ac149413dc226761377e34d9320d09cbe8cefe3fd",
+      "size": 811347
+    },
+    {
+      "package": "deldir",
+      "version": "2.0-4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "d418acb28ec3707b6d64c7466d0cefbb49b098537f37558d8f7a5befd34a4653",
+      "size": 103621
+    },
+    {
+      "package": "Deriv",
+      "version": "4.3.6",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Rcpp"
+      ],
+      "sha256": "8950065ee01803e936e4fa48b525bcff702ecc21f6dd41ab3e98e37fd9efeb9c",
+      "size": 47790
+    },
+    {
+      "package": "DESeq2",
+      "version": "1.52.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "S4Vectors",
+        "IRanges",
+        "GenomicRanges",
+        "SummarizedExperiment",
+        "BiocGenerics",
+        "Biobase",
+        "BiocParallel",
+        "matrixStats",
+        "locfit",
+        "ggplot2",
+        "Rcpp",
+        "MatrixGenerics",
+        "RcppArmadillo"
+      ],
+      "sha256": "8c91699286336350e66eec132ce6fdf5bb4af78e2a4d015a5a61224f62a95984",
+      "size": 2680841
+    },
+    {
+      "package": "dir.expiry",
+      "version": "1.20.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "filelock"
+      ],
+      "sha256": "895f0c8b9eb2c2eb2276ba69faec1c65947c2f9ec0b4811ae30e995353bc645c",
+      "size": 308491
+    },
+    {
+      "package": "doBy",
+      "version": "4.7.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "boot",
+        "broom",
+        "cowplot",
+        "Deriv",
+        "dplyr",
+        "forecast",
+        "ggplot2",
+        "MASS",
+        "Matrix",
+        "modelr",
+        "rlang",
+        "purrr",
+        "tibble",
+        "tidyr"
+      ],
+      "sha256": "9d4b2c4dca86b9e54f5c3778f6af93485334cd4b4f6105ac69e5d55579af7b7f",
+      "size": 4477331
+    },
+    {
+      "package": "dplyr",
+      "version": "1.2.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "generics",
+        "glue",
+        "lifecycle",
+        "magrittr",
+        "pillar",
+        "R6",
+        "rlang",
+        "tibble",
+        "tidyselect",
+        "vctrs"
+      ],
+      "sha256": "18d66fe2f24cda8b619c177326d39dd015229ab99695fa67d3fa31e4569390e0",
+      "size": 923509
+    },
+    {
+      "package": "EDASeq",
+      "version": "2.46.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "Biobase",
+        "ShortRead",
+        "BiocGenerics",
+        "IRanges",
+        "aroma.light",
+        "Rsamtools",
+        "biomaRt",
+        "Biostrings",
+        "AnnotationDbi",
+        "GenomicFeatures",
+        "GenomicRanges",
+        "BiocManager"
+      ],
+      "sha256": "de4879a9d2506a0572fbf5002dcbfd6c8ee4b0846873ccbd2b24709a29ab02c1",
+      "size": 1190207
+    },
+    {
+      "package": "edgeR",
+      "version": "4.10.7",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "limma",
+        "locfit"
+      ],
+      "sha256": "a3cc0f66be29f1a61a74021f9848ec940794e653905c4332327a719dd9ad8393",
+      "size": 3074140
+    },
+    {
+      "package": "emdbook",
+      "version": "1.3.14",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "MASS",
+        "lattice",
+        "plyr",
+        "coda",
+        "bbmle"
+      ],
+      "sha256": "afca37687ff6ce9d93812ced12b3cd7627635a8654e2ee52ab7082e82cb0a0a2",
+      "size": 89931
+    },
+    {
+      "package": "EnvStats",
+      "version": "3.1.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "MASS",
+        "ggplot2",
+        "nortest"
+      ],
+      "sha256": "c743b833242193d8893d1d6d0d45af091e3c12354e6ab44a787530e83858cd02",
+      "size": 1427005
+    },
+    {
+      "package": "etrunct",
+      "version": "0.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "19b36c739e382be2f19bdbe4107337935d52a1ab8eb301326612318afdfbca2b",
+      "size": 2319
+    },
+    {
+      "package": "fANCOVA",
+      "version": "0.6-1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "c3ea3640d9a87abbfeae713141d606ece93bc88b9952f41a37b3f1fbe802bc12",
+      "size": 13832
+    },
+    {
+      "package": "farver",
+      "version": "2.1.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "528823b95daab4566137711f1c842027a952bea1b2ae6ff098e2ca512b17fe25",
+      "size": 1275981
+    },
+    {
+      "package": "fastmap",
+      "version": "1.2.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "b1da04a2915d1d057f3c2525e295ef15016a64e6667eac83a14641bbd83b9246",
+      "size": 46710
+    },
+    {
+      "package": "filelock",
+      "version": "1.0.3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "2dcd0ec453f5ec4d96f69b0c472569d57d3c5f9956a82a48492ee02f12071137",
+      "size": 15443
+    },
+    {
+      "package": "forecast",
+      "version": "9.0.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "colorspace",
+        "fracdiff",
+        "generics",
+        "ggplot2",
+        "lmtest",
+        "magrittr",
+        "nnet",
+        "Rcpp",
+        "timeDate",
+        "urca",
+        "withr",
+        "zoo",
+        "RcppArmadillo"
+      ],
+      "sha256": "86dadffb846903b83fa6471d4e33d29e37435cc492641963a5b1daa925150653",
+      "size": 590857
+    },
+    {
+      "package": "formatR",
+      "version": "1.14",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "4ebaab2c3f8527871655246b62abd060bc75dae1cec7f962ca4752b8080f474c",
+      "size": 96077
+    },
+    {
+      "package": "fracdiff",
+      "version": "1.5-4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "c38ea9c377144a01e72c32f7fd30d6548f9795c1be909aab143b0efb26b42d9e",
+      "size": 59652
+    },
+    {
+      "package": "futile.logger",
+      "version": "1.4.9",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "lambda.r",
+        "futile.options"
+      ],
+      "sha256": "496bedbe2e52d06db22a4d659b8e7dd9ad0f1d1f95ead459ec02d05d0ac2b3d6",
+      "size": 24311
+    },
+    {
+      "package": "futile.options",
+      "version": "1.0.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "7a9cc974e09598077b242a1069f7fbf4fa7f85ffe25067f6c4c32314ef532570",
+      "size": 3919
+    },
+    {
+      "package": "genefilter",
+      "version": "1.94.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "MatrixGenerics",
+        "AnnotationDbi",
+        "annotate",
+        "Biobase",
+        "survival"
+      ],
+      "sha256": "92fe3d5710317da562ce025c30d8ef2e6811f7ae30b1a801235e10a90cc22e06",
+      "size": 1119959
+    },
+    {
+      "package": "generics",
+      "version": "0.1.4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "bbe95a097792d38fc3b7e677738af1b95b66ea5e5017e33b8beac6a6088d0801",
+      "size": 47224
+    },
+    {
+      "package": "GenomicAlignments",
+      "version": "1.48.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges",
+        "Seqinfo",
+        "GenomicRanges",
+        "SummarizedExperiment",
+        "Biostrings",
+        "Rsamtools",
+        "BiocParallel",
+        "cigarillo"
+      ],
+      "sha256": "a8c0f7c4aaef1c907b887ba95dd678b3400f5a564bf654fff868a745d43c503e",
+      "size": 2257229
+    },
+    {
+      "package": "GenomicFeatures",
+      "version": "1.64.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges",
+        "Seqinfo",
+        "GenomicRanges",
+        "AnnotationDbi",
+        "DBI",
+        "XVector",
+        "Biostrings",
+        "rtracklayer"
+      ],
+      "sha256": "c33233d1fc22034c71243bc20a07556623b4ede31c41c9e20b690c0ff4ed41a6",
+      "size": 572215
+    },
+    {
+      "package": "GenomicRanges",
+      "version": "1.64.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges",
+        "Seqinfo"
+      ],
+      "sha256": "09fee555b60be2f54c8fa35b0a2238fea9a1b96dea24e9a8c52166b61d44f776",
+      "size": 1368726
+    },
+    {
+      "package": "ggplot2",
+      "version": "4.0.4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "gtable",
+        "isoband",
+        "lifecycle",
+        "rlang",
+        "S7",
+        "scales",
+        "vctrs",
+        "withr"
+      ],
+      "sha256": "d3d25e95e2b0c5f777d6cef41ace54ffd7c26ebe707f278bde7c916c76d328c9",
+      "size": 6357378
+    },
+    {
+      "package": "glue",
+      "version": "1.8.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "1c55905d3efc3d5c199ceb0bd12218e97f0d4c64df6038ff41ecef415478a122",
+      "size": 129786
+    },
+    {
+      "package": "gplots",
+      "version": "3.3.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "gtools",
+        "caTools",
+        "KernSmooth"
+      ],
+      "sha256": "f84c0b38d8fdbb6aa45fa81b9b21ee96f2c5891a5d37c77643977d06a66be302",
+      "size": 4793937
+    },
+    {
+      "package": "gtable",
+      "version": "0.3.6",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "glue",
+        "lifecycle",
+        "rlang"
+      ],
+      "sha256": "d305a5fa11278b649d2d8edc5288bf28009be888a42be58ff8714018e49de0ef",
+      "size": 148148
+    },
+    {
+      "package": "gtools",
+      "version": "3.9.5",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "dee9b6c1152db1a5dc427d074b32bbbb738708683f17a95e0e95e4d79fdf174b",
+      "size": 242029
+    },
+    {
+      "package": "hms",
+      "version": "1.1.4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "lifecycle",
+        "pkgconfig",
+        "rlang",
+        "vctrs"
+      ],
+      "sha256": "efc525f797b62b3740d06c6fa8202593ab5aa4fc1edeefb76b6eb9be89e87b94",
+      "size": 44793
+    },
+    {
+      "package": "httr",
+      "version": "1.4.9",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "curl",
+        "jsonlite",
+        "mime",
+        "openssl",
+        "R6"
+      ],
+      "sha256": "4adf8cea7a24012ec883da1723eaade26c69455e0a3200bdc12f2f9f8515982c",
+      "size": 113805
+    },
+    {
+      "package": "httr2",
+      "version": "1.3.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "curl",
+        "glue",
+        "lifecycle",
+        "magrittr",
+        "openssl",
+        "R6",
+        "rlang",
+        "vctrs",
+        "withr"
+      ],
+      "sha256": "031990311482479da4bb910369606c73bb2b2456b8b8c1ab877ad8fbb0703c75",
+      "size": 301901
+    },
+    {
+      "package": "hwriter",
+      "version": "1.3.2.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "ed2fa254ab27cf65d397e181339976fc3261dfb4f6b600fea8c5689620dab6f3",
+      "size": 59374
+    },
+    {
+      "package": "interp",
+      "version": "1.1-6",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Rcpp",
+        "deldir",
+        "RcppEigen"
+      ],
+      "sha256": "3674044e5334ecdf124054303929c084fc0797d3123e28576a230492ea6ecd34",
+      "size": 1112116
+    },
+    {
+      "package": "invgamma",
+      "version": "1.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "f74229bad5f14cadb4e0b1acc85072a08dc8b6de1b93f1384fcb6c448ad56601",
+      "size": 2603382
+    },
+    {
+      "package": "IRanges",
+      "version": "2.46.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "S4Vectors"
+      ],
+      "sha256": "a61e97812b0357411b770c5886b684fc6c0b59c05441f7336e46404e6898b3e9",
+      "size": 490372
+    },
+    {
+      "package": "irlba",
+      "version": "2.4.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Matrix"
+      ],
+      "sha256": "00650af430b1549d54ee39c19a9cce125421c72b851ba2c4fbf6ddacccc3cad1",
+      "size": 383723
+    },
+    {
+      "package": "isoband",
+      "version": "0.3.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "rlang",
+        "cpp11"
+      ],
+      "sha256": "fe8d3d58ca75bbee32f389152ac0058818f3f76f09c9867949531de7abc424ac",
+      "size": 1593511
+    },
+    {
+      "package": "iterators",
+      "version": "1.0.14",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "cef3075a0930e1408c764e4da56bbadd4f7d14315809df8f38dd51f80ccc677b",
+      "size": 300266
+    },
+    {
+      "package": "jpeg",
+      "version": "0.1-11",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "2139efbd48fbcc590a401e40215573f4a214432536bc8967caa163a833b03729",
+      "size": 19302
+    },
+    {
+      "package": "jsonlite",
+      "version": "2.0.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "75eb910c82b350ec33f094779da0f87bff154c232e4ae39c9896a9b89f3ac82d",
+      "size": 1055849
+    },
+    {
+      "package": "KEGGREST",
+      "version": "1.52.2",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "httr",
+        "png",
+        "Biostrings"
+      ],
+      "sha256": "8e6a98ef31aac836ce3e924847937ca6cd9a8b0993b24e88416afc50325ae9ca",
+      "size": 239057
+    },
+    {
+      "package": "KernSmooth",
+      "version": "2.23-27",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "d501066a63959bee97d1ce7c556cb90862b3261fa6fc1c3cf8e5b2cdea2cc70d",
+      "size": 27615
+    },
+    {
+      "package": "labeling",
+      "version": "0.4.3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "c62f4fc2cc74377d7055903c5f1913b7295f7587456fe468592738a483e264f2",
+      "size": 10167
+    },
+    {
+      "package": "lambda.r",
+      "version": "1.2.6",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "formatR"
+      ],
+      "sha256": "0ad5ca078d86597a5527f781f10a669dc925f6b63e759cc43e0bccee77e69059",
+      "size": 25603
+    },
+    {
+      "package": "lattice",
+      "version": "0.23-1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "34e9b2fc023582c4246959b543c331233c62118efd922bcc1ba72b4888adc590",
+      "size": 682686
+    },
+    {
+      "package": "latticeExtra",
+      "version": "0.6-31",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "lattice",
+        "png",
+        "jpeg",
+        "RColorBrewer",
+        "interp",
+        "MASS"
+      ],
+      "sha256": "be69d8014bf722fab00d1afc7a8b515fdba65b25c7700ef44d76f092c5b6e66e",
+      "size": 1294027
+    },
+    {
+      "package": "lifecycle",
+      "version": "1.0.5",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "rlang"
+      ],
+      "sha256": "61841e3e6edba056a88355a3f1d6698ab8d5d9cb3c05f2af0ec5a44ab516f8ee",
+      "size": 107137
+    },
+    {
+      "package": "limma",
+      "version": "3.68.5",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "statmod"
+      ],
+      "sha256": "40b1d2059a76ad98db4bf80139760acf8e8bae92a8265aaaf16ac199831533f4",
+      "size": 2842081
+    },
+    {
+      "package": "lme4",
+      "version": "2.1-0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Matrix",
+        "MASS",
+        "Rdpack",
+        "boot",
+        "lattice",
+        "minqa",
+        "nlme",
+        "nloptr",
+        "reformulas",
+        "Rcpp",
+        "RcppEigen"
+      ],
+      "sha256": "361d6eba45826b6ff4972eac57d400c4c7198506430418217af693adedd54b4b",
+      "size": 4530297
+    },
+    {
+      "package": "lmerTest",
+      "version": "3.2-1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "lme4",
+        "numDeriv",
+        "MASS",
+        "ggplot2",
+        "reformulas"
+      ],
+      "sha256": "a0c5e6958940824fe09fc595383548e65ff08d3e363f4940e84a51084c025968",
+      "size": 197448
+    },
+    {
+      "package": "lmtest",
+      "version": "0.9-40",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "zoo"
+      ],
+      "sha256": "64400d4d6cc635316531042971f1783539686e9015c76f5741c07304fa14d997",
+      "size": 230313
+    },
+    {
+      "package": "locfit",
+      "version": "1.5-9.12",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "lattice"
+      ],
+      "sha256": "fa31b9d407f3557a6fcb7105cbd7b16a32a6fb868a7c60bc38a3e33cb7a39343",
+      "size": 207112
+    },
+    {
+      "package": "magrittr",
+      "version": "2.0.5",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "3f5b5b1d4e6d12807a95c50b6c88cb1d8af2c5eb5213f08bfe58f278eca2ed23",
+      "size": 281813
+    },
+    {
+      "package": "MASS",
+      "version": "7.3-66",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "59c619c70bfca653f1c74aef880e69405daefd0134e716a1862ecc5334b4e155",
+      "size": 510345
+    },
+    {
+      "package": "Matrix",
+      "version": "1.7-6",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "lattice"
+      ],
+      "sha256": "694239dbe47e659d6d39a49af95157f46bd94977c283df00c4e8a016601cf143",
+      "size": 2527103
+    },
+    {
+      "package": "MatrixGenerics",
+      "version": "1.24.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "matrixStats"
+      ],
+      "sha256": "371d32bbd324ad6665465b5c54f66a9619c2958c5cad6f7aa65c6d533379005e",
+      "size": 31975
+    },
+    {
+      "package": "matrixStats",
+      "version": "1.5.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "12996c5f3e6fc202a43e1087f16a71b7fa93d7e908f512542c7ee89cf95dcc15",
+      "size": 212156
+    },
+    {
+      "package": "memoise",
+      "version": "2.0.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "rlang",
+        "cachem"
+      ],
+      "sha256": "f85034ee98c8ca07fb3cd826142c1cd1e1e5747075a94c75a45783bbc4fe2deb",
+      "size": 17852
+    },
+    {
+      "package": "mgcv",
+      "version": "1.9-5",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "nlme",
+        "Matrix"
+      ],
+      "sha256": "d079c68e500708de4df79692e83493636004915dc6689cd7350e226291abd992",
+      "size": 1191939
+    },
+    {
+      "package": "mime",
+      "version": "0.13",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "7132834cf3c3388eff12bad376d69fbcf8275acc37d36c290e59174fe3c7f3eb",
+      "size": 21950
+    },
+    {
+      "package": "minqa",
+      "version": "1.2.8",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Rcpp"
+      ],
+      "sha256": "5941e4b9b01978fc6d9fe24e6ca60cca66883fe9fa6ff3cbfa32aa1ac9db5467",
+      "size": 54644
+    },
+    {
+      "package": "mixsqp",
+      "version": "0.3-54",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "irlba",
+        "Rcpp",
+        "RcppArmadillo"
+      ],
+      "sha256": "f7d0de918a221c58b3618dc3290a0ebe052256999ee3be35a19384f26b1dfb8e",
+      "size": 221349
+    },
+    {
+      "package": "modelr",
+      "version": "0.1.11",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "broom",
+        "magrittr",
+        "purrr",
+        "rlang",
+        "tibble",
+        "tidyr",
+        "tidyselect",
+        "vctrs"
+      ],
+      "sha256": "94ebd506e9ccf3bf25318be6a182f8f89c3669a77b41864a0b9dbcc1d4337bd3",
+      "size": 121480
+    },
+    {
+      "package": "mvtnorm",
+      "version": "1.4-2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "466302a08c9306d11384d85bf677893e4794541bde2991409be54e1f7b304b6e",
+      "size": 1036395
+    },
+    {
+      "package": "nlme",
+      "version": "3.1-172",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "lattice"
+      ],
+      "sha256": "eef55d70b08d6bf8269f0cc2a3e06d098102ec88d04a40f97c60d9ad6f47eef0",
+      "size": 854323
+    },
+    {
+      "package": "nloptr",
+      "version": "2.2.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "76ba40750b475c8b1ad6a86c9e05f0c1746af16d965235ff9293953920aed7f4",
+      "size": 2253853
+    },
+    {
+      "package": "nnet",
+      "version": "7.3-21",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "c3914e2b8fd2cc2df7afb60cfa106070fc43cd5b60f877f3790303fc6513895b",
+      "size": 31369
+    },
+    {
+      "package": "nortest",
+      "version": "1.0-4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "a3850a048181d5d059c1e74903437569873b430c915b709808237d71fee5209f",
+      "size": 6179
+    },
+    {
+      "package": "numDeriv",
+      "version": "2016.8-1.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "d8c4d19ff9aeb31b0c628bd4a16378e51c1c9a3813b525469a31fe89af00b345",
+      "size": 76053
+    },
+    {
+      "package": "openssl",
+      "version": "2.6.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "askpass"
+      ],
+      "sha256": "5c94c361bca1aece2ba88518042617fd501dc8e5e3da72503a3cef3251cee1a8",
+      "size": 1056862
+    },
+    {
+      "package": "pbkrtest",
+      "version": "0.5.5",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "lme4",
+        "broom",
+        "dplyr",
+        "MASS",
+        "numDeriv",
+        "Matrix",
+        "doBy"
+      ],
+      "sha256": "d26c8ef0a6fd73bba184bde8e3434439d62539d93aef0a0b5b480a0f309bc51b",
+      "size": 77353
+    },
+    {
+      "package": "pillar",
+      "version": "1.11.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "glue",
+        "lifecycle",
+        "rlang",
+        "utf8",
+        "vctrs"
+      ],
+      "sha256": "056ce154238c9b5b8d5dcbcb52e1bc51d33870ce08c8a9ca9496478bd59f4653",
+      "size": 409508
+    },
+    {
+      "package": "pkgconfig",
+      "version": "2.0.3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "330fef440ffeb842a7dcfffc8303743f1feae83e8d6131078b5a44ff11bc3850",
+      "size": 6080
+    },
+    {
+      "package": "plyr",
+      "version": "1.8.9",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Rcpp"
+      ],
+      "sha256": "15b5e7f711d53bf41b8687923983b8ef424563aa2f74c5195feb5b1df1aee103",
+      "size": 401488
+    },
+    {
+      "package": "png",
+      "version": "0.1-9",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "0b8502363c6f5c73cf284dee4fd1416f5adf4115b6ae9a1e09531c143b978589",
+      "size": 24939
+    },
+    {
+      "package": "prettyunits",
+      "version": "1.2.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "f059f27e2a5c82e351fe05b87ad712f7afc273c651450453f59d99af5deeacea",
+      "size": 97496
+    },
+    {
+      "package": "progress",
+      "version": "1.2.3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "crayon",
+        "hms",
+        "prettyunits",
+        "R6"
+      ],
+      "sha256": "ea2b079b894de85c3ab12088c9c52aec06432245047a961d5b4b8aa6889f9276",
+      "size": 30499
+    },
+    {
+      "package": "purrr",
+      "version": "1.2.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "lifecycle",
+        "magrittr",
+        "rlang",
+        "vctrs"
+      ],
+      "sha256": "ac3bc0fc0e789510042522e6c4294336c71447be8f6921b5ef78b9a9fb86617d",
+      "size": 278508
+    },
+    {
+      "package": "pwalign",
+      "version": "1.8.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges",
+        "Biostrings",
+        "XVector"
+      ],
+      "sha256": "54d97ddcba175658ca44bc813f458f7b376257cdac1341a62940a2d895062485",
+      "size": 354615
+    },
+    {
+      "package": "R.methodsS3",
+      "version": "1.8.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "822d5e61dad4c91e8883be2b38d7b89f87492046d0fe345704eb5d2658927c2e",
+      "size": 24131
+    },
+    {
+      "package": "R.oo",
+      "version": "1.27.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "R.methodsS3"
+      ],
+      "sha256": "5faf599cc1f027d8b80e1270aa6a43e29dccd6fee8287953f13e7ab3d94270f5",
+      "size": 384264
+    },
+    {
+      "package": "R.utils",
+      "version": "2.13.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "R.oo",
+        "R.methodsS3"
+      ],
+      "sha256": "ab2043c34e129928ff85a037ce7a3f7791f245f49a55ee9a95bd7df0813bcf25",
+      "size": 367225
+    },
+    {
+      "package": "R6",
+      "version": "2.6.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "59c6eba8b1b912eb7e104f65053235604be853425ee67c152ac4e86a1f2073b4",
+      "size": 64507
+    },
+    {
+      "package": "rbibutils",
+      "version": "2.4.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "da313d920a0f35ffdf30a54929ba8904b2b5a0d7f11a519db8674148129c8f32",
+      "size": 1191704
+    },
+    {
+      "package": "RColorBrewer",
+      "version": "1.1-3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "4f42f5423c45688b39f492c7892d93f37b4541831c8ffb140364d2bd89031ac0",
+      "size": 11638
+    },
+    {
+      "package": "Rcpp",
+      "version": "1.1.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "2746cf2fb188e5f0a84dbf5c8f68915b54564ed33e5754572f174e7b32e7f4f3",
+      "size": 1892159
+    },
+    {
+      "package": "RcppArmadillo",
+      "version": "15.6.2-1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Rcpp"
+      ],
+      "sha256": "66fb2b707e237e1086b4f39111a172794f43a8bb815c1b589363d2219d61368d",
+      "size": 1097105
+    },
+    {
+      "package": "RcppEigen",
+      "version": "0.3.4.0.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Rcpp"
+      ],
+      "sha256": "ecad7ba2129fd48b7ebb825558d38492ed1f3a8934959e27fcd6688175e542bb",
+      "size": 1761745
+    },
+    {
+      "package": "RcppNumerical",
+      "version": "0.7-0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Rcpp",
+        "RcppEigen"
+      ],
+      "sha256": "6e3717669ecbf3ed10fee3919630cd4899d6f534fee0ad9fedb9d4b006034e81",
+      "size": 180341
+    },
+    {
+      "package": "RCurl",
+      "version": "1.98-1.20",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "bitops"
+      ],
+      "sha256": "91ec442673597261115354e791f14b59fc8dc339010ae775e03c185970a48c1b",
+      "size": 718541
+    },
+    {
+      "package": "Rdpack",
+      "version": "2.6.6",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "rbibutils"
+      ],
+      "sha256": "b4e19d22bd5a2ec79cdb08ba209e79c66ea16dbc2fd2e7db8bca46412651cbdb",
+      "size": 378731
+    },
+    {
+      "package": "reformulas",
+      "version": "0.4.4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Matrix",
+        "Rdpack"
+      ],
+      "sha256": "6a76d85eb4e19325aef87510180175f8cd7b5904a7075c89aff073765529e2f7",
+      "size": 85205
+    },
+    {
+      "package": "remaCor",
+      "version": "0.0.20",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "ggplot2",
+        "mvtnorm",
+        "reshape2",
+        "Rcpp",
+        "EnvStats",
+        "Rdpack",
+        "RcppArmadillo"
+      ],
+      "sha256": "8c68ae044117cc72172389ee8ece8487f4e81861e99fe458bd6218db948f539f",
+      "size": 691574
+    },
+    {
+      "package": "reshape2",
+      "version": "1.4.5",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "plyr",
+        "Rcpp",
+        "stringr"
+      ],
+      "sha256": "0ead5acd0153e5073b3c24e8e782982a4eab3aaa768ba17700d796fb13b68cef",
+      "size": 38080
+    },
+    {
+      "package": "restfulr",
+      "version": "0.0.17",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "XML",
+        "RCurl",
+        "rjson",
+        "S4Vectors",
+        "yaml"
+      ],
+      "sha256": "e50b9c4a9886f3756a9610f89f24d4de97262e7c5769dc3e4824ce888c304057",
+      "size": 15182
+    },
+    {
+      "package": "rhdf5",
+      "version": "2.56.1",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "rhdf5filters",
+        "Rhdf5lib"
+      ],
+      "sha256": "8a5c88fa23df1a6881db0f268673a06e483073cd60d31f17f633cb3aed901509",
+      "size": 1206724
+    },
+    {
+      "package": "rhdf5filters",
+      "version": "1.24.1",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "Rhdf5lib"
+      ],
+      "sha256": "2c60dfdbe5fe7a0da7ad53f0cb2b26c14130ed9303e35855edff9c7a17f0c9b5",
+      "size": 1122016
+    },
+    {
+      "package": "Rhdf5lib",
+      "version": "2.0.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "biocmake"
+      ],
+      "sha256": "a6acd3536f4aca697d9c35dec43412d8ec4653bcdbad2b6d863977ad1ce11f82",
+      "size": 4934194
+    },
+    {
+      "package": "RhpcBLASctl",
+      "version": "0.23-42",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "5c889d5b69e264060b9f1f0383c447f594855b8afc15b7d76d39e4d62b946615",
+      "size": 41947
+    },
+    {
+      "package": "Rhtslib",
+      "version": "3.8.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [],
+      "sha256": "e89153bbac580adc2e988a095ce39c26e28cdf23b9a337988d18f66bc3b1eded",
+      "size": 5148118
+    },
+    {
+      "package": "rjson",
+      "version": "0.2.23",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "55034575c854ed657e6701da278c0fdea251479624d06a963b2e58461a5f0f48",
+      "size": 79159
+    },
+    {
+      "package": "rlang",
+      "version": "1.3.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "80aa537d49e72265f443a15e8936128af583caa5e572086518b503cbf064279c",
+      "size": 784080
+    },
+    {
+      "package": "Rsamtools",
+      "version": "2.28.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "Seqinfo",
+        "GenomicRanges",
+        "Biostrings",
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges",
+        "XVector",
+        "bitops",
+        "BiocParallel",
+        "Rhtslib"
+      ],
+      "sha256": "5840f1035018bf55608f54647265122de53a2ab5e2531bd5f29f770b636fb730",
+      "size": 1908159
+    },
+    {
+      "package": "RSQLite",
+      "version": "3.53.3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "bit64",
+        "blob",
+        "DBI",
+        "memoise",
+        "pkgconfig",
+        "rlang",
+        "cpp11"
+      ],
+      "sha256": "82946aac5e2869da5fdaf57d0e4afeee3d4deac21d9eaeffb5f743273a93736c",
+      "size": 4413180
+    },
+    {
+      "package": "rtracklayer",
+      "version": "1.72.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "GenomicRanges",
+        "XML",
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges",
+        "XVector",
+        "Seqinfo",
+        "Biostrings",
+        "curl",
+        "httr",
+        "Rsamtools",
+        "GenomicAlignments",
+        "BiocIO",
+        "restfulr"
+      ],
+      "sha256": "dd885d8a0fe7fe0805ca73abf5f6523554f59108a578ed3c1db21efa2f5348df",
+      "size": 4078053
+    },
+    {
+      "package": "RUVSeq",
+      "version": "1.46.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "Biobase",
+        "EDASeq",
+        "edgeR",
+        "MASS"
+      ],
+      "sha256": "eeb2f1ccddaff13cf06d66478bdd8df124a797f0d9f0bbae6f28391c83fe2367",
+      "size": 512789
+    },
+    {
+      "package": "S4Arrays",
+      "version": "1.12.1",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "Matrix",
+        "abind",
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges"
+      ],
+      "sha256": "7a11bafb0b9f495ae9bf4ed8b10fca2eeddd5e766aa870ad7fdc0ce11604e827",
+      "size": 295284
+    },
+    {
+      "package": "S4Vectors",
+      "version": "0.50.3",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics"
+      ],
+      "sha256": "2faca526d6f2c69a6bbd75e6fcff2592b4f6b94e6792ced824a8f1e716590add",
+      "size": 844326
+    },
+    {
+      "package": "S7",
+      "version": "0.2.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "6f33245dde05b74265b1c4d379e034bc3a8923d41e7b52e6e75a75ce97d42af7",
+      "size": 184632
+    },
+    {
+      "package": "scales",
+      "version": "1.4.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "farver",
+        "glue",
+        "labeling",
+        "lifecycle",
+        "R6",
+        "RColorBrewer",
+        "rlang",
+        "viridisLite"
+      ],
+      "sha256": "d55ef5f08c92652d7a95cfa27584024723ab17873f1b2577dd488cb7c883ceee",
+      "size": 328671
+    },
+    {
+      "package": "Seqinfo",
+      "version": "1.2.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges"
+      ],
+      "sha256": "f86693fd96ff24dc4f79c340040d68256be53690fe14f06330af5c356ea3a073",
+      "size": 253489
+    },
+    {
+      "package": "ShortRead",
+      "version": "1.70.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "BiocParallel",
+        "Biostrings",
+        "Rsamtools",
+        "GenomicAlignments",
+        "Biobase",
+        "S4Vectors",
+        "IRanges",
+        "Seqinfo",
+        "GenomicRanges",
+        "pwalign",
+        "hwriter",
+        "lattice",
+        "latticeExtra",
+        "XVector",
+        "Rhtslib"
+      ],
+      "sha256": "fddaf618de9cf1854b11be62878a1878643f94e4ba11a6973f631183051a3a84",
+      "size": 5305737
+    },
+    {
+      "package": "snow",
+      "version": "0.4-4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "84587f46f222a96f3e2fde10ad6ec6ddbd878f4e917cd926d632f61a87db13c9",
+      "size": 20464
+    },
+    {
+      "package": "SparseArray",
+      "version": "1.12.3",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "Matrix",
+        "BiocGenerics",
+        "MatrixGenerics",
+        "S4Vectors",
+        "S4Arrays",
+        "matrixStats",
+        "IRanges",
+        "XVector"
+      ],
+      "sha256": "dee7681bc9f835bda9a2c8983327dd7f68dd972c23032eeab94de32a6c214787",
+      "size": 475172
+    },
+    {
+      "package": "SQUAREM",
+      "version": "2026.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "e9b32a384876b3a6646ea4262aedd738292220cd1852b2a289855606f56cfcad",
+      "size": 240392
+    },
+    {
+      "package": "statmod",
+      "version": "1.5.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "5f83d82043c5e26f1048fc0139580da1b7e40becf95fb4cb26ed3afcd46a581d",
+      "size": 93227
+    },
+    {
+      "package": "stringi",
+      "version": "1.8.9",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "427fcebd281d7ea850becce75e0807576dd394a723a814b2d487419b93275a33",
+      "size": 11907881
+    },
+    {
+      "package": "stringr",
+      "version": "1.6.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "glue",
+        "lifecycle",
+        "magrittr",
+        "rlang",
+        "stringi",
+        "vctrs"
+      ],
+      "sha256": "24f2fc5df980a7eb888659e22b9744d2316c558624015c7a7cd8c3ce3e370064",
+      "size": 195833
+    },
+    {
+      "package": "SummarizedExperiment",
+      "version": "1.42.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "MatrixGenerics",
+        "GenomicRanges",
+        "Biobase",
+        "Matrix",
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges",
+        "Seqinfo",
+        "S4Arrays",
+        "DelayedArray"
+      ],
+      "sha256": "40110b8dbb64e41e23adc8ac349a76a79e5cffcfd903eca2d6d9be344a24a71a",
+      "size": 688863
+    },
+    {
+      "package": "survival",
+      "version": "3.8-12",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "Matrix"
+      ],
+      "sha256": "ebb70d9a4e7e8ad7f886a563184d6f079e64c0591a0bce219ae90967f0bdf994",
+      "size": 8456267
+    },
+    {
+      "package": "sva",
+      "version": "3.60.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "mgcv",
+        "genefilter",
+        "BiocParallel",
+        "matrixStats",
+        "limma",
+        "edgeR"
+      ],
+      "sha256": "d5d2b515d05abce9da50bbd2d9bbd17406078569c64064a46f22dde47f58b30f",
+      "size": 453022
+    },
+    {
+      "package": "sys",
+      "version": "3.4.3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "051e7332e3074db826efef9059067721864f9d70adc55bbcae3a72e5ae83913a",
+      "size": 19936
+    },
+    {
+      "package": "tibble",
+      "version": "3.3.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "lifecycle",
+        "magrittr",
+        "pillar",
+        "pkgconfig",
+        "rlang",
+        "vctrs"
+      ],
+      "sha256": "fb309f8a1939021b237c7e85ff7ad6e8ff5acd57a6230d220a452094b492b28f",
+      "size": 557135
+    },
+    {
+      "package": "tidyr",
+      "version": "1.3.2",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "dplyr",
+        "glue",
+        "lifecycle",
+        "magrittr",
+        "purrr",
+        "rlang",
+        "stringr",
+        "tibble",
+        "tidyselect",
+        "vctrs",
+        "cpp11"
+      ],
+      "sha256": "04c0e6daf0af682af73763a42c027d7171761cdbdbf9ff7a77a0e421343d665a",
+      "size": 809031
+    },
+    {
+      "package": "tidyselect",
+      "version": "1.2.1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "glue",
+        "lifecycle",
+        "rlang",
+        "vctrs",
+        "withr"
+      ],
+      "sha256": "169e97ba0bbfbcdf4a80534322751f87a04370310c40e27f04aac6525d45903c",
+      "size": 103591
+    },
+    {
+      "package": "timeDate",
+      "version": "4052.112",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "7f5b8e294f9fdf977cb721e711a6fcd664e379ee1b0ddb4c733374940e0e4646",
+      "size": 367313
+    },
+    {
+      "package": "truncnorm",
+      "version": "1.0-9",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "5156acc4d63243bf95326d6285b0ba3cdf710697d67c233a12ae56f3d87ec708",
+      "size": 11629
+    },
+    {
+      "package": "tximport",
+      "version": "1.40.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [],
+      "sha256": "72841a6b2ac1f64ccb05af2d9fba4eea781596771798cefcb3a9327f9dc929f9",
+      "size": 314911
+    },
+    {
+      "package": "urca",
+      "version": "1.3-4",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "nlme"
+      ],
+      "sha256": "fe3d6ce5041f1e7caaf3137dfb6187640bcd2d208e19c59ee1202355ac0acb16",
+      "size": 680691
+    },
+    {
+      "package": "utf8",
+      "version": "1.2.6",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "4589f8b72291329e70b7f3a8c20f2feb4e7764eebad2e6976bc9a3eee7686ce9",
+      "size": 243856
+    },
+    {
+      "package": "variancePartition",
+      "version": "1.42.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "ggplot2",
+        "limma",
+        "BiocParallel",
+        "MASS",
+        "pbkrtest",
+        "lmerTest",
+        "Matrix",
+        "iterators",
+        "gplots",
+        "corpcor",
+        "reformulas",
+        "matrixStats",
+        "RhpcBLASctl",
+        "reshape2",
+        "gtools",
+        "remaCor",
+        "fANCOVA",
+        "aod",
+        "scales",
+        "Rdpack",
+        "rlang",
+        "lme4",
+        "Biobase"
+      ],
+      "sha256": "dc606e5098ba7395118b19d2231f66be337fc5b45bd5c06bc886543702b7e802",
+      "size": 4950736
+    },
+    {
+      "package": "vctrs",
+      "version": "0.7.3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "glue",
+        "lifecycle",
+        "rlang"
+      ],
+      "sha256": "b45078413e06ac624dddb7221a3a43908b405c8abec09822cb86638d30b0435b",
+      "size": 1083213
+    },
+    {
+      "package": "viridisLite",
+      "version": "0.4.3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "433be9bde66234dc76301fb4ffbbc9fc74bab5c14f4548d8ef2fc0065e121ef5",
+      "size": 1269031
+    },
+    {
+      "package": "withr",
+      "version": "3.0.3",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "d86c6454164fc85678bfc85e2a6cce42f7461d45fa9a87de71f376e7956c991e",
+      "size": 103968
+    },
+    {
+      "package": "XML",
+      "version": "3.99-0.25",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "c0fc887921d0468214c184edeea2991f31a3cbf10a5fb4458dea4046a54b3861",
+      "size": 959237
+    },
+    {
+      "package": "xml2",
+      "version": "1.6.0",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "cli",
+        "rlang"
+      ],
+      "sha256": "b0660edab0a839866a0cccd44721c54d497000fd6577a25106a33280318bf579",
+      "size": 155466
+    },
+    {
+      "package": "xtable",
+      "version": "1.8-8",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "b999c031b91255fb92134b0e70e5f84c5609e9312c0518393b9d0a4aaf6b2510",
+      "size": 618708
+    },
+    {
+      "package": "XVector",
+      "version": "0.52.0",
+      "repository": "https://bioconductor.org/packages/3.23/bioc/src/contrib",
+      "dependencies": [
+        "BiocGenerics",
+        "S4Vectors",
+        "IRanges"
+      ],
+      "sha256": "80b520c984e9da13fe06a2a6bdf712fffa6275705f3d0fb16af60eb5fb28609d",
+      "size": 69047
+    },
+    {
+      "package": "yaml",
+      "version": "2.3.12",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [],
+      "sha256": "80ccf3dde851133ef3e333b818a817c296c6ccdacfc4709cd466995289cd556c",
+      "size": 108975
+    },
+    {
+      "package": "zoo",
+      "version": "1.9-1",
+      "repository": "https://cloud.r-project.org/src/contrib",
+      "dependencies": [
+        "lattice"
+      ],
+      "sha256": "a2d998726a9b528efd20af449099e4b2df53887a0d10f48ac9ba63992b3a053a",
+      "size": 691004
+    }
+  ]
+}

@@ -1,9 +1,9 @@
 """Offline parent integration controls; fixtures are not scientific validation."""
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import hashlib
 import json
 import os
-import threading
 import time
 
 import pytest
@@ -224,6 +224,13 @@ class CapturedFixtureBackend(AuditedInvestigationBackend):
             "capture_ref": capture_ref, "usage": usage, "actual_calls": 2,
             "native_session_ids": ["offline-preflight-" + reservation.ref[-32:], "offline-action-" + reservation.ref[-32:]],
             "elapsed_seconds": 1, "launch_confirmed": True}
+
+    def _capture_selection(self, capture_ref):
+        from devbench.analysis.episode_agent import Selection
+
+        capture = self._document(capture_ref, artifact_type="rna_investigation_capture")
+        action = json.loads(self._artifact(capture["response_ref"], max_bytes=64_000))
+        return Selection(action, {"backend": "recorded_fixture"})
 
     def verify_child_result(self, packet_ref, result_ref):
         from devbench.analysis.rna_investigation_contract import validate_investigation_result, investigation_context
@@ -925,22 +932,13 @@ def test_repeated_accepted_status_cannot_bypass_a_scientific_publication_gate(tm
 
 @pytest.mark.skipif(os.environ.get("DEVBENCH_RUN_LOCAL_FIXTURES") != "1", reason="Explicit local FakeCLI capture opt-in")
 @pytest.mark.parametrize("transition", ["uncertain", "cancelled"])
-def test_parent_fake_cli_shared_revocation_after_preflight_stops_action_and_retains_usage(workspace, monkeypatch, transition):
+def test_parent_fake_cli_shared_revocation_after_local_probe_retains_zero_usage(workspace, monkeypatch, transition):
     """Actual offline processes and capture; never a paid/native qualification."""
-    from pathlib import Path
     from devbench.analysis.method_planner import ScientificMethodPlanner
-    from devbench.analysis.workflow_operations import model_reservation_ref
-    from tests.test_rna_investigation_backend import protected_fixture
-    backend, _, _, _ = protected_fixture(workspace, monkeypatch)
+    from tests.test_rna_investigation_backend import protected_fixture, revoke_at_retained_probe
+    release = workspace / "resume-login"
+    backend, _, _, _ = protected_fixture(workspace, monkeypatch, parent=True, login_release=release)
     backend.ledger.cancel_campaign("offline-campaign")
-    # The reused fixture's binary must produce the parent schema before the
-    # new parent campaign freezes its exact executable/runtime capability.
-    executable = Path(backend.selector.executable)
-    script = executable.read_text()
-    start = script.index("else:\n body=prompt.split")
-    end = script.index("\nPath(args[args.index('--output-last-message')", start)
-    script = script[:start] + "else:\n answer=json.dumps({'candidates':[]})" + script[end:]
-    executable.write_text(script)
     planner = ScientificMethodPlanner(backend.methods)
     state = planner.create({"scientific_objective": "Verify protected planning transport",
         "computational_task": "Offline software capture qualification"},
@@ -948,7 +946,7 @@ def test_parent_fake_cli_shared_revocation_after_preflight_stops_action_and_reta
         actor="offline-fixture", data_classification="synthetic", evaluation_purpose="execution_verification")
     session = state["session_id"]
     capability = backend.capabilities()
-    allocation = {"tokens": 300, "calls": 2, "seconds": 15, "context_bytes": 128000, "memory_mb": 256}
+    allocation = {"tokens": 300, "calls": 1, "seconds": 15, "context_bytes": 128000, "memory_mb": 256}
     backend.ledger.open_campaign(session, session_id=session,
         policy=_policy("bounded_observed_tokens", soft_token_target=1000, max_context_bytes=128000, memory_mb=256),
         capability=capability, identity={"expected_plan_hash": _digest(state),
@@ -963,47 +961,28 @@ def test_parent_fake_cli_shared_revocation_after_preflight_stops_action_and_reta
     sibling = backend.ledger.reserve_model_call(session, "offline-sibling", 0, sibling_request,
         limits={**allocation, "tokens": 100}, purpose="fixture_other_attempt")
     backend.ledger.activate_model_call(sibling)
-    observed = {}
     output_root = planner.methods.root / "planner-selections" / session
     def revoke():
-        deadline = time.monotonic() + 12
-        checkpoints = []
-        while time.monotonic() < deadline:
-            checkpoints = list(output_root.glob("*/exec-preflight/dispatch_checkpoint.json"))
-            if checkpoints:
-                break
-            time.sleep(.001)
-        observed["preflight_seen"] = bool(checkpoints)
-        if not checkpoints:
-            return
-        output = checkpoints[0].parent.parent
-        observed["output"] = output
-        observed["action_before_revocation"] = (output / "selection-dispatch.json").exists()
         if transition == "uncertain":
             backend.ledger.mark_model_call_uncertain(sibling, error_type="OfflineFixtureUnknownSiblingSpend")
         else:
             backend.ledger.cancel_campaign(session)
-    worker = threading.Thread(target=revoke)
-    worker.start()
-    try:
-        with pytest.raises((ValueError, RuntimeError, PermissionError)) as failure:
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        revoked = executor.submit(revoke_at_retained_probe, lambda: output_root.glob("*/boundary-probe.json"),
+                                  release, revoke)
+        with pytest.raises((ValueError, RuntimeError, PermissionError)):
             planner.generate_candidates(session, backend.selector, actor="offline-fixture", allow_model_execution=True)
-    finally:
-        worker.join(timeout=13)
-    preflight_errors = {}
-    for path in output_root.glob("*/exec-preflight/evidence.json"):
-        summary = json.loads(path.read_text())
-        preflight_errors = {key: summary.get(key) for key in ("verified", "checks", "validation_errors", "dispatch_stage")}
-    assert not worker.is_alive() and observed["preflight_seen"], str({"failure": str(failure.value)[:400], "preflight": preflight_errors})
-    assert not observed["action_before_revocation"] and not (observed["output"] / "selection-dispatch.json").exists()
+        output = revoked.result()
+    assert not (output / "selection-dispatch.json").exists()
+    assert not (output / "model/cli-records.jsonl").exists()
     after = planner.get(session)
     assert after["scientific_candidates"] is None and after["selection_history"][-1]["status"] != "accepted"
     selection = after["selection_history"][-1]
     record = backend.ledger.get_model_reservation(selection["model_reservation_ref"])
     receipt = backend.verify_capture(selection["model_capture_ref"])
-    assert receipt["actual_calls"] == 1 and len(receipt["native_session_ids"]) == 1
-    assert receipt["usage"]["normalized_total_tokens"] == 130
-    assert backend.ledger.get_campaign(session)["verified_spent_tokens"] == 130
+    assert receipt["actual_calls"] == 0 and receipt["native_session_ids"] == []
+    assert receipt["usage"]["normalized_total_tokens"] == 0
+    assert backend.ledger.get_campaign(session)["verified_spent_tokens"] == 0
     assert selection["model_usage_ref"] and record["capture"] == receipt
     manifest = backend._document(selection["model_capture_ref"])
     if "actor/context.json" in manifest["files"]:

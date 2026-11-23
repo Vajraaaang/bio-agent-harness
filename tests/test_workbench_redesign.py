@@ -25,7 +25,7 @@ def test_composed_page_retains_nonce_and_trusted_modules():
 def test_redesign_assets_are_exactly_packaged_and_allowlisted():
     import tomllib
     from pathlib import Path
-    root = Path(workbench_ui.__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[1]
     config = tomllib.loads((root / "pyproject.toml").read_text())
     packaged = config["tool"]["setuptools"]["package-data"]["devbench"]
     for name in ["workbench-theme.css", "workbench-conversation.js", "workbench-investigations.js", "workbench-artifacts.js", "scientific-figure.js"]:
@@ -53,7 +53,7 @@ vm.runInContext(script,context);
 server.state.proposal={external_input:{path:'/approved/source-a.h5ad',sha256:'a'.repeat(64)},
   configuration:{declarations:{assay:'scrna',measurement:'umi_counts',count_provenance:'A counts',
     capture_unit_key:'donor_a',capture_units_confirmed:true,annotation_provenance:'A annotations'}}};
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 elements.source.value='/approved/unrelated-b.h5ad';elements.digest.value='b'.repeat(64);
 options.onAction({type:'draft',question:'Inspect source A',sourceRunId:'fixture-job'});
 assert.equal(elements.source.value,'/approved/source-a.h5ad');
@@ -78,7 +78,7 @@ server.results={report:{cells_input:2,cells_retained:2,HVG_count:1},deterministi
 server.figures={parent_root:'a'.repeat(64),parent_status:'completed_review_passed',revisions:[],figures:[{
   figure_id:'uncorrected',analysis_n:2,rendered_n:2,labels:[],image:{path:'figures/uncorrected.png'},
   plot_data:{path:'figures/uncorrected-data.json'},display_options:{point_size:4}}]};
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 await elements['figure-mode'].onchange();
 assert.ok(mounts>=1);assert.equal(elements['interactive-figure'].hidden,false);
 await elements['nav-review'].onclick();assert.ok(destroys>=1);assert.equal(elements.figures.hidden,false);
@@ -142,7 +142,7 @@ def test_panel_separators_and_redundant_copy_have_responsive_boundaries():
 def test_accepted_question_clears_composer_but_inflight_edit_survives():
     from tests.test_workbench_ui_agent_asset import run_script
     run_script(r"""
-await elements.connect.onclick();elements.question.value='Inspect recorded quality';
+await startWorkspace();elements.question.value='Inspect recorded quality';
 await submit();assert.equal(elements.question.value,'');
 const originalFetch=context.fetch;let release;
 context.fetch=async(path,options)=>{if(path==='/api/jobs'&&options.method==='POST')await new Promise(resolve=>{release=resolve;});return originalFetch(path,options);};
@@ -157,7 +157,7 @@ def test_stage_transitions_are_native_guarded_and_never_dispatch_science():
     run_script(r"""
 let transitions=0;
 context.document.startViewTransition=update=>{transitions++;const done=Promise.resolve(update());return {updateCallbackDone:done,finished:done,skipTransition(){}};};
-await elements.connect.onclick();await elements['nav-review'].onclick();
+await startWorkspace();await elements['nav-review'].onclick();
 assert.equal(transitions,1);assert.equal(elements.review.hidden,false);
 context.matchMedia=()=>({matches:true});await elements['nav-results'].onclick();
 assert.equal(transitions,1);assert.equal(elements.results.hidden,false);
@@ -173,7 +173,7 @@ context.window={WorkbenchInvestigations:{mount(options){host=options;return {rea
 vm.runInContext(script,context);
 server.config.investigations={enabled:true};
 server.workspace.ui.question_draft='Previously submitted question';
-await elements.connect.onclick();assert.ok(host);
+await startWorkspace();assert.ok(host);
 elements.question.value='';host.onStatus('Question recorded.',false);
 for(let tick=0;tick<12;tick++)await Promise.resolve();
 assert.equal(server.workspace.ui.question_draft,'');
@@ -185,7 +185,7 @@ assert.equal(posts().length,0);
 def test_new_job_requires_fresh_operator_confirmations_without_resetting_same_job_edits():
     from tests.test_workbench_ui_agent_asset import run_script
     run_script(r"""
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 elements.reviewer.value='Same local operator';elements.decision.value='approve';elements.rationale.value='Earlier question rationale';
 for(const input of elements.confirmations.querySelectorAll('input'))input.checked=true;
 server.state={...server.state,id:'second-job',question:'A separate question'};server.registration={...server.registration,id:'second-job'};
@@ -210,7 +210,7 @@ context.window={WorkbenchInvestigations:{mount(options){host=options;return {rea
   async submit(){submitted++;}};}}};
 vm.runInContext(script,context);server.config.investigations={enabled:true};
 server.state.source='/approved/retained.h5ad';server.jobs=[{id:'fixture-job',question:'Retained question',status:'awaiting_operator_review'}];
-await elements.connect.onclick();await elements.jobs.children[0].onclick();
+await startWorkspace();await elements.jobs.children[0].onclick();
 elements['investigation-dataset'].value='/approved/retained.h5ad';elements.question.value='A new question about this retained input';
 await elements['composer-submit'].onclick();
 assert.equal(submitted,1);assert.equal(sourceAction.sourceRunId,'fixture-job');

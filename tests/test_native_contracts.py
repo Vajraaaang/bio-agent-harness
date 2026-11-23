@@ -1,4 +1,5 @@
 """Contract-only checks for signed native analyses; no model or container execution."""
+
 import hashlib
 import importlib
 import json
@@ -10,7 +11,11 @@ from pydantic import ValidationError
 
 
 def api():
-    source = Path(__file__).resolve().parents[1] / "devharness_controlled" / "native_contracts.py"
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "devharness_controlled"
+        / "native_contracts.py"
+    )
     assert source.is_file(), "Native signed-plan contract implementation is missing"
     return importlib.import_module("devharness_controlled.native_contracts")
 
@@ -53,7 +58,11 @@ def plan(**updates):
 
 
 def test_native_plan_has_distinct_schema_and_explicit_version_pins():
-    from devharness_controlled.contracts import AnalysisPlan, FrozenContract, parse_plan_bytes
+    from devharness_controlled.contracts import (
+        AnalysisPlan,
+        FrozenContract,
+        parse_plan_bytes,
+    )
 
     module = api()
     value = plan()
@@ -69,13 +78,28 @@ def test_native_plan_has_distinct_schema_and_explicit_version_pins():
         plan(schema_version="controlled_analysis/1")
 
 
+@pytest.mark.parametrize("platform", ["linux/arm64", "linux/amd64"])
+def test_native_analysis_accepts_the_kernel_pin_only_on_its_platform(platform):
+    images = api().KERNEL_IMAGES
+    value = plan(runtime_image_id=images[platform], platform=platform)
+    assert api().parse_native_plan_bytes(value.canonical_bytes()).platform == platform
+    other = next(image for name, image in images.items() if name != platform)
+    with pytest.raises(ValidationError, match="pinned platform"):
+        plan(runtime_image_id=other, platform=platform)
+
+
 def test_native_plan_preserves_gene_sample_order_and_canonical_utf8(tmp_path):
     value = plan()
     encoded = value.canonical_bytes()
-    expected = json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
-                          separators=(",", ":"), allow_nan=False).encode("utf-8")
+    expected = json.dumps(
+        value.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
     assert encoded == expected
-    assert "β-actin".encode("utf-8") in encoded
+    assert "β-actin".encode() in encoded
     assert value.sha256() == hashlib.sha256(encoded).hexdigest()
     decoded = api().parse_native_plan_bytes(encoded)
     assert decoded == value
@@ -89,7 +113,9 @@ def test_native_plan_preserves_gene_sample_order_and_canonical_utf8(tmp_path):
     assert api().load_native_plan(source) == value
 
 
-@pytest.mark.parametrize("field", ["hypothesis_genes", "panel_genes", "sample_ids", "temporal_columns"])
+@pytest.mark.parametrize(
+    "field", ["hypothesis_genes", "panel_genes", "sample_ids", "temporal_columns"]
+)
 def test_native_plan_collections_are_immutable_and_python_lists_are_rejected(field):
     value = plan()
     assert isinstance(getattr(value, field), tuple)
@@ -107,60 +133,114 @@ def test_deseq2_requires_explicit_supported_fit_type(fit_type):
     assert api().parse_native_plan_bytes(value.canonical_bytes()) == value
 
 
-@pytest.mark.parametrize("updates", [
-    {"engine": "deseq2_lrt"},
-    {"engine": "deseq2_lrt", "deseq2_fit_type": None},
-    {"engine": "deseq2_lrt", "deseq2_fit_type": "local"},
-    {"engine": "deseq2_lrt", "deseq2_fit_type": "glmGamPoi"},
-    {"engine": "edger_qlf", "deseq2_fit_type": "mean"},
-    {"engine": "edger_qlf", "deseq2_fit_type": "parametric"},
-    {"engine": "edger_qlf:4.10.5"},
-    {"engine": "DESeq2"},
-    {"normalization": "tmm"},
-    {"normalization": "none"},
-])
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"engine": "deseq2_lrt"},
+        {"engine": "deseq2_lrt", "deseq2_fit_type": None},
+        {"engine": "deseq2_lrt", "deseq2_fit_type": "local"},
+        {"engine": "deseq2_lrt", "deseq2_fit_type": "glmGamPoi"},
+        {"engine": "edger_qlf", "deseq2_fit_type": "mean"},
+        {"engine": "edger_qlf", "deseq2_fit_type": "parametric"},
+        {"engine": "edger_qlf:4.10.5"},
+        {"engine": "DESeq2"},
+        {"normalization": "tmm"},
+        {"normalization": "none"},
+    ],
+)
 def test_engine_configuration_cannot_be_implicit_or_cross_engine(updates):
     with pytest.raises(ValidationError):
         plan(**updates)
 
 
-@pytest.mark.parametrize("updates", [
-    {"extra": "ignored"}, {"formula": "1 + malicious()"}, {"command": "Rscript arbitrary.R"},
-    {"callback": "arbitrary.module:run"}, {"counts_path": "/tmp/other-counts.tsv"},
-    {"runtime_image": "r-base:latest"}, {"selection_criterion": "bic"},
-    {"engine_version": "999"}, {"r_version": "4.0.0"},
-    {"clinical_release_allowed": True},
-    {"schema_version": "controlled_native_analysis/2"},
-    {"plan_id": ""}, {"plan_id": " "}, {"study_id": "\t"},
-    {"revision": 0}, {"revision": True}, {"revision": "1"},
-    {"intended_use_ref": " "}, {"intended_use_ref": "x" * 2049},
-    {"time_unit": ""}, {"time_unit": "\n"}, {"time_unit": 7},
-    {"basis_definition_ref": " "}, {"basis_definition_ref": "x" * 2049},
-    {"data_classification": "clinical"}, {"data_classification": None},
-    {"platform": "linux/arm64"}, {"platform": "darwin/amd64"},
-    {"runtime_image_id": "r-base:4.6.1"}, {"runtime_image_id": "sha256:" + "A" * 64},
-    {"runtime_image_id": "sha256:" + "3" * 63},
-    {"runtime_image_id": "sha256:" + "3" * 64 + "\n"},
-    {"runtime_image_id": "registry.example/image@sha256:" + "3" * 64},
-    {"max_memory_mb": 127}, {"max_memory_mb": 65537}, {"max_memory_mb": "256"},
-    {"max_memory_mb": 256.0}, {"max_memory_mb": True},
-    {"timeout_sec": 0}, {"timeout_sec": 86401}, {"timeout_sec": False},
-    {"timeout_sec": float("nan")}, {"timeout_sec": float("inf")},
-    {"max_cpus": 0}, {"max_cpus": 9}, {"max_cpus": 1.0}, {"max_cpus": True},
-])
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"extra": "ignored"},
+        {"formula": "1 + malicious()"},
+        {"command": "Rscript arbitrary.R"},
+        {"callback": "arbitrary.module:run"},
+        {"counts_path": "/tmp/other-counts.tsv"},
+        {"runtime_image": "r-base:latest"},
+        {"selection_criterion": "bic"},
+        {"engine_version": "999"},
+        {"r_version": "4.0.0"},
+        {"clinical_release_allowed": True},
+        {"schema_version": "controlled_native_analysis/2"},
+        {"plan_id": ""},
+        {"plan_id": " "},
+        {"study_id": "\t"},
+        {"revision": 0},
+        {"revision": True},
+        {"revision": "1"},
+        {"intended_use_ref": " "},
+        {"intended_use_ref": "x" * 2049},
+        {"time_unit": ""},
+        {"time_unit": "\n"},
+        {"time_unit": 7},
+        {"basis_definition_ref": " "},
+        {"basis_definition_ref": "x" * 2049},
+        {"data_classification": "clinical"},
+        {"data_classification": None},
+        {"platform": "linux/arm64"},
+        {"platform": "darwin/amd64"},
+        {"runtime_image_id": "r-base:4.6.1"},
+        {"runtime_image_id": "sha256:" + "A" * 64},
+        {"runtime_image_id": "sha256:" + "3" * 63},
+        {"runtime_image_id": "sha256:" + "3" * 64 + "\n"},
+        {"runtime_image_id": "registry.example/image@sha256:" + "3" * 64},
+        {"max_memory_mb": 127},
+        {"max_memory_mb": 65537},
+        {"max_memory_mb": "256"},
+        {"max_memory_mb": 256.0},
+        {"max_memory_mb": True},
+        {"timeout_sec": 0},
+        {"timeout_sec": 86401},
+        {"timeout_sec": False},
+        {"timeout_sec": float("nan")},
+        {"timeout_sec": float("inf")},
+        {"max_cpus": 0},
+        {"max_cpus": 9},
+        {"max_cpus": 1.0},
+        {"max_cpus": True},
+    ],
+)
 def test_native_plan_rejects_unlocked_or_ambiguous_fields(updates):
     with pytest.raises(ValidationError):
         plan(**updates)
 
 
-@pytest.mark.parametrize("field", [
-    "plan_id", "revision", "intended_use_ref", "study_id", "data_classification", "engine",
-    "normalization", "hypothesis_genes", "panel_genes", "sample_ids", "temporal_columns",
-    "time_unit", "basis_definition_ref", "counts_sha256", "metadata_sha256",
-    "full_design_sha256", "reduced_design_sha256", "driver_sha256", "package_lock_sha256",
-    "implementation_sha256", "environment_sha256", "runtime_image_id", "platform",
-    "max_memory_mb", "timeout_sec", "max_cpus",
-])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "plan_id",
+        "revision",
+        "intended_use_ref",
+        "study_id",
+        "data_classification",
+        "engine",
+        "normalization",
+        "hypothesis_genes",
+        "panel_genes",
+        "sample_ids",
+        "temporal_columns",
+        "time_unit",
+        "basis_definition_ref",
+        "counts_sha256",
+        "metadata_sha256",
+        "full_design_sha256",
+        "reduced_design_sha256",
+        "driver_sha256",
+        "package_lock_sha256",
+        "implementation_sha256",
+        "environment_sha256",
+        "runtime_image_id",
+        "platform",
+        "max_memory_mb",
+        "timeout_sec",
+        "max_cpus",
+    ],
+)
 def test_native_plan_requires_every_locked_input(field):
     values = plan_values()
     del values[field]
@@ -168,40 +248,62 @@ def test_native_plan_requires_every_locked_input(field):
         api().NativeAnalysisPlan(**values)
 
 
-@pytest.mark.parametrize("updates", [
-    {"hypothesis_genes": ()}, {"hypothesis_genes": ("Sox2", "Sox2")},
-    {"hypothesis_genes": ("Sox2", "missing")}, {"hypothesis_genes": (" ",)},
-    {"hypothesis_genes": tuple(f"gene-{i}" for i in range(101))},
-    {"panel_genes": ()}, {"panel_genes": ("Sox2",)},
-    {"panel_genes": ("Other", "Sox2", "β-actin", "Sox2")},
-    {"panel_genes": ("Sox2", "β-actin", " ")},
-    {"panel_genes": tuple(f"gene-{i}" for i in range(5001))},
-    {"sample_ids": ("sample-1", "sample-2")},
-    {"sample_ids": ("sample-1", "sample-2", "sample-2")},
-    {"sample_ids": ("sample-1", "sample-2", " ")},
-    {"sample_ids": tuple(f"sample-{i}" for i in range(513))},
-    {"temporal_columns": ()}, {"temporal_columns": (1,)},
-    {"temporal_columns": (2, 2)}, {"temporal_columns": (4, 2)},
-    {"temporal_columns": (2, 3, 4, 5, 6, 7)},
-    {"temporal_columns": (2.0,)}, {"temporal_columns": ("2",)},
-    {"temporal_columns": (True,)},
-])
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"hypothesis_genes": ()},
+        {"hypothesis_genes": ("Sox2", "Sox2")},
+        {"hypothesis_genes": ("Sox2", "missing")},
+        {"hypothesis_genes": (" ",)},
+        {"hypothesis_genes": tuple(f"gene-{i}" for i in range(101))},
+        {"panel_genes": ()},
+        {"panel_genes": ("Sox2",)},
+        {"panel_genes": ("Other", "Sox2", "β-actin", "Sox2")},
+        {"panel_genes": ("Sox2", "β-actin", " ")},
+        {"panel_genes": tuple(f"gene-{i}" for i in range(5001))},
+        {"sample_ids": ("sample-1", "sample-2")},
+        {"sample_ids": ("sample-1", "sample-2", "sample-2")},
+        {"sample_ids": ("sample-1", "sample-2", " ")},
+        {"sample_ids": tuple(f"sample-{i}" for i in range(513))},
+        {"temporal_columns": ()},
+        {"temporal_columns": (1,)},
+        {"temporal_columns": (2, 2)},
+        {"temporal_columns": (4, 2)},
+        {"temporal_columns": (2, 3, 4, 5, 6, 7)},
+        {"temporal_columns": (2.0,)},
+        {"temporal_columns": ("2",)},
+        {"temporal_columns": (True,)},
+    ],
+)
 def test_native_plan_rejects_invalid_families_samples_and_temporal_columns(updates):
     with pytest.raises(ValidationError):
         plan(**updates)
 
 
-@pytest.mark.parametrize("field", [
-    "counts_sha256", "metadata_sha256", "full_design_sha256", "reduced_design_sha256",
-    "driver_sha256", "package_lock_sha256", "implementation_sha256", "environment_sha256",
-])
-@pytest.mark.parametrize("value", ["A" * 64, "a" * 63, "a" * 65, "g" * 64, "a" * 64 + "\n", 1])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "counts_sha256",
+        "metadata_sha256",
+        "full_design_sha256",
+        "reduced_design_sha256",
+        "driver_sha256",
+        "package_lock_sha256",
+        "implementation_sha256",
+        "environment_sha256",
+    ],
+)
+@pytest.mark.parametrize(
+    "value", ["A" * 64, "a" * 63, "a" * 65, "g" * 64, "a" * 64 + "\n", 1]
+)
 def test_native_plan_requires_exact_lowercase_sha256_digests(field, value):
     with pytest.raises(ValidationError):
         plan(**{field: value})
 
 
-@pytest.mark.parametrize("classification", ["synthetic", "public_processed", "restricted_clinical"])
+@pytest.mark.parametrize(
+    "classification", ["synthetic", "public_processed", "restricted_clinical"]
+)
 def test_classification_declaration_does_not_confer_release_authority(classification):
     value = plan(data_classification=classification)
     assert "clinical_release_allowed" not in value.model_dump()
@@ -210,34 +312,58 @@ def test_classification_declaration_does_not_confer_release_authority(classifica
 
 def test_documented_collection_and_resource_bounds_are_inclusive():
     genes = tuple(f"gene-{i}" for i in range(5000))
-    value = plan(hypothesis_genes=genes[:100], panel_genes=genes,
-                 sample_ids=tuple(f"sample-{i}" for i in range(512)),
-                 temporal_columns=(2, 3, 4, 5, 6), max_memory_mb=65536,
-                 timeout_sec=86400, max_cpus=8)
+    value = plan(
+        hypothesis_genes=genes[:100],
+        panel_genes=genes,
+        sample_ids=tuple(f"sample-{i}" for i in range(512)),
+        temporal_columns=(2, 3, 4, 5, 6),
+        max_memory_mb=65536,
+        timeout_sec=86400,
+        max_cpus=8,
+    )
     assert len(value.panel_genes) == 5000
     assert len(value.hypothesis_genes) == 100
     assert len(value.sample_ids) == 512
     assert api().parse_native_plan_bytes(value.canonical_bytes()) == value
-    assert plan(temporal_columns=(2,), max_memory_mb=128, timeout_sec=1).timeout_sec == 1
+    assert (
+        plan(temporal_columns=(2,), max_memory_mb=128, timeout_sec=1).timeout_sec == 1
+    )
 
 
-@pytest.mark.parametrize("raw", [
-    b'{"a":1,"a":2}', b'{"a":{"b":1,"b":2}}', b'{"a":NaN}',
-    b'{"a":Infinity}', b'{"a":-Infinity}', b'{"a":1e999}', b'\xff',
-    b'\xef\xbb\xbf{}', b'{"a":"\\ud800"}', b'[]', b'null', b'1', b'{',
-])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b'{"a":1,"a":2}',
+        b'{"a":{"b":1,"b":2}}',
+        b'{"a":NaN}',
+        b'{"a":Infinity}',
+        b'{"a":-Infinity}',
+        b'{"a":1e999}',
+        b"\xff",
+        b"\xef\xbb\xbf{}",
+        b'{"a":"\\ud800"}',
+        b"[]",
+        b"null",
+        b"1",
+        b"{",
+    ],
+)
 def test_native_json_parser_rejects_malformed_duplicate_or_nonfinite_values(raw):
     with pytest.raises((ValueError, UnicodeError)):
         api().parse_native_plan_bytes(raw)
 
 
 def test_native_json_parser_rejects_a_duplicate_even_when_last_value_is_valid():
-    raw = plan().canonical_bytes().replace(b'"revision":1', b'"revision":99,"revision":1')
+    raw = (
+        plan().canonical_bytes().replace(b'"revision":1', b'"revision":99,"revision":1')
+    )
     with pytest.raises(ValueError, match="Duplicate JSON key"):
         api().parse_native_plan_bytes(raw)
 
 
-def test_native_plan_load_rejects_relative_oversized_symlink_and_nonregular_files(tmp_path):
+def test_native_plan_load_rejects_relative_oversized_symlink_and_nonregular_files(
+    tmp_path,
+):
     module = api()
     with pytest.raises(ValueError, match="absolute"):
         module.load_native_plan("native-plan.json")
@@ -263,13 +389,22 @@ def test_native_plan_load_rejects_relative_oversized_symlink_and_nonregular_file
         module.load_native_plan(fifo)
 
 
-@pytest.mark.parametrize("updates", [
-    {"schema_version": "controlled_analysis/1"}, {"engine": "arbitrary"},
-    {"engine": "deseq2_lrt"}, {"deseq2_fit_type": "mean"},
-    {"hypothesis_genes": ["Sox2"]}, {"sample_ids": ("s1", "s1", "s2")},
-    {"counts_sha256": "invalid"}, {"temporal_columns": (4, 2)},
-    {"max_cpus": True}, {"normalization": "none"}, {"extra": True},
-])
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"schema_version": "controlled_analysis/1"},
+        {"engine": "arbitrary"},
+        {"engine": "deseq2_lrt"},
+        {"deseq2_fit_type": "mean"},
+        {"hypothesis_genes": ["Sox2"]},
+        {"sample_ids": ("s1", "s1", "s2")},
+        {"counts_sha256": "invalid"},
+        {"temporal_columns": (4, 2)},
+        {"max_cpus": True},
+        {"normalization": "none"},
+        {"extra": True},
+    ],
+)
 def test_unvalidated_model_copy_is_rejected_before_hashing_or_validation(updates):
     original = plan()
     tampered = original.model_copy(update=updates)
@@ -291,4 +426,7 @@ def test_locked_order_is_part_of_the_signed_plan_digest():
     original = plan()
     assert original.sha256() != plan(hypothesis_genes=("β-actin", "Sox2")).sha256()
     assert original.sha256() != plan(panel_genes=("Sox2", "β-actin", "Other")).sha256()
-    assert original.sha256() != plan(sample_ids=("sample-1", "sample-2", "sample-3")).sha256()
+    assert (
+        original.sha256()
+        != plan(sample_ids=("sample-1", "sample-2", "sample-3")).sha256()
+    )

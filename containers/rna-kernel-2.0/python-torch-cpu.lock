@@ -1,0 +1,5 @@
+# Official PyTorch CPU wheels for CPython 3.13 on Linux amd64 and arm64.
+# https://download.pytorch.org/whl/cpu/torch/
+torch==2.14.0+cpu \
+    --hash=sha256:160e1bc46aeded3111d2801f8ae10dc9a1b946843a7e126b4dbf5e19c5706e95 \
+    --hash=sha256:092d5c12938850dfbd90a654b3c8dac34c33e300f88eb19ee6f4ef93992c6347

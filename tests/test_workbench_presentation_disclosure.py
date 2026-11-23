@@ -15,7 +15,7 @@ server.figures={parent_root:'a'.repeat(64),parent_status:'completed_review_passe
 
 def test_presentation_history_explains_zero_attempts_without_starting_work():
     run_script(SETUP + r"""
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 const history=elements['presentation-versions'];
 assert.equal(history.children.length,1);
 assert.equal(history.children[0].textContent,'No presentation versions yet.');
@@ -28,7 +28,7 @@ def test_presentation_history_opens_real_attempt_and_replaces_empty_state():
     run_script(SETUP + r"""
 server.figures.revisions=[{id:'revision-fixture',figure_id:'qc',status:'completed_presentation',cancellable:false}];
 server.revision={id:'revision-fixture',figure_id:'qc',status:'completed_presentation',figures:[]};
-await elements.connect.onclick();await submit();
+await startWorkspace();await submit();
 const history=elements['presentation-versions'];
 assert.equal(history.children.length,1);
 assert.equal(history.children[0].tagName,'button');

@@ -24,23 +24,24 @@ def _load(name, path):
     return module
 
 
-import devharness_core
-import devbench.analysis
 _load('devharness_core.methods', ROOT / 'devharness_core/methods.py')
-_load('devbench.analysis.colab_execution_contract', ROOT / 'devbench/analysis/colab_execution_contract.py')
-methods = _load('devbench.analysis.methods', ROOT / 'devbench/analysis/methods.py')
-transport = _load('devbench.analysis.colab_transport', ROOT / 'devbench/analysis/colab_transport.py')
+_load('devbench.analysis.colab_execution_contract', ROOT / 'src/devbench/analysis/colab_execution_contract.py')
+methods = _load('devbench.analysis.methods', ROOT / 'src/devbench/analysis/methods.py')
+transport = _load('devbench.analysis.colab_transport', ROOT / 'src/devbench/analysis/colab_transport.py')
 metadata_tests = _load('colab_metadata_fixture_helpers', ROOT / 'tests/test_colab_remote_methods.py')
 methods = metadata_tests.methods
 
 
 def fixture(tmp_path, monkeypatch):
     service, job = metadata_tests.job(tmp_path)
-    payload = tmp_path / 'payload.zip'; payload.write_bytes(b'inert software payload')
-    notebook = tmp_path / 'job.ipynb'; notebook.write_text('{"cells":[]}')
-    execution = tmp_path / 'execution.py'; execution.write_text('# inert remote submission source\n')
-    body_hash = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
-    ref = lambda p: {'path':str(p),'sha256':body_hash(p),'size_bytes':p.stat().st_size}
+    payload = tmp_path / 'payload.zip'
+    payload.write_bytes(b'inert software payload')
+    notebook = tmp_path / 'job.ipynb'
+    notebook.write_text('{"cells":[]}')
+    execution = tmp_path / 'execution.py'
+    execution.write_text('# inert remote submission source\n')
+    def body_hash(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+    def ref(p): return {'path':str(p),'sha256':body_hash(p),'size_bytes':p.stat().st_size}
     export = {'format':'devbench.colab-method-export/1','job_id':job['job_id'],
       'job_sha256':transport.job_sha256(job),'source_bundle_sha256':job['source_bundle_sha256'],
       'payload':ref(payload),'notebook':ref(notebook),'execution_file':ref(execution),
@@ -50,7 +51,8 @@ def fixture(tmp_path, monkeypatch):
     monkeypatch.setattr(service, '_remote_job', lambda _: (copy.deepcopy(job), copy.deepcopy(record)))
     claims = []
     def claim(identity, **kwargs):
-        if claims: raise PermissionError('already claimed')
+        if claims:
+            raise PermissionError('already claimed')
         claims.append((identity,kwargs))
         return {'format':'devbench.colab-transport-claim/1','job_id':identity,
                 'job_sha256':transport.job_sha256(job),**kwargs}
@@ -101,34 +103,39 @@ def test_dispatch_spends_claim_before_provision_and_does_not_exec(tmp_path,monke
     assert value['notebook_id'] is None and len(value['remote_session_id']) == 64
     assert len(value['dispatch_id']) == 32 and value['expected_root_sha256'] is None
     assert value['result_archive_sha256'] is None
-    with pytest.raises(PermissionError): obj.dispatch(job['job_id'])
+    with pytest.raises(PermissionError):
+        obj.dispatch(job['job_id'])
 
 
 def test_missing_consumed_grant_never_calls_cli(tmp_path,monkeypatch):
     obj,job,record,calls,claims = fixture(tmp_path,monkeypatch)
     record['reservation'] = None
-    with pytest.raises(PermissionError): obj.dispatch(job['job_id'])
+    with pytest.raises(PermissionError):
+        obj.dispatch(job['job_id'])
     assert calls == [] and claims == [] and obj.state == 'spent'
 
 
 def test_changed_export_never_calls_cli(tmp_path,monkeypatch):
     obj,job,record,calls,claims = fixture(tmp_path,monkeypatch)
     Path(record['export']['payload']['path']).write_bytes(b'changed')
-    with pytest.raises(ValueError): obj.dispatch(job['job_id'])
+    with pytest.raises(ValueError):
+        obj.dispatch(job['job_id'])
     assert calls == [] and claims == []
 
 
 def test_duplicate_persistent_claim_never_provisions_again(tmp_path,monkeypatch):
     obj,job,record,calls,claims = fixture(tmp_path,monkeypatch)
     claims.append(('spent',{}))
-    with pytest.raises(PermissionError): obj.dispatch(job['job_id'])
+    with pytest.raises(PermissionError):
+        obj.dispatch(job['job_id'])
     assert calls == []
 
 
 def test_assignment_observation_unknown_stops_without_receipt(tmp_path,monkeypatch):
     obj,job,record,calls,claims = fixture(tmp_path,monkeypatch)
     monkeypatch.setattr(obj,'_observe',lambda *_args,**_kwargs:'unknown')
-    with pytest.raises(RuntimeError): obj.dispatch(job['job_id'])
+    with pytest.raises(RuntimeError):
+        obj.dispatch(job['job_id'])
     assert [c[0] for c in calls] == ['new','stop']
     assert obj.cleanup == {'stop_requested':True,'presence':'unknown'}
     assert not (obj.private_root/'witness-dispatched.json').exists()
@@ -137,33 +144,41 @@ def test_assignment_observation_unknown_stops_without_receipt(tmp_path,monkeypat
 def test_witness_tampering_and_wrong_stage_rejected(tmp_path,monkeypatch):
     obj,job,record,calls,claims = fixture(tmp_path,monkeypatch)
     observed = obj.dispatch(job['job_id'])
-    with pytest.raises(PermissionError): observed.verify(job=job,stage='returned')
+    with pytest.raises(PermissionError):
+        observed.verify(job=job,stage='returned')
     (obj.private_root/'witness-dispatched.json').write_bytes(b'{}')
-    with pytest.raises(PermissionError): observed.verify(job=job,stage='dispatched')
+    with pytest.raises(PermissionError):
+        observed.verify(job=job,stage='dispatched')
 
 
 def test_expired_before_execution_stops_and_never_submits(tmp_path,monkeypatch):
     obj,job,record,calls,claims = fixture(tmp_path,monkeypatch)
-    obj.dispatch(job['job_id']); record['status']='remote_dispatched'
+    obj.dispatch(job['job_id'])
+    record['status']='remote_dispatched'
     def denied(_): raise PermissionError('expired approval')
     monkeypatch.setattr(obj.service,'revalidate_remote_dispatch',denied)
-    with pytest.raises(PermissionError): obj.collect()
+    with pytest.raises(PermissionError):
+        obj.collect()
     assert [c[0] for c in calls] == ['new','upload','upload','stop']
     assert obj.state == 'spent' and obj.cleanup['presence']=='absent'
 
 
 def test_cli_zero_does_not_imply_result_success(tmp_path,monkeypatch):
     obj,job,record,calls,claims = fixture(tmp_path,monkeypatch)
-    obj.dispatch(job['job_id']); record['status']='remote_dispatched'
+    obj.dispatch(job['job_id'])
+    record['status']='remote_dispatched'
     monkeypatch.setattr(obj,'_observe',lambda operation,**_:'absent' if operation=='verify' else 'unknown')
-    with pytest.raises(RuntimeError): obj.collect()
+    with pytest.raises(RuntimeError):
+        obj.collect()
     assert sum(c[0]=='exec' for c in calls)==1 and calls[-1][0]=='stop'
-    with pytest.raises(PermissionError): obj.collect()
+    with pytest.raises(PermissionError):
+        obj.collect()
 
 
 def test_fake_channel_metadata_return_has_closed_witness(tmp_path,monkeypatch):
     obj,job,record,calls,claims = fixture(tmp_path,monkeypatch)
-    obj.dispatch(job['job_id']); record['status']='remote_dispatched'
+    obj.dispatch(job['job_id'])
+    record['status']='remote_dispatched'
     original = obj._cli
     def fake(command,*args,**kwargs):
         original(command,*args,**kwargs)
@@ -181,15 +196,18 @@ def test_fake_channel_metadata_return_has_closed_witness(tmp_path,monkeypatch):
 
 def test_unknown_cleanup_prevents_accepted_return(tmp_path,monkeypatch):
     obj,job,record,calls,claims = fixture(tmp_path,monkeypatch)
-    obj.dispatch(job['job_id']); record['status']='remote_dispatched'
+    obj.dispatch(job['job_id'])
+    record['status']='remote_dispatched'
     original = obj._cli
     def fake(command,*args,**kwargs):
         original(command,*args,**kwargs)
         if command=='download':
-            with zipfile.ZipFile(Path(args[1]),'w') as archive: archive.writestr('root-receipt.json',b'{}')
+            with zipfile.ZipFile(Path(args[1]),'w') as archive:
+                archive.writestr('root-receipt.json',b'{}')
     monkeypatch.setattr(obj,'_cli',fake)
     monkeypatch.setattr(obj,'_observe',lambda operation,**_:'unknown' if operation=='verify' else 'present')
-    with pytest.raises(RuntimeError): obj.collect()
+    with pytest.raises(RuntimeError):
+        obj.collect()
     assert not (obj.private_root/'witness-returned.json').exists()
 
 
@@ -197,7 +215,8 @@ def test_forbidden_local_or_arbitrary_command_rejected_before_popen(tmp_path,mon
     obj,job,record,calls,claims = fixture(tmp_path,monkeypatch)
     obj._deadline=transport.time.monotonic()+10
     monkeypatch.setattr(transport,'_verify_pins',lambda:None)
-    with pytest.raises(PermissionError): obj._run(['-c','print("arbitrary")'],seconds=1)
+    with pytest.raises(PermissionError):
+        obj._run(['-c','print("arbitrary")'],seconds=1)
 
 
 def test_fixed_helpers_compile_without_running_auth_or_computation():
@@ -207,16 +226,20 @@ def test_fixed_helpers_compile_without_running_auth_or_computation():
 
 def test_command_plan_is_fixed_and_explicit_oauth2(tmp_path,monkeypatch):
     obj,job,record,calls,claims=fixture(tmp_path,monkeypatch)
-    obj._job=job;obj._bind_export(record['export'])
+    obj._job=job
+    obj._bind_export(record['export'])
     plans=[]
     monkeypatch.setattr(obj,'_run',lambda arguments,**kwargs:plans.append((arguments,kwargs)))
     fixed=transport.OfficialColabTransport._cli
     fixed(obj,'new')
     fixed(obj,'exec','--timeout','90','-f',str(obj.execution_file),seconds=100)
     assert plans[0][0]==['-m','colab_cli.cli','--auth','oauth2','--config',str(obj.config),'new','-s',obj.session_name]
-    with pytest.raises(PermissionError): fixed(obj,'rm','content/anything')
-    with pytest.raises(PermissionError): fixed(obj,'upload',str(obj.bundle),'content/other.zip')
-    with pytest.raises(PermissionError): fixed(obj,'exec','--timeout','999','-f',str(obj.execution_file))
+    with pytest.raises(PermissionError):
+        fixed(obj,'rm','content/anything')
+    with pytest.raises(PermissionError):
+        fixed(obj,'upload',str(obj.bundle),'content/other.zip')
+    with pytest.raises(PermissionError):
+        fixed(obj,'exec','--timeout','999','-f',str(obj.execution_file))
     assert len(plans)==2
 
 
@@ -229,12 +252,15 @@ def test_opaque_official_helper_projects_only_closed_status(tmp_path,monkeypatch
     endpoint = 'inert-private-endpoint-marker'
     entry = types.SimpleNamespace(endpoint=endpoint)
     def assignments():
-        if fail: raise SystemExit('never-return-raw-auth-error')
+        if fail:
+            raise RuntimeError('never-return-raw-auth-error')
         return [entry] if present else []
     state = types.SimpleNamespace(store=types.SimpleNamespace(get=lambda _:entry),
                                   client=types.SimpleNamespace(list_assignments=assignments))
-    common = types.ModuleType('colab_cli.common'); common.state=state
-    auth = types.ModuleType('colab_cli.auth'); auth.AuthProvider=types.SimpleNamespace(OAUTH2='oauth2')
+    common = types.ModuleType('colab_cli.common')
+    common.state=state
+    auth = types.ModuleType('colab_cli.auth')
+    auth.AuthProvider=types.SimpleNamespace(OAUTH2='oauth2')
     contents = types.ModuleType('colab_cli.contents')
     class Contents:
         def __init__(self,_): pass
@@ -243,7 +269,8 @@ def test_opaque_official_helper_projects_only_closed_status(tmp_path,monkeypatch
     for name,module in (('colab_cli.common',common),('colab_cli.auth',auth),('colab_cli.contents',contents)):
         monkeypatch.setitem(sys.modules,name,module)
     private = tmp_path/'endpoint.json'
-    if operation!='capture': private.write_text(json.dumps({'endpoint':endpoint}))
+    if operation!='capture':
+        private.write_text(json.dumps({'endpoint':endpoint}))
     monkeypatch.setattr(sys,'argv',['fixed',operation,str(tmp_path/'sessions.json'),'fixed-name',str(private),'100'])
     exec(compile(transport._OPAQUE_HELPER,'fixed-owned-observation','exec'),{'__name__':'__main__'})
     output = capsys.readouterr()
@@ -251,3 +278,22 @@ def test_opaque_official_helper_projects_only_closed_status(tmp_path,monkeypatch
     assert value['presence']==expected and output.err==''
     assert endpoint not in output.out and 'never-return-raw-auth-error' not in output.out
     assert set(value)==({'presence','bounded_result_inventory'} if operation=='inventory' else {'presence'})
+
+
+def test_opaque_helper_leaves_process_control_exceptions_to_child_boundary(tmp_path, monkeypatch, capsys):
+    def stop():
+        raise SystemExit(71)
+
+    common = types.ModuleType('colab_cli.common')
+    common.state = types.SimpleNamespace(client=types.SimpleNamespace(list_assignments=stop))
+    auth = types.ModuleType('colab_cli.auth')
+    auth.AuthProvider = types.SimpleNamespace(OAUTH2='oauth2')
+    monkeypatch.setitem(sys.modules, 'colab_cli.common', common)
+    monkeypatch.setitem(sys.modules, 'colab_cli.auth', auth)
+    endpoint = tmp_path / 'endpoint.json'
+    endpoint.write_text('{"endpoint":"inert-test-marker"}')
+    monkeypatch.setattr(sys, 'argv', ['fixed', 'verify', str(tmp_path / 'config'), 'fixed-name', str(endpoint), '100'])
+    with pytest.raises(SystemExit) as signal:
+        exec(compile(transport._OPAQUE_HELPER, 'fixed-owned-observation', 'exec'), {'__name__': '__main__'})
+    assert signal.value.code == 71
+    assert capsys.readouterr().out == ''

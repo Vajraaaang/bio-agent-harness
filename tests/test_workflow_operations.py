@@ -2,9 +2,10 @@ import json
 import multiprocessing
 import os
 import sqlite3
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
+from contextlib import closing
 from pathlib import Path
-from threading import Event
+from threading import Barrier, Event
 
 import pytest
 
@@ -137,6 +138,43 @@ def test_concurrent_active_operation_is_not_dispatched_or_reconciled(tmp_path, c
         else:
             worker.result(15)
             pool.shutdown()
+
+
+def test_independent_rollback_ledgers_wait_for_transient_contention(tmp_path):
+    Ledger, Blocked, _ = _api()
+    path = tmp_path / 'operations.sqlite'
+    ledger = Ledger(path)
+    workers, attempts = 8, 4
+    start = Barrier(workers + 1, timeout=10)
+
+    def exercise(worker):
+        start.wait()
+        reader = Ledger(path, readonly=True)
+        assert reader.is_cancelled('revoked')
+        writer = Ledger(path)
+        node = f'fit-{worker}'
+        with pytest.raises(Blocked) as error:
+            writer.run('revoked', node, 0, {}, lambda: pytest.fail('cancelled work was dispatched'))
+        assert error.value.state == 'cancelled'
+        for attempt in range(attempts):
+            request = {'worker': worker, 'attempt': attempt}
+            assert writer.run('rna', node, attempt, request, lambda: request) == request
+            assert reader.get('rna', node, attempt)['result'] == request
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        with closing(sqlite3.connect(path)) as blocker:
+            assert blocker.execute('PRAGMA journal_mode').fetchone()[0] == 'delete'
+            blocker.execute('BEGIN EXCLUSIVE')
+            futures = [pool.submit(exercise, worker) for worker in range(workers)]
+            start.wait()
+            # Let readers contend for the held SQLite lock before publishing the denial.
+            wait(futures, timeout=0.25)
+            blocker.execute('INSERT INTO workflows VALUES (?, 1)', ('revoked',))
+            blocker.commit()
+        for future in futures:
+            future.result(timeout=15)
+    assert len(ledger.replay('rna')) == workers * attempts
+    assert ledger.replay('revoked') == []
 
 
 def test_cancellation_durable_and_retains_late_completion(tmp_path):

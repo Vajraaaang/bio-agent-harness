@@ -1,0 +1,1437 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RNA Workbench dual-backend design contracts",
+  "description": "Validate a selected $defs entry. Cross-record authority and content checks are specified in the design.",
+  "$defs": {
+    "Sha256": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "JobId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "UtcSeconds": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20,
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "AccountBinding": {
+      "type": "object",
+      "properties": {
+        "account_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "account_id",
+        "connection_generation"
+      ],
+      "additionalProperties": false
+    },
+    "ConnectionStatus": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "Disconnected",
+            "Connecting",
+            "Connected",
+            "Stale",
+            "Error"
+          ]
+        },
+        "account_binding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccountBinding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "account_label": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 254
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "state",
+        "account_binding",
+        "account_label",
+        "connection_generation"
+      ],
+      "additionalProperties": false
+    },
+    "UsageSnapshot": {
+      "type": "object",
+      "properties": {
+        "account_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$"
+        },
+        "checked_at_utc": {
+          "$ref": "#/$defs/UtcSeconds"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "remaining_cu": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "aggregate_cu_per_hour": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "headless_eligibility": {
+          "enum": [
+            "verified",
+            "denied",
+            "unknown"
+          ]
+        },
+        "active_runtimes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "format": {
+          "const": "devbench.colab-usage/1"
+        },
+        "is_stale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account_id",
+        "checked_at_utc",
+        "connection_generation",
+        "remaining_cu",
+        "aggregate_cu_per_hour",
+        "headless_eligibility",
+        "active_runtimes",
+        "format",
+        "is_stale"
+      ],
+      "additionalProperties": false
+    },
+    "Input": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
+        },
+        "path_selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^/[^\\x00]+$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "classification": {
+          "enum": [
+            "synthetic",
+            "public",
+            "local_only"
+          ]
+        }
+      },
+      "required": [
+        "role",
+        "path_selector",
+        "sha256",
+        "size_bytes",
+        "classification"
+      ],
+      "additionalProperties": false
+    },
+    "Adapter": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
+        },
+        "digest": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "environment_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "validation_policy_sha256": {
+          "$ref": "#/$defs/Sha256"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "digest",
+        "environment_sha256",
+        "validation_policy_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "ComputeProfile": {
+      "type": "object",
+      "properties": {
+        "hardware": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
+        },
+        "min_ram_gb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "min_disk_gb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "deadline_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "deadline_at_utc": {
+          "$ref": "#/$defs/UtcSeconds"
+        },
+        "hard_cu_cap": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "hardware",
+        "min_ram_gb",
+        "min_disk_gb",
+        "deadline_seconds",
+        "deadline_at_utc",
+        "hard_cu_cap"
+      ],
+      "additionalProperties": false
+    },
+    "Transfer": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "local",
+            "direct_upload"
+          ]
+        },
+        "per_file_bytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8000000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total_input_bytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16000000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "mode",
+        "per_file_bytes",
+        "total_input_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "OutputPort": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "format": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
+        },
+        "validator_sha256": {
+          "$ref": "#/$defs/Sha256"
+        }
+      },
+      "required": [
+        "name",
+        "required",
+        "max_bytes",
+        "format",
+        "validator_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "JobRef": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "$ref": "#/$defs/JobId"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/Sha256"
+        }
+      },
+      "required": [
+        "job_id",
+        "manifest_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "JobStatus": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "$ref": "#/$defs/JobId"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "phase": {
+          "enum": [
+            "reserved",
+            "allocating",
+            "ready",
+            "transferring",
+            "running",
+            "exited",
+            "staged",
+            "failed",
+            "cancel_requested",
+            "cleanup_pending",
+            "closed"
+          ]
+        },
+        "runtime_presence": {
+          "enum": [
+            "unknown",
+            "present",
+            "confirmed_absent"
+          ]
+        },
+        "dispatch_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result_root_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime_observation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeObservation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "job_id",
+        "manifest_sha256",
+        "phase",
+        "runtime_presence",
+        "dispatch_id",
+        "result_root_sha256",
+        "runtime_observation"
+      ],
+      "additionalProperties": false
+    },
+    "OutputReceipt": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "name",
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "RunManifest": {
+      "type": "object",
+      "properties": {
+        "manifest_version": {
+          "const": "devbench.run-manifest/1"
+        },
+        "job_id": {
+          "$ref": "#/$defs/JobId"
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$"
+        },
+        "investigation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$"
+        },
+        "analysis_revision": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "backend": {
+          "enum": [
+            "colab",
+            "local_supervised"
+          ]
+        },
+        "account_binding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccountBinding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Input"
+          },
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true
+        },
+        "adapter": {
+          "$ref": "#/$defs/Adapter"
+        },
+        "effective_parameters": {
+          "type": "object",
+          "maxProperties": 64
+        },
+        "parameters_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "compute_profile": {
+          "$ref": "#/$defs/ComputeProfile"
+        },
+        "transfer": {
+          "$ref": "#/$defs/Transfer"
+        },
+        "allowed_outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OutputPort"
+          },
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true
+        },
+        "issued_at_utc": {
+          "$ref": "#/$defs/UtcSeconds"
+        },
+        "approval_expires_at_utc": {
+          "$ref": "#/$defs/UtcSeconds"
+        }
+      },
+      "required": [
+        "manifest_version",
+        "job_id",
+        "project_id",
+        "investigation_id",
+        "analysis_revision",
+        "backend",
+        "account_binding",
+        "inputs",
+        "adapter",
+        "effective_parameters",
+        "parameters_sha256",
+        "compute_profile",
+        "transfer",
+        "allowed_outputs",
+        "issued_at_utc",
+        "approval_expires_at_utc"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "backend": {
+                "const": "colab"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "account_binding": {
+                "$ref": "#/$defs/AccountBinding"
+              },
+              "inputs": {
+                "items": {
+                  "properties": {
+                    "classification": {
+                      "enum": [
+                        "synthetic",
+                        "public"
+                      ]
+                    }
+                  }
+                }
+              },
+              "transfer": {
+                "properties": {
+                  "mode": {
+                    "const": "direct_upload"
+                  },
+                  "per_file_bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 8000000
+                  },
+                  "total_input_bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 16000000
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "account_binding": {
+                "const": null
+              },
+              "transfer": {
+                "properties": {
+                  "mode": {
+                    "const": "local"
+                  },
+                  "per_file_bytes": {
+                    "const": null
+                  },
+                  "total_input_bytes": {
+                    "const": null
+                  }
+                }
+              },
+              "compute_profile": {
+                "properties": {
+                  "hard_cu_cap": {
+                    "const": null
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ApprovedRun": {
+      "type": "object",
+      "properties": {
+        "manifest": {
+          "$ref": "#/$defs/RunManifest"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "issuer_key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$"
+        },
+        "signature_ed25519_hex": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[0-9a-f]{128}$"
+        },
+        "format": {
+          "const": "devbench.manifest-signature/1"
+        }
+      },
+      "required": [
+        "manifest",
+        "manifest_sha256",
+        "issuer_key_id",
+        "signature_ed25519_hex",
+        "format"
+      ],
+      "additionalProperties": false
+    },
+    "IpcRequest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "method": {
+              "const": "check_connection"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "method": {
+              "const": "get_usage"
+            },
+            "params": {
+              "$ref": "#/$defs/UsageRequest"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "method": {
+              "const": "prepare_runtime"
+            },
+            "params": {
+              "$ref": "#/$defs/ApprovedRun"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "method": {
+              "const": "transfer_inputs"
+            },
+            "params": {
+              "$ref": "#/$defs/JobRef"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "method": {
+              "const": "monitor_job"
+            },
+            "params": {
+              "$ref": "#/$defs/JobRef"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "method": {
+              "const": "collect_outputs"
+            },
+            "params": {
+              "$ref": "#/$defs/JobRef"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "method": {
+              "const": "stop_runtime"
+            },
+            "params": {
+              "$ref": "#/$defs/JobRef"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "IpcResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "check_connection"
+                },
+                "value": {
+                  "$ref": "#/$defs/ConnectionStatus"
+                }
+              },
+              "required": [
+                "method",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "get_usage"
+                },
+                "value": {
+                  "$ref": "#/$defs/UsageSnapshot"
+                }
+              },
+              "required": [
+                "method",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "prepare_runtime"
+                },
+                "value": {
+                  "$ref": "#/$defs/JobStatus"
+                }
+              },
+              "required": [
+                "method",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "transfer_inputs"
+                },
+                "value": {
+                  "$ref": "#/$defs/JobStatus"
+                }
+              },
+              "required": [
+                "method",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "monitor_job"
+                },
+                "value": {
+                  "$ref": "#/$defs/JobStatus"
+                }
+              },
+              "required": [
+                "method",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "collect_outputs"
+                },
+                "value": {
+                  "$ref": "#/$defs/JobStatus"
+                }
+              },
+              "required": [
+                "method",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/JobId"
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "stop_runtime"
+                },
+                "value": {
+                  "$ref": "#/$defs/JobStatus"
+                }
+              },
+              "required": [
+                "method",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/JobId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "enum": [
+                    -32700,
+                    -32600,
+                    -32601,
+                    -32602,
+                    -32603,
+                    -32000
+                  ]
+                },
+                "message": {
+                  "enum": [
+                    "Parse error",
+                    "Invalid Request",
+                    "Method not found",
+                    "Invalid params",
+                    "Internal error",
+                    "Workbench operation failed"
+                  ]
+                },
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "INVALID_REQUEST",
+                        "NOT_AUTHORIZED",
+                        "ACCOUNT_MISMATCH",
+                        "STALE_GENERATION",
+                        "USAGE_UNAVAILABLE",
+                        "HEADLESS_INELIGIBLE",
+                        "HARD_CU_CAP_UNAVAILABLE",
+                        "HARD_RUNTIME_DEADLINE_UNAVAILABLE",
+                        "DIRECT_UPLOAD_LIMIT_EXCEEDED",
+                        "RUNTIME_UNAVAILABLE",
+                        "INPUT_INTEGRITY_FAILURE",
+                        "OUTPUT_VERIFICATION_FAILED",
+                        "CLEANUP_UNCONFIRMED",
+                        "OPERATION_FAILED"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "data"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ResultManifest": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "const": "devbench.compute-result/1"
+        },
+        "job_id": {
+          "$ref": "#/$defs/JobId"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "dispatch_id": {
+          "$ref": "#/$defs/JobId"
+        },
+        "runtime_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "execution_tier": {
+          "enum": [
+            "colab",
+            "local_supervised"
+          ]
+        },
+        "runtime_observation_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "exit_code": {
+          "const": 0
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OutputReceipt"
+          },
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "format",
+        "job_id",
+        "manifest_sha256",
+        "dispatch_id",
+        "runtime_id",
+        "execution_tier",
+        "runtime_observation_sha256",
+        "exit_code",
+        "outputs"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_tier": {
+                "const": "colab"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "runtime_id": {
+                "$ref": "#/$defs/JobId"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "runtime_id": {
+                "const": null
+              }
+            }
+          }
+        }
+      ]
+    },
+    "VerificationReceipt": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "const": "devbench.compute-verification/1"
+        },
+        "result_root_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "execution_tier": {
+          "enum": [
+            "colab",
+            "local_supervised"
+          ]
+        },
+        "verifier_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "checked_at_utc": {
+          "$ref": "#/$defs/UtcSeconds"
+        },
+        "checks_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "issuer_key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$"
+        },
+        "signature_ed25519_hex": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[0-9a-f]{128}$"
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OutputReceipt"
+          },
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "format",
+        "result_root_sha256",
+        "manifest_sha256",
+        "execution_tier",
+        "verifier_sha256",
+        "checked_at_utc",
+        "checks_sha256",
+        "issuer_key_id",
+        "signature_ed25519_hex",
+        "outputs"
+      ],
+      "additionalProperties": false
+    },
+    "UsageRequest": {
+      "type": "object",
+      "properties": {
+        "account_binding": {
+          "$ref": "#/$defs/AccountBinding"
+        },
+        "refresh": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account_binding",
+        "refresh"
+      ],
+      "additionalProperties": false
+    },
+    "RuntimeObservation": {
+      "type": "object",
+      "properties": {
+        "runtime_id": {
+          "$ref": "#/$defs/JobId"
+        },
+        "observed_at_utc": {
+          "$ref": "#/$defs/UtcSeconds"
+        },
+        "hardware": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
+        },
+        "ram_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "free_disk_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "environment_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "watchdog_deadline_at_utc": {
+          "$ref": "#/$defs/UtcSeconds"
+        }
+      },
+      "required": [
+        "runtime_id",
+        "observed_at_utc",
+        "hardware",
+        "ram_bytes",
+        "free_disk_bytes",
+        "environment_sha256",
+        "watchdog_deadline_at_utc"
+      ],
+      "additionalProperties": false
+    },
+    "ApprovalSignature": {
+      "type": "object",
+      "properties": {
+        "manifest_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "issuer_key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$"
+        },
+        "signature_ed25519_hex": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[0-9a-f]{128}$"
+        },
+        "format": {
+          "const": "devbench.manifest-signature/1"
+        }
+      },
+      "required": [
+        "manifest_sha256",
+        "issuer_key_id",
+        "signature_ed25519_hex",
+        "format"
+      ],
+      "additionalProperties": false
+    },
+    "IPCFrame": {
+      "$comment": "devbench.colab-ipc/1: four-byte unsigned big-endian payload length, then 1\u201365536 bytes of strict UTF-8 JSON. This schema validates the decoded payload.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/IpcRequest"
+        },
+        {
+          "$ref": "#/$defs/IpcResponse"
+        }
+      ]
+    }
+  }
+}

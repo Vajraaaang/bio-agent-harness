@@ -2,22 +2,19 @@
 import json
 from pathlib import Path
 import shutil
-import tempfile
 import threading
 import time
 import uuid
 
 import pytest
 
-from tests.test_figure_revisions import figure_parent
+pytest_plugins = ("tests.test_figure_revisions",)
 
 
 @pytest.fixture
-def figure_service(figure_parent):
+def figure_service(figure_parent, workspace_tmp_path):
     from devbench.analysis.workbench_ui import WorkbenchService
-    base = Path(__file__).resolve().parents[1] / "reports/rna-agent-readiness/2026-09-27-m2a.l9eya67z/fixtures"
-    base.mkdir(exist_ok=True)
-    root = Path(tempfile.mkdtemp(prefix="presentation-service-", dir=base))
+    root = workspace_tmp_path
     inputs = root / "inputs"
     inputs.mkdir()
     app = WorkbenchService(root / "service", [inputs], run_timeout_seconds=120)
@@ -121,7 +118,9 @@ def test_renderer_failure_stays_failed_without_success_download(figure_service, 
     monkeypatch.setattr(figure_revisions, "execute_figure_revision", fail)
     child = app.revise_figure(parent, request(parent_root))["id"]
     state = wait(app, child)
-    assert state["status"] == "operation_failed" and "fixture failure" in state["error"]["message"]
+    assert state["status"] == "operation_failed"
+    assert state["error"]["message"] == "invalid_request"
+    assert "fixture failure" not in json.dumps(state)
     assert app.status(parent)["status"] == "completed_review_failed"
     assert app.revise_figure(parent, request(parent_root))["id"] == child
     with pytest.raises(RuntimeError):

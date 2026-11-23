@@ -1,7 +1,3 @@
-.venv/
-.venv310/
-.venv-analysis/
-.venv-colab-operator/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -9,16 +5,72 @@ __pycache__/
 build/
 dist/
 benchmarks/data/
-results/
-devbench-audit/
 benchmarks/cache/
 .coverage
 .env
 tmp/
-biology-authorized-*/
-workbench_runs/
+.devbench-codex-auth/
+runs/
+.runs/
 
-# Local environments and publication worktrees
-.venv*/
-.github-publication-*/
-output/
+# Generated logs and media. Keep review packets and checked-in fixtures eligible.
+*.log
+*.mp4
+*.zip
+!hirisa_case_04.zip
+!/benchmarks/reference_data/**/*.zip
+!/tests/fixtures/**/*.zip
+
+# Root-only generated outputs, local runtimes, and scratch.
+# Retained evidence stays available by explicit path.
+/reports/
+/implementations/
+/output/
+/results/
+/biology-authorized-*/
+/workbench_runs/
+/devbench-audit/
+/.venv*/
+/.t15-*/
+/.t16-*/
+/.pytest-*/
+/.scientific-*/
+/.test-*/
+/.review*/
+/.g1*/
+/.dpb*/
+/.nr*/
+/.pr*/
+/.cn*/
+/.[0-9a-f][0-9a-f]/
+
+# Retained root scratch and local metadata.
+.DS_Store
+/.github-publication-20261007/
+/.md/
+/.nabd1/
+/.nf/
+/.sc-live-*/
+/a/
+/b/
+/hf1/
+/hf2/
+/hw1/
+/hw2/
+/lf/
+/lw/
+/ng4/
+/q/
+/r/
+/sc11/
+/t/
+/u/
+/v/
+/w/
+/w2/
+/x/
+/y/
+
+# Local workspace notes and generated integration outputs.
+/.agents/
+/integrations/codex/validation/

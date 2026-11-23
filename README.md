@@ -1,125 +1,71 @@
-# RNA Workbench
+# DevHarness · RNA Workbench
 
-A local workspace for transcriptomics research. Organize datasets by project, investigate them through chats, and inspect figures, code and evidence in one interface.
+**A local RNA-seq workbench for agents that propose workflows and researchers who review the evidence.** DevHarness checks whether the inputs support the question, freezes a plan for review, and binds completed outputs to an execution receipt. Companion Studio opens the same research session to inspect plans, figures, code and evidence. DevBench provides a separate harness for evaluating agent behavior.
 
-The application is built around **Project → Data + Chats**. Project navigation, conversation and scientific results occupy independently resizable panes. Each chat keeps its attached datasets, question, workflow state and unsent draft together.
+[Run the synthetic demo](#run-the-synthetic-demo) · [Inspect the architecture](#architecture) · [Configure the Codex plugin](integrations/codex/devharness/README.md) · [Read the evidence](#verification-and-limits)
 
-![RNA Workbench project, conversations and 287,463-point generated cell landscape](reports/workbench-integrated-simulation-20261029/images/workbench-landscape.png)
+![Offline RNA Workbench simulation showing a generated cell landscape and interactive figure controls](docs/assets/companion-studio.png)
 
-The screenshot uses the current workbench’s project navigation, conversation pane and interactive figure renderer. **Airway Immune Landscape** is a clearly labeled synthetic demonstration with 287,463 generated cell-like records across three unequal batches. The conversation summaries are calculated from those records. Six fictional projects offer different generated populations, and the [66-plot gallery](reports/workbench-plot-families-20261029/README.md) combines 48 summary plots and 18 scatter views exported by the workbench. No live trial, model response or biological discovery is claimed.
+*The offline simulation shows 287,463 generated observations. It exercises the Workbench interface and figures without running an analysis.*
 
-## Work in the interface
+## Run the synthetic demo
 
-- **Projects and datasets:** create local projects, add files from an authorized input library, and switch projects without mixing drafts or attachments.
-- **Conversations:** attach an ordered set of up to eight datasets to a chat. The analysis overview groups Data, Question, Methods, Results and Conclusion into expandable sections.
-- **Scientific results:** inspect figures, notebook code, evidence and display settings beside the conversation. Interactive figures support point inspection, selection and source-bound follow-up questions.
-- **Recorded work:** retain plans, runs, results, failed attempts and review decisions with their input and source identities. Execution and scientific acceptance remain separate actions.
+Use a local macOS or Linux checkout with `uv`, Python 3.13 and a modern browser. From the repository root:
 
-Multiple attachments are passed to the planning workflow as an exact input set. Their presence does not establish that the files can be combined or that a joint numerical analysis has run; the selected method must support the complete set.
+```sh
+make install
+repo="$(pwd -P)"
+mkdir -p "$repo/results"
+demo_dir="$(mktemp -d "$repo/results/studio-demo.XXXXXX")"
+mkdir -p "$demo_dir/inputs" "$demo_dir/workspace"
+"$repo/.venv/bin/devbench" workbench \
+  --input-root "$demo_dir/inputs" \
+  --workspace "$demo_dir/workspace" \
+  --offline-only --port 8765
+```
 
-## Plot families
+Open the printed loopback URL with `?simulation=1` appended to its path, for example `http://127.0.0.1:8765/?simulation=1`. Choose **Open simulated project**. Switch projects or batches and inspect, filter or export the generated figures. The browser generates the data locally. The simulation requires no model account, expression data or container.
 
-The current figure selector adds stacked composition bars, read-depth histograms, mitochondrial histogram ridges, quartile/min–max boxplots, empirical cumulative distributions, module heatmaps, module dot plots and correlation matrices. These summarize every selected generated record; summary marks are not individual cells. The [gallery](reports/workbench-plot-families-20261029/README.md) documents the exact encodings and source identities.
+For a real local research session, start with the [Workbench operating guide](docs/workbench-ui.md) or the [Codex plugin setup](integrations/codex/devharness/README.md). Accounts, inputs, data execution and scientific review each have their own requirements.
 
-| Composition | Module means |
-| --- | --- |
-| ![Generated cell-group composition](reports/workbench-plot-families-20261029/gallery/airway-composition.png) | ![Generated module heatmap](reports/workbench-plot-families-20261029/gallery/airway-module_heatmap.png) |
-| Batch distributions | Correlation |
-| ![Generated mitochondrial histogram outlines](reports/workbench-plot-families-20261029/gallery/airway-mito_ridges.png) | ![Generated measurement correlations](reports/workbench-plot-families-20261029/gallery/airway-correlation.png) |
-
-## Code organization
-
-The browser uses HTML, CSS and JavaScript modules served by a local Python service. The service owns input admission, project routing and workflow records. Numerical execution remains behind the existing controlled-analysis interfaces.
-
-| Area | Source | Responsibility |
-| --- | --- | --- |
-| Local application | [`workbench_ui.py`](devbench/analysis/workbench_ui.py) | `WorkbenchService`, HTTP request handling, authentication, page composition and workbench operations |
-| Projects | [`workbench_projects.py`](devbench/analysis/workbench_projects.py) | `WorkbenchProjectHub`, project workspaces, project-bound service state and data entries |
-| Inputs | [`workbench_inputs.py`](devbench/analysis/workbench_inputs.py) | `InputDiscovery`, bounded file inspection and input identity checks |
-| Investigations | [`workbench_investigations.py`](devbench/analysis/workbench_investigations.py) | `InvestigationService`, chat attachments, questions and investigation records |
-| Interface | [`workbench-ui.html`](devbench/analysis/assets/workbench-ui.html), [`workbench-theme.css`](devbench/analysis/assets/workbench-theme.css) | Three-pane layout, controls, workflow card and responsive presentation |
-| Frontend state | [`workbench-projects.js`](devbench/analysis/assets/workbench-projects.js), [`workbench-conversation.js`](devbench/analysis/assets/workbench-conversation.js), [`workbench-investigations.js`](devbench/analysis/assets/workbench-investigations.js) | Project navigation, conversations, drafts and investigation interactions |
-| Figures and artifacts | [`scientific-figure.js`](devbench/analysis/assets/scientific-figure.js), [`workbench-artifacts.js`](devbench/analysis/assets/workbench-artifacts.js) | Figure rendering, selections, artifact display and provenance-aware interaction |
-| Offline demonstration | [`workbench-demo.js`](devbench/analysis/assets/workbench-demo.js) | Generates a temporary project presentation inside the current workbench, computes summaries and renders through the same figure component without service writes |
-| Analysis services | [`devbench.analysis`](devbench/analysis), [`devharness_core`](devharness_core), [`devharness_server`](devharness_server) | Scientific planning, registered tools, bounded data access and numerical methods |
-
-The UI presents the five scientific questions in order: identify the data, define the question, assess methods, inspect outputs, and state supported conclusions. Missing inputs, failed tools and unresolved assumptions remain visible in that process.
-
-## Agentic workflow and harness
-
-The agent proposes actions; the harness owns execution and evidence. A chat follows **Data → Question → Methods → Results → Conclusion**, while the serial workflow checks finer-grained stages for scientific review, implementation resolution, trial declaration, execution and verification.
+## Architecture
 
 ```mermaid
 flowchart LR
-    A[Project data and question] --> B[Planner and bounded selector]
-    B --> C[Review and execution checks]
-    C --> D[Registered tools or admitted method]
-    D --> E[Outputs and captured evidence]
-    E --> F[Verified conclusion or abstention]
+    A["Local input + research question"] --> B["Bounded inspection"]
+    B --> C{"Measurements and design support the question?"}
+    C -->|"Missing or unsupported"| D["Clarification or refusal"]
+    C -->|"Supported route"| E["Freeze input identity and plan"]
+    E --> F{"Review and execution permission?"}
+    F -->|"Pending or denied"| G["Hold with reason"]
+    F -->|"Approved"| H["Execute the exact reviewed plan"]
+    H --> I["Record outcome and evidence"]
+    I --> J["Inspect in Companion Studio"]
 ```
 
-Model calls, discovery access, review operations and data execution have separate permissions. Registered tools validate their arguments and bound inputs; supervised numerical workers enforce applicable memory and time limits. Workflow checkpoints and operation records support explicit recovery without treating an interrupted attempt as a completed result.
+The typed MCP interface exposes seven tools over local STDIO. Inspection and planning can run before execution is permitted. Starting a run requires the exact session, plan ID and plan digest. The local service owns review state, bounded execution and receipt verification. The browser renders the resulting session, including holds and failures.
 
-The harness exposes eleven registered tools, including expression-quality auditing, design-rank validation, batch diagnostics, temporal fitting, bounded bulk contrasts, lineage inference and enrichment. Their outputs retain diagnostics and scientific limits: inferred pseudotime is not collection age, and network association is not causality.
+| Layer | Code and contracts |
+| --- | --- |
+| Agent interface | [MCP server and tool schemas](src/devbench/platform/plugin_mcp.py) · [Codex plugin](integrations/codex/devharness) |
+| Scientific admission | [Answerability rules](src/devbench/core/rna_answerability.py) · [Contrast design](src/devbench/core/contrast_design.py) |
+| Durable workflow | [Investigation service](src/devbench/platform/workbench_investigations.py) · [LangGraph stage and review contracts](docs/langgraph-workflow.md#enforced-route-and-node-contracts) |
+| Local application | [Workbench service](src/devbench/platform/workbench_ui.py) · [Companion Studio assets](src/devbench/analysis/assets) |
+| Source custody | [Colab source bundle builder](scripts/build_colab_notebook.py) · [Source include/exclude and tamper checks](tests/test_source_bundle_verification.py) |
 
-Read the [workflow and harness design](docs/agentic-workflow-and-harness.md) for the exact graph route, source map, tool input/output contracts, request examples, resource boundaries and provenance model. The generated project gallery is a separate presentation path and does not supply scientific execution or review evidence.
+## Verification and limits
 
-## Run locally
+| Published checkpoint | Observed result |
+| --- | --- |
+| [Companion Studio source update](RELEASE_READINESS.md) | 93 focused tests and eight local MCP tests passed. The offline browser simulation initialized successfully, and batch filtering changed the displayed count from 287,463 to 94,817 and back. |
+| [Synthetic Workbench simulation](reports/workbench-integrated-simulation-20261029/README.md) | The historical publication snapshot passed 144 focused tests. Browser checks covered six generated projects, point counts, batch filtering and SVG/PNG downloads. |
+| [Plot family gallery](reports/workbench-plot-families-20261029/README.md) | Browser checks exported 48 PNGs across eight descriptive plot families using the Workbench controls. |
+| [Gaussian calibration prototype](reports/selection-calibration/README.md) | Corrected null rejection was 5.045%–5.225% under equal variance. It remained 8.610%–9.065% under unequal variance at a nominal 5% threshold. |
 
-Use Python 3.11 or newer. The locked setup defaults to Python 3.12 and uses `uv` when available.
+These checkpoints describe the source and conditions in their reports. Synthetic software verification and recorded artifact integrity establish separate properties. Comparative scientific effectiveness, independently qualified deployment and clinical release remain open. See [release readiness](RELEASE_READINESS.md) and the [evaluation design](docs/public-three-condition-study.md).
 
-```sh
-git clone https://github.com/Vajraaaang/bio-agent-harness.git /absolute/repository
-make -C /absolute/repository install
-```
+## Related projects
 
-The module CLI starts a single-workspace browser service. Use a fresh workspace and a separate approved input directory that already exists:
+[OpenAI Agents SDK](https://github.com/openai/openai-agents-python) is a reference for typed tools and tracing. [LatchBio scBench](https://github.com/latchbio/scbench) evaluates agents on single-cell analysis tasks, while [CellAtria](https://github.com/AstraZeneca/cellatria) orchestrates single-cell ingestion and analysis. [nf-core/rnaseq](https://nf-co.re/rnaseq) documents a versioned RNA-seq pipeline with explicit inputs and outputs. DevHarness focuses on the local boundary between an agent request, a scientifically admissible plan, and independently inspectable execution evidence.
 
-```sh
-/absolute/repository/.venv/bin/python -m devbench.analysis.workbench_ui \
-  --workspace /absolute/workbench-workspace \
-  --input-root /absolute/approved-inputs \
-  --enable-scientific --port 8765
-```
-
-Open the loopback URL printed by the service. Its session token is private. Starting the interface does not authorize model calls or numerical execution; those actions have separate admission and permission checks.
-
-The multi-project catalog is composed through `WorkbenchProjectHub` and `make_server(..., project_hub=hub)` with a trusted service factory. That factory supplies each project’s service and the shared execution queue. The module CLI above does not configure that catalog; the [project hub](devbench/analysis/workbench_projects.py) and [HTTP routing tests](tests/test_workbench_project_http.py) document the integration boundary.
-
-Install the optional scRNA and notebook dependencies when needed:
-
-```sh
-uv sync --project /absolute/repository --locked \
-  --extra dev --extra reporting --extra analysis --python 3.12
-```
-
-On a fresh, disconnected workbench page, choose **Open simulated project** to explore six generated projects with distinct seeds and unequal batch populations. Switch conversations, figures and batches; inspect or export plotted values using the workbench controls. The simulation keeps its provenance visible, creates no analysis or approval records, and restores the disconnected page when closed.
-
-See the [operating guide](docs/workbench-ui.md) for initialization, input registration, execution permissions and recovery.
-
-## Verification
-
-The [current verification record](reports/workbench-integrated-simulation-20261029/README.md) records contract tests, workbench and packaging checks, actual browser rendering, interaction isolation and controlled synthetic numerical checks. Rendering tests preserve the retained-figure contract while admitting generated data through a separate simulation contract.
-
-These are bounded software checks. Full-suite hosted CI is not confirmed green, and these checks do not establish comparative biological validity or clinical readiness. [Release readiness](RELEASE_READINESS.md) records limitations.
-
-To run the software tests or the controlled synthetic check locally:
-
-```sh
-make -C /absolute/repository test
-make -C /absolute/repository controlled-demo
-```
-
-The controlled check needs R for its configured references. A missing reference is reported. The count reference shares fitted dispersions and offsets, so it does not independently validate their estimation.
-
-## Documentation
-
-- [Agentic workflow, harness and tool contracts](docs/agentic-workflow-and-harness.md)
-- [Projects, datasets and chats](docs/workbench-redesign/projects-and-source-sets.md)
-- [Scientific workspace](docs/shared-scientific-workspace.md)
-- [Local RNA analyst](docs/local-rna-analyst.md)
-- [Analysis episode support](docs/analysis-episodes.md)
-- [Method planning](docs/scientific-method-planner.md)
-- [Controlled execution](docs/controlled-execution.md)
-
-Research software. Clinical release remains held pending qualified independent validation and the required operational controls.
+Code is [MIT licensed](LICENSE). Dataset and reference terms are in [NOTICE.md](NOTICE.md).

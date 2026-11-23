@@ -1,11 +1,11 @@
 """Protected integration contracts; offline tests never qualify native controls."""
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import hashlib
 import json
 import os
 import sys
 import tempfile
-import threading
 import time
 from pathlib import Path
 
@@ -252,51 +252,32 @@ def test_current_absolute_campaign_deadline_blocks_actual_launch(workspace, monk
         backend.investigate(prepared[0]["request"],execution_authority=authority,reservation=reservations[0])
 
 
-def protected_fixture(workspace, monkeypatch, *, malformed=False, unattributed=False, invalid_preflight=False):
-    """Installed synthetic CLI exercises real process/capture, never native proof."""
-    from tests.test_rna_investigation_contract import result, packet, fixture
-    from tests.test_rna_investigation_budget import _policy
-    from devbench.analysis.methods import MethodService
-    from devbench.analysis.episode_codex import CodexActionSelector
-    from devbench.analysis.workflow_operations import WorkflowOperationLedger, model_reservation_ref
-    from devbench.analysis.rna_investigation_contract import build_investigation_packet
-    from devbench import staging
-    from devbench.study import execution
-    Backend, _, Authority = backend_api()
+def write_fake_cli(workspace, response_source, *, cached_input_tokens=80, login_release=None):
+    """Write the deterministic transport process for protected offline tests."""
     fake = workspace / "offline-codex"
-    template = result(packet(), transported=False)
-    if unattributed:
-        template["proposals"]["candidates"][0]["parameter_candidates"][0]["origin"]="user"
     fake.write_text(f'''#!{sys.executable}
-import ast,json,shlex,sys,tomllib,uuid
+import json,sys,time,tomllib,uuid
 from pathlib import Path
 from urllib.request import Request,urlopen
 args=sys.argv[1:]
 if args==['--version']:
- print('codex-cli 0.0.0');raise SystemExit(0)
+ print('codex-cli 0.160.0');raise SystemExit(0)
 if args[:2]==['login','status']:
+ release={str(login_release) if login_release is not None else None!r}
+ if release is not None:
+  deadline=time.monotonic()+10
+  while not Path(release).is_file() and time.monotonic()<deadline:time.sleep(.01)
+  if not Path(release).is_file():raise SystemExit(3)
  print('Logged in using ChatGPT (offline fixture)');raise SystemExit(0)
 if args and args[0]=='sandbox':
  print(json.dumps({{'private_read_denied':True,'protected_write_denied':True,'workspace_write_allowed':True}}));raise SystemExit(0)
 if not args or args[0]!='exec':raise SystemExit(2)
 prompt=sys.stdin.read();sid='offline-'+uuid.uuid4().hex
-events=[{{'type':'thread.started','thread_id':sid}},{{'type':'turn.started'}}]
-if 'unscored permission preflight' in prompt:
- invocation=prompt.splitlines()[-1];python,flag,script=shlex.split(invocation)
- config=ast.literal_eval(Path(script).read_text().splitlines()[0].removeprefix('CONFIG = '))
- checks={{name:True for name in ['private_read_denied','sibling_read_denied','protected_write_denied','workspace_write_allowed','unassigned_socket_denied','tcp_denied','isolated_python','child_environment_matches','tool_endpoint_absent']}}
- report={{'protocol':config['protocol'],'nonce':config['nonce'],'checks':checks,'errors':{{}}}}
- Path(config['workspace_canary']).write_bytes(b'probe-write')
- events.extend([{{'type':'item.started','item':{{'type':'command_execution','id':'probe','command':invocation,'status':'in_progress'}}}},{{'type':'item.completed','item':{{'type':'command_execution','id':'probe','command':invocation,'status':'completed','exit_code':0,'aggregated_output':json.dumps(report)}}}}])
- answer='Synthetic preflight text'
-else:
- body=prompt.split('Task context:\\n',1)[1]
- context=json.JSONDecoder().raw_decode(body)[0];p=context['packet'];answer={template!r}
- answer.update(investigation_id=p['investigation_id'],parent_session_id=p['parent_session_id'],packet_sha256=context['packet_sha256'],stage=p['stage'])
- answer['data_assessment']['evidence_refs']=p['evidence_refs'];answer['requirements_assessment']['evidence_refs']=p['evidence_refs']
- answer=json.dumps(answer)
+context=json.JSONDecoder().raw_decode(prompt.split('Task context:\\n',1)[1])[0]
+{response_source}
 Path(args[args.index('--output-last-message')+1]).write_text(answer)
-events.append({{'type':'turn.completed','model':'fixture-model','usage':{{'input_tokens':100,'output_tokens':30,'cached_input_tokens':80,'reasoning_tokens':20}}}})
+events=[{{'type':'thread.started','thread_id':sid}},{{'type':'turn.started'}}]
+events.append({{'type':'turn.completed','model':'fixture-model','usage':{{'input_tokens':100,'output_tokens':30,'cached_input_tokens':{cached_input_tokens!r},'reasoning_tokens':20}}}})
 for row in events:print(json.dumps(row),flush=True)
 configurations=[tomllib.loads(args[i+1]) for i,arg in enumerate(args) if arg=='-c' and args[i+1].startswith('otel=')]
 if configurations:
@@ -305,18 +286,46 @@ if configurations:
  packet={{'resourceLogs':[{{'scopeLogs':[{{'logRecords':[{{'attributes':[{{'key':key,'value':{{'stringValue':value}}}} for key,value in attrs.items()]}}]}}]}}]}}
  urlopen(Request(otel['endpoint'],data=json.dumps(packet).encode(),headers={{'Content-Type':'application/json',**otel['headers']}}),timeout=2).close()
 ''')
-    if malformed:
-        fake.write_text(fake.read_text().replace('answer=json.dumps(answer)', 'answer="{partial"'))
-    if invalid_preflight:
-        invalid_value={"too_many":"200","null":"None","float":"1.5"}.get(invalid_preflight,"200")
-        fake.write_text(fake.read_text().replace("'cached_input_tokens':80", "'cached_input_tokens':"+invalid_value+" if 'unscored permission preflight' in prompt else 80"))
     fake.chmod(0o700)
+    return fake
+
+
+def revoke_at_retained_probe(probes, release, revoke):
+    """Hold the fixture's login until current authority is revoked."""
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            for probe in probes():
+                if probe.is_file():
+                    output = probe.parent
+                    assert not (output / "selection-dispatch.json").exists()
+                    assert not (output / "model/cli-records.jsonl").exists()
+                    revoke()
+                    return output
+            time.sleep(.01)
+        pytest.fail("No local boundary probe was retained")
+    finally:
+        release.touch()
+
+
+def protected_fake_cli_backend(workspace, monkeypatch, response_source, *, cached_input_tokens=80,
+                               login_release=None, scientific=False):
+    """Use the real process, capture and ledger with a synthetic CLI executable."""
+    from devbench.analysis.methods import MethodService
+    from devbench.analysis.episode_codex import CodexActionSelector
+    from devbench.analysis.workflow_operations import LEDGER_NAME, WorkflowOperationLedger
+    from devharness_core.provenance import canonical_json
+    Backend, _, _ = backend_api()
+    fake = write_fake_cli(workspace, response_source, cached_input_tokens=cached_input_tokens,
+                          login_release=login_release)
     private = workspace / "private"
     methods = MethodService(private)
-    short_actors=tempfile.TemporaryDirectory(prefix=".i",dir=Path(__file__).resolve().parents[1])
+    scratch_root = Path(__file__).resolve().parents[1] / ".runs"
+    scratch_root.mkdir(mode=0o700, exist_ok=True)
+    short_actors = tempfile.TemporaryDirectory(prefix=".i", dir=scratch_root)
     selector = CodexActionSelector(requested_model="fixture-model", workspace_parent=Path(short_actors.name),
         private_root=private, executable=str(fake), memory_mb=256)
-    ledger = WorkflowOperationLedger(private / "workflow.sqlite")
+    ledger = WorkflowOperationLedger(private / LEDGER_NAME, scientific=scientific)
     backend = Backend(methods, selector, ledger=ledger)
     backend._fixture_workspace=short_actors
     source_capability = backend.capabilities
@@ -325,16 +334,34 @@ if configurations:
         value.update(scope="offline", qualification="qualified", capability_status="offline_qualified",
             usage_capture="verified_complete", verified_usage_capture=True,
             parallel_boundary_qualified=True, all_attributable_requests_accounted=True)
-        value["capability_digest"] = hashlib.sha256(__import__("devharness_core.provenance", fromlist=["canonical_json"]).canonical_json({key:item for key,item in value.items() if key!='capability_digest'})).hexdigest()
+        value["capability_digest"] = hashlib.sha256(canonical_json(
+            {key: item for key, item in value.items() if key != "capability_digest"})).hexdigest()
         return value
     monkeypatch.setattr(backend, "capabilities", offline_capability)
-    def stage(path, *, assisted):
-        assert assisted is False
-        (path / ".venv/bin").mkdir(parents=True)
-        (path / ".venv/bin/python").symlink_to(sys.executable)
-        return {"python": str(path / ".venv/bin/python"), "runtime_source_hashes": {}, "linked_dependency_entries": []}
-    monkeypatch.setattr(staging, "stage_python", stage)
-    monkeypatch.setattr(execution, "_runtime_roots", lambda *args: ())
+    return backend
+
+
+def protected_fixture(workspace, monkeypatch, *, malformed=False, unattributed=False,
+                      cached_input_tokens=80, login_release=None, parent=False):
+    from tests.test_rna_investigation_contract import result, packet, fixture
+    from tests.test_rna_investigation_budget import _policy
+    from devbench.analysis.workflow_operations import model_reservation_ref
+    from devbench.analysis.rna_investigation_contract import build_investigation_packet
+    _, _, Authority = backend_api()
+    template = result(packet(), transported=False)
+    if unattributed:
+        template["proposals"]["candidates"][0]["parameter_candidates"][0]["origin"]="user"
+    response_source = f"""p=context['packet'];answer={template!r}
+answer.update(investigation_id=p['investigation_id'],parent_session_id=p['parent_session_id'],packet_sha256=context['packet_sha256'],stage=p['stage'])
+answer['data_assessment']['evidence_refs']=p['evidence_refs'];answer['requirements_assessment']['evidence_refs']=p['evidence_refs']
+answer=json.dumps(answer)"""
+    if parent:
+        response_source = "answer=json.dumps({'candidates':[]})"
+    if malformed:
+        response_source = 'answer="{partial"'
+    backend = protected_fake_cli_backend(workspace, monkeypatch, response_source,
+        cached_input_tokens=cached_input_tokens, login_release=login_release)
+    ledger = backend.ledger
     policy = _policy("bounded_observed_tokens", soft_token_target=1000, max_context_bytes=128000, memory_mb=256)
     plan, evidence, packet_policy = fixture()
     campaign = ledger.open_campaign("offline-campaign", session_id=plan["session_id"], policy=policy,
@@ -353,7 +380,7 @@ if configurations:
     reservations=[]
     for number,item in enumerate(prepared,1):
         reservation=ledger.reserve_model_call("offline-campaign","child-"+str(number),0,item["binding"],
-            limits={"tokens":300,"calls":2,"seconds":15,"context_bytes":128000,"memory_mb":256},purpose="child_investigation",child_id=item["request"]["investigation_id"])
+            limits={"tokens":300,"calls":1,"seconds":15,"context_bytes":128000,"memory_mb":256},purpose="child_investigation",child_id=item["request"]["investigation_id"])
         reservations.append(ledger.activate_model_call(reservation))
     authority=Authority(check=lambda request:True,data_classification="synthetic",budget_policy="bounded_observed_tokens")
     return backend,prepared,reservations,authority
@@ -373,18 +400,19 @@ def test_installed_offline_cli_proves_private_packet_sessions_and_capture_bound_
     for item,reservation in zip(prepared,reservations):
         outcome=backend.investigate(item["request"],execution_authority=authority,reservation=reservation)
         if outcome["status"] != "completed":
-            path=backend._output(item["binding"]["invocation_id"]) / "exec-preflight/evidence.json"
-            errors=json.loads(path.read_text()).get("validation_errors") if path.is_file() else None
-            pytest.fail(str({"error":outcome["error"],"preflight_errors":errors}))
+            path=backend._output(item["binding"]["invocation_id"]) / "evidence.json"
+            evidence = json.loads(path.read_text()) if path.is_file() else {}
+            pytest.fail(str({"error":outcome["error"], "phase":evidence.get("phase_timing", {}).get("failure_phase")}))
         receipt=backend.verify_capture(outcome["capture_ref"],reservation)
         manifest=backend._document(outcome["capture_ref"],artifact_type="rna_investigation_capture")
         metadata=json.loads(backend._artifact(manifest["files"]["model/metadata.json"],artifact_type="file",max_bytes=4_000_000))
         assert metadata["execution_role"]=="rna_investigation_selector"
         assert metadata["tool_evidence_source"]=="no_scientific_execution_during_investigation"
-        assert receipt["actual_calls"] == 2
-        assert receipt["usage"]["normalized_total_tokens"] == 260
-        assert receipt["usage"]["cached_input_tokens"] == 160
-        assert receipt["usage"]["reasoning_tokens"] == 40
+        assert {"boundary-probe.json", "selection-dispatch.json", "model/cli-records.jsonl"} <= set(manifest["files"])
+        assert receipt["actual_calls"] == len(receipt["native_session_ids"]) == 1
+        assert receipt["usage"]["normalized_total_tokens"] == 130
+        assert receipt["usage"]["cached_input_tokens"] == 80
+        assert receipt["usage"]["reasoning_tokens"] == 20
         backend.ledger.settle_model_call(reservation,capture=outcome["capture_ref"],verify_capture=backend.verify_capture)
         result=backend.verify_child_result(item["request"]["packet_ref"],outcome["result_ref"])
         assert result["capture_ref"] == outcome["capture_ref"]
@@ -400,6 +428,17 @@ def test_installed_offline_cli_proves_private_packet_sessions_and_capture_bound_
         assert backend.reconcile_capture(item["invocation_ref"]) == outcome
     with pytest.raises(ValueError,match="different exact reservation"):
         backend.verify_capture(outcomes[0][0]["capture_ref"],reservations[1])
+    forged = backend._document(outcomes[0][0]["capture_ref"], artifact_type="rna_investigation_capture")
+    probe = backend._document(forged["files"]["boundary-probe.json"], artifact_type="file", max_bytes=4_000_000)
+    probe["checks"]["private_read_denied"] = False
+    forged_probe = workspace / "changed-probe.json"
+    forged_probe.write_text(json.dumps(probe))
+    artifact = backend.methods.import_artifact(forged_probe, artifact_type="file", actor="offline_fixture")
+    forged["files"]["boundary-probe.json"] = {key: artifact[key]
+                                            for key in ("artifact_id", "sha256", "artifact_type", "size_bytes")}
+    forged_ref = backend._retain(forged, "rna_investigation_capture")
+    with pytest.raises(ValueError, match="local permission probe"):
+        backend.verify_capture(forged_ref, reservations[0])
     first=prepared[0]
     marker=backend._output(first["binding"]["invocation_id"]) / "completion.json"
     marker.unlink()
@@ -420,7 +459,7 @@ def test_malformed_response_preserves_actual_failed_capture_usage_and_raw_bytes(
     assert outcome["capture_ref"] is not None and outcome["usage_ref"] is not None
     assert outcome["result_ref"] is None
     receipt=backend.verify_capture(outcome["capture_ref"],reservations[0])
-    assert receipt["status"]=="failed" and receipt["usage"]["normalized_total_tokens"]==260
+    assert receipt["status"]=="failed" and receipt["usage"]["normalized_total_tokens"]==130
     manifest=backend._document(outcome["capture_ref"],artifact_type="rna_investigation_capture")
     assert backend._artifact(manifest["files"]["model/answer.json"])==b"{partial"
     backend.ledger.settle_model_call(reservations[0],capture=outcome["capture_ref"],verify_capture=backend.verify_capture)
@@ -436,25 +475,17 @@ def test_invalid_scientific_proposal_retains_known_transport_capture_and_usage(w
     assert outcome["capture_ref"] is not None and outcome["usage_ref"] is not None
     assert outcome["result_ref"] is None and outcome["error"] is not None
     receipt=backend.verify_capture(outcome["capture_ref"],reservations[0])
-    assert receipt["usage"]["normalized_total_tokens"]==260
+    assert receipt["usage"]["normalized_total_tokens"]==130
     assert backend._capture_action(outcome["capture_ref"])["proposals"]["candidates"][0]["parameter_candidates"][0]["origin"]=="user"
 
 
 @pytest.mark.skipif(os.environ.get("DEVBENCH_RUN_LOCAL_FIXTURES") != "1", reason="Local capture fixture requires opt-in")
-@pytest.mark.parametrize("invalid_kind",["too_many","null","float"])
-def test_unknown_preflight_usage_stops_action_and_retains_positive_primary_floor(workspace, monkeypatch, invalid_kind):
-    backend,prepared,reservations,authority=protected_fixture(workspace,monkeypatch,invalid_preflight=invalid_kind)
+@pytest.mark.parametrize("invalid_cached_tokens", [200, None, 1.5])
+def test_unknown_action_usage_blocks_acceptance_and_retains_positive_primary_floor(workspace, monkeypatch, invalid_cached_tokens):
+    backend,prepared,reservations,authority=protected_fixture(workspace,monkeypatch,cached_input_tokens=invalid_cached_tokens)
     outcome=backend.investigate(prepared[0]["request"],execution_authority=authority,reservation=reservations[0])
-    if outcome["capture_ref"] is None:
-        errors=[]
-        with backend.methods._db() as database:
-            rows=database.execute("SELECT payload FROM records WHERE kind='artifact' AND json_extract(payload,'$.artifact_type')='rna_investigation_capture' LIMIT 2").fetchall()
-        for row in rows:
-            record=json.loads(row[0]);ref={key:record[key] for key in ("artifact_id","sha256","artifact_type","size_bytes")}
-            try:backend.verify_capture(ref,reservations[0])
-            except Exception as error:errors.append(type(error).__name__+': '+str(error)[:500])
-        pytest.fail(str({"provider_error":outcome["error"],"capture_errors":errors}))
     assert outcome["status"]=="incomplete" and outcome["capture_ref"] is not None, outcome["error"]
+    assert outcome["result_ref"] is None
     receipt=backend.verify_capture(outcome["capture_ref"],reservations[0])
     assert receipt["actual_calls"]==1 and len(receipt["native_session_ids"])==1
     assert receipt["usage"]["normalized_total_tokens"] is None
@@ -466,51 +497,36 @@ def test_unknown_preflight_usage_stops_action_and_retains_positive_primary_floor
 
 @pytest.mark.skipif(os.environ.get("DEVBENCH_RUN_LOCAL_FIXTURES") != "1", reason="Local capture fixture requires opt-in")
 @pytest.mark.parametrize("transition",["uncertain","cancelled"])
-def test_shared_admission_revocation_during_preflight_prevents_action(workspace,monkeypatch,transition):
-    backend,prepared,reservations,authority=protected_fixture(workspace,monkeypatch)
+def test_shared_admission_revocation_after_local_probe_prevents_action(workspace,monkeypatch,transition):
+    release = workspace / "resume-login"
+    backend,prepared,reservations,authority=protected_fixture(workspace,monkeypatch,login_release=release)
     output=backend._output(prepared[0]["binding"]["invocation_id"])
-    observed={}
     def revoke():
-        end=time.monotonic()+10
-        checkpoint=output/"exec-preflight/dispatch_checkpoint.json"
-        while time.monotonic()<end and not checkpoint.is_file():time.sleep(.001)
-        observed["preflight_seen"]=checkpoint.is_file()
-        observed["action_before_revocation"]=(output/"selection-dispatch.json").exists()
         if transition=="uncertain":
             backend.ledger.mark_model_call_uncertain(reservations[1],error_type="FixtureUnknownSiblingSpend")
         else:
             backend.ledger.cancel_campaign(reservations[0].campaign_id)
-        observed["remaining"]=backend.ledger.model_call_remaining(reservations[0])
-    worker=threading.Thread(target=revoke)
-    worker.start()
-    outcome=backend.investigate(prepared[0]["request"],execution_authority=authority,reservation=reservations[0])
-    worker.join(timeout=12)
-    assert not worker.is_alive() and observed["preflight_seen"] and not observed["action_before_revocation"]
-    assert observed["remaining"]==0
+        assert backend.ledger.model_call_remaining(reservations[0])==0
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        revoked = executor.submit(revoke_at_retained_probe, lambda: (output / "boundary-probe.json",),
+                                  release, revoke)
+        outcome=backend.investigate(prepared[0]["request"],execution_authority=authority,reservation=reservations[0])
+        assert revoked.result() == output
     assert not (output/"selection-dispatch.json").exists()
+    assert not (output/"model/cli-records.jsonl").exists()
     assert outcome["status"]=="incomplete" and outcome["capture_ref"] is not None, outcome["error"]
     receipt=backend.verify_capture(outcome["capture_ref"],reservations[0])
-    assert receipt["actual_calls"]==1 and len(receipt["native_session_ids"])==1
-    assert receipt["usage"]["normalized_total_tokens"]==130
+    assert receipt["actual_calls"]==0 and receipt["native_session_ids"]==[]
+    assert receipt["usage"]["normalized_total_tokens"]==0
     assert "ledger_path" not in json.dumps(backend.read_packet(prepared[0]["request"]["packet_ref"]))
 
 
-def protected_parent_fixture(workspace,monkeypatch,invalid_phase=None,invalid_value=None):
+def protected_parent_fixture(workspace,monkeypatch,*,cached_input_tokens=80):
     from devbench.analysis.method_planner import ScientificMethodPlanner
     from devbench.analysis.methods import _digest
     from tests.test_rna_investigation_budget import _policy
-    backend,_,_,_=protected_fixture(workspace,monkeypatch)
+    backend,_,_,_=protected_fixture(workspace,monkeypatch,parent=True,cached_input_tokens=cached_input_tokens)
     backend.ledger.cancel_campaign("offline-campaign")
-    executable=Path(backend.selector.executable)
-    script=executable.read_text()
-    start=script.index("else:\n body=prompt.split")
-    end=script.index("\nPath(args[args.index('--output-last-message')",start)
-    script=script[:start]+"else:\n answer=json.dumps({'candidates':[]})"+script[end:]
-    if invalid_phase is not None:
-        expression=repr(invalid_value)+( " if 'unscored permission preflight' in prompt else 80"
-            if invalid_phase=="preflight" else " if 'unscored permission preflight' not in prompt else 80")
-        script=script.replace("'cached_input_tokens':80","'cached_input_tokens':"+expression)
-    executable.write_text(script)
     planner=ScientificMethodPlanner(backend.methods)
     state=planner.create({"scientific_objective":"Verify metered parent transport accounting",
         "computational_task":"Offline software capture qualification"},
@@ -518,7 +534,7 @@ def protected_parent_fixture(workspace,monkeypatch,invalid_phase=None,invalid_va
         data_classification="synthetic",evaluation_purpose="execution_verification")
     session=state["session_id"]
     capability=backend.capabilities()
-    allocation={"tokens":300,"calls":2,"seconds":15,"context_bytes":128000,"memory_mb":256}
+    allocation={"tokens":300,"calls":1,"seconds":15,"context_bytes":128000,"memory_mb":256}
     backend.ledger.open_campaign(session,session_id=session,
         policy=_policy("bounded_observed_tokens",soft_token_target=1000,max_context_bytes=128000,memory_mb=256),
         capability=capability,identity={"expected_plan_hash":_digest(state),
@@ -529,9 +545,9 @@ def protected_parent_fixture(workspace,monkeypatch,invalid_phase=None,invalid_va
 
 
 @pytest.mark.skipif(os.environ.get("DEVBENCH_RUN_LOCAL_FIXTURES") != "1", reason="Local capture fixture requires opt-in")
-@pytest.mark.parametrize("phase,invalid",[("preflight",None),("preflight",200),("action",1.5)])
-def test_attached_parent_invalid_usage_stays_unknown_and_cannot_accept_science(workspace,monkeypatch,phase,invalid):
-    backend,planner,session=protected_parent_fixture(workspace,monkeypatch,phase,invalid)
+@pytest.mark.parametrize("invalid",[None,200,1.5])
+def test_attached_parent_invalid_usage_stays_unknown_and_cannot_accept_science(workspace,monkeypatch,invalid):
+    backend,planner,session=protected_parent_fixture(workspace,monkeypatch,cached_input_tokens=invalid)
     with pytest.raises(Exception):
         planner.generate_candidates(session,backend.selector,actor="offline-fixture",allow_model_execution=True)
     state=planner.get(session)
@@ -542,10 +558,12 @@ def test_attached_parent_invalid_usage_stays_unknown_and_cannot_accept_science(w
     assert reservation["status"]=="uncertain"
     receipt=backend.verify_capture(selection["model_capture_ref"])
     assert receipt["usage"]["normalized_total_tokens"] is None
-    assert receipt["actual_calls"]==(1 if phase=="preflight" else 2)
-    assert receipt["usage"]["native_usage"]["observed_token_lower_bound"]==(130 if phase=="preflight" else 260)
+    assert receipt["actual_calls"]==1
+    assert receipt["usage"]["native_usage"]["observed_token_lower_bound"]==130
     directory=Path(selection["output"])
-    assert (directory/"selection-dispatch.json").exists()==(phase=="action")
+    assert (directory/"boundary-probe.json").is_file()
+    assert (directory/"selection-dispatch.json").is_file()
+    assert (directory/"model/cli-records.jsonl").is_file()
 
 
 @pytest.mark.skipif(os.environ.get("DEVBENCH_RUN_LOCAL_FIXTURES") != "1", reason="Local capture fixture requires opt-in")
@@ -555,5 +573,5 @@ def test_attached_parent_valid_usage_preserves_positive_transport_baseline(works
     selection=planner.get(session)["selection_history"][-1]
     assert selection["status"]=="accepted"
     receipt=backend.verify_capture(selection["model_capture_ref"])
-    assert receipt["actual_calls"]==2 and receipt["usage"]["normalized_total_tokens"]==260
+    assert receipt["actual_calls"]==1 and receipt["usage"]["normalized_total_tokens"]==130
     assert backend.ledger.get_model_reservation(selection["model_reservation_ref"])["status"]=="completed"

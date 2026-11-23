@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 import pytest
 
@@ -52,6 +54,7 @@ def test_stored_confidence_distribution_is_reported_without_a_new_annotation():
 
 def test_real_small_concordance_runs_both_embeddings_without_fitting_to_old_labels(tmp_path):
     pytest.importorskip("scanpy")
+    pytest.importorskip("harmonypy")
     from tests.test_analysis_singlecell import counts_fixture
     from devbench.analysis.concordance import run_concordance
     data = counts_fixture()
@@ -69,3 +72,30 @@ def test_real_small_concordance_runs_both_embeddings_without_fitting_to_old_labe
         assert result["clustering"]["ARI"] is not None
         assert result["annotation"]["label_agreement"] is None
     assert report["conditions"]["harmony"]["method"]["batch_correction"]["status"] == "completed"
+
+
+def test_concordance_records_missing_optional_package_in_configuration(tmp_path, monkeypatch):
+    from importlib import metadata
+    from devbench.analysis import concordance, io
+
+    def version(package):
+        if package == "harmonypy":
+            raise metadata.PackageNotFoundError(package)
+        return "1.0"
+
+    class ReadReached(Exception):
+        pass
+
+    def stop_before_read(*args, **kwargs):
+        raise ReadReached
+
+    monkeypatch.setattr(metadata, "version", version)
+    monkeypatch.setattr(io, "open_h5ad", stop_before_read)
+    source = tmp_path / "unused.h5ad"
+    source.write_bytes(b"synthetic")
+    output = tmp_path / "comparison"
+    with pytest.raises(ReadReached):
+        concordance.run_concordance(source, output)
+    config = json.loads((output / "configuration.json").read_text())
+    assert config["runtime_versions"]["harmonypy"] is None
+    assert config["runtime_versions"]["numpy"] == "1.0"

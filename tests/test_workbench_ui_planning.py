@@ -1,9 +1,6 @@
 """M1 uses the real planner boundary and small inputs; no provider is called."""
 import inspect
 import json
-import os
-from pathlib import Path
-import tempfile
 import time
 
 import pytest
@@ -11,7 +8,6 @@ import pytest
 from devbench.analysis.checkpoints import digest, sha256
 from devbench.analysis.episode_agent import Selection
 
-BASE = Path(__file__).resolve().parents[1] / 'reports/rna-agent-readiness/2026-09-24-m1.i_ibb4sy'
 DECISION = {'kind':'propose', 'workflow':'scrna_qc_integration_annotation/1',
             'rationale':'Inspect the supplied fixed QC and annotation workflow.'}
 
@@ -33,17 +29,16 @@ class RecordedSelector:
 
 
 @pytest.fixture
-def root():
-    BASE.mkdir(parents=True,exist_ok=True)
-    # Keep execution and failure artifacts for the milestone's completion audit.
-    yield Path(tempfile.mkdtemp(prefix='planning-',dir=BASE))
+def root(workspace_tmp_path):
+    return workspace_tmp_path
 
 
 def setup(root, selector=None, **options):
     from devbench.analysis.workbench_ui import WorkbenchService
     assert 'proposal_selector' in inspect.signature(WorkbenchService).parameters, 'UI is not connected to the proposal selector'
     from tests.test_workbench_proposals import fixture
-    inputs=root/'inputs';inputs.mkdir()
+    inputs=root/'inputs'
+    inputs.mkdir()
     source, parameters, declarations=fixture(inputs)
     # Derived integration provenance is not an operator parameter override.
     excluded={'workflow','prompt','execution_tier','data_sha256','parent_root','model_path','model_sha256','integration_decision'}
@@ -59,7 +54,8 @@ def wait(app, job, *, timeout_seconds=60):
     deadline=time.monotonic()+timeout_seconds
     while time.monotonic()<deadline:
         record=app.status(job)
-        if record['status'] not in ACTIVE:return record
+        if record['status'] not in ACTIVE:
+            return record
         time.sleep(.02)
     pytest.fail('bounded planner fixture did not finish')
 
@@ -77,7 +73,8 @@ def test_recorded_selector_configuration_is_not_live_model_access(root):
         assert config['proposal_selection']['mode']=='recorded_fixture'
         assert config['proposal_selection']['available'] is True
         assert config['model_access'] is False
-    finally:app.close()
+    finally:
+        app.close()
 
 
 def test_default_service_cannot_launch_an_agent(root):
@@ -86,7 +83,8 @@ def test_default_service_cannot_launch_an_agent(root):
         with pytest.raises(PermissionError,match='proposal|selector|Agent'):
             app.register(request)
         assert app.jobs()==[]
-    finally:app.close()
+    finally:
+        app.close()
 
 
 def test_codex_is_wired_but_disabled_before_inspection(root,monkeypatch):
@@ -97,15 +95,19 @@ def test_codex_is_wired_but_disabled_before_inspection(root,monkeypatch):
         assert isinstance(app.proposal_selector,CodexActionSelector)
         assert app.configuration()['proposal_selection']['mode']=='codex'
         assert app.configuration()['proposal_selection']['available'] is False
-        with pytest.raises(PermissionError):app.register(request)
+        with pytest.raises(PermissionError):
+            app.register(request)
         assert app.jobs()==[]
-    finally:app.close()
+    finally:
+        app.close()
 
 
 def test_real_planner_proposal_reaches_operator_review_with_bound_origin(root):
-    selector=RecordedSelector();app,request=setup(root,selector)
+    selector=RecordedSelector()
+    app,request=setup(root,selector)
     try:
-        job=app.register(request)['id'];record=wait(app,job)
+        job=app.register(request)['id']
+        record=wait(app,job)
         assert record['status']=='awaiting_operator_review',record
         assert record['plan_author']=='recorded_fixture'
         assert record['planning_result']['status']=='proposal_ready_for_review'
@@ -115,7 +117,26 @@ def test_real_planner_proposal_reaches_operator_review_with_bound_origin(root):
         assert str(root) not in json.dumps(selector.calls[0])
         app.review(job,approval())
         assert wait(app,job)['status']=='approved'
-    finally:app.close()
+    finally:
+        app.close()
+
+
+def test_public_planning_status_keeps_metadata_and_withholds_retained_selector_bytes(tmp_path):
+    from types import SimpleNamespace
+
+    from devbench.platform.workbench_ui import _publication_status
+
+    root_hash = "a" * 64
+    record = {"status": "awaiting_information", "planning_result": {
+        "status": "awaiting_information",
+        "decision": {"kind": "request_information", "message": "restricted selector message"},
+        "authoring_receipt": {"root_hash": root_hash, "manifest_path": "/private/retained"},
+        "context": {"batch": "private-batch"}}}
+    result = _publication_status(SimpleNamespace(workspace=tmp_path), record)
+    assert result["planning_result"] == {
+        "status": "awaiting_information", "decision": {"kind": "request_information"},
+        "authoring_receipt": {"root_hash": root_hash}}
+    assert record["planning_result"]["context"] == {"batch": "private-batch"}
 
 
 @pytest.mark.parametrize('decision,status',[
@@ -123,22 +144,27 @@ def test_real_planner_proposal_reaches_operator_review_with_bound_origin(root):
     ({'kind':'refuse','reason':'The requested causal comparison is unsupported.'},'refusal'),
 ])
 def test_nonproposals_and_duplicate_requests_remain_terminal(root,decision,status):
-    selector=RecordedSelector(decision);app,request=setup(root,selector)
+    selector=RecordedSelector(decision)
+    app,request=setup(root,selector)
     if decision['kind']=='request_information':
         request['declarations']['capture_units_confirmed']=False
     else:
         request['declarations']['assay']='snrna'
         request['question']='Use this workflow for nuclei despite its declared scRNA-only support'
     try:
-        job=app.register(request)['id'];record=wait(app,job)
+        job=app.register(request)['id']
+        record=wait(app,job)
         assert record['status']==status and not record.get('proposal_receipt'),record
         again=app.register(request)
         assert again['id']==job and again['cached'] is True
         assert len(selector.calls)==1
         assert selector.calls[0]['allowed_workflows']==[]
-        with pytest.raises(RuntimeError):app.review(job,approval())
-        with pytest.raises((RuntimeError,PermissionError)):app.run(job)
-    finally:app.close()
+        with pytest.raises(RuntimeError):
+            app.review(job,approval())
+        with pytest.raises((RuntimeError,PermissionError)):
+            app.run(job)
+    finally:
+        app.close()
 
 
 def test_actor_cannot_expand_settings_or_claim_a_different_workflow(root):
@@ -147,37 +173,44 @@ def test_actor_cannot_expand_settings_or_claim_a_different_workflow(root):
     try:
         record=wait(app,app.register(request)['id'])
         assert record['status']=='invalid_proposal' and not record.get('proposal_receipt'),record
-    finally:app.close()
+    finally:
+        app.close()
 
 
 def test_changed_request_gets_new_identity_and_no_approval(root):
     app,request=setup(root,RecordedSelector())
     try:
-        first=app.register(request)['id'];assert wait(app,first)['status']=='awaiting_operator_review'
-        app.review(first,approval());assert wait(app,first)['status']=='approved'
+        first=app.register(request)['id']
+        assert wait(app,first)['status']=='awaiting_operator_review'
+        app.review(first,approval())
+        assert wait(app,first)['status']=='approved'
         second=app.register({**request,'question':'Inspect a different descriptive question'})['id']
         assert second!=first
         assert wait(app,second)['status']=='awaiting_operator_review'
         assert 'review_receipt' not in app.status(second)
-    finally:app.close()
+    finally:
+        app.close()
 
 
 def test_tampered_agent_authoring_cannot_be_approved(root):
     app,request=setup(root,RecordedSelector())
     try:
-        job=app.register(request)['id'];assert wait(app,job)['status']=='awaiting_operator_review'
+        job=app.register(request)['id']
+        assert wait(app,job)['status']=='awaiting_operator_review'
         context=app.workspace/'jobs'/job/'planning/context.json'
         context.write_bytes(context.read_bytes()+b'\n')
         app.review(job,approval())
         record=wait(app,job)
         assert record['status']=='operation_failed' and 'review_receipt' not in record
-    finally:app.close()
+    finally:
+        app.close()
 
 
 def test_stopped_request_is_reused_after_service_restart(root):
     selector=RecordedSelector({'kind':'refuse','reason':'Unsupported estimand'})
     app,request=setup(root,selector)
-    job=app.register(request)['id'];assert wait(app,job)['status']=='refusal'
+    job=app.register(request)['id']
+    assert wait(app,job)['status']=='refusal'
     parameters={key:value for key,value in app.parameters.items() if key not in
         {'workflow','prompt','execution_tier','data_sha256','parent_root','model_path','model_sha256','integration_decision'}}
     app.close()
@@ -187,25 +220,31 @@ def test_stopped_request_is_reused_after_service_restart(root):
     try:
         assert reopened.register(request)=={'id':job,'status':'refusal','cached':True}
         assert len(selector.calls)==1
-    finally:reopened.close()
+    finally:
+        reopened.close()
 
 
 def test_cached_request_is_not_reused_after_source_drift(root,monkeypatch):
     from devbench.analysis import workbench_proposals
     app,request=setup(root,RecordedSelector({'kind':'refuse','reason':'Unsupported question'}))
     try:
-        job=app.register(request)['id'];assert wait(app,job)['status']=='refusal'
+        job=app.register(request)['id']
+        assert wait(app,job)['status']=='refusal'
         monkeypatch.setattr(workbench_proposals,'_source_identity',lambda:'f'*64)
         with pytest.raises(RuntimeError,match='runtime|source|restart'):
             app.register(request)
         assert app.status(job)['status']=='refusal'
-    finally:app.close()
+    finally:
+        app.close()
 
 
 def test_mutated_selector_cannot_reuse_a_frozen_service_configuration(root):
-    selector=RecordedSelector();app,request=setup(root,selector)
+    selector=RecordedSelector()
+    app,request=setup(root,selector)
     try:
         selector.decision={'kind':'refuse','reason':'Changed after service construction'}
-        with pytest.raises(ValueError,match='configuration changed'):app.register(request)
+        with pytest.raises(ValueError,match='configuration changed'):
+            app.register(request)
         assert app.jobs()==[]
-    finally:app.close()
+    finally:
+        app.close()

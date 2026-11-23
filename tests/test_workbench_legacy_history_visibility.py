@@ -10,7 +10,7 @@ def test_history_is_an_open_section_and_empty_history_stays_out_of_the_way():
     assert re.search(r'<section\b[^>]*id="legacy-history"[^>]*aria-labelledby="legacy-history-title"', page)
     assert not re.search(r'<details\b[^>]*id="legacy-history"', page)
     run_script(r"""
-await elements.connect.onclick();
+await startWorkspace();
 assert.equal(elements['legacy-history'].hidden,true);
 assert.equal(elements.jobs.children.length,0);
 assert.equal(posts().length,0);
@@ -27,7 +27,7 @@ server.jobs=[
  {id:'fixture-job',question:'Oldest retained question',status:'operation_failed',updated_at:'2026-10-28T11:00:00Z'}
 ];
 server.state.question='Oldest retained question';server.state.status='operation_failed';
-await elements.connect.onclick();
+await startWorkspace();
 assert.equal(elements['legacy-history'].hidden,false);
 assert.equal(elements['legacy-history-title'].textContent,'Analysis history · 5');
 assert.equal(elements.jobs.children.length,5);

@@ -4,14 +4,13 @@ import hashlib
 import importlib.util
 import io
 import json
-from pathlib import Path
 import stat
 import subprocess
 import sys
 import zipfile
+from pathlib import Path
 
 import pytest
-
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -205,6 +204,21 @@ def test_bundle_is_deterministic_allowlisted_and_extracts_safely(tmp_path):
     destination = builder.extract_source_bundle(first["base64"], tmp_path / "extracted", first["sha256"])
     assert (destination / "scripts/colab_run.py").is_file()
     assert builder.extract_source_bundle(first["base64"], destination, first["sha256"]) == destination
+
+
+def test_source_build_and_extraction_enforce_the_same_file_limit(tmp_path, monkeypatch):
+    builder = load_script("build_colab_notebook")
+    source = tmp_path / "source"
+    fake_project(source)
+    bundle = builder.build_source_bundle(source)
+    destination = tmp_path / "extract"
+    monkeypatch.setattr(builder, "SOURCE_BUNDLE_MAX_FILES", len(bundle["files"]) - 1)
+
+    with pytest.raises(ValueError, match="file-count limit"):
+        builder.build_source_bundle(source)
+    with pytest.raises(ValueError, match="file count"):
+        builder.extract_source_bundle(bundle["base64"], destination, bundle["sha256"])
+    assert not destination.exists()
 
 
 @pytest.mark.parametrize("name", ["../escape.py", "/escape.py", "devharness/../../escape.py", "devharness\\escape.py", ".env"])

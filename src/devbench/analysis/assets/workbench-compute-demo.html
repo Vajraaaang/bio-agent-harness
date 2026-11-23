@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Compute Lab · RNA Workbench</title>
+  <link rel="stylesheet" href="/demo.css">
+  <script src="/demo.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="brand"><span class="mark" aria-hidden="true">∷</span> RNA Workbench</div>
+    <span class="offline">Offline simulation</span>
+  </header>
+
+  <main>
+    <div class="intro">
+      <p class="eyebrow">Synthetic project / QC-01</p>
+      <h1>Compute lab</h1>
+      <p>Choose where to run a two-cell quality check, then review the inputs and compute limits.</p>
+    </div>
+
+    <nav class="views" aria-label="Demo views">
+      <button type="button" data-view="methods" aria-current="page">Methods</button>
+      <button type="button" data-view="settings">Settings <span aria-hidden="true">/</span> Compute</button>
+    </nav>
+
+    <p id="app-error" role="alert" hidden></p>
+    <section id="methods" aria-labelledby="method-title" class="sheet">
+      <div class="primary">
+        <p class="eyebrow">01 / Method</p>
+        <h2 id="method-title">Sparse matrix QC</h2>
+        <p class="muted">Summarize read counts from a fixed synthetic input.</p>
+        <fieldset>
+          <legend>Run on</legend>
+          <label class="choice">
+            <input type="radio" name="backend" value="local_supervised" checked>
+            <span><strong>This Mac</strong><small>Local supervised simulation</small></span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="backend" value="colab">
+            <span><strong>Google Colab</strong><small>Simulated account and preflight</small></span>
+          </label>
+        </fieldset>
+        <div id="inline-connect" class="inline">
+          <span>Connect a simulated account to review Colab.</span>
+          <button type="button" data-action="connect" class="secondary">Connect Google Colab</button>
+        </div>
+        <div id="result" class="notice result" role="status" hidden></div>
+      </div>
+      <aside class="review-card">
+        <p class="eyebrow">02 / Preparation</p>
+        <h2>Run setup</h2>
+        <label for="fixture">Synthetic input</label>
+        <select id="fixture">
+          <option value="standard">Two-cell counts</option>
+          <option value="oversized_file">Over per-file limit</option>
+          <option value="oversized_total">Over total transfer limit</option>
+        </select>
+        <dl>
+          <div><dt>Backend</dt><dd id="backend-summary">This Mac</dd></div>
+          <div><dt>Selected input</dt><dd id="input-summary">—</dd></div>
+        </dl>
+        <button type="button" id="open-review">Review run</button>
+      </aside>
+    </section>
+
+    <section id="settings" aria-labelledby="compute-title" class="sheet" hidden>
+      <div class="primary">
+        <p class="eyebrow">Settings / Compute</p>
+        <h2 id="compute-title">Google Colab</h2>
+        <p class="muted">The demo helper supplies a synthetic account and usage readings.</p>
+        <dl class="account">
+          <div><dt>Connection</dt><dd id="connection-state" role="status">Disconnected</dd></div>
+          <div><dt>Verified email</dt><dd id="account-label">Unavailable</dd></div>
+          <div><dt>Account ID</dt><dd id="account-id">Unavailable</dd></div>
+          <div><dt>Connection generation</dt><dd id="generation">0</dd></div>
+        </dl>
+        <div class="actions">
+          <button type="button" id="connect" data-action="connect">Connect Google Colab</button>
+          <button type="button" id="disconnect" data-action="disconnect" class="secondary" hidden>Disconnect</button>
+          <button type="button" id="reconnect" data-action="reconnect" class="secondary" hidden>Reconnect</button>
+        </div>
+      </div>
+      <aside class="review-card">
+        <p class="eyebrow">Account usage</p>
+        <h2>Colab compute limits</h2>
+        <dl>
+          <div><dt>Remaining compute units</dt><dd id="remaining">Unavailable</dd></div>
+          <div><dt>Aggregate CU/hour</dt><dd id="rate">Unavailable</dd></div>
+          <div><dt>Active runtimes</dt><dd id="runtimes">Unavailable</dd></div>
+        </dl>
+        <p id="usage-freshness" role="status" class="freshness">Usage unavailable</p>
+        <button type="button" id="refresh" data-action="refresh" class="secondary" disabled>Refresh</button>
+      </aside>
+    </section>
+  </main>
+
+  <dialog id="run-review" aria-labelledby="review-title">
+    <div class="modal-head">
+      <div><p class="eyebrow">03 / Approval</p><h2 id="review-title">Review run</h2></div>
+      <form method="dialog"><button type="submit" class="secondary">Close</button></form>
+    </div>
+    <div class="modal-body">
+      <p id="review-backend" class="backend-pill"></p>
+      <div id="remote-review" hidden>
+        <h3>Colab compute limits</h3>
+        <dl>
+          <div><dt>Google account</dt><dd id="review-account">Unavailable</dd></div>
+          <div><dt>Connection generation</dt><dd id="review-generation">0</dd></div>
+          <div><dt>Account usage</dt><dd id="review-usage">Unavailable</dd></div>
+          <div><dt>Requested profile</dt><dd id="profile"></dd></div>
+        </dl>
+        <p class="notice"><strong>Provider deadline required</strong><br>
+          A live Colab run needs a qualified provider-side deadline lease.
+          <code>HARD_RUNTIME_DEADLINE_UNAVAILABLE</code>
+        </p>
+      </div>
+      <h3>Selected inputs</h3>
+      <ul id="file-list"></ul>
+      <p id="transfer-summary"></p>
+      <p id="transfer-warning" class="notice" hidden></p>
+      <p id="blocked" aria-live="polite" class="muted"></p>
+      <p id="run-feedback" role="status" hidden></p>
+    </div>
+    <div class="actions modal-actions">
+      <button type="button" data-action="run" id="approve" disabled>Approve and run</button>
+      <button type="button" data-action="run" id="test-guard" class="secondary" hidden>Test Colab preflight</button>
+    </div>
+  </dialog>
+
+  <footer>Synthetic inputs · local demo helper</footer>
+</body>
+</html>

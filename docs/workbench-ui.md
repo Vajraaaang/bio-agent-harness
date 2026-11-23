@@ -134,7 +134,9 @@ Run from the repository checkout using its analysis environment:
 
 Use canonical absolute paths. Input roots must exist, and the dedicated workspace must be disjoint from them and outside platform scratch. A fresh empty directory is accepted; an existing service workspace must retain the same roots and frozen settings. An OS-backed exclusive workspace lock prevents a second process from reopening it while the service is alive. The lock stays held until the worker executor finishes shutdown; it does not infer ownership from a PID file. This local adapter requires POSIX `flock` support. Additional input roots can be supplied by repeating `--input-root`. Original H5AD inputs remain external and are never uploaded or copied into this workspace. The native pipeline can produce its existing bounded derived H5AD checkpoints.
 
-The process prints a loopback URL with a random session token in its fragment. Open that new application URL; its page consumes and removes the fragment. A token can also be pasted into the page. The token stays in page memory and is sent in a request header, not request URLs. Restarting changes the token. The service only binds `127.0.0.1`; it is not a remote or multi-user deployment.
+The process prints the loopback URL, typically `http://127.0.0.1:8765/`. Open it to load the local workspace directly. The service binds only to `127.0.0.1`. Software running on this machine can read the data the service exposes.
+
+Add `--open-browser` to open the same URL in the system browser after the listener binds. Browser opening runs separately from the service loop and has a ten-second native-launch timeout. macOS uses `/usr/bin/open`, and Linux resolves the system `xdg-open`. If opening fails, use the displayed loopback URL.
 
 ## Proposal selection
 
@@ -178,8 +180,51 @@ The native `devbench-analyze --verify-bundle`, `--import-bundle` and `--replay-b
 
 ## Local security and evidence boundary
 
-Mutation and data-read APIs require the session token and an exact loopback Host. Supplied Origins must match; mutations require the matching Origin. Cross-site requests, ambiguous/oversized/nonfinite JSON, unsupported routes, traversal, symlink paths, client-controlled output paths, and input files outside configured roots are refused. The generic page contains no session token or private records. Downloads use an explicit artifact allowlist after native receipt verification. HTML/SVG artifacts are downloaded rather than executed within the application.
+Mutation and data-read APIs require the exact loopback Host. Supplied Origins must match; mutations require the matching Origin. Cross-site requests, ambiguous/oversized/nonfinite JSON, unsupported routes, traversal, symlink paths, client-controlled output paths, and input files outside configured roots are refused. The generic page contains no private records. Downloads use an explicit artifact allowlist after native receipt verification. HTML/SVG artifacts are downloaded rather than executed within the application.
 
 The dedicated workspace uses private directory permissions. Its service state is an operational index; native proposal, review and execution receipts remain the evidence records. Local hashes are tamper-evident against a separately retained root, not an authenticated signature or protection against a host owner replacing the whole workspace. The registered H5AD remains externally writable; the native workflow rechecks its identity at the existing defined boundaries.
 
 Relevant checks are in `tests/test_workbench_ui.py`. Source-capturing numerical tests must run against a stable shared source tree because existing source identities include the coordinated implementation. Source/HTTP checks are separate from rendered browser verification. No browser rendering or accessibility conformance is claimed by this implementation's automated fixtures.
+
+## Single-cell and thesis workflows
+
+Open an adaptive investigation, or select its retained planning session
+under Scientific records. Expand **Adaptive workflow**, then **Research
+workflows**. The panel uses the selected project's current evidence access
+and trusted coordinator binding. It lists unavailable steps with their
+runtime, input, or review prerequisites.
+
+Use **Single-cell** to queue a curated step from its current input ports
+and typed parameters. A completed QC step has **Review QC**, which opens
+the exact generation and receipt. Change a setting and choose **Queue QC
+reanalysis** to reopen downstream work. **Advance workflow** dispatches
+the queued steps after a fresh grant. Superseded generations stay visible
+in the workflow history and cannot be selected as current inputs.
+
+Use **Thesis** to propose an aim, inspect its answerability and evidence,
+and record an authorized review or scientific decision. An aim that
+requires blinded review keeps its outcome on hold until the bound
+verifier admits the required assessments. **Build thesis package** uses
+the current retained evidence and local answer schema for its reviewed
+scope. The panel reports the sealed package's workspace location and
+checksum. Clinical release is disabled.
+
+### Project navigation and findings review
+
+Use **Data** for shared inputs and **Investigations** for the current
+project's analysis conversations. **New investigation** stays visible
+when the list is collapsed. **Project activity** holds project-wide
+plans, runs, results and exports.
+
+Within an investigation, **Define an aim** contains the data context
+and research question. **Plan & run** contains the proposed methods,
+execution controls and recovery for failed runs. **Review findings**
+puts the proposed interpretation and review actions beside the figures,
+estimates, diagnostics and provenance.
+
+The project **Thesis** tab groups current aims by readiness across
+available adaptive sessions. Open an aim or choose a session in
+**Build and export**. After building a verified package, use **Export
+thesis evidence** to download the sealed archive. When the workflow revision
+changes, the previous package remains visible as stale and a fresh build
+is required for export.

@@ -63,6 +63,23 @@ def test_legacy_auto_is_visible_and_matches_explicit_count_transform(tmp_path):
     assert declared["warnings"] == []
 
 
+def test_count_lineage_geometry_and_hvgs_are_library_depth_invariant(tmp_path):
+    from devharness_server.tools_lineage import infer_lineage
+
+    expression, metadata, samples, genes, values = integer_continuous_fixture(tmp_path)
+    params = {"top_genes": 3, "n_components": 2, "n_neighbors": 23, "n_clusters": 3,
+              "data_type": "counts"}
+    base = infer_lineage(str(expression), str(metadata), samples[0], **params)
+    pd.DataFrame(values * np.arange(1, len(samples) + 1), index=genes, columns=samples).to_csv(expression)
+    scaled = infer_lineage(str(expression), str(metadata), samples[0], **params)
+    assert base["provenance"]["selected_genes"] == scaled["provenance"]["selected_genes"]
+    assert base["provenance"]["library_sizes_sha256"] != scaled["provenance"]["library_sizes_sha256"]
+    np.testing.assert_allclose(
+        [base["pseudotime"][sample] for sample in samples],
+        [scaled["pseudotime"][sample] for sample in samples],
+    )
+
+
 @pytest.mark.parametrize("invalid", [None, True, "normalized", [], {}])
 def test_invalid_measurement_is_rejected_before_worker_start(monkeypatch, invalid):
     import devharness_server.tools_lineage as module

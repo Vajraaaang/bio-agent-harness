@@ -1,0 +1,159 @@
+{
+  "schema_version": "erql_package_sources/1",
+  "profile": "ERQL-1.1",
+  "scope": "P0 installation and direct-R reference identity; no production admission or scientific qualification",
+  "R": "4.6.1",
+  "BiocVersion": "3.23.1",
+  "platform": "linux/amd64",
+  "base_image": "bioconductor/bioconductor_docker@sha256:979991813693d4256f685a565cd59560d7bca7c4d4d41f66ed5fc38b31338594",
+  "base_scope": "Immutable base binds R, compilers, OS and numerical libraries; actual runtime versions and library digests required in build receipt",
+  "targets": [
+    "edgeR",
+    "limma",
+    "statmod",
+    "locfit",
+    "lattice",
+    "jsonlite"
+  ],
+  "packages": [
+    {
+      "package": "edgeR",
+      "version": "4.10.7",
+      "file": "edgeR_4.10.7.tar.gz",
+      "url": "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib/edgeR_4.10.7.tar.gz",
+      "sha256": "a3cc0f66be29f1a61a74021f9848ec940794e653905c4332327a719dd9ad8393",
+      "bytes": 3074140,
+      "description_sha256": "c2ef57a64cff9524082159fb3f88fb718fa800b5f69abafc5185b5931ceae799",
+      "metadata": {
+        "Depends": "R (>= 3.6.0), limma (>= 3.63.6)",
+        "Imports": "methods, graphics, stats, utils, locfit",
+        "LinkingTo": null,
+        "Suggests": "jsonlite, knitr, Matrix, nanoparquet, readr, rhdf5, SeuratObject, splines, AnnotationDbi, Biobase, BiocStyle, org.Hs.eg.db, S4Vectors, SummarizedExperiment",
+        "License": "GPL (>=2)",
+        "NeedsCompilation": "yes",
+        "SystemRequirements": null,
+        "git_last_commit": "27ba7b3",
+        "git_branch": "RELEASE_3_23"
+      },
+      "dependencies": [
+        "limma",
+        "locfit"
+      ]
+    },
+    {
+      "package": "jsonlite",
+      "version": "2.0.0",
+      "file": "jsonlite_2.0.0.tar.gz",
+      "url": "https://cran.rstudio.com/src/contrib/jsonlite_2.0.0.tar.gz",
+      "sha256": "75eb910c82b350ec33f094779da0f87bff154c232e4ae39c9896a9b89f3ac82d",
+      "bytes": 1055849,
+      "description_sha256": "427df14753b07bb9f6a5ea8799d39dcdcdf5a18026f32c88c5652356da0daa09",
+      "metadata": {
+        "Depends": "methods",
+        "Imports": null,
+        "LinkingTo": null,
+        "Suggests": "httr, vctrs, testthat, knitr, rmarkdown, R.rsp, sf",
+        "License": "MIT + file LICENSE",
+        "NeedsCompilation": "yes",
+        "SystemRequirements": null,
+        "git_last_commit": null,
+        "git_branch": null
+      },
+      "dependencies": []
+    },
+    {
+      "package": "lattice",
+      "version": "0.23-1",
+      "file": "lattice_0.23-1.tar.gz",
+      "url": "https://cran.rstudio.com/src/contrib/lattice_0.23-1.tar.gz",
+      "sha256": "34e9b2fc023582c4246959b543c331233c62118efd922bcc1ba72b4888adc590",
+      "bytes": 682686,
+      "description_sha256": "675137f4fcf0c511f60ea8ab252f21d9786797f3c3cef6a2ecfafdff60acbc5c",
+      "metadata": {
+        "Depends": "R (>= 4.0.0)",
+        "Imports": "grid, grDevices, graphics, stats, utils",
+        "LinkingTo": null,
+        "Suggests": "KernSmooth, MASS, latticeExtra, colorspace",
+        "License": "GPL (>= 2)",
+        "NeedsCompilation": "yes",
+        "SystemRequirements": null,
+        "git_last_commit": null,
+        "git_branch": null
+      },
+      "dependencies": []
+    },
+    {
+      "package": "limma",
+      "version": "3.68.5",
+      "file": "limma_3.68.5.tar.gz",
+      "url": "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib/limma_3.68.5.tar.gz",
+      "sha256": "40b1d2059a76ad98db4bf80139760acf8e8bae92a8265aaaf16ac199831533f4",
+      "bytes": 2842081,
+      "description_sha256": "b60b4b0a4522bdef7aa2624579a2737b33f02fc1ff4a815d899b459c278d031e",
+      "metadata": {
+        "Depends": "R (>= 3.6.0)",
+        "Imports": "grDevices, graphics, stats, utils, methods, statmod",
+        "LinkingTo": null,
+        "Suggests": "BiasedUrn, ellipse, gplots, knitr, locfit, MASS, splines, affy, AnnotationDbi, Biobase, BiocStyle, GO.db, illuminaio, org.Hs.eg.db, vsn",
+        "License": "GPL (>=2)",
+        "NeedsCompilation": "yes",
+        "SystemRequirements": null,
+        "git_last_commit": "825d1c8",
+        "git_branch": "RELEASE_3_23"
+      },
+      "dependencies": [
+        "statmod"
+      ]
+    },
+    {
+      "package": "locfit",
+      "version": "1.5-9.12",
+      "file": "locfit_1.5-9.12.tar.gz",
+      "url": "https://cran.rstudio.com/src/contrib/locfit_1.5-9.12.tar.gz",
+      "sha256": "fa31b9d407f3557a6fcb7105cbd7b16a32a6fb868a7c60bc38a3e33cb7a39343",
+      "bytes": 207112,
+      "description_sha256": "08f53ba618ceed9b19936d312ae817885e3cf18ed16f31f06ce6c4ab52804586",
+      "metadata": {
+        "Depends": "R (>= 4.1.0)",
+        "Imports": "lattice",
+        "LinkingTo": null,
+        "Suggests": "interp, gam",
+        "License": "GPL (>= 2)",
+        "NeedsCompilation": "yes",
+        "SystemRequirements": "USE_C17",
+        "git_last_commit": null,
+        "git_branch": null
+      },
+      "dependencies": [
+        "lattice"
+      ]
+    },
+    {
+      "package": "statmod",
+      "version": "1.5.2",
+      "file": "statmod_1.5.2.tar.gz",
+      "url": "https://cran.rstudio.com/src/contrib/statmod_1.5.2.tar.gz",
+      "sha256": "5f83d82043c5e26f1048fc0139580da1b7e40becf95fb4cb26ed3afcd46a581d",
+      "bytes": 93227,
+      "description_sha256": "639e2fe6b4eb6e82d2ee696b850c5bcc98c428934e71a614cc0d78d2282fa218",
+      "metadata": {
+        "Depends": "R (>= 3.0.0)",
+        "Imports": "stats, graphics",
+        "LinkingTo": null,
+        "Suggests": "MASS, tweedie",
+        "License": "GPL-2 | GPL-3",
+        "NeedsCompilation": "yes",
+        "SystemRequirements": null,
+        "git_last_commit": null,
+        "git_branch": null
+      },
+      "dependencies": []
+    }
+  ],
+  "repositories": [
+    "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib",
+    "https://cran.rstudio.com/src/contrib"
+  ],
+  "license_policy": "Retain source archives and licenses with local image; no external image/content publication in P0. Article-content rights are separate.",
+  "compatibility_basis": "Downloaded DESCRIPTION mandatory dependency closure; installed-version and same-image smoke verification required separately. limma 3.62.0 is excluded."
+}

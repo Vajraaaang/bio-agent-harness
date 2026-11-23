@@ -9,12 +9,13 @@ serializes the caller's already-resident DataFrame into the worker.
 import copy
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Literal, Union
 
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import TruncatedSVD
 
+from devharness_core.normalization import count_like, log1p_counts_per_10k
 from devharness_core.stages import parse_stages
 from devharness_core.storage import ChunkedExpressionStore
 from devharness_core.watchdog import HarnessResourceInterrupt, run_sandboxed
@@ -39,49 +40,79 @@ def _aligned_metadata(metadata_df: pd.DataFrame, sample_names: List[str], time_c
     return metadata
 
 
+def _dispersion(values: np.ndarray) -> np.ndarray:
+    return values.var(axis=1) / np.maximum(np.abs(values.mean(axis=1)), 1e-8)
+
+
 def _compute_manifold(source: Union[str, pd.DataFrame], metadata: pd.DataFrame,
-                      top_n: int, n_components: int) -> Dict[str, Any]:
+                      top_n: int, n_components: int, data_type: str = "auto") -> Dict[str, Any]:
     store = ChunkedExpressionStore(source) if isinstance(source, str) else None
     try:
-        gene_names = store.gene_names if store else list(source.index.map(str))
-        gene_count, sample_count = store.shape if store else source.shape
+        if store is not None:
+            gene_names = store.gene_names
+            gene_count, sample_count = store.shape
+        else:
+            assert not isinstance(source, str)
+            gene_names = list(source.index.map(str))
+            gene_count, sample_count = source.shape
         selected_count = min(top_n, gene_count)
         estimated_bytes = sample_count * selected_count * 8 * 8
         if estimated_bytes > 1536 * 1024 * 1024:
             raise HarnessResourceInterrupt("Selected matrix would exceed the 1.5 GB active-memory allowance; reduce top_n")
         chunk_size = min(500, max(1, int(64 * 1024 * 1024 / (8 * sample_count))))
-        if store:
-            chunks = store.iter_gene_chunks(chunk_size)
-        else:
-            chunks = ((gene_names[start:start + chunk_size], source.iloc[start:start + chunk_size].to_numpy(dtype=float))
-                      for start in range(0, gene_count, chunk_size))
+        def chunks():
+            if store:
+                for _, values in store.iter_gene_chunks(chunk_size):
+                    yield np.asarray(values, dtype=float)
+            else:
+                assert not isinstance(source, str)
+                for start in range(0, gene_count, chunk_size):
+                    yield source.iloc[start:start + chunk_size].to_numpy(dtype=float)
+
         scores = np.empty(gene_count, dtype=float)
         library_sizes = np.zeros(sample_count, dtype=float)
-        all_nonnegative = True
+        compatible_counts = data_type != "continuous"
         offset = 0
-        for _, values in chunks:
-            values = np.asarray(values, dtype=float)
+        for values in chunks():
             if not np.isfinite(values).all():
                 raise ValueError("Expression values must be finite")
-            means = values.mean(axis=1)
-            scores[offset:offset + len(values)] = values.var(axis=1) / np.maximum(np.abs(means), 1e-8)
-            library_sizes += np.maximum(values, 0).sum(axis=0)
-            all_nonnegative = all_nonnegative and bool(np.all(values >= 0))
+            if compatible_counts:
+                compatible_counts = count_like(values)
+                if not compatible_counts and data_type == "counts":
+                    raise ValueError("declared counts require nonnegative integer-valued expression")
+                if compatible_counts:
+                    with np.errstate(over="ignore"):
+                        library_sizes += values.sum(axis=0)
+            if data_type != "counts":
+                with np.errstate(over="ignore", invalid="ignore"):
+                    scores[offset:offset + len(values)] = _dispersion(values)
             offset += len(values)
+        if compatible_counts:
+            offset = 0
+            for values in chunks():
+                normalized = log1p_counts_per_10k(values, library_sizes)
+                scores[offset:offset + len(values)] = _dispersion(normalized)
+                offset += len(values)
+        if not np.isfinite(scores).all():
+            raise ValueError("Expression dispersion overflowed; rescale the input")
         selected_indices = np.argsort(-scores, kind="stable")[:selected_count]
         selected_genes = [gene_names[index] for index in selected_indices]
-        values = (store.get_chunk(selected_indices, slice(None)).astype(float)
-                  if store else source.iloc[selected_indices].to_numpy(dtype=float))
-        if all_nonnegative:
-            values /= np.maximum(library_sizes, 1.0)[None, :]
-            values *= 10000.0
-            np.log1p(values, out=values)
+        if store is not None:
+            values = store.get_chunk(selected_indices, slice(None)).astype(float)
+        else:
+            assert not isinstance(source, str)
+            values = source.iloc[selected_indices].to_numpy(dtype=float, copy=True)
+        if compatible_counts:
+            values = log1p_counts_per_10k(values, library_sizes)
+        constant = np.ptp(values, axis=1) == 0
         values -= values.mean(axis=1, keepdims=True)
+        values[constant] = 0
         scales = values.std(axis=1, keepdims=True)
         values /= np.where(scales > 1e-12, scales, 1.0)
         matrix = values.T
         components = min(n_components, sample_count, selected_count)
-        if not np.any(matrix):
+        variable_geometry = bool(np.any(matrix))
+        if not variable_geometry:
             embedding = np.zeros((sample_count, components), dtype=float)
             variance_ratio = np.zeros(components, dtype=float)
             loadings = np.zeros((components, selected_count), dtype=float)
@@ -132,6 +163,8 @@ def _compute_manifold(source: Union[str, pd.DataFrame], metadata: pd.DataFrame,
             "num_genes": gene_count,
             "num_samples": sample_count,
             "selected_gene_count": selected_count,
+            "expression_transform": "log1p_cp10k" if compatible_counts else "continuous",
+            "expression_geometry_status": "variable" if variable_geometry else "collapsed",
             "svd_variance_explained": variance_ratio.tolist(),
             "stage_centroids": centroids,
             "stage_variances": variances,
@@ -140,6 +173,8 @@ def _compute_manifold(source: Union[str, pd.DataFrame], metadata: pd.DataFrame,
             "top_trajectory_driver_genes": [selected_genes[index] for index in driver_indices],
             "temporal_monotonicity": monotonicity,
         }
+        if compatible_counts and np.any(library_sizes == 0):
+            state["zero_library_count"] = int(np.count_nonzero(library_sizes == 0))
         if monotonicity is None:
             state["temporal_monotonicity_status"] = "insufficient_timepoints"
         return {"state": state, "embedding": embedding,
@@ -165,9 +200,12 @@ class TemporalStateCompactor:
     def __init__(self, counts_df: Union[pd.DataFrame, ChunkedExpressionStore, str, Path],
                  metadata_df: pd.DataFrame, time_col: str, top_n: int = 1000,
                  n_components: int = 5, max_mem_mb: float = 8000,
-                 timeout_sec: float = 300) -> None:
+                 timeout_sec: float = 300,
+                 data_type: Literal["counts", "continuous", "auto"] = "auto") -> None:
         if not isinstance(top_n, int) or top_n < 1 or not isinstance(n_components, int) or n_components < 1:
             raise ValueError("top_n and n_components must be positive integers")
+        if not isinstance(data_type, str) or data_type not in {"counts", "continuous", "auto"}:
+            raise ValueError("data_type must be counts, continuous or auto")
         if isinstance(counts_df, pd.DataFrame):
             ChunkedExpressionStore._validate_dataframe(counts_df)
             sample_names = list(counts_df.columns.map(str))
@@ -181,7 +219,7 @@ class TemporalStateCompactor:
                 sample_names = store.sample_names
                 source = str(store.path)
         metadata = _aligned_metadata(metadata_df, sample_names, time_col)
-        result = run_sandboxed(_compute_manifold, args=(source, metadata, top_n, n_components),
+        result = run_sandboxed(_compute_manifold, args=(source, metadata, top_n, n_components, data_type),
                                max_mem_mb=max_mem_mb, timeout_sec=timeout_sec)
         self.state = result["state"]
         self.embedding = result["embedding"]
