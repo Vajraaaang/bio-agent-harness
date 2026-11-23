@@ -401,7 +401,7 @@ Use one row per cell with `cell_id` and finite embedding coordinates. Metadata m
 
 #### Bulk deconvolution
 
-Stage gene-by-bulk-sample and gene-by-reference-cell CSVs with `gene_id` and optional `chromosome`. The annotations contain exactly `cell_id,donor_id,cell_type`. Each reference type requires at least two distinct donors. Declare the bulk scale as linear counts or CPM.
+Stage gene-by-bulk-sample and gene-by-reference-cell CSVs with `gene_id` and optional `chromosome`. The annotations contain exactly `cell_id,donor_id,cell_type`. Each reference type requires at least two distinct donors. Declare the bulk scale as linear counts or CPM. The normalization history is required to distinguish filtered CPM from transformed values with an overlapping numeric range.
 
 ```json
 {
@@ -488,7 +488,7 @@ Stage a sample-by-feature CSV with `sample_id`, aligned metadata containing `don
 
 #### Spatial pattern and colocalization
 
-Stage a spot-by-gene raw-count CSV keyed by `spot_id` and matched `spot_id,donor_id,section_id,x,y,cell_type` metadata. Declare a physical frame and physical units. Graphs are bounded by donor and section. Spatial domains remain gated.
+Stage a spot-by-gene raw-count CSV keyed by `spot_id` and matched `spot_id,donor_id,section_id,x,y,cell_type` metadata. Declare a physical frame and physical units. Graphs are bounded by donor and section. Empty libraries are reported and excluded from the graphs and expression tests. Spatial domains remain gated.
 
 ```json
 {
@@ -520,7 +520,7 @@ Stage a spot-by-gene raw-count CSV keyed by `spot_id` and matched `spot_id,donor
 
 #### Perturbation response
 
-Use a cell-by-gene raw-count CSV with `cell_id`, aligned with `cell_id,donor_id,perturbation` and optional `batch`. The label `NTC` must be observed, with valid replicated contrasts. Guide efficacy scores are exploratory.
+Use a cell-by-gene raw-count CSV with `cell_id`, aligned with `cell_id,donor_id,perturbation` and optional `batch`. The label `NTC` must be observed, with valid replicated contrasts. The energy test assumes cell labels are exchangeable within donor and batch. Well-assigned experiments need analysis at their randomization unit. Guide efficacy scores are exploratory.
 
 ```json
 {
@@ -558,7 +558,7 @@ Use a cell-by-gene raw-count CSV with `cell_id`, aligned with `cell_id,donor_id,
 
 #### Phenotype prediction
 
-Use sample-by-gene raw counts with `sample_id` and aligned `sample_id,donor_id,label` metadata, with binary labels `0` and `1`. When grouping by cohort, include `cohort_id` in training and `cohort` in the holdout. The JSON reference contains `features` and `rows`, with each row giving `observation`, `unit`, string `label`, and original integer `counts` in feature order. Training and evaluation must have disjoint sample, donor and declared cohort identities.
+Use sample-by-gene raw counts with `sample_id` and aligned `sample_id,donor_id,label` metadata, with binary labels `0` and `1`. When grouping by cohort, include `cohort_id` in training and `cohort` in the holdout. The JSON reference contains `features` and `rows`, with each row giving `observation`, `unit`, string `label`, and original integer `counts` in feature order. Training and evaluation must have disjoint sample, donor and declared cohort identities. The supplied partition provenance must establish that renamed or duplicate profiles cannot cross the split.
 
 ```json
 {

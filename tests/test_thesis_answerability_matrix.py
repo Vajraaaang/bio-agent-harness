@@ -74,7 +74,7 @@ _PROBES = (
         "count_matrix",
         ("gene_counts", "transcript_counts"),
         "transcript_counts",
-        (("transcript_counts",),),
+        (("transcript_counts", "exon_counts"),),
         "bulk_dtu",
     ),
     _Probe(

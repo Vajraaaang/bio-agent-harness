@@ -113,3 +113,45 @@ def test_refuses_embedding_or_missing_physical_units(tmp_path, updates):
     paths, spec = _spatial_inputs(tmp_path)
     with pytest.raises(ValueError, match="coordinate"):
         fit_spatial_pattern(*paths, spec.model_copy(update=updates))
+
+
+def test_zero_library_spots_do_not_create_compositional_spatial_signal(tmp_path):
+    from devbench.core.spatial_analysis import SpatialPatternSpec, fit_spatial_pattern
+
+    counts, metadata = tmp_path / "counts.csv", tmp_path / "metadata.csv"
+    spots = [f"s{i}" for i in range(12)]
+    pd.DataFrame({"spot_id": spots, "gene": [0] * 6 + [100] * 6}).to_csv(
+        counts, index=False
+    )
+    pd.DataFrame(
+        {
+            "spot_id": spots,
+            "donor_id": "d",
+            "section_id": "section",
+            "x": range(12),
+            "y": 0,
+            "cell_type": "A",
+        }
+    ).to_csv(metadata, index=False)
+    result = fit_spatial_pattern(
+        counts,
+        metadata,
+        SpatialPatternSpec(
+            counts_sha256=hashlib.sha256(counts.read_bytes()).hexdigest(),
+            metadata_sha256=hashlib.sha256(metadata.read_bytes()).hexdigest(),
+            coordinate_frame="registered-tissue",
+            coordinate_units="um",
+            k=2,
+            n_perm=99,
+            seed=35,
+        ),
+    )
+    assert result["zero_library_spot_ids"] == spots[:6]
+    assert result["gene_statistics"][0]["moran_p"] is None
+
+
+def test_collapsed_spatial_coordinates_are_refused():
+    from devbench.core.spatial_analysis import build_spatial_graph
+
+    with pytest.raises(ValueError, match="duplicate_spatial_coordinates"):
+        build_spatial_graph(np.zeros((3, 2)), [("donor", "section")] * 3, k=2)

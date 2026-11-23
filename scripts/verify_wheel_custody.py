@@ -11,12 +11,12 @@ import venv
 from importlib.metadata import version
 from pathlib import Path
 
+from scripts.build_source_resource import build_source_resource
 from scripts.source_bundle import (
     allowed_bundle_path,
     build_source_bundle,
     checkout_source_paths,
 )
-from scripts.build_source_resource import build_source_resource
 
 REGRESSION = (
     "test_exploratory_benchmark",
@@ -51,6 +51,14 @@ REGRESSION = (
     "test_tier_a_donor_trajectory",
     "test_tier_a_sccoda",
     "test_tier_a_scrna",
+    "test_scrna_ccc",
+    "test_scrna_neighborhood_da",
+    "test_bulk_deconvolution",
+    "test_bulk_dtu",
+    "test_spatial_analysis",
+    "test_perturbation_analysis",
+    "test_phenotype_prediction",
+    "test_plugin_mcp_new_solvers",
 )
 FIXTURES = (
     "test_admitted_research_inference",

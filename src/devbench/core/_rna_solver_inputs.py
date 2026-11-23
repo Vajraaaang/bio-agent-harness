@@ -3,6 +3,8 @@
 import csv
 import hashlib
 import io
+from decimal import Decimal, InvalidOperation
+from itertools import chain
 from pathlib import Path
 from typing import Annotated, Any, cast
 
@@ -19,6 +21,7 @@ from .scientific_types import FrozenContract, content_sha256
 
 MAX_INPUT_BYTES = 100_000_000
 MAX_MATRIX_ENTRIES = MAX_INPUT_BYTES // np.dtype(np.float64).itemsize
+MAX_EXACT_COUNT = 2**53
 Label = Annotated[str, Field(min_length=1, max_length=200)]
 
 
@@ -70,6 +73,43 @@ def numeric_matrix(frame: pd.DataFrame) -> NDArray[np.float64]:
     return cast(NDArray[np.float64], values)
 
 
+def _raw_count(token: str) -> int:
+    error = "count1_requires_bounded_nonnegative_integer_counts"
+    if not isinstance(token, str) or len(token) > 64 or not token.isascii():
+        raise ValueError(error)
+    if token.isdecimal():
+        count = int(token)
+        if count <= MAX_EXACT_COUNT:
+            return count
+        raise ValueError(error)
+    try:
+        value = Decimal(token)
+    except InvalidOperation as exc:
+        raise ValueError(error) from exc
+    if not value.is_finite() or not 0 <= value <= MAX_EXACT_COUNT:
+        raise ValueError(error)
+    if value != value.to_integral_value():
+        raise ValueError(error)
+    return int(value)
+
+
+def raw_count_matrix(frame: pd.DataFrame) -> NDArray[np.float64]:
+    """Validate exact integer tokens and observation totals before conversion."""
+    if not 0 < frame.size <= MAX_MATRIX_ENTRIES:
+        raise ValueError("solver_numeric_matrix_empty_or_over_budget")
+
+    def rows():
+        for row in frame.itertuples(index=False, name=None):
+            counts = tuple(map(_raw_count, row))
+            if sum(counts) > MAX_EXACT_COUNT:
+                raise ValueError("count1_requires_bounded_nonnegative_integer_counts")
+            yield counts
+
+    return np.fromiter(
+        chain.from_iterable(rows()), dtype=np.float64, count=frame.size
+    ).reshape(frame.shape)
+
+
 def require_labels(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:
     if not set(columns).issubset(frame.columns):
         raise ValueError("required_solver_columns_missing")
@@ -110,6 +150,16 @@ class ConditionContrast(FrozenContract):
         return self
 
 
+def _technical_factors(
+    metadata: pd.DataFrame, contrast: ConditionContrast
+) -> tuple[str, ...]:
+    factors = contrast.technical_factors
+    if "batch" not in metadata or "batch" in factors:
+        return factors
+    require_labels(metadata, ("batch",))
+    return (*factors, "batch") if metadata["batch"].nunique() > 1 else factors
+
+
 def donor_design(
     metadata: pd.DataFrame,
     contrast: ConditionContrast,
@@ -117,7 +167,8 @@ def donor_design(
     min_units_per_group: int = 3,
 ) -> tuple[tuple[str, ...], NDArray[np.float64], dict[str, Any]]:
     """Construct an independent-donor design with declared categorical effects."""
-    columns = ("donor_id", "condition", *contrast.technical_factors)
+    technical_factors = _technical_factors(metadata, contrast)
+    columns = ("donor_id", "condition", *technical_factors)
     require_labels(metadata, columns)
     profiles = metadata.loc[:, list(columns)].drop_duplicates().sort_values("donor_id")
     if profiles["donor_id"].duplicated().any():
@@ -136,7 +187,7 @@ def donor_design(
         (conditions == contrast.numerator).to_numpy(float),
     ]
     terms = ["intercept", "condition"]
-    for factor in contrast.technical_factors:
+    for factor in technical_factors:
         labels = sorted(set(profiles[factor]))
         if len(labels) < 2:
             raise ValueError("rank_deficient_design: technical factor has one level")
@@ -186,15 +237,11 @@ def read_count_and_metadata(
     observation_id: str,
 ) -> tuple[NDArray[np.float64], pd.DataFrame, list[str]]:
     """Read aligned observation-by-feature raw counts without normalization."""
-    from rna_kernels.normalization import count_like
-
     frame = indexed_rows(read_solver_csv(counts_path, counts_sha256), observation_id)
     metadata = indexed_rows(
         read_solver_csv(metadata_path, metadata_sha256), observation_id
     )
     if set(frame.index) != set(metadata.index):
         raise ValueError("counts_and_metadata_observation_ids_must_match")
-    counts = numeric_matrix(frame)
-    if not count_like(counts) or np.any(counts.sum(axis=1) > 2**53):
-        raise ValueError("count1_requires_bounded_nonnegative_integer_counts")
+    counts = raw_count_matrix(frame)
     return counts, metadata.loc[frame.index], list(frame.columns)

@@ -27,6 +27,7 @@ from ._hashing import canonical_sha256
 from ._rna_solver_inputs import (
     indexed_rows,
     numeric_matrix,
+    raw_count_matrix,
     read_solver_csv,
     require_labels,
 )
@@ -34,7 +35,6 @@ from .design import DESIGN_CONDITION_NUMBER_LIMIT
 from .scientific_types import FrozenContract, Sha256, content_sha256
 
 _Floats = NDArray[np.float64]
-_MAX_EXACT_COUNT = 2**53 - 1
 
 
 class BulkDeconvolutionSpec(FrozenContract):
@@ -130,14 +130,19 @@ def _read_expression(
     observations = tuple(frame.columns)
     if not observations:
         raise ValueError("deconvolution_requires_nonempty_sample_or_cell_ids")
-    values = numeric_matrix(frame)
-    if np.any(values < 0):
-        raise ValueError("deconvolution_requires_nonnegative_linear_expression")
-    if measurement != "cpm":
-        if np.any(values != np.floor(values)) or np.any(values > _MAX_EXACT_COUNT):
-            raise ValueError("deconvolution_requires_exact_nonnegative_integer_counts")
-    elif np.any(values > 1_001_000) or np.any(values.sum(axis=0) > 1_001_000):
-        raise ValueError("deconvolution_cpm_mass_exceeds_one_million")
+    if measurement == "cpm":
+        values = numeric_matrix(frame)
+        if np.any(values < 0):
+            raise ValueError("deconvolution_requires_nonnegative_linear_expression")
+        if np.any(values.sum(axis=0) > 1_001_000):
+            raise ValueError("deconvolution_cpm_mass_exceeds_one_million")
+    else:
+        try:
+            values = raw_count_matrix(frame.T).T
+        except ValueError as error:
+            raise ValueError(
+                "deconvolution_requires_exact_nonnegative_integer_counts"
+            ) from error
     return _Expression(genes, observations, chromosomes, values)
 
 

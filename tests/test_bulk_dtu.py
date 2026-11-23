@@ -157,3 +157,17 @@ def test_effective_lengths_are_bound_and_exon_usage_is_labeled(tmp_path):
     assert "effective_lengths" in result["input_sha256s"]
     assert all("length bias" not in warning for warning in result["warnings"])
     assert any("exon usage" in warning for warning in result["warnings"])
+
+
+def test_stagewise_partial_screen_with_four_features():
+    from devbench.core.bulk_dtu import _stagewise
+
+    features = [{"tx_p": p, "tx_q": None} for p in (0.002, 0.006, 0.02, 0.4)]
+    genes = [
+        {"gene_p": 0.001, "transcript_statistics": features},
+        {"gene_p": 0.6, "transcript_statistics": [{"tx_p": 0.3, "tx_q": None}]},
+        {"gene_p": 0.8, "transcript_statistics": [{"tx_p": 0.4, "tx_q": None}]},
+    ]
+    assert _stagewise(genes, 0.05) == (3, 1)
+    assert [row["tx_q"] for row in features] == pytest.approx([0.018, 0.054, 0.12, 1.0])
+    assert genes[1]["transcript_statistics"][0]["tx_q"] is None

@@ -47,17 +47,21 @@ def _inputs(root, *, planted=True, conflict=False, donors=40, features=60, seed=
 def _locked_eval(root, spec, table, metadata, *, leaky=False):
     features = list(table.columns[1:])
     entries = []
+    rng = np.random.default_rng(836)
+    labels = rng.permutation(np.tile([0, 1], 5))
+    independent = rng.poisson(24, size=(len(labels), len(features)))
+    independent[labels == 1, :3] += rng.poisson(125, size=((labels == 1).sum(), 3))
+    independent[labels == 0, 3:6] += rng.poisson(80, size=((labels == 0).sum(), 3))
+    independent[:, -1] = rng.integers(50, 151, size=len(labels))
     donor_ids = metadata["donor_id"].tolist()
-    for i in range(10):
+    for i, (label, counts) in enumerate(zip(labels, independent, strict=True)):
         identifier = donor_ids[i] if leaky else f"external-donor-{i}"
-        counts = table.iloc[i, 1:].astype(int).tolist()
-        counts[-1] = 150
         entries.append(
             {
                 "observation": f"external-sample-{i}",
                 "unit": identifier,
-                "label": str(metadata.iloc[i]["label"]),
-                "counts": counts,
+                "label": str(label),
+                "counts": counts.tolist(),
             }
         )
     path = root / "sealed_evaluation.json"
@@ -170,3 +174,12 @@ def test_donor_repeats_and_cohorts_remain_in_one_outer_fold(tmp_path):
         test_donors.extend(fold["test_donors"])
     assert sorted(test_donors) == sorted(cohorts)
     assert receipt["cv_group_column"] == "cohort_id"
+
+
+def test_technical_repeats_leave_each_donor_with_fixed_loss_weight():
+    from devbench.core.phenotype_prediction import _weights
+
+    metadata = pd.DataFrame({"donor_id": ["a", "b", "c"]})
+    repeats = metadata.loc[metadata.index.repeat([2, 3, 4])].copy()
+    repeats["weight"] = _weights(repeats)
+    assert np.allclose(repeats.groupby("donor_id")["weight"].sum(), _weights(metadata))

@@ -79,17 +79,15 @@ def build_spatial_graph(
         neighbors = min(k, len(rows) - 1)
         if neighbors == 0:
             continue
-        _, closest = cKDTree(coordinates[rows]).query(
-            coordinates[rows], k=neighbors + 1
-        )
-        # For tied locations a returned neighbor list may omit the query
-        # itself. Move self to the end, then take the first k other spots.
-        self_matches = closest == np.arange(len(rows))[:, None]
-        ordered = np.take_along_axis(
-            closest, np.argsort(self_matches, axis=1, kind="stable"), axis=1
-        )
+        locations = coordinates[rows]
+        if len(np.unique(locations, axis=0)) != len(rows):
+            raise ValueError("duplicate_spatial_coordinates_within_donor_section")
+        # Stable location order makes geometric distance ties independent of file order.
+        order = np.lexsort(locations.T[::-1])
+        rows, locations = rows[order], locations[order]
+        _, closest = cKDTree(locations).query(locations, k=neighbors + 1)
         sources.append(np.repeat(rows, neighbors))
-        targets.append(rows[ordered[:, :neighbors].ravel()])
+        targets.append(rows[closest[:, 1:].ravel()])
     size = len(blocks)
     if not sources:
         return csr_matrix((size, size), dtype=float)
@@ -253,7 +251,16 @@ def fit_spatial_pattern(
     require_labels(metadata, ("donor_id", "section_id", "cell_type"))
     if not {"x", "y"}.issubset(metadata.columns):
         raise ValueError("spatial_coordinates_require_physical_x_and_y_columns")
-    coordinates = numeric_matrix(metadata[["x", "y"]])
+    order = np.argsort(metadata.index.to_numpy())
+    counts, metadata = counts[order], metadata.iloc[order]
+    n_spots = len(counts)
+    zero_library = counts.sum(axis=1) == 0
+    zero_library_ids = metadata.index[zero_library].tolist()
+    n_donor_sections = len(metadata[["donor_id", "section_id"]].drop_duplicates())
+    counts, metadata = counts[~zero_library], metadata.loc[~zero_library]
+    coordinates = (
+        numeric_matrix(metadata[["x", "y"]]) if len(metadata) else np.empty((0, 2))
+    )
     block_labels = list(zip(metadata["donor_id"], metadata["section_id"], strict=True))
     graph = build_spatial_graph(coordinates, block_labels, k=spec.k)
     active = np.asarray(graph.getnnz(axis=1)) > 0
@@ -273,8 +280,9 @@ def fit_spatial_pattern(
             "status": "completed" if eligible_graph.nnz else "no_nonisolated_spots",
             "claim_scope": "within_section_spatial_association",
             "count1_unchanged": True,
-            "n_spots": len(counts),
-            "n_donor_sections": len(set(block_labels)),
+            "n_spots": n_spots,
+            "n_donor_sections": n_donor_sections,
+            "zero_library_spot_ids": zero_library_ids,
             "n_undirected_edges": eligible_graph.nnz // 2,
             "isolated_spot_ids": metadata.index[~active].tolist(),
             "gene_statistics": gene_results,
@@ -293,7 +301,8 @@ def fit_spatial_pattern(
                 "that can confound expression patterns.",
             ],
             "method": (
-                "Symmetric binary KNN within donor and section. Isolates are excluded. "
+                "Symmetric binary KNN within donor and section among positive-library "
+                "spots. Empty libraries and isolates are reported separately. "
                 "Expression uses log1p counts per 10,000 and block-centered values. "
                 "Permutations test high Moran I, low Geary C, and high type-pair "
                 "edge counts. Each gene statistic and the type pairs have separate "

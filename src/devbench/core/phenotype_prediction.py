@@ -122,8 +122,7 @@ def _normalize(counts: _Floats) -> _Floats:
 
 def _weights(metadata: pd.DataFrame) -> _Floats:
     repeats = metadata.groupby("donor_id")["donor_id"].transform("size").to_numpy()
-    equal_donor_weight = 1.0 / repeats
-    return equal_donor_weight / equal_donor_weight.mean()
+    return 1.0 / repeats
 
 
 @dataclass(frozen=True)

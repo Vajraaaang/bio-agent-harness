@@ -118,3 +118,37 @@ def test_refuses_single_replicate_confirmatory_inference(tmp_path):
     paths, spec, _, _ = _perturbation_inputs(tmp_path, donors=1)
     with pytest.raises(ValueError, match="two_biological_units"):
         fit_perturbation_response(*paths, spec)
+
+
+def test_pseudobulk_effect_is_log2_once():
+    from devbench.core.perturbation_analysis import _de_estimate
+    from rna_kernels.nb_irls import DenseDesign, NBIRLSGene, fit_statsmodels_nb
+
+    response = np.array([97, 98, 102, 103, 194, 196, 204, 206], dtype=float)
+    design = np.column_stack((np.ones(8), np.repeat([0, 1], 4)))
+    batch = fit_statsmodels_nb(
+        DenseDesign(design), response[None, :], [0.1], np.zeros(8)
+    )
+    assert batch.converged[0]
+    effect = _de_estimate(NBIRLSGene(batch, 0), np.array([[0.0, 1.0]]), 0.1)
+    assert np.isclose(effect["log2_fold_change"], 1.0)
+
+
+@pytest.mark.parametrize(
+    "token", ["9007199254740993", "1.0000000000000000001", "-1e-400"]
+)
+def test_count1_rejects_tokens_that_only_become_valid_after_float_rounding(
+    tmp_path, token
+):
+    from devbench.core._rna_solver_inputs import read_count_and_metadata
+
+    counts, metadata = tmp_path / "counts.csv", tmp_path / "metadata.csv"
+    counts.write_text(f"sample_id,gene1\na,{token}\n")
+    metadata.write_text("sample_id,donor_id\na,d1\n")
+    hashes = [
+        hashlib.sha256(path.read_bytes()).hexdigest() for path in (counts, metadata)
+    ]
+    with pytest.raises(
+        ValueError, match="count1_requires_bounded_nonnegative_integer_counts"
+    ):
+        read_count_and_metadata(counts, metadata, *hashes, "sample_id")

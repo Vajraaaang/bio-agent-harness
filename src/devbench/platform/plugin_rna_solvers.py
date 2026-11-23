@@ -365,29 +365,13 @@ def _dtu_evidence(
     bulk_dtu._lengths(
         Path(lengths["source"]) if lengths else None, spec, axis, frame.columns
     )
-    values = numeric_matrix(frame)
-    if np.any((values < 0) | (values > 2**53)) or (
-        spec.count_scale == "raw_counts" and np.any(values != np.floor(values))
-    ):
-        raise ValueError("usage_requires_bounded_nonnegative_counts")
-    contrast = spec.contrast
-    if "batch" in metadata:
-        require_labels(metadata, ("batch",))
-        if (
-            metadata["batch"].nunique() > 1
-            and "batch" not in contrast.technical_factors
-        ):
-            contrast = contrast.model_copy(
-                update={"technical_factors": (*contrast.technical_factors, "batch")}
-            )
-    _, _, diagnostics = donor_design(metadata, contrast, min_units_per_group=2)
-    # The registry uses transcript_counts for mapped within-gene usage. Preserve
-    # the actual exon/transcript axis in the slot and the frozen solver contract.
+    bulk_dtu._usage_counts(frame, metadata, spec.count_scale)
+    _, _, diagnostics = donor_design(metadata, spec.contrast, min_units_per_group=2)
     return SolverEvidence(
         [
             ObservedMeasurement(
                 sources["counts"],
-                "transcript_counts",
+                spec.measurement,
                 axis,
                 tuple(frame.index),
                 tuple(frame.columns),

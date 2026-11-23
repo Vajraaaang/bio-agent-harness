@@ -155,3 +155,12 @@ def test_revalidates_copied_specification_before_graph_fit(tmp_path: Path):
     embedding, metadata, spec = _inputs(tmp_path)
     with pytest.raises(ValueError, match="greater than or equal to 1"):
         fit_neighborhood_da(embedding, metadata, spec.model_copy(update={"k": 0}))
+
+
+def test_neighborhood_refuses_observed_batch_confounded_with_arm(tmp_path):
+    embedding, metadata, spec = _inputs(tmp_path, confounded=True)
+    contrast = spec.contrast.model_copy(update={"technical_factors": ()})
+    with pytest.raises(ValueError, match="rank_deficient_design"):
+        fit_neighborhood_da(
+            embedding, metadata, spec.model_copy(update={"contrast": contrast})
+        )

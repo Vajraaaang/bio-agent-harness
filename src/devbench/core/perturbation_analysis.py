@@ -19,6 +19,7 @@ from rna_kernels.nb_irls import DenseDesign, NBIRLSGene, fit_statsmodels_nb
 from rna_kernels.normalization import log1p_counts_per_10k
 
 from ._rna_solver_inputs import (
+    MAX_EXACT_COUNT,
     Label,
     adjust_probabilities,
     read_count_and_metadata,
@@ -244,7 +245,10 @@ def _pool_counts(
         if len(batches) != 1:
             raise ValueError("pseudobulk_unit_arm_has_mixed_batches")
         batch_levels.append(batches[0])
-        rows.append(counts[indices].sum(axis=0))
+        cell_counts = counts[indices]
+        if sum(int(value) for value in cell_counts.sum(axis=1)) > MAX_EXACT_COUNT:
+            raise ValueError("pseudobulk_requires_positive_bounded_raw_libraries")
+        rows.append(cell_counts.sum(axis=0))
     pooled = np.asarray(rows)
     totals = pooled.sum(axis=1)
     if np.any(totals > 2**53) or np.any(totals == 0):
@@ -324,7 +328,7 @@ def _de_estimate(fit: Any, contrast: _Floats, alpha: float) -> dict[str, Any]:
     if not math.isfinite(statistic):
         return {"missing_reason": "nb_wald_statistic_nonfinite"}
     return {
-        "log2_fold_change": float(effect / math.log(2)),
+        "log2_fold_change": effect,
         "dispersion_alpha": alpha,
         "p_value": max(math.ulp(0.0), float(2 * t.sf(statistic, fit.df_resid))),
     }
@@ -517,6 +521,7 @@ def fit_perturbation_response(
             "claim_scope": "replicate_aware_perturbation_association",
             "count1_unchanged": True,
             "pca_components_used": components,
+            "energy_test_claim_scope": "conditional_cell_label_exchangeability",
             "perturbations": results,
             "method": (
                 "Energy U-test on log1p library-normalized PCA, conditional on cell "

@@ -49,6 +49,7 @@ Measurement = Literal[
     "sequencing_reads",
     "read_alignments",
     "transcript_counts",
+    "exon_counts",
     "gene_counts",
     "estimated_gene_counts",
     "effective_lengths",
@@ -190,6 +191,7 @@ class EntryPointContract:
 
 
 _COUNT_MATRIX: tuple[Measurement, ...] = (
+    "exon_counts",
     "gene_counts",
     "estimated_gene_counts",
     "transcript_counts",
@@ -216,7 +218,7 @@ RNA_ENTRY_POINTS: Mapping[EntryPoint, EntryPointContract] = MappingProxyType(
             "Local alignments with their original reference and read scope.",
         ),
         "transcript_quantification": EntryPointContract(
-            ("transcript_counts", "estimated_gene_counts"),
+            ("transcript_counts", "exon_counts", "estimated_gene_counts"),
             "Transcript-level counts or estimates with retained length provenance.",
         ),
         "count_matrix": EntryPointContract(
@@ -300,7 +302,7 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
         ),
         "transcript_usage": QuestionContract(
             4,
-            (("transcript_counts",),),
+            (("transcript_counts", "exon_counts"),),
             min_units_per_group=2,
             reference_required=True,
             curated_operation="bulk_dtu",
@@ -840,7 +842,8 @@ def _select_route(
                 }
             )
         if runtime.operation_id in (
-            contract.curated_operation, *contract.curated_alternatives
+            contract.curated_operation,
+            *contract.curated_alternatives,
         ):
             return result.model_copy(
                 update={

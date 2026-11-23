@@ -17,11 +17,13 @@ from statsmodels.tools.sm_exceptions import (
 )
 
 from ._rna_solver_inputs import (
+    MAX_EXACT_COUNT,
     ConditionContrast,
     adjust_probabilities,
     donor_design,
     indexed_rows,
     numeric_matrix,
+    raw_count_matrix,
     read_solver_csv,
     require_labels,
     solver_receipt,
@@ -233,6 +235,24 @@ def _read_mapping(
     return groups, role
 
 
+def _usage_counts(
+    frame: pd.DataFrame,
+    metadata: pd.DataFrame,
+    scale: Literal["raw_counts", "scaledTPM"],
+) -> _Floats:
+    if scale == "scaledTPM":
+        values = numeric_matrix(frame)
+        if np.any((values < 0) | (values > MAX_EXACT_COUNT)):
+            raise ValueError("usage_requires_bounded_nonnegative_counts")
+        return values
+    counts = raw_count_matrix(frame)
+    totals = counts.sum(axis=1)
+    for indices in metadata.groupby("donor_id").indices.values():
+        if sum(int(value) for value in totals[indices]) > MAX_EXACT_COUNT:
+            raise ValueError("pooled_donor_counts_exceed_exact_integer_range")
+    return counts
+
+
 def fit_bulk_dtu(
     counts_path: Path,
     metadata_path: Path,
@@ -257,21 +277,8 @@ def fit_bulk_dtu(
         raise ValueError("counts_and_metadata_sample_ids_must_match")
     samples = samples.loc[frame.index]
     contrast = spec.contrast
-    if "batch" in samples:
-        require_labels(samples, ("batch",))
-        if samples["batch"].nunique() > 1 and "batch" not in contrast.technical_factors:
-            contrast = contrast.model_copy(
-                update={"technical_factors": (*contrast.technical_factors, "batch")}
-            )
     units, design, diagnostics = donor_design(samples, contrast, min_units_per_group=2)
-    counts = numeric_matrix(frame)
-    if (counts < 0).any() or (counts > 2**53).any():
-        raise ValueError("usage_requires_bounded_nonnegative_counts")
-    if (
-        spec.count_scale == "raw_counts"
-        and not np.equal(counts, np.floor(counts)).all()
-    ):
-        raise ValueError("raw_usage_counts_must_be_integer")
+    counts = _usage_counts(frame, samples, spec.count_scale)
     lengths = _lengths(effective_lengths_path, spec, role, frame.columns)
     pooled = np.zeros((len(units), counts.shape[1]))
     np.add.at(pooled, pd.Index(units).get_indexer(samples["donor_id"]), counts)
