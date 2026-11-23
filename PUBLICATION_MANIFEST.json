@@ -9,7 +9,7 @@
   "historical_publication_manifest": "The manifest at base_commit records the preceding public snapshot and its source hashes.",
   "publication_changes_sha256": {
     ".github/workflows/ci.yml": "d9891d743a6c86495422d2a7baf76b8999071c6df7b613307eb3be6ccc00cccf",
-    ".github/workflows/pages.yml": "46a3325b5cb6f9a217b93f21fa75889e016498a6e31d3a05519c84316e2dbf0f",
+    ".github/workflows/pages.yml": "ff8a11f4228a1b6594e1e45dd1760732e995206a746542944db2e0e27d9fcf8c",
     ".gitignore": "89e43e09244227152b002351c74cdea933a299a64ab69faaaaf8f439964445fa",
     "Makefile": "1afa26eb2c9c4e2c9ad484e1c7a20f4973b09ba31fb6854e0bdd336422a75470",
     "README.md": "bca307af33d810d735ed26fb7ac7e3763b611c693c5e5a59ccf05f9c532f0fb9",
