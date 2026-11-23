@@ -13,6 +13,10 @@ Identifier = Annotated[
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 Probability = Annotated[float, Field(strict=True, ge=0, le=1, allow_inf_nan=False)]
 
+PHYSICAL_UNITS = frozenset(
+    {"um", "µm", "micrometers", "mm", "millimeters", "nm", "cm", "m"}
+)
+
 
 class FrozenContract(BaseModel):
     model_config = ConfigDict(

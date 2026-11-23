@@ -240,6 +240,33 @@ def test_embedding_cannot_substitute_for_spatial_coordinates():
         _measurement("spatial_coordinates", slot="obsm/spatial")
 
 
+def test_spatial_pattern_uses_curated_operation_and_domains_stay_unbound():
+    request = AnswerabilityRequest(
+        family_id=9,
+        question="spatial_pattern",
+        assay="spatial_transcriptomics",
+        entry_point="annotated_object",
+    )
+    coords = _measurement(
+        "spatial_coordinates",
+        slot="obsm/spatial",
+        coordinate_frame="tissue-slide",
+        coordinate_units="um",
+    )
+    runtime = RuntimeEvidence(
+        question="spatial_pattern",
+        tier="tier_a",
+        operation_id="spatial_pattern",
+        runtime_sha256=_RUNTIME,
+    )
+    result = assess_answerability(
+        request, measurements=(_measurement("gene_counts"), coords), runtime=runtime,
+    )
+    assert result.status == "ready"
+    assert result.execution_route == "tier_a"
+    assert RNA_QUESTIONS["spatial_domains"].curated_operation is None
+
+
 def test_ase_requires_exact_genotype_sample_and_variant_axes():
     request = _request(12, "allele_specific_expression")
     counts = _measurement("allele_counts", value="a" * 64, reference=_REFERENCE)
@@ -352,6 +379,79 @@ def test_curated_route_keeps_scientific_review_gate():
     assert (result.status, result.execution_route) == ("ready", "tier_a")
     assert result.claim_scope == "requires_scientific_review"
     assert result.design_receipt_sha256 == _RECEIPT
+
+
+def test_cell_communication_admits_curated_route_with_explicit_reference():
+    request = _request(10, "cell_communication", entry_point="normalized_expression")
+    runtime = RuntimeEvidence(
+        question=request.question,
+        tier="tier_a",
+        operation_id="scrna_ccc",
+        runtime_sha256=_RUNTIME,
+    )
+    expression = _measurement("cell_type_expression")
+    reference = _measurement("ligand_receptor_reference", value="a" * 64)
+    complete = assess_answerability(
+        request,
+        measurements=(expression, reference),
+        runtime=runtime,
+    )
+    assert (complete.status, complete.execution_route) == ("ready", "tier_a")
+    assert complete.claim_scope == "requires_scientific_review"
+    missing = assess_answerability(request, measurements=(expression,), runtime=runtime)
+    assert missing.missing_measurements == (("ligand_receptor_reference",),)
+
+
+def test_neighborhood_da_admits_embedding_and_preserves_design_gate():
+    request = _request(3, "compositional_abundance")
+    runtime = RuntimeEvidence(
+        question=request.question,
+        tier="tier_a",
+        operation_id="scrna_neighborhood_da",
+        runtime_sha256=_RUNTIME,
+    )
+    embedding = _measurement("latent_embedding")
+    complete = assess_answerability(
+        request, measurements=(embedding,), design=_design(), runtime=runtime
+    )
+    assert (complete.status, complete.execution_route) == ("ready", "tier_a")
+    incomplete = assess_answerability(
+        request, measurements=(_measurement("cell_type_counts"),), runtime=runtime
+    )
+    assert incomplete.missing_measurements == (("latent_embedding",),)
+    mismatched = assess_answerability(
+        request,
+        measurements=(embedding,),
+        design=_design(observation_axis_sha256="a" * 64),
+        runtime=runtime,
+    )
+    assert mismatched.reason == "design_axis_incompatible"
+
+
+def test_bulk_deconvolution_admits_matched_reference_without_group_design():
+    request = AnswerabilityRequest(
+        family_id=3,
+        question="bulk_deconvolution",
+        assay="bulk_rna_seq",
+        entry_point="count_matrix",
+    )
+    runtime = RuntimeEvidence(
+        question=request.question,
+        tier="tier_a",
+        operation_id="bulk_deconvolution",
+        runtime_sha256=_RUNTIME,
+    )
+    counts = _measurement("gene_counts")
+    reference = _measurement("cell_type_reference", value="b" * 64)
+    result = assess_answerability(
+        request, measurements=(counts, reference), runtime=runtime
+    )
+    assert (result.status, result.execution_route) == ("ready", "tier_a")
+    mismatched = reference.model_copy(update={"feature_axis_sha256": "c" * 64})
+    refused = assess_answerability(
+        request, measurements=(counts, mismatched), runtime=runtime
+    )
+    assert refused.reason == "measurement_axes_incompatible"
 
 
 def test_raw_read_archive_download_is_refused_even_with_local_metadata():

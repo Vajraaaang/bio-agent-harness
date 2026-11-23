@@ -38,6 +38,17 @@ jobs:
             tests/test_workbench_studio_drawer.py \
             tests/test_thesis_answerability_matrix.py \
             tests/test_source_bundle_verification.py
+      - name: Verify pure-Python RNA solver behavior
+        run: |
+          .venv/bin/python -m pytest -q \
+            tests/test_scientific_core_boundary.py \
+            tests/test_scrna_ccc.py \
+            tests/test_scrna_neighborhood_da.py \
+            tests/test_bulk_deconvolution.py \
+            tests/test_bulk_dtu.py \
+            tests/test_spatial_analysis.py \
+            tests/test_perturbation_analysis.py \
+            tests/test_phenotype_prediction.py
       # Configured plugin execution requires a separately verified patched SQLite runtime.
       - name: Verify plugin packaging and admission guards
         run: |

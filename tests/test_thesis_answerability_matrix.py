@@ -74,7 +74,8 @@ _PROBES = (
         "count_matrix",
         ("gene_counts", "transcript_counts"),
         "transcript_counts",
-        (("transcript_counts",),),
+        (("transcript_counts", "exon_counts"),),
+        "bulk_dtu",
     ),
     _Probe(
         5,
@@ -141,6 +142,7 @@ _PROBES = (
         ("gene_counts", "perturbation_assignments", "control_assignments"),
         "control_assignments",
         (("control_assignments",),),
+        "perturbation_response",
     ),
     _Probe(
         12,
@@ -205,6 +207,7 @@ _PROBES = (
         ("gene_counts", "phenotype_outcomes", "independent_evaluation_partition"),
         "independent_evaluation_partition",
         (("independent_evaluation_partition",),),
+        "phenotype_prediction",
     ),
     _Probe(
         19,

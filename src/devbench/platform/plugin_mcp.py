@@ -35,6 +35,7 @@ from pydantic import (
     ConfigDict,
     Field,
     RootModel,
+    TypeAdapter,
     ValidationError,
     model_validator,
 )
@@ -68,6 +69,23 @@ from .plugin_jobs import (
     directory,
     studio_handoff,
 )
+from .plugin_rna_solvers import (
+    LOCAL_OPERATIONS,
+    CCCChoice,
+    DeconvolutionChoice,
+    DTUChoice,
+    NeighborhoodChoice,
+    PerturbationChoice,
+    PredictionChoice,
+    SolverChoice,
+    SolverEvidence,
+    SpatialChoice,
+    bind_sources,
+    check_inputs,
+    execute_solver,
+    local_request,
+)
+from .plugin_rna_solvers import runtime_info as _local_python_runtime
 from .scrna_general_pseudobulk import GeneralPseudobulkSpec
 from .thesis_aims import AimDefinition, AimOutcome, ExplanationAssessment
 
@@ -105,7 +123,7 @@ class Input(_Args):
         "synthetic", "public", "private", "private_clinical", "clinical", "unclassified"
     ] = "unclassified"
     clinical_metadata: bool = False
-    role: Literal["expression", "metadata", "manifest"] = "expression"
+    role: Literal["expression", "metadata", "manifest", "reference"] = "expression"
 
 
 class Inspect(_Args):
@@ -146,6 +164,14 @@ class Answerability(_Args):
     )
     design: DesignEvidence | None = None
     local_design: LocalDesign | None = None
+    local_solver: SolverChoice | None = None
+    normalized_layer: _TEXT | None = None
+    normalization: Literal["library_size_normalized", "library_size_log1p"] | None = (
+        None
+    )
+    coordinate_frame: _TEXT | None = None
+    coordinate_units: _TEXT | None = None
+    non_targeting_control: _TEXT | None = None
 
 
 class _Plan(_Args):
@@ -317,10 +343,62 @@ class _FastqPlan(_Plan):
     parameters: _FastqParameters
 
 
+class _CCCPlan(CCCChoice, _Plan):
+    pass
+
+
+class _NeighborhoodPlan(NeighborhoodChoice, _Plan):
+    pass
+
+
+class _DeconvolutionPlan(DeconvolutionChoice, _Plan):
+    pass
+
+
+class _DTUPlan(DTUChoice, _Plan):
+    pass
+
+
+class _SpatialPlan(SpatialChoice, _Plan):
+    pass
+
+
+class _PerturbationPlan(PerturbationChoice, _Plan):
+    pass
+
+
+class _PredictionPlan(PredictionChoice, _Plan):
+    pass
+
+
+_LOCAL_PLAN_TYPES = (
+    _CCCPlan,
+    _NeighborhoodPlan,
+    _DeconvolutionPlan,
+    _DTUPlan,
+    _SpatialPlan,
+    _PerturbationPlan,
+    _PredictionPlan,
+)
+_SOLVER_FIELDS = {"operation", "parameters", "transcript_reference"}
+_SOLVER_ADAPTER: TypeAdapter[SolverChoice] = TypeAdapter(SolverChoice)
+
+
 class Plan(
     RootModel[
         Annotated[
-            _MatrixPlan | _BulkPlan | _CellPlan | _PathwayPlan | _FastqPlan,
+            _MatrixPlan
+            | _BulkPlan
+            | _CellPlan
+            | _PathwayPlan
+            | _FastqPlan
+            | _CCCPlan
+            | _NeighborhoodPlan
+            | _DeconvolutionPlan
+            | _DTUPlan
+            | _SpatialPlan
+            | _PerturbationPlan
+            | _PredictionPlan,
             Field(discriminator="operation"),
         ]
     ]
@@ -538,8 +616,21 @@ def _metadata_header(columns: list[str]) -> bool:
 
 
 def _table_axes(
-    profile: dict[str, Any], *, verify_counts: bool = False
+    profile: dict[str, Any],
+    *,
+    verify_counts: bool = False,
+    verified_axes: tuple[tuple[str, ...], tuple[str, ...]] | None = None,
 ) -> dict[str, str]:
+    if verified_axes is not None:
+        observed_ids, feature_ids = verified_axes
+        return {
+            **(
+                {"observation_axis_sha256": digest(sorted(observed_ids))}
+                if observed_ids
+                else {}
+            ),
+            **({"feature_axis_sha256": digest(feature_ids)} if feature_ids else {}),
+        }
     from devbench.analysis.workbench_episode_intake import _expression_rows
 
     with _expression_rows(profile, maximum=_AXIS_BUDGET) as rows:
@@ -588,7 +679,14 @@ def _validate_h5_dataset(node) -> None:
         raise ValueError("HDF5 uses an unsupported inspection filter")
 
 
-def _verify_h5_counts(element, shape: tuple[int, int], layout: str | None) -> bool:
+def _verify_h5_counts(
+    element,
+    shape: tuple[int, int],
+    layout: str | None,
+    *,
+    integer: bool = True,
+    nonnegative: bool = True,
+) -> bool:
     import h5py
     import numpy as np
 
@@ -620,9 +718,13 @@ def _verify_h5_counts(element, shape: tuple[int, int], layout: str | None) -> bo
         chunk = values[start : start + block]
         if (
             not np.isfinite(chunk).all()
-            or np.any(chunk < 0)
-            or np.any(chunk >= 2**53)
-            or (values.dtype.kind == "f" and np.any(chunk != np.floor(chunk)))
+            or (nonnegative and np.any(chunk < 0))
+            or (nonnegative and np.any(chunk >= 2**53))
+            or (
+                integer
+                and values.dtype.kind == "f"
+                and np.any(chunk != np.floor(chunk))
+            )
         ):
             return False
     return True
@@ -719,6 +821,26 @@ def _h5_index(group, expected: int) -> str:
     return hashlib.sha256(canonical_json(labels)).hexdigest()
 
 
+def _h5_annotation_values(node, column: str, expected: int) -> list[str]:
+    import h5py
+    import numpy as np
+
+    if (
+        column == "label"
+        and isinstance(node, h5py.Dataset)
+        and node.shape == (expected,)
+        and node.dtype.kind in "iub"
+    ):
+        if node.nbytes > _H5_BLOCK or expected > _H5_BLOCK // 32:
+            raise ValueError("Binary labels exceed the inspection budget")
+        _validate_h5_dataset(node)
+        values = node[:]
+        if not np.isin(values, (0, 1)).all():
+            raise ValueError("Phenotype labels require binary values")
+        return [str(int(value)) for value in values]
+    return _h5_labels(node, expected)
+
+
 def _bounded_hdf5_probe(probe: Callable[..., Any], *args: Any) -> Any:
     from devharness_core.watchdog import HarnessResourceInterrupt, run_sandboxed
 
@@ -732,7 +854,9 @@ def _h5ad_evidence(
     profile: dict[str, Any],
     check_slots: tuple[str, ...] = (),
     annotation_columns: tuple[str, ...] = (),
-) -> tuple[dict[str, str], tuple[str, ...], dict[str, list[str]]]:
+    continuous_slot: str | None = None,
+    physical_spatial: bool = False,
+) -> tuple[dict[str, str], tuple[str, ...], dict[str, list[str]], dict[str, str]]:
     import h5py
 
     from devbench.analysis.rna_scrna_input_contract import _closed_storage
@@ -755,17 +879,45 @@ def _h5ad_evidence(
         annotations = {}
         for column in annotation_columns:
             if column in observed["obs_columns"]:
-                annotations[column] = _h5_labels(_node(obs, column), shape[0])
+                annotations[column] = _h5_annotation_values(
+                    _node(obs, column), column, shape[0]
+                )
         verified = [
             slot
             for slot in check_slots
             if _valid_h5ad_slot(handle, slot, observed["layers"], shape)
         ]
-    return axes, tuple(verified), annotations
+        additional = {}
+        if continuous_slot and _valid_h5ad_slot(
+            handle, continuous_slot, observed["layers"], shape, integer=False
+        ):
+            additional["cell_type_expression"] = (
+                continuous_slot
+                if continuous_slot == "X"
+                else "layers/" + continuous_slot
+            )
+        if (
+            physical_spatial
+            and "spatial" in observed["obsm_keys"]
+            and _verify_h5_counts(
+                _node(handle["obsm"], "spatial"),
+                (shape[0], 2),
+                None,
+                integer=False,
+                nonnegative=False,
+            )
+        ):
+            additional["spatial_coordinates"] = "obsm/spatial"
+    return axes, tuple(verified), annotations, additional
 
 
 def _valid_h5ad_slot(
-    handle, slot: str, layers: list[str], shape: tuple[int, int]
+    handle,
+    slot: str,
+    layers: list[str],
+    shape: tuple[int, int],
+    *,
+    integer: bool = True,
 ) -> bool:
     import h5py
 
@@ -776,12 +928,12 @@ def _valid_h5ad_slot(
     else:
         return False
     if isinstance(element, h5py.Dataset):
-        return _verify_h5_counts(element, shape, None)
+        return _verify_h5_counts(element, shape, None, integer=integer)
     layout = element.attrs.get("encoding-type")
     return (
         layout in ("csr_matrix", "csc_matrix")
         and tuple(element.attrs.get("shape", ())) == shape
-        and _verify_h5_counts(element, shape, layout[:3])
+        and _verify_h5_counts(element, shape, layout[:3], integer=integer)
     )
 
 
@@ -903,16 +1055,40 @@ def _h5ad_measurements(
             "counts" if "counts" in profile["observed"]["layers"] else "X"
         )
         slots = (slot,)
-    columns = tuple(
-        dict.fromkeys(
-            col for col in (args.batch_column, args.capture_column) if col is not None
+    from devbench.core.scientific_types import PHYSICAL_UNITS
+
+    extra_columns = {
+        "cell_communication": ("cell_type", "donor_id"),
+        "perturbation_response": ("perturbation", "donor_id"),
+        "phenotype_prediction": ("label", "donor_id"),
+    }.get(args.request.question, ())
+    physical_spatial = (
+        args.request.question in {"spatial_pattern", "spatial_domains"}
+        and args.coordinate_units in PHYSICAL_UNITS
+        and args.coordinate_frame is not None
+        and args.coordinate_frame.strip() == args.coordinate_frame
+        and not re.search(
+            r"umap|(?:^|[^a-z])pca|t[\W_]*sne|latent|embedding",
+            args.coordinate_frame,
+            re.I,
         )
     )
-    axes, verified, annotations = _bounded_hdf5_probe(
+    columns = tuple(
+        dict.fromkeys(
+            col
+            for col in (args.batch_column, args.capture_column, *extra_columns)
+            if col is not None
+        )
+    )
+    axes, verified, annotations, additional = _bounded_hdf5_probe(
         _h5ad_evidence,
         profile,
         slots,
         columns,
+        args.normalized_layer
+        if args.normalization and args.request.question == "cell_communication"
+        else None,
+        physical_spatial,
     )
     kinds: dict[str, Measurement] = {
         "X": "gene_counts",
@@ -923,7 +1099,25 @@ def _h5ad_measurements(
     selected = [
         (kinds.get(slot, "gene_counts"), slot if slot == "X" else "layers/" + slot)
         for slot in verified
+        if (slot if slot == "X" else "layers/" + slot)
+        != additional.get("cell_type_expression")
     ]
+    if (
+        annotations.get("cell_type")
+        and annotations.get("donor_id")
+        and "cell_type_expression" in additional
+    ):
+        selected.append(("cell_type_expression", additional["cell_type_expression"]))
+    if "spatial_coordinates" in additional:
+        selected.append(("spatial_coordinates", additional["spatial_coordinates"]))
+    if assignments := annotations.get("perturbation"):
+        selected.append(("perturbation_assignments", "obs/perturbation"))
+        if args.non_targeting_control in assignments and len(set(assignments)) > 1:
+            selected.append(("control_assignments", "obs/perturbation/control"))
+    if set(annotations.get("label", ())) == {"0", "1"} and annotations.get("donor_id"):
+        labels = set(zip(annotations["donor_id"], annotations["label"], strict=True))
+        if len(labels) == len(set(annotations["donor_id"])):
+            selected.append(("phenotype_outcomes", "obs/label"))
     batch, capture = args.batch_column, args.capture_column
     if batch is not None and annotations.get(batch):
         selected.append(("batch_membership", "obs/" + batch))
@@ -941,8 +1135,51 @@ def _h5ad_measurements(
 
 
 def _attested_measurements(
-    args: Answerability, profiles: list[dict[str, Any]]
+    args: Answerability,
+    profiles: list[dict[str, Any]],
+    *,
+    solver_evidence: SolverEvidence | None = None,
 ) -> tuple[AttestedMeasurement, ...]:
+    if solver_evidence is not None:
+        attestations = []
+        choice = args.local_solver
+        for measured in solver_evidence.measurements:
+            axes = _table_axes(
+                measured.source,
+                verified_axes=(measured.observations, measured.features),
+            )
+            spatial = (
+                choice.parameters
+                if isinstance(choice, SpatialChoice)
+                and measured.kind == "spatial_coordinates"
+                else None
+            )
+            projection = _inspect_projection(measured.source, axes=axes)
+            attestations.append(
+                AttestedMeasurement(
+                    kind=measured.kind,
+                    slot=measured.slot,
+                    artifact_sha256=measured.source["sha256"],
+                    receipt_sha256=digest(
+                        {
+                            "inspection": projection["inspection_receipt_sha256"],
+                            "kind": measured.kind,
+                            "slot": measured.slot,
+                            "solver": choice.model_dump(mode="json")
+                            if choice
+                            else None,
+                        }
+                    ),
+                    observation_axis_sha256=axes.get("observation_axis_sha256"),
+                    feature_axis_sha256=axes.get("feature_axis_sha256"),
+                    reference=choice.transcript_reference
+                    if isinstance(choice, DTUChoice)
+                    else None,
+                    coordinate_frame=spatial.coordinate_frame if spatial else None,
+                    coordinate_units=spatial.coordinate_units if spatial else None,
+                )
+            )
+        return tuple(attestations)
     request = args.request
     measurements: list[AttestedMeasurement] = []
     for profile in profiles:
@@ -976,10 +1213,34 @@ def _attested_measurements(
                         "inspection": projection["inspection_receipt_sha256"],
                         "verified_representation": kind,
                         "slot": slot,
+                        **(
+                            {
+                                "coordinate_frame": args.coordinate_frame,
+                                "coordinate_units": args.coordinate_units,
+                            }
+                            if kind == "spatial_coordinates"
+                            else {}
+                        ),
+                        **(
+                            {"declared_control": args.non_targeting_control}
+                            if kind == "control_assignments"
+                            else {}
+                        ),
+                        **(
+                            {"declared_normalization": args.normalization}
+                            if kind == "cell_type_expression"
+                            else {}
+                        ),
                     }
                 ),
                 observation_axis_sha256=axes.get("observation_axis_sha256"),
                 feature_axis_sha256=axes.get("feature_axis_sha256"),
+                coordinate_frame=args.coordinate_frame
+                if kind == "spatial_coordinates"
+                else None,
+                coordinate_units=args.coordinate_units
+                if kind == "spatial_coordinates"
+                else None,
             )
             for kind, slot in selected
         )
@@ -997,8 +1258,26 @@ _CELL_ASSAYS = {"single_cell_rna_seq", "single_nucleus_rna_seq"}
 
 
 def _answer_runtime(
-    request: AnswerabilityRequest, image_id: str | None
+    request: AnswerabilityRequest,
+    image_id: str | None,
+    *,
+    local_solver: SolverChoice | None = None,
+    local_runtime: dict[str, Any] | None = None,
 ) -> RuntimeEvidence | None:
+    if local_solver is not None:
+        declared = local_request(local_solver)
+        if (declared.family_id, declared.question) != (
+            request.family_id,
+            request.question,
+        ):
+            return None
+        info = local_runtime if local_runtime is not None else _local_python_runtime()
+        return RuntimeEvidence(
+            question=request.question,
+            tier="tier_a",
+            operation_id=local_solver.operation,
+            runtime_sha256=info["runtime_sha256"],
+        )
     from devharness_controlled.native_contracts import (
         limma_voom_kernel_images,
         pathway_kernel_images,
@@ -1200,7 +1479,17 @@ def _answer(
         **(
             {
                 "attested_measurements": [
-                    {"kind": item.kind, "slot": item.slot} for item in measurements
+                    item.model_dump(
+                        mode="json",
+                        include={
+                            "kind",
+                            "slot",
+                            "coordinate_frame",
+                            "coordinate_units",
+                        },
+                        exclude_none=True,
+                    )
+                    for item in measurements
                 ]
             }
             if profiles
@@ -1540,6 +1829,8 @@ def _answer_staged(
     request = args.request
     if not profiles or request.requires_read_archive_download:
         return {}
+    if args.local_solver is not None:
+        return _local_solver_answer(args, profiles)
     runtime = _answer_runtime(request, plugin.mounted_image_id)
     if request.question == "qc_salmon" and (
         request.family_id == 1
@@ -1563,6 +1854,71 @@ def _answer_staged(
     ):
         return _retained_cell_answer(plugin, args, runtime)
     return {}
+
+
+def _local_solver_answer(
+    args: Answerability,
+    profiles: list[dict[str, Any]],
+    runtime_info=None,
+) -> dict[str, Any]:
+    choice = args.local_solver
+    if choice is None or args.request.requires_read_archive_download:
+        raise OperationBlocked("local_solver_requires_staged_inputs")
+    if any(
+        profile["data_classification"] not in {"synthetic", "public"}
+        for profile in profiles
+    ):
+        raise OperationBlocked(_PRIVATE)
+    declared = local_request(choice)
+    if (args.request.family_id, args.request.question) != (
+        declared.family_id,
+        declared.question,
+    ):
+        raise OperationBlocked("local_solver_question_mismatch")
+    sources = bind_sources(choice, profiles)
+    try:
+        evidence = check_inputs(choice, sources)
+    except ValueError as error:
+        # Report a controlled category rather than arbitrary values from inputs.
+        raise OperationBlocked("local_solver_input_or_design_invalid") from error
+    measurements = _attested_measurements(args, profiles, solver_evidence=evidence)
+    design = None
+    if evidence.design_units:
+        axis = measurements[0].observation_axis_sha256
+        assert axis is not None
+        design = DesignEvidence(
+            biological_unit="donor_id",
+            receipt_sha256=digest(
+                {
+                    "solver": choice.model_dump(mode="json"),
+                    "observations": axis,
+                    "independent_units_per_group": evidence.design_units,
+                }
+            ),
+            observation_axis_sha256=axis,
+            estimability="estimable",
+            independent_units_per_group=evidence.design_units,
+        )
+    runtime = _answer_runtime(
+        args.request, None, local_solver=choice, local_runtime=runtime_info
+    )
+    result = assess_answerability(
+        args.request,
+        measurements=measurements,
+        design=design,
+        runtime=runtime,
+    ).model_dump(mode="json")
+    return {
+        **result,
+        "evidence_provenance": "server_attested_local_inputs",
+        "design_evidence_status": design.estimability
+        if design
+        else "not_required_by_registry",
+        "attested_measurements": [
+            item.model_dump(mode="json", exclude_none=True) for item in measurements
+        ],
+        "registered_family_count": len(RNA_FAMILIES),
+    }
 
 
 def _local_design(design: LocalDesign, source: Path, source_sha: str) -> dict[str, Any]:
@@ -1844,6 +2200,54 @@ def _plan_answer(
     )
 
 
+def _plan_runtime_and_answer(
+    args: _Plan,
+    profiles: list[dict[str, Any]],
+    classification: str,
+    mounted_image_id: str | None,
+) -> tuple[dict[str, Any], dict[str, Any] | None, SolverChoice | None]:
+    if classification == "private":
+        return _runtime_info(mounted_image_id), None, None
+    if not isinstance(args, _LOCAL_PLAN_TYPES):
+        return (
+            _runtime_info(mounted_image_id),
+            _plan_answer(args, profiles, mounted_image_id),
+            None,
+        )
+    choice = _SOLVER_ADAPTER.validate_json(
+        canonical(args.model_dump(mode="json", include=_SOLVER_FIELDS))
+    )
+    supplied = args.answerability
+    if supplied is not None and (
+        supplied.design is not None
+        or supplied.local_design is not None
+        or supplied.measurements
+        or (supplied.inputs and supplied.inputs != args.inputs)
+        or (supplied.local_solver is not None and supplied.local_solver != choice)
+    ):
+        raise OperationBlocked("local_solver_answerability_scope_mismatch")
+    runtime = _local_python_runtime()
+    answer = _local_solver_answer(
+        Answerability(
+            request=supplied.request if supplied else local_request(choice),
+            local_solver=choice,
+        ),
+        profiles,
+        runtime,
+    )
+    if answer["status"] != "ready":
+        raise OperationBlocked(answer["reason"])
+    return runtime, answer, choice
+
+
+def _freeze_route_parameters(
+    plan: dict[str, Any], parameters: dict[str, Any], choice: SolverChoice | None
+) -> None:
+    plan["design"]["parameters"] = parameters
+    if choice is not None:
+        plan["local_solver"] = choice.model_dump(mode="json")
+
+
 class Plugin:
     def __init__(
         self,
@@ -1919,6 +2323,19 @@ class Plugin:
         return {"inputs": [_inspect_projection(item) for item in profiles]}
 
     def answer(self, args: Answerability) -> dict[str, Any]:
+        if args.local_solver is not None:
+            if (
+                args.design is not None
+                or args.local_design is not None
+                or args.measurements
+            ):
+                raise OperationBlocked("local_solver_requires_server_attested_design")
+            profiles = self._answer_profiles(args)
+            if not profiles:
+                raise OperationBlocked("local_solver_requires_staged_inputs")
+            return _answer_staged(self, args, profiles) or _local_solver_answer(
+                args, profiles
+            )
         design = args.local_design
         source = (
             _profile(self.discovery, self.input_root, design.metadata)
@@ -2003,6 +2420,12 @@ class Plugin:
             if "private" in classes
             else ("public" if "public" in classes else "synthetic")
         )
+        runtime_info, answer, local_choice = _plan_runtime_and_answer(
+            args,
+            profiles,
+            classification,
+            self.mounted_image_id,
+        )
         frozen: dict[str, Any] = {
             "format": "devbench.plugin-plan/1",
             "plan_id": uuid4().hex,
@@ -2029,15 +2452,11 @@ class Plugin:
                 {"citation": citation, "provenance": "unverified_caller_citation"}
                 for citation in args.references
             ],
-            "answerability": (
-                _plan_answer(args, profiles, self.mounted_image_id)
-                if classification != "private"
-                else None
-            ),
-            "runtime": _runtime_info(self.mounted_image_id),
+            "answerability": answer,
+            "runtime": runtime_info,
             "mounted_image_id": self.mounted_image_id,
         }
-        frozen["design"]["parameters"] = parameters
+        _freeze_route_parameters(frozen, parameters, local_choice)
         if args.operation == "qc-salmon" and classification != "private":
             frozen["runtime"]["network_policy"] = (
                 "Local data only; analysis containers offline; pinned engine bootstrap "
@@ -2209,6 +2628,8 @@ class Plugin:
                 row["plan_sha256"],
                 receipt,
             )
+            if plan["operation"] in LOCAL_OPERATIONS:
+                _verify_solver_result(self.jobs.workspace, args.run_id, receipt)
             current = _adaptive_receipt_guard(ledger, plan, receipt)
         else:
             raise OperationBlocked("run_receipt_unavailable")
@@ -2392,6 +2813,8 @@ def _studio_receipt(
             row["plan_sha256"],
             receipt,
         )
+        if plan["operation"] in LOCAL_OPERATIONS:
+            _verify_solver_result(workspace, rid, receipt)
         current = _adaptive_receipt_guard(ledger, plan, receipt)
     identities = set(studio_evidence_digests(receipt))
     if not identities.isdisjoint(blocked_hashes):
@@ -2821,6 +3244,339 @@ def _statistic_summary(
     ], tested
 
 
+def _solver_label(*parts: str) -> str:
+    safe = [_receipt_label(part, "") for part in parts]
+    return " / ".join(safe) if all(safe) else ""
+
+
+def _solver_statistics(
+    rows: Iterable[dict[str, Any]],
+    *,
+    axes: tuple[str, ...],
+    effect: str,
+    p: str = "p_value",
+    q: str = "q_value",
+    unconfirmed: bool = False,
+) -> Iterator[dict[str, Any]]:
+    for row in rows:
+        nominal, adjusted = row[p], row[q]
+        if unconfirmed and adjusted is None and nominal is not None:
+            if not 0 <= nominal <= 1:
+                raise OperationBlocked("retained_probability_bounds_failed")
+            nominal = (
+                None  # Confirmation was not performed for the retained nominal test.
+            )
+        yield {
+            "label": _solver_label(*(str(row[key]) for key in axes)),
+            "effect": row.get(effect),
+            "p_value": nominal,
+            "q_value": adjusted,
+        }
+
+
+def _descriptive_solver_tables(
+    operation: str, result: dict[str, Any], metrics: dict[str, Any]
+) -> list[dict[str, Any]]:
+    tables = []
+    if operation == "bulk_deconvolution":
+        samples = result["samples"]
+        metrics["samples"] = len(samples)
+        metrics["estimated_samples"] = sum(
+            sample["status"] == "estimated" for sample in samples
+        )
+        tables.append(
+            _summary_table(
+                "Reconstruction diagnostics",
+                ["Sample", "Status", "RMSE", "Pearson", "Spearman"],
+                [
+                    [
+                        _receipt_label(row["sample_id"], f"Sample {index}"),
+                        row["status"],
+                        row["rmse"],
+                        row["pearson_r"],
+                        row["spearman_r"],
+                    ]
+                    for index, row in enumerate(samples[:20], start=1)
+                ],
+            )
+        )
+        proportions = (
+            [sample["sample_id"], cell_type, proportion]
+            for sample in samples
+            for cell_type, proportion in (sample["proportions"] or {}).items()
+        )
+        from itertools import islice
+
+        tables.append(
+            _summary_table(
+                "Relative cell-type proportions",
+                ["Sample", "Cell type", "Proportion"],
+                [
+                    [
+                        _receipt_label(sample, "Withheld"),
+                        _receipt_label(cell_type, "Withheld"),
+                        value,
+                    ]
+                    for sample, cell_type, value in islice(proportions, 20)
+                ],
+            )
+        )
+    else:
+        oof = result["out_of_fold_metrics"]
+        held = result["independent_evaluation"]["metrics"]
+        keys = (
+            "n_donors",
+            "roc_auc",
+            "pr_auc",
+            "brier_score",
+            "calibration_error",
+            "calibration_slope",
+        )
+        metrics.update({f"out_of_fold_{key}": oof[key] for key in keys})
+        tables.append(
+            _summary_table(
+                "Donor-level predictive performance",
+                ["Metric", "Out of fold", "Independent holdout"],
+                [[key, oof[key], held[key]] for key in keys],
+            )
+        )
+    return tables
+
+
+def _solver_summary(
+    operation: str, result: dict[str, Any]
+) -> tuple[dict[str, Any], list[dict[str, Any]], int]:
+    metrics = {"solver_status": result["status"]}
+    for key in (
+        "n_cells",
+        "n_donors",
+        "n_spots",
+        "n_donor_sections",
+        "n_undirected_edges",
+        "tested_genes",
+        "screened_genes",
+        "target_ofdr",
+        "pca_components_used",
+        "reference_condition_number",
+        "feature_selection_stability",
+    ):
+        metrics[key] = result.get(key)
+    metrics = {key: value for key, value in metrics.items() if value is not None}
+    if operation in {"bulk_deconvolution", "phenotype_prediction"}:
+        return metrics, _descriptive_solver_tables(operation, result, metrics), 0
+    tables: list[dict[str, Any]] = []
+    tested = 0
+
+    def statistics(caption: str, rows: Iterable[dict[str, Any]]) -> int:
+        preview, n_tests = _statistic_summary(
+            rows,
+            identifier="label",
+            effect="effect",
+            caption=caption,
+        )
+        tables.extend(preview)
+        return n_tests
+
+    if operation == "scrna_ccc":
+        effect = (
+            "effect"
+            if result["specification"]["mode"] == "differential_condition"
+            else "interaction_magnitude"
+        )
+        tested += statistics(
+            "Cell–cell communication",
+            _solver_statistics(
+                result["interaction_statistics"],
+                axes=("interaction_id", "sender", "receiver"),
+                effect=effect,
+            ),
+        )
+    elif operation == "scrna_neighborhood_da":
+        rows = result["neighborhoods"]
+        tested += statistics(
+            "Neighborhood differential abundance",
+            _solver_statistics(
+                rows,
+                axes=("center_cell_id",),
+                effect="log2_fold_change",
+            ),
+        )
+        statistics(
+            "Neighborhoods (spatial FDR)",
+            _solver_statistics(
+                rows,
+                axes=("center_cell_id",),
+                effect="log2_fold_change",
+                q="spatial_fdr",
+            ),
+        )
+    elif operation == "bulk_dtu":
+        genes = result["gene_statistics"]
+        tested += statistics(
+            "Within-gene usage screen",
+            _solver_statistics(
+                genes,
+                axes=("gene_id",),
+                effect="unused",
+                p="gene_p",
+                q="gene_q",
+            ),
+        )
+        tested += statistics(
+            "Feature usage confirmation",
+            _solver_statistics(
+                (row for gene in genes for row in gene["transcript_statistics"]),
+                axes=("feature_id",),
+                effect="log_odds_ratio",
+                p="tx_p",
+                q="tx_q",
+                unconfirmed=True,
+            ),
+        )
+    elif operation == "spatial_pattern":
+        for label, key, effect in (
+            ("Moran’s I", "moran", "moran_i"),
+            ("Geary’s C", "geary", "geary_c"),
+        ):
+            tested += statistics(
+                label,
+                _solver_statistics(
+                    result["gene_statistics"],
+                    axes=("gene_id",),
+                    effect=effect,
+                    p=key + "_p",
+                    q=key + "_q",
+                ),
+            )
+        tested += statistics(
+            "Cell-type neighborhood enrichment",
+            _solver_statistics(
+                (
+                    {**row, "label": _solver_label(*row["cell_types"])}
+                    for row in result["neighborhood_enrichment"]
+                ),
+                axes=("label",),
+                effect="z_score",
+            ),
+        )
+        tested += statistics(
+            "Library size Moran’s I",
+            _solver_statistics(
+                [result["library_size_diagnostic"]],
+                axes=("measurement",),
+                effect="moran_i",
+            ),
+        )
+    elif operation == "perturbation_response":
+        perturbations = result["perturbations"]
+        tested += statistics(
+            "Perturbation energy distance",
+            _solver_statistics(
+                (
+                    {**row["energy_test"], "perturbation": row["perturbation"]}
+                    for row in perturbations
+                ),
+                axes=("perturbation",),
+                effect="distance",
+            ),
+        )
+        tested += statistics(
+            "Donor pseudobulk differential expression",
+            _solver_statistics(
+                (
+                    {**gene, "perturbation": row["perturbation"]}
+                    for row in perturbations
+                    for gene in row["pseudobulk_de"]["gene_statistics"]
+                ),
+                axes=("perturbation", "gene_id"),
+                effect="log2_fold_change",
+            ),
+        )
+    return metrics, tables, tested
+
+
+_SOLVER_RESULT_FILE = "solver-result.json"
+
+
+def _verify_solver_result(
+    workspace: Path,
+    rid: str,
+    receipt: dict[str, Any],
+) -> None:
+    from devbench.core.population_data import bound_query_file
+
+    relative = Path("runs") / rid / _SOLVER_RESULT_FILE
+    artifact = receipt.get("result_artifact", {})
+    if artifact.get("path") != relative.as_posix():
+        raise OperationBlocked("solver_result_artifact_changed")
+    try:
+        with bound_query_file(
+            workspace / relative, artifact["sha256"], artifact["size_bytes"]
+        ) as source:
+            if os.fstat(source.fileno()).st_size != artifact["size_bytes"]:
+                raise ValueError("Result size mismatch")
+    except (OSError, ValueError, KeyError) as error:
+        raise OperationBlocked("solver_result_artifact_changed") from error
+
+
+def _run_local_solver(jobs: JobStore, rid: str, plan: dict[str, Any]) -> dict[str, Any]:
+    from devbench.core._rna_solver_inputs import MAX_INPUT_BYTES
+    from devbench.core.population_data import bound_query_file
+
+    from .workbench_matrix_audit import _snapshot_sources
+
+    runtime = _local_python_runtime()
+    if runtime != plan["runtime"]:
+        raise OperationBlocked("local_python_runtime_changed")
+    choice = _SOLVER_ADAPTER.validate_json(canonical(plan["local_solver"]))
+    if choice.operation != plan["operation"]:
+        raise OperationBlocked("solver_plan_operation_mismatch")
+    run_root = jobs.workspace / "runs" / rid
+    run_root.mkdir(mode=0o700, parents=True, exist_ok=False)
+    profiles = plan["profiles"]
+    with TemporaryDirectory(dir=run_root, prefix=".inputs-") as staging:
+        staged = _snapshot_sources(
+            {
+                "source_profiles": profiles,
+                "sources": [row["source"] for row in profiles],
+            },
+            Path(staging),
+            MAX_INPUT_BYTES,
+        )["source_profiles"]
+        sources = bind_sources(choice, staged)
+        try:
+            result = execute_solver(choice, sources)
+        finally:
+            for profile in staged:
+                with bound_query_file(
+                    profile["source"], profile["sha256"], profile["size_bytes"]
+                ):
+                    pass
+    metrics, tables, tested = _solver_summary(choice.operation, result)
+    raw = canonical(result)
+    path = run_root / _SOLVER_RESULT_FILE
+    with path.open("xb") as target:
+        target.write(raw)
+    path.chmod(0o400)
+    return {
+        "claim_scope": result["claim_scope"],
+        "runtime_sha256": runtime["runtime_sha256"],
+        "probability_bounds_status": "verified" if tested else "not_evaluated",
+        "metrics": metrics,
+        "summary_tables": tables,
+        "result_artifact": {
+            "path": path.relative_to(jobs.workspace).as_posix(),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "size_bytes": len(raw),
+        },
+        "limitations": [
+            "Scope is limited to the supplied measurements and design and the "
+            "declared method. "
+            "Scientific review and independent qualification remain separate."
+        ],
+    }
+
+
 def _matrix_summary(result: dict[str, Any]) -> list[dict[str, Any]]:
     from statistics import median, quantiles
 
@@ -2898,6 +3654,8 @@ def run_frozen_plan(jobs: JobStore, rid: str, plan: dict[str, Any]) -> dict[str,
         result = _run_matrix(jobs, rid, plan, ledger, lineage, verify)
     elif operation == "qc-salmon":
         result = _run_fastq(jobs, rid, plan)
+    elif operation in LOCAL_OPERATIONS:
+        result = _run_local_solver(jobs, rid, plan)
     else:
         result = _run_adaptive(jobs, rid, plan, ledger, broker, lineage)
     verify()

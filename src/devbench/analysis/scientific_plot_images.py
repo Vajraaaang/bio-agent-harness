@@ -10,17 +10,18 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
-from io import BytesIO
 import math
 import numbers
 import re
 import struct
 import zlib
+from io import BytesIO
+
+from devbench.core.scientific_types import PHYSICAL_UNITS
 
 MAX_PNG_BYTES = 8 * 1024**2
 MAX_IMAGE_PIXELS = 4_000_000
 MAX_IMAGE_DIMENSION = 16_384
-PHYSICAL_UNITS = frozenset({"um", "µm", "micrometers", "mm", "millimeters", "nm", "cm", "m"})
 _IMAGE_FIELDS = {"png_base64", "sha256", "width", "height", "pixel_to_data", "coordinate_unit",
                  "coordinate_system_id", "registration_id", "source"}
 _SOURCE_FIELDS = {"id", "kind", "sample_id", "section_id", "biological_unit_id"}

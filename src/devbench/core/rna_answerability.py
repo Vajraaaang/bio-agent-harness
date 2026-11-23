@@ -8,7 +8,7 @@ discovering software, or granting execution or publication authority.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Annotated, Literal
 
@@ -49,6 +49,7 @@ Measurement = Literal[
     "sequencing_reads",
     "read_alignments",
     "transcript_counts",
+    "exon_counts",
     "gene_counts",
     "estimated_gene_counts",
     "effective_lengths",
@@ -190,6 +191,7 @@ class EntryPointContract:
 
 
 _COUNT_MATRIX: tuple[Measurement, ...] = (
+    "exon_counts",
     "gene_counts",
     "estimated_gene_counts",
     "transcript_counts",
@@ -216,7 +218,7 @@ RNA_ENTRY_POINTS: Mapping[EntryPoint, EntryPointContract] = MappingProxyType(
             "Local alignments with their original reference and read scope.",
         ),
         "transcript_quantification": EntryPointContract(
-            ("transcript_counts", "estimated_gene_counts"),
+            ("transcript_counts", "exon_counts", "estimated_gene_counts"),
             "Transcript-level counts or estimates with retained length provenance.",
         ),
         "count_matrix": EntryPointContract(
@@ -289,18 +291,21 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             assays=_CELLS,
             min_units_per_group=3,
             curated_operation="scrna_sccoda",
+            curated_alternatives=("scrna_neighborhood_da",),
         ),
         "bulk_deconvolution": QuestionContract(
             3,
             (_EXPRESSION, ("cell_type_reference",)),
             assays=("bulk_rna_seq",),
             align="features",
+            curated_operation="bulk_deconvolution",
         ),
         "transcript_usage": QuestionContract(
             4,
-            (("transcript_counts",),),
+            (("transcript_counts", "exon_counts"),),
             min_units_per_group=2,
             reference_required=True,
+            curated_operation="bulk_dtu",
         ),
         "splice_junction_usage": QuestionContract(
             4,
@@ -367,6 +372,7 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             (_EXPRESSION, ("spatial_coordinates",)),
             assays=_SPATIAL,
             align="observations",
+            curated_operation="spatial_pattern",
         ),
         "spatial_domains": QuestionContract(
             9,
@@ -378,12 +384,14 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             10,
             (("cell_type_expression",), ("ligand_receptor_reference",)),
             assays=(*_CELLS, *_SPATIAL),
+            curated_operation="scrna_ccc",
         ),
         "perturbation_response": QuestionContract(
             11,
             (_EXPRESSION, ("perturbation_assignments",), ("control_assignments",)),
             align="observations",
             min_units_per_group=2,
+            curated_operation="perturbation_response",
         ),
         "allele_specific_expression": QuestionContract(
             12,
@@ -491,6 +499,7 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             ),
             align="observations",
             min_units_per_group=2,
+            curated_operation="phenotype_prediction",
         ),
         "published_reproduction": QuestionContract(
             19,
@@ -668,6 +677,15 @@ def assess_answerability(
         return result
     if contract.assays and request.assay not in contract.assays:
         return result.model_copy(update={"reason": "assay_incompatible"})
+    if (
+        request.question == "compositional_abundance"
+        and runtime is not None
+        and runtime.question == request.question
+        and runtime.tier == "tier_a"
+        and runtime.operation_id == "scrna_neighborhood_da"
+    ):
+        # The solver counts donor membership in KNN neighborhoods from this axis.
+        contract = replace(contract, measurements=(("latent_embedding",),))
     selected, issue = _select_measurements(request, contract, measurements)
     if issue is not None:
         reason, missing = issue
@@ -824,7 +842,8 @@ def _select_route(
                 }
             )
         if runtime.operation_id in (
-            contract.curated_operation, *contract.curated_alternatives
+            contract.curated_operation,
+            *contract.curated_alternatives,
         ):
             return result.model_copy(
                 update={
