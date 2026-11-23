@@ -3,7 +3,7 @@ import argparse
 import base64
 from pathlib import Path
 
-from scripts.build_colab_notebook import _read_source_file, build_source_bundle
+from scripts.source_bundle import _read_source_file, build_source_bundle
 
 
 def build_source_resource(project, *, check=False):

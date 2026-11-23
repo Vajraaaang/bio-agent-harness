@@ -1,7 +1,7 @@
 
 from devbench.engine.method_executor import container_command
 from devbench.engine.methods import exploratory_method
-from devbench.study.rna_hosted_fixtures import custom
+from tests.support.workflow_science_fixtures import custom
 
 
 def test_frozen_method_uses_daemon_lifetime_and_closed_mounts(tmp_path):

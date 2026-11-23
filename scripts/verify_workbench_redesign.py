@@ -170,7 +170,7 @@ def main(argv=None):
     elif args.runtime_source:
         seed(args.root)
     else:
-        from scripts.build_colab_notebook import build_source_bundle, extract_source_bundle
+        from scripts.source_bundle import build_source_bundle, extract_source_bundle
         snapshot = build_source_bundle(PROJECT)
         source = args.root / "numerical-source"
         extract_source_bundle(snapshot["base64"], source, snapshot["sha256"])

@@ -99,7 +99,7 @@ def test_governed_oci_retains_large_binary_table(workspace_tmp_path):
     from devbench.engine.methods import MethodService
     from devbench.engine.provenance import hash_artifact
     from devbench.platform.workflow_entrypoints import LEDGER_NAME
-    from devbench.study.rna_hosted_fixtures import custom
+    from tests.support.workflow_science_fixtures import custom
     from tests.test_exploratory_execution_profile import bound_step
     from tests.test_investigation_invalidation import artifact, link, make, step
 

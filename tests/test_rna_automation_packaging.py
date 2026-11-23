@@ -3,7 +3,7 @@ import base64
 import zipfile
 import io
 
-from scripts.build_colab_notebook import allowed_bundle_path, build_source_bundle, extract_source_bundle
+from scripts.source_bundle import allowed_bundle_path, build_source_bundle, extract_source_bundle
 
 ASSETS = ("Dockerfile", "README.md", "build_local.py", "collect_inventory.py",
     "environment-explicit.linux-arm64.txt", "nextflow-launcher", "package-lock.linux-arm64.json",
@@ -14,7 +14,7 @@ PREFIX = "devbench/analysis/assets/community-workflow/"
 def test_community_assets_roundtrip_from_explicit_allowlist(tmp_path):
     source = tmp_path / "source"
     (source / "scripts").mkdir(parents=True)
-    (source / "scripts/colab_run.py").write_text("print('fixture')\n")
+    (source / "scripts/source_bundle.py").write_text("print('fixture')\n")
     (source / "pyproject.toml").write_text("[project]\nname='fixture'\nversion='1'\n")
     (source / "README.md").write_text("Synthetic packaging fixture\n")
     for name in ASSETS:

@@ -425,7 +425,7 @@ def test_executor_relocates_long_socket_paths(
 
     root = workspace_tmp_path
     workspace_parent = root / "tmp" / ("é" * 32)
-    runs_root = root.parent / ".runs"
+    runs_root = Path(__file__).resolve().parents[1] / ".runs"
     monkeypatch.setenv("DEVBENCH_RUNS_ROOT", str(runs_root))
     module = importlib.import_module("devbench.study." + MODULES[track])
     monkeypatch.setattr(module, "_REPOSITORY", root)

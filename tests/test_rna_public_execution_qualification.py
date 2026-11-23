@@ -326,7 +326,7 @@ def full_authored_figure_case():
     import hashlib
     import json
     from pathlib import Path
-    path = Path('/Users/vajraang/Documents/ChatGPT/bio-agent-harness/methods/airway-2015/compiled-v3/workflow-manifest.json')
+    path = Path(__file__).resolve().parents[1] / "methods" / "airway-2015" / "compiled-v3" / "workflow-manifest.json"
     body = path.read_bytes()
     manifest = json.loads(body)
     expected = {chunk['chunk_id']: {'kind': chunk['figure']['kind'], 'source_chunk_id': chunk['chunk_id'],

@@ -73,8 +73,8 @@ def module_workspace_tmp_path(pytestconfig):
 @pytest.fixture
 def installed_hosted_wheel():
     """Require installed module origin for tests whose product path checks the wheel RECORD."""
-    from devbench.study import rna_hosted_qualification
+    from devbench.analysis import rna_trace_contract
 
-    module_path = Path(rna_hosted_qualification.__file__).resolve()
+    module_path = Path(rna_trace_contract.__file__).resolve()
     if not module_path.is_relative_to(Path(sys.prefix).resolve()):
-        pytest.skip("Requires a non-editable installed devharness wheel for hosted identity verification")
+        pytest.skip("Requires a non-editable installed devharness wheel for runtime identity verification")

@@ -10,7 +10,6 @@ import tomllib
 import pytest
 
 from devbench.analysis.workbench_ui import make_server
-from tests.test_workbench_legacy_proxy import archive as archive  # noqa: F401
 
 
 A, B = "a" * 32, "b" * 32
@@ -282,91 +281,20 @@ def test_actor_permission_configuration_denies_future_sibling_workspaces():
 
 
 @pytest.mark.parametrize("path", ["/api/jobs", "/api/config"])
-def test_archived_child_identity_drift_cannot_relabel_a_scoped_request(routing, path):
+def test_project_identity_drift_cannot_relabel_a_scoped_request(routing, path):
     apps, _, request, _ = routing
-
-    class DriftingProxy:
-        is_legacy_proxy = True
-
-        def __init__(self):
-            self.actual_id, self.relay_calls, self.config_calls = A, [], 0
-
-        def workspace_state(self, changes=None):
-            return {"project": {"id": self.actual_id, "name": "Retained child"}}
-
-        def request(self, method, path, body=None):
-            self.relay_calls.append((method, path))
-            payload = json.dumps({"owner": self.actual_id}).encode()
-            return 200, "application/json", None, payload
-
-        def configuration(self):
-            self.config_calls += 1
-            return {"owner": self.actual_id}
-
-    child = DriftingProxy()
-    apps[A] = child
+    child = apps[A]
     assert child.workspace_state()["project"]["id"] == A
-    child.actual_id = B  # A cached archive child no longer has its catalog identity.
+    child.owner = B
+    handler_name = "jobs" if path == "/api/jobs" else "configuration"
+    handler = getattr(child, handler_name)
+    calls = []
+
+    def record_handler():
+        calls.append(path)
+        return handler()
+
+    setattr(child, handler_name, record_handler)
     status, value = request(path, project=A)
     assert status == 409 and "identity" in value["message"].lower()
-    assert child.relay_calls == [] and child.config_calls == 0
-
-
-def test_parent_boundary_and_scope_precede_private_archive_relay(routing, archive):  # noqa: F811
-    apps, hub, request, _ = routing
-    proxy, child_requests, _, _ = archive
-    apps[A] = proxy
-    status, config = request("/api/config", project=A)
-    assert status == 200 and config["project_catalog"]["current_project_id"] == A
-    assert config["project_catalog"]["read_only"] is True
-    assert config["model_access"] is False and config["execution_allowed"] is False
-    before = len(child_requests)
-    status, _ = request("/api/jobs/own/files", project=A, origin="https://example.invalid")
-    assert status == 403 and len(child_requests) == before
-    status, payload = request("/api/jobs/own/files", project=A)
-    assert status == 403 and payload["error"] == "PermissionError"
-    assert request("/api/jobs/foreign/files", project=A)[0] == 404
-    for row in child_requests:
-        headers = {key.lower(): value for key, value in row["headers"].items()}
-        assert headers["x-workbench-token"] == "private-child-token"
-        assert "x-workbench-project" not in headers
-        assert headers["origin"] == "http://127.0.0.1:" + str(proxy._port)
-    before = len(child_requests)
-    status, _ = request("/api/jobs/" + JA + "/run", project=A, method="POST", body={})
-    assert status == 403
-    assert all(row["method"] == "GET" for row in child_requests[before:])
-    status, created = request("/api/projects", project=A, method="POST", body={"name": "New from archive"})
-    assert status == 201 and created["name"] == "New from archive"
-    assert not any(row["method"] == "POST" for row in child_requests)
-
-
-def test_parent_withholds_legacy_html_attachment(routing):
-    apps, hub, _, start = routing
-    payload = b'<!doctype html><script>throw new Error("download bytes only")</script>'
-
-    class HTMLAttachmentProxy:
-        is_legacy_proxy = True
-
-        def workspace_state(self, changes=None):
-            return {"project": {"id": A, "name": "Retained notebook"}}
-
-        def request(self, method, path, body=None):
-            assert method == "GET" and body is None
-            assert path == "/api/jobs/" + JA + "/artifact?name=notebook.html"
-            return 200, "text/html; charset=utf-8", "notebook.html", payload
-
-    apps[A] = HTMLAttachmentProxy()
-    port = start()
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-    try:
-        connection.request("GET", "/api/jobs/" + JA + "/artifact?name=notebook.html",
-            headers={"X-Workbench-Project": A})
-        response = connection.getresponse()
-        assert response.status == 403 and payload not in response.read()
-        assert response.getheader("Content-Disposition") is None
-        assert response.getheader("X-Content-Type-Options") == "nosniff"
-        assert response.getheader("X-Frame-Options") == "DENY"
-        policy = response.getheader("Content-Security-Policy")
-        assert "default-src 'none'" in policy and "script-src" not in policy
-    finally:
-        connection.close()
+    assert calls == []

@@ -10,56 +10,13 @@ registered tool interfaces. Neither component replaces the native model selector
 
 ## Installation and scope
 
-LangGraph 1.2.12, LangChain Core 1.6.6 and SQLite checkpoints 3.1.1 are pinned base
-project dependencies. The `workflow` extra remains a compatibility alias; it no
-longer enables an optional route. The project lock and `requirements-langgraph.lock`
-retain those versions. The hash lock covers workflow dependencies; it is not a
-complete numerical environment lock. Preserve a qualified numerical environment
-and record loaded module identities when installing or overlaying these packages.
-
-For the current checkout, the isolated verification interpreter is
-`.venv-workflow/bin/python`. It reuses the canonical environment's numerical
-modules and has its own workflow dependencies. Its WebSocket package is 16.1.1,
-required by the new SDK; the canonical environment retains 17.1. This is a new
-runtime qualification, not an assertion that the historical runtime is unchanged.
-The canonical `.venv` currently lacks LangGraph; declaring the dependency does not
-install it there. Sync the locked project before using that environment:
+LangGraph, LangChain Core, and SQLite checkpoints are pinned in the base project lock. Install the local runtime from the repository root:
 
 ```sh
-uv sync --project /Users/vajraang/Documents/ChatGPT/bio-agent-harness --locked --extra dev
+uv sync --project "$(pwd -P)" --locked --extra dev
 ```
 
-The existing isolated verification environment can retain its qualified overlay:
-
-```sh
-uv pip install --python /Users/vajraang/Documents/ChatGPT/bio-agent-harness/.venv-workflow/bin/python --require-hashes -r /Users/vajraang/Documents/ChatGPT/bio-agent-harness/requirements-langgraph.lock
-uv pip install --python /Users/vajraang/Documents/ChatGPT/bio-agent-harness/.venv-workflow/bin/python --no-deps --no-build-isolation --editable /Users/vajraang/Documents/ChatGPT/bio-agent-harness
-```
-
-Install the project itself as well as the workflow dependencies. Adding another
-environment's site-packages directory to `sys.path` does not process that
-environment's editable-install hooks. Clean notebook and MCP child processes need
-the project installed in their own environment. Qualification installs the exact
-frozen source snapshot and records its editable finder and module origins. These
-commands assume the separate numerical environment and build dependencies have
-already been prepared; they do not supply or certify a complete numerical runtime.
-
-The qualification overlay also copies and hashes the matching canonical
-`share/jupyter/nbconvert` resources into its own prefix. Python import paths alone
-do not supply Jupyter's non-Python template assets. A fully installed separate
-numerical environment must include its own matching nbconvert resources before
-supervised notebook execution and HTML export are qualified. The report records
-both import-hook and template-asset identities before and after testing.
-
-The adapter currently accepts the existing bounded bulk RNA JSON binding: explicit
-gene-by-sample axes, up to 100 MB, 100,000 genes and 128 samples. Declare raw counts,
-normalized expression or unknown representation. Exact metadata joins and original
-sample order are retained. Unknown donor/library provenance remains unknown; unique
-sample labels do not establish independent biological replication. Normalized
-expression is never converted into artificial counts. Registered methods and the
-planner continue to enforce their own contrast, rank, representation and biological
-unit requirements. This does not add general single-cell, raw-read or remote HPC
-execution support.
+The numerical runtime has separate requirements for mounted methods. Clean MCP child processes need the project installed in their own environment, and scientific state writes require the patched SQLite runtime described in the Workbench guide.
 
 ## Enforced route and node contracts
 
@@ -292,7 +249,7 @@ Inherited external tracing and callbacks are rejected. Retry, fallback, batch an
 binding/listener conveniences that can repeat or export scientific calls are
 disabled. Explicitly construct trusted serial calls rather than autonomous tool
 loops. Arbitrary Python compositions remain trusted coordinator code, not a security
-sandbox. LangSmith is not enabled by this release.
+sandbox. Execution and trace evidence are recorded locally.
 
 Parallel scientific branches remain gated pending serial qualification and an
 explicit shared campaign budget. Parallel implementation agents do not authorize

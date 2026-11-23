@@ -53,7 +53,7 @@ console.log('deterministic synthetic gallery contracts pass');
 
 def test_gallery_is_packaged_and_disclosed_in_composed_page():
     from devbench.analysis.workbench_ui import render_page
-    from scripts.build_colab_notebook import allowed_bundle_path
+    from scripts.source_bundle import allowed_bundle_path
     page = render_page("gallery-test-nonce")
     assert "WorkbenchSynthetic" in page
     assert "Synthetic atlas" in page

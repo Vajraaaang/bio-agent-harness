@@ -22,7 +22,7 @@ _DECLARATIONS = {"assay", "measurement", "count_provenance", "capture_unit_key",
 
 
 def _source_identity():
-    from scripts.build_colab_notebook import default_source_bundle
+    from scripts.source_bundle import default_source_bundle
     return default_source_bundle()["sha256"]
 
 

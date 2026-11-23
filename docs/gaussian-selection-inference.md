@@ -1,10 +1,10 @@
 # Experimental Gaussian selection inference
 
-Executed local checks are summarized in [API verification](../reports/api-verification/README.md). The [offline evidence page](index.html) presents the separately preserved prototype study.
+Historical local checks are summarized in the [archived API verification report](https://github.com/Vajraaaang/bio-agent-harness/blob/86df6dd5591f11d4fda5b410dcdaa80b33a439b0/reports/api-verification/README.md).
 
 The research trajectory API offers an explicit `gaussian_selection_mc` mode. It repeats the complete AIC, BIC or GCV selection rule in simulated Gaussian null vectors, then ranks the observed selected-model probability against that reference. Default conditional inference and controlled fixed-plan contracts remain available. **Clinical release remains held.**
 
-The [preceding prototype study](../reports/selection-calibration/README.md) found near-nominal null rejection under its equal-variance Gaussian assumptions and persistent excess rejection under unequal variances. That preserved study used a different simulation layout from the packaged mode. Its measurements are not a performance result for the new API or evidence of robustness to assumption violations.
+The [preceding prototype study](https://github.com/Vajraaaang/bio-agent-harness/blob/86df6dd5591f11d4fda5b410dcdaa80b33a439b0/reports/selection-calibration/README.md) found near-nominal null rejection under its equal-variance Gaussian assumptions and persistent excess rejection under unequal variances. That preserved study used a different simulation layout from the packaged mode. Its measurements are not a performance result for the new API or evidence of robustness to assumption violations.
 
 ## Use through the SDK
 

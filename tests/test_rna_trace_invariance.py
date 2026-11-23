@@ -17,7 +17,7 @@ from devbench.analysis.rna_trace_receipts import LocalTraceObserver
 from devbench.analysis.rna_trace_projection import project_rna_trace, read_rna_trace_snapshot
 from devbench.analysis.workflow_actions import create_rna_workflow
 from devbench.analysis.workflow_operations import _policy, _json, _digest
-from devbench.study.rna_hosted_fixtures import resume_synthetic_fixture
+from tests.support.workflow_science_fixtures import resume_synthetic_fixture
 from tests.test_langgraph_investigations import independent_setup
 from tests.test_rna_independent_postfit_workflow import _case
 from tests.test_rna_investigation_replay import fingerprint, replay_actions, deny_effects

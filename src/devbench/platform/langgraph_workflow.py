@@ -4,23 +4,9 @@ import os
 import sqlite3
 import stat
 from contextlib import contextmanager
-from contextvars import ContextVar
 from typing import TypedDict
 
-from .workflow_state import SERIAL_ROUTE, WorkflowState, digest, validate_workflow_state
-
-_active_node_dispatch = ContextVar("devbench_active_serial_node_dispatch", default=None)
-_active_graph_invocation = ContextVar("devbench_active_serial_graph_invocation", default=None)
-
-
-def _require_active_node_dispatch(controller, node, state):
-    active = _active_node_dispatch.get()
-    if (_active_graph_invocation.get() is not controller
-            or active is None or active[0] is not controller or active[1] != node
-            or active[2] != digest(state)):
-        raise PermissionError("Qualification dispatch requires the current serial graph node invocation")
-    return active[3]
-
+from .workflow_state import SERIAL_ROUTE, WorkflowState, validate_workflow_state
 
 class _AdaptiveInvocation(TypedDict):
     remaining: int
@@ -225,23 +211,11 @@ class SerialRNAWorkflow:
         builder.add_node("execution_review", execution_review)
 
     def _node(self, node, state):
-        active = _active_node_dispatch.set((self, node, digest(state), object()))
         try:
-            if node == "run":
-                from .workflow_actions import _COLAB_FACTORY_ADMISSION
-                if getattr(self, "_qualification_factory_token", None) is _COLAB_FACTORY_ADMISSION:
-                    from devbench.analysis.colab_workflow import (
-                        ColabQualificationActions,
-                    )
-                    if type(self.actions) is ColabQualificationActions:
-                        with self.actions.graph_run_scope(self, state):
-                            return self.actions.perform(node, state)
             return self.actions.perform(node, state)
         except Exception as error:
             return validate_workflow_state({**state, "phase": node, "status": "failed",
                 "failure": {"kind": type(error).__name__, "message": str(error)[:500]}})
-        finally:
-            _active_node_dispatch.reset(active)
 
     @staticmethod
     def _config(workflow_id):
@@ -263,11 +237,7 @@ class SerialRNAWorkflow:
         with self.invocation_lease(state["workflow_id"]):
             if self.graph.get_state(config).values:
                 raise ValueError("Workflow checkpoint already exists; resume instead of restarting")
-            active = _active_graph_invocation.set(self)
-            try:
-                return self.graph.invoke(state, config=config)
-            finally:
-                _active_graph_invocation.reset(active)
+            return self.graph.invoke(state, config=config)
 
     def resume(self, workflow_id, *, expected_nodes=None, before_invoke=None):
         from langgraph.types import Command
@@ -288,11 +258,7 @@ class SerialRNAWorkflow:
                 before_invoke(snapshot)
             if not snapshot.next:
                 return self.actions.verify_terminal(state)
-            active = _active_graph_invocation.set(self)
-            try:
-                return self.graph.invoke(Command(resume="continue") if snapshot.interrupts else None, config=config)
-            finally:
-                _active_graph_invocation.reset(active)
+            return self.graph.invoke(Command(resume="continue") if snapshot.interrupts else None, config=config)
 
     def reconcile(self, workflow_id):
         """Continue only after deriving completed effects from actual harness evidence."""

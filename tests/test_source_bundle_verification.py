@@ -1,5 +1,4 @@
-"""Notebook postflight checks must never repair missing or changed source."""
-import ast
+"""Source custody checks must never repair missing or changed source."""
 import base64
 import hashlib
 import io
@@ -13,7 +12,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from scripts.build_colab_notebook import build_source_bundle, extract_source_bundle
+from scripts.source_bundle import build_source_bundle, extract_source_bundle
 
 
 def _fixture(tmp_path):
@@ -21,7 +20,7 @@ def _fixture(tmp_path):
     (source / "scripts").mkdir(parents=True)
     (source / "pyproject.toml").write_text("[project]\nname='synthetic-source'\nversion='1'\n")
     (source / "README.md").write_text("Synthetic source verification fixture.\n")
-    (source / "scripts/colab_run.py").write_text("print('x')\n")
+    (source / "scripts/source_bundle.py").write_text("print('x')\n")
     bundle = build_source_bundle(source)
     output = tmp_path / "extracted"
     extract_source_bundle(bundle["base64"], output, bundle["sha256"])
@@ -36,7 +35,7 @@ def test_checkout_and_wheel_stage_share_the_git_source_inventory(tmp_path):
     (project / "benchmarks").mkdir()
     (project / "pyproject.toml").write_text("[project]\nname='synthetic-source'\nversion='1'\n")
     (project / "README.md").write_text("Synthetic source verification fixture.\n")
-    (project / "scripts/colab_run.py").write_text("print('x')\n")
+    (project / "scripts/source_bundle.py").write_text("print('x')\n")
     subprocess.run(["git", "init", "--quiet", str(project)], check=True)
     (project / ".git/info/exclude").write_text("/benchmarks/planted_discovery.py\n")
     (project / "benchmarks/planted_discovery.py").write_text("# ignored local fixture\n")
@@ -85,25 +84,25 @@ def _wheel_resource_fixture(tmp_path):
     (project / "pyproject.toml").write_text("[project]\nname='devharness'\nversion='1'\n")
     (project / "README.md").write_text("Frozen source epoch\n")
     (project / "uv.lock").write_text("version = 1\n")
-    (project / "scripts/colab_run.py").write_text("print('epoch')\n")
+    (project / "scripts/source_bundle.py").write_text("print('epoch')\n")
     generated = build_source_resource(project)
     installed = tmp_path / "site-packages"
     asset = installed / "devbench/analysis/assets/source-bundle.zip"
     asset.parent.mkdir(parents=True)
     asset.write_bytes(Path(generated["path"]).read_bytes())
-    code = installed / "scripts/colab_run.py"
+    code = installed / "scripts/source_bundle.py"
     code.parent.mkdir()
-    code.write_bytes((project / "scripts/colab_run.py").read_bytes())
+    code.write_bytes((project / "scripts/source_bundle.py").read_bytes())
     record_asset = PackagePath("devbench/analysis/assets/source-bundle.zip")
     record_asset.hash = SimpleNamespace(mode="sha256", value=base64.urlsafe_b64encode(hashlib.sha256(asset.read_bytes()).digest()).decode().rstrip("="))
     record_asset.size = asset.stat().st_size
-    record_code = PackagePath("scripts/colab_run.py")
+    record_code = PackagePath("scripts/source_bundle.py")
     distribution = SimpleNamespace(files=[record_asset, record_code], locate_file=lambda member: installed / member)
     return project, asset, code, distribution
 
 
 def test_wheel_resource_matches_frozen_source_and_excludes_itself(tmp_path):
-    from scripts.build_colab_notebook import _installed_source_bundle
+    from scripts.source_bundle import _installed_source_bundle
     project, asset, _, distribution = _wheel_resource_fixture(tmp_path)
     actual = _installed_source_bundle(asset, distribution)
     assert actual == build_source_bundle(project)
@@ -112,7 +111,7 @@ def test_wheel_resource_matches_frozen_source_and_excludes_itself(tmp_path):
 
 @pytest.mark.parametrize("mutation", ["missing", "tampered", "code_changed", "missing_record", "missing_code"])
 def test_wheel_resource_rejects_missing_tampered_or_mixed_epoch(tmp_path, mutation):
-    from scripts.build_colab_notebook import _installed_source_bundle
+    from scripts.source_bundle import _installed_source_bundle
     project, asset, code, distribution = _wheel_resource_fixture(tmp_path)
     if mutation == "missing":
         asset.unlink()
@@ -132,9 +131,9 @@ def test_default_installed_identity_uses_verified_resource_and_explicit_root_sta
     from importlib import metadata, resources
 
     from devbench.analysis.workbench_proposals import _source_identity
-    from scripts import build_colab_notebook as builder
+    from scripts import source_bundle as builder
     project, asset, _, distribution = _wheel_resource_fixture(tmp_path)
-    monkeypatch.setattr(builder, "__file__", str(asset.parents[3] / "scripts/build_colab_notebook.py"))
+    monkeypatch.setattr(builder, "__file__", str(asset.parents[3] / "scripts/source_bundle.py"))
     monkeypatch.setattr(metadata, "distribution", lambda name: distribution)
     monkeypatch.setattr(resources, "files", lambda name: asset.parent.parent)
     expected = build_source_bundle(project)
@@ -195,9 +194,9 @@ def test_default_preparation_retains_verified_wheel_source_and_environment_lock(
     from importlib import metadata, resources
 
     from devbench.analysis import runtime, workbench
-    from scripts import build_colab_notebook as builder
+    from scripts import source_bundle as builder
     project, asset, _, distribution = _wheel_resource_fixture(tmp_path)
-    monkeypatch.setattr(builder, "__file__", str(asset.parents[3] / "scripts/build_colab_notebook.py"))
+    monkeypatch.setattr(builder, "__file__", str(asset.parents[3] / "scripts/source_bundle.py"))
     monkeypatch.setattr(metadata, "distribution", lambda name: distribution)
     monkeypatch.setattr(resources, "files", lambda name: asset.parent.parent)
     monkeypatch.setattr(workbench, "_validated_parameters", lambda parameters: parameters)
@@ -212,7 +211,7 @@ def test_default_preparation_retains_verified_wheel_source_and_environment_lock(
     assert prepared["source_sha256"] == build_source_bundle(project)["sha256"]
     assert (output / "source.zip").read_bytes() == asset.read_bytes()
     assert (output / "environment.lock").read_bytes() == (project / "uv.lock").read_bytes()
-    assert (output / "source/scripts/colab_run.py").read_bytes() == (project / "scripts/colab_run.py").read_bytes()
+    assert (output / "source/scripts/source_bundle.py").read_bytes() == (project / "scripts/source_bundle.py").read_bytes()
     assert workbench.prepare_bundle(source, output, parameters) == prepared
 
 
@@ -223,9 +222,29 @@ def test_existing_source_verification_is_read_only_and_accepts_exact_members(tmp
     assert _state(output) == before
 
 
+def test_retired_notebook_paths_remain_readable_in_historical_source_archives(tmp_path):
+    archive_bytes = io.BytesIO()
+    retired = ("scripts/colab_run.py", "scripts/build_colab_notebook.py", "scripts/build_controlled_notebook.py")
+    with zipfile.ZipFile(archive_bytes, "w") as archive:
+        for name in retired:
+            member = zipfile.ZipInfo(name)
+            member.create_system = 3
+            member.external_attr = (stat.S_IFREG | 0o644) << 16
+            archive.writestr(member, b"# frozen source\n")
+    raw = archive_bytes.getvalue()
+    expected = hashlib.sha256(raw).hexdigest()
+    encoded = base64.b64encode(raw).decode("ascii")
+    output = tmp_path / "legacy-source"
+    extract_source_bundle(encoded, output, expected)
+    before = _state(output)
+    assert all((output / name).read_bytes() == b"# frozen source\n" for name in retired)
+    assert extract_source_bundle(encoded, output, expected, verify_only=True) == output
+    assert _state(output) == before
+
+
 @pytest.mark.parametrize("limit", [0, 4])
 def test_source_file_read_refuses_payload_larger_than_its_bound(tmp_path, limit):
-    from scripts import build_colab_notebook as builder
+    from scripts import source_bundle as builder
     source = tmp_path / "source"
     source.write_bytes(b"original")
     with pytest.raises(ValueError, match="bound"):
@@ -233,44 +252,39 @@ def test_source_file_read_refuses_payload_larger_than_its_bound(tmp_path, limit)
     assert source.read_bytes() == b"original"
 
 
-@pytest.mark.parametrize("kind", ["agent", "controlled"])
-def test_generated_bootstrap_source_verifier_runs_without_repository_imports(tmp_path, kind):
-    from scripts import build_colab_notebook, build_controlled_notebook
+def test_standalone_source_verifier_runs_without_repository_imports(tmp_path):
+    from scripts import source_bundle
+
     bundle, output = _fixture(tmp_path)
-    module = build_colab_notebook if kind == "agent" else build_controlled_notebook
-    notebook = module.build_notebook(tmp_path / "original")
-    code = next("".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code")
-    definitions = [
-        node for node in ast.parse(code).body
-        if isinstance(node, ast.FunctionDef)
-        or (
-            isinstance(node, ast.Assign)
-            and ast.unparse(node.targets[0]) == "SOURCE_BUNDLE_MAX_FILES"
-        )
-    ]
     namespace = {"os":os, "stat":stat, "Path":Path, "PurePosixPath":PurePosixPath,
                  "base64":base64, "hashlib":hashlib, "io":io, "zipfile":zipfile}
-    exec(compile(ast.Module(body=definitions, type_ignores=[]), "embedded-functions", "exec"), namespace)
-    limit = build_colab_notebook.SOURCE_BUNDLE_MAX_FILES
-    assert namespace["SOURCE_BUNDLE_MAX_FILES"] == limit
+    definitions = source_bundle.source_bundle_extractor_source()
+    exec(compile(definitions, "standalone-source-verifier", "exec"), namespace)
+    assert namespace["SOURCE_BUNDLE_MAX_FILES"] == source_bundle.SOURCE_BUNDLE_MAX_FILES == 768
     verify = namespace["extract_source_bundle"]
     assert verify(bundle["base64"], output, bundle["sha256"], verify_only=True) == output
-    (output / "scripts/colab_run.py").unlink()
+    (output / "scripts/source_bundle.py").unlink()
     with pytest.raises(ValueError, match="changed"):
         verify(bundle["base64"], output, bundle["sha256"], verify_only=True)
-    assert not (output / "scripts/colab_run.py").exists()
+    assert not (output / "scripts/source_bundle.py").exists()
 
 
-def test_bundled_test_dependencies_import_with_site_packages_and_checkout_disabled(tmp_path):
-    from scripts import build_colab_notebook, build_controlled_notebook
+def test_bundled_source_verifier_imports_with_site_packages_and_checkout_disabled(tmp_path):
+    from scripts import source_bundle
+
     _fixture(tmp_path)
     project = tmp_path / "original"
     (project / "scripts/__init__.py").write_text("")
-    for module in (build_colab_notebook, build_controlled_notebook):
-        shutil.copyfile(module.__file__, project / "scripts" / Path(module.__file__).name)
+    shutil.copyfile(source_bundle.__file__, project / "scripts/source_bundle.py")
     bundle = build_source_bundle(project)
     output = extract_source_bundle(bundle["base64"], tmp_path / "standalone", bundle["sha256"])
-    code = """import sys\nfrom pathlib import Path\nroot=Path(sys.argv[1]).resolve()\nsys.path.insert(0,str(root))\nfrom scripts import build_colab_notebook, build_controlled_notebook\nassert all(Path(m.__file__).resolve().is_relative_to(root) for m in (build_colab_notebook,build_controlled_notebook))\n"""
+    code = """import sys
+from pathlib import Path
+root=Path(sys.argv[1]).resolve()
+sys.path.insert(0,str(root))
+from scripts import source_bundle
+assert Path(source_bundle.__file__).resolve().is_relative_to(root)
+"""
     result = subprocess.run([sys.executable, "-I", "-S", "-c", code, str(output)], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
 
@@ -278,7 +292,7 @@ def test_bundled_test_dependencies_import_with_site_packages_and_checkout_disabl
 @pytest.mark.parametrize("mutation", ["modify", "remove_root", "remove_member", "fifo_member"])
 def test_postflight_verification_rejects_changes_without_reextracting_source(tmp_path, mutation):
     bundle, output = _fixture(tmp_path)
-    member = output / "scripts/colab_run.py"
+    member = output / "scripts/source_bundle.py"
     if mutation == "modify": member.write_text("print('y')\n")
     elif mutation == "remove_root": shutil.rmtree(output)
     elif mutation == "remove_member": member.unlink()

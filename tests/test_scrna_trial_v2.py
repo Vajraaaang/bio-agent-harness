@@ -1,41 +1,9 @@
-"""Synthetic controls for the trial verifier and receipt-bound pseudobulk sums."""
+"""Synthetic controls for pseudobulk receipts and bounded scRNA projections."""
 import hashlib
-import importlib.util
-from pathlib import Path
-import sys
 
 import numpy as np
 import pandas as pd
 import pytest
-
-TRIAL = Path(__file__).resolve().parents[1] / "reports/live-scrna-motor-neuron-trial-2026-11-01"
-
-
-def verifier():
-    path = TRIAL / "verify_trial.py"
-    assert path.is_file(), "v2 verifier is missing"
-    sys.path.insert(0, str(TRIAL))
-    spec = importlib.util.spec_from_file_location("scrna_trial_verifier", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_bh_keeps_missing_hypotheses_in_denominator():
-    assert verifier().bh_reference([0.01, None, 0.03, 0.8]) == pytest.approx([0.04, None, 0.06, 1.0])
-
-
-def test_truth_metrics_exclude_annotation_markers_and_preserve_misses():
-    rows = [{"gene_id": g, "component_id": "type", "estimate_status": "estimated",
-             "values": [v], "p_value": .001, "q_value": q}
-            for g, v, q in [("marker", 2, .001), ("positive", 1, .01), ("null", 1, .01)]]
-    truth = {"type": {"marker": 2, "positive": 1, "missed": -1, "null": 0}}
-    result = verifier().truth_metrics(rows, truth, {"marker"}, .05)
-    assert result["pooled_realized_FDP_at_q05"] == .5
-    assert result["by_cell_type"]["type"]["recall_at_q05"] == .5
-    assert result["by_cell_type"]["type"]["direction_accuracy"] == 1
-    assert result["by_cell_type"]["type"]["background_hypotheses"] == 3
-
 
 def test_pseudobulk_receipt_binds_actual_integer_sums_and_axis_order():
     from devbench.study.biology_tool_io import ObservedData
@@ -56,30 +24,6 @@ def test_pseudobulk_receipt_binds_actual_integer_sums_and_axis_order():
     assert binding["gene_ids"] == ["g1", "g2"]
     assert binding["pseudobulk_ids"] == ["pb0", "pb1"]
     assert binding["sha256"] == hashlib.sha256(expected.tobytes(order="C")).hexdigest()
-
-
-@pytest.mark.parametrize("tamper", ["count", "axis", "membership"])
-def test_independent_resum_rejects_count_axis_and_membership_tampering(tamper):
-    expression = pd.DataFrame({"c1": [1, 5], "c2": [2, 6]}, index=["g1", "g2"])
-    meta = pd.DataFrame({"embryo_id": ["e1", "e1"], "condition": ["A", "A"],
-                         "specimen_id": ["s1", "s1"], "library_id": ["l1", "l1"]}, index=["c1", "c2"])
-    expected = np.array([[3], [11]], dtype="<i8")
-    diag = {"raw_count_binding": {"format": "pseudobulk-raw-count-sha256/1", "dtype": "little_endian_int64",
-                                 "order": "C_genes_by_pseudobulk", "gene_ids": ["g1", "g2"],
-                                 "pseudobulk_ids": ["pb0"], "shape": [2, 1],
-                                 "sha256": hashlib.sha256(expected.tobytes(order="C")).hexdigest()},
-            "membership": [{"pseudobulk_id": "pb0", "donor_id": "e1", "condition": "A", "cell_type": "t",
-                            "cell_ids": ["c1", "c2"], "cell_count": 2, "specimen_ids": ["s1"], "library_ids": ["l1"]}],
-            "batch_columns": [], "uncertain_cells_not_used_for_type_specific_model": 0}
-    verifier().resummarize(expression, meta, diag)
-    if tamper == "count":
-        expression.loc["g1", "c1"] += 1
-    elif tamper == "axis":
-        diag["raw_count_binding"]["gene_ids"].reverse()
-    else:
-        diag["membership"][0]["cell_ids"] = ["c1", "c1"]
-    with pytest.raises(ValueError):
-        verifier().resummarize(expression, meta, diag)
 
 
 def test_cell_state_zero_condition_boundaries_are_missing_not_finite_estimates(monkeypatch):
@@ -153,9 +97,8 @@ def test_scrna_projection_exposes_full_family_and_bounded_diagnostics():
     assert _scrna_effect_projection(target, diagnostics, ["g1", "g2"], ["t"])["full_attempted_BH_denominator"] is None
 
 
-def test_scrna_large_projection_preserves_receipts_and_rejects_summary_tampering(monkeypatch):
+def test_scrna_large_projection_preserves_receipts_and_rejects_summary_tampering(monkeypatch, workspace_tmp_path):
     import json
-    import tempfile
     from devbench.analysis.episode_agent import project_observation, verify_projected_history
     from devbench.study.biology_broker import BiologyBroker
     from devbench.study.biology_tools_bulk import _bh
@@ -174,36 +117,33 @@ def test_scrna_large_projection_preserves_receipts_and_rejects_summary_tampering
             payload["multiplicity_scope"] = _bh(payload["gene_statistics"])
         return result
     monkeypatch.setattr(BiologyBroker, "_invoke_tool", invoke)
-    folder = TRIAL / "validation-20261102/projection-test-workspaces"
-    folder.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="projection-", dir=folder) as directory:
-        episode, _ = create(Path(directory), cellular=True, continuous=False)
-        try:
-            response = run_contrast(episode, cellular=True)
-            projected = project_observation(episode, response)
-            summary = projected["result_summary"]
-            target = summary["targets"][0]
-            assert target["full_attempted_BH_denominator"] == 28
-            assert target["tested_gene_rows"] == 26
-            assert target["family_structure_verified"] is True
-            assert sum(target["unavailable_reason_counts"].values()) == 2
-            assert "transport_padding" not in json.dumps(projected)
-            assert "gene_statistics" not in json.dumps(projected)
-            assert len(json.dumps(projected).encode()) < 128_000
-            history = [{"action": {"kind": "tool", "tool": "cell_type_state_analysis"}, "observation": projected}]
+    episode, _ = create(workspace_tmp_path, cellular=True, continuous=False)
+    try:
+        response = run_contrast(episode, cellular=True)
+        projected = project_observation(episode, response)
+        summary = projected["result_summary"]
+        target = summary["targets"][0]
+        assert target["full_attempted_BH_denominator"] == 28
+        assert target["tested_gene_rows"] == 26
+        assert target["family_structure_verified"] is True
+        assert sum(target["unavailable_reason_counts"].values()) == 2
+        assert "transport_padding" not in json.dumps(projected)
+        assert "gene_statistics" not in json.dumps(projected)
+        assert len(json.dumps(projected).encode()) < 128_000
+        history = [{"action": {"kind": "tool", "tool": "cell_type_state_analysis"}, "observation": projected}]
+        verify_projected_history(episode, history)
+        for key in ("full_attempted_BH_denominator", "tested_gene_rows"):
+            changed = json.loads(json.dumps(history))
+            changed[0]["observation"]["result_summary"]["targets"][0][key] += 1
+            with pytest.raises(ValueError, match="projection"):
+                verify_projected_history(episode, changed)
+        checkpoint = episode.root / "checkpoints/action-0004/observation.json"
+        retained = checkpoint.read_bytes()
+        assert len(retained) > 128_000 and b"transport_padding" in retained
+        checkpoint.write_bytes(retained + b" ")
+        with pytest.raises(ValueError, match="changed|mismatch|projection"):
             verify_projected_history(episode, history)
-            for key in ("full_attempted_BH_denominator", "tested_gene_rows"):
-                changed = json.loads(json.dumps(history))
-                changed[0]["observation"]["result_summary"]["targets"][0][key] += 1
-                with pytest.raises(ValueError, match="projection"):
-                    verify_projected_history(episode, changed)
-            checkpoint = episode.root / "checkpoints/action-0004/observation.json"
-            retained = checkpoint.read_bytes()
-            assert len(retained) > 128_000 and b"transport_padding" in retained
-            checkpoint.write_bytes(retained + b" ")
-            with pytest.raises(ValueError, match="changed|mismatch|projection"):
-                verify_projected_history(episode, history)
-            checkpoint.write_bytes(retained)
-        finally:
-            if episode.outcome is None:
-                episode.abort("synthetic_projection_regression_complete")
+        checkpoint.write_bytes(retained)
+    finally:
+        if episode.outcome is None:
+            episode.abort("synthetic_projection_regression_complete")

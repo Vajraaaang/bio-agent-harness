@@ -95,7 +95,6 @@ devbench = ["adaptive/*.py", "tasks/catalog.json", "study/public_sources.json", 
   "assets/2026-11-04-workbench-compute-contracts.schema.json",
   "assets/official-client-pins.json",
   "assets/owned-host-sentinel.txt",
-  "assets/workbench-compute-demo.*",
 ]
 devharness_controlled = ["native-package-sources.lock.json", "native-kernel-runtime.lock.json", "erql-package-sources.lock.json"]
 devharness_server = ["r/*.R"]

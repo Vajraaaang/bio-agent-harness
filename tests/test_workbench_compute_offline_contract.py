@@ -32,7 +32,7 @@ SIGNING_DOMAIN = b"devbench.run-manifest/1\0"
 NOW = datetime(2026, 11, 4, 12, tzinfo=timezone.utc)
 PAYLOAD = b"cell,g1,g2\nA,2,3\nB,0,1\n"
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / (
-    "docs/superpowers/specs/2026-11-04-workbench-compute-contracts.schema.json"
+    "src/devbench/analysis/assets/2026-11-04-workbench-compute-contracts.schema.json"
 )
 
 

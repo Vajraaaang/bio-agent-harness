@@ -114,10 +114,7 @@ environment, review and display controls. Version histories are figure-specific
 and ordered by recorded attempts. Original restoration clears unsaved label edits.
 Fit-canvas and actual-pixel viewing do not modify the underlying figure.
 
-Current verification and known limits are recorded in
-`reports/rna-agent-readiness/2026-09-27-m2a.l9eya67z/README.md` and `design-qa.md`.
-Browser download preparation and API export were verified; native file-save
-completion remains unobserved after the browser event hook timed out.
+The [public verification workflow](../.github/workflows/ci.yml) covers the portable Workbench and source custody contracts.
 
 ## Operating the analysis service
 
@@ -168,7 +165,7 @@ The controller owns cancellation events and observes worker cleanup through the 
 
 After the workspace lock becomes available on restart, an unfinished operation is marked `recovery_required` with unknown worker liveness. An interrupted cached-input check also retains unknown liveness. No new workers or automatic recovery are allowed until that uncertainty is reconciled. Planning refusals and stopped requests are not implicitly restarted by registration. The UI enables stop/resume controls only from the controller's eligibility flags.
 
-Ctrl+C stops accepting HTTP requests. A currently active worker keeps its original supervised deadline while the process closes; closing the page alone does not cancel analysis. No new Colab allocation or cloud execution is provided.
+Ctrl+C stops accepting HTTP requests. A currently active worker keeps its original supervised deadline while the process closes. Use the cancellation control to request a stop before closing the page.
 
 ## Frozen settings
 

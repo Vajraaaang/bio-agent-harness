@@ -63,18 +63,15 @@ The typed MCP interface exposes seven tools over local STDIO. Inspection and pla
 | Scientific admission | [Answerability rules](src/devbench/core/rna_answerability.py) · [Contrast design](src/devbench/core/contrast_design.py) |
 | Durable workflow | [Investigation service](src/devbench/platform/workbench_investigations.py) · [LangGraph stage and review contracts](docs/langgraph-workflow.md#enforced-route-and-node-contracts) |
 | Local application | [Workbench service](src/devbench/platform/workbench_ui.py) · [Companion Studio assets](src/devbench/analysis/assets) |
-| Source custody | [Colab source bundle builder](scripts/build_colab_notebook.py) · [Source include/exclude and tamper checks](tests/test_source_bundle_verification.py) |
+| Source custody | [Portable source bundles](scripts/source_bundle.py) · [Source include/exclude and tamper checks](tests/test_source_bundle_verification.py) |
 
 ## Verification and limits
 
-| Published checkpoint | Observed result |
-| --- | --- |
-| [Companion Studio source update](https://github.com/Vajraaaang/bio-agent-harness/blob/05bac3be6a0abf74797588986286facc31b4aea4/RELEASE_READINESS.md) | 93 focused tests and eight local MCP tests passed. The offline browser simulation initialized successfully, and batch filtering changed the displayed count from 287,463 to 94,817 and back. |
-| [Synthetic Workbench simulation](https://github.com/Vajraaaang/bio-agent-harness/blob/05bac3be6a0abf74797588986286facc31b4aea4/reports/workbench-integrated-simulation-20261029/README.md) | The historical publication snapshot passed 144 focused tests. Browser checks covered six generated projects, point counts, batch filtering and SVG/PNG downloads. |
-| [Plot family gallery](https://github.com/Vajraaaang/bio-agent-harness/blob/05bac3be6a0abf74797588986286facc31b4aea4/reports/workbench-plot-families-20261029/README.md) | Browser checks exported 48 PNGs across eight descriptive plot families using the Workbench controls. |
-| [Gaussian calibration prototype](https://github.com/Vajraaaang/bio-agent-harness/blob/05bac3be6a0abf74797588986286facc31b4aea4/reports/selection-calibration/README.md) | Corrected null rejection was 5.045%–5.225% under equal variance. It remained 8.610%–9.065% under unequal variance at a nominal 5% threshold. |
+- [Public CI](https://github.com/Vajraaaang/bio-agent-harness/actions/workflows/ci.yml) checks Workbench and source custody contracts and plugin packaging on macOS and Linux. Run `make test` for the local suite and `make test-wheel-custody` for installed-wheel checks with a patched SQLite runtime.
+- The [20-family capability assessment](docs/thesis-goal-and-capability-assessment.md) distinguishes implemented methods, partial support, and missing execution routes. The [method playbooks](docs/references/rna-workbench-method-playbooks-and-literature.md) explain evidence requirements.
+- The [verification archive](https://github.com/Vajraaaang/bio-agent-harness/tree/86df6dd5591f11d4fda5b410dcdaa80b33a439b0/reports) retains earlier software checks and calibration findings. See the [evaluation design](docs/public-three-condition-study.md) for the study boundaries.
 
-These checkpoints describe the source and conditions in their reports. Synthetic software verification and recorded artifact integrity establish separate properties. Comparative scientific effectiveness, independently qualified deployment and clinical release remain open. See [release readiness](https://github.com/Vajraaaang/bio-agent-harness/blob/05bac3be6a0abf74797588986286facc31b4aea4/RELEASE_READINESS.md) and the [evaluation design](docs/public-three-condition-study.md).
+Software checks and evidence integrity have separate scopes from comparative scientific effectiveness. Clinical release remains held.
 
 ## Related projects
 

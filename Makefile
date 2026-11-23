@@ -21,7 +21,7 @@ export SINGLE_THREAD ?= 1
 export NUMBA_NUM_THREADS ?= 1
 export NUMBA_THREADING_LAYER ?= workqueue
 
-.PHONY: help install sync-runtimes check-platform check-sqlite-wal test lint typecheck test-fake-cli test-wheel-custody controlled-demo demo sweep pilot notebook
+.PHONY: help install sync-runtimes check-platform check-sqlite-wal test lint typecheck test-fake-cli test-wheel-custody controlled-demo demo sweep pilot
 help: ## Show local commands; pilot and sweep invoke live models
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "%-18s %s\n", $$1, $$2}' "$(PROJECT)/Makefile"
 
@@ -52,7 +52,12 @@ typecheck: ## Check product Python with mypy
 	$(MYPY) --config-file "$(PROJECT)/pyproject.toml"
 
 test: check-sqlite-wal ## Run software tests under the patched local runtime
-	$(VERIFY) -m pytest -q --import-mode=importlib "$(PROJECT)/tests"
+	@set -eu; \
+	test ! -L "$(PYTEST_ROOT)"; \
+	mkdir -p -m 700 "$(PYTEST_ROOT)"; \
+	verify=$$(mktemp -d "$(PYTEST_ROOT)/suite.XXXXXX"); \
+	trap 'find "$$verify" -type d -exec chmod u+rwx {} +; find "$$verify" -depth -delete' EXIT; \
+	$(VERIFY) -m pytest -q --import-mode=importlib --basetemp="$$verify" "$(PROJECT)/tests"
 
 test-fake-cli: check-sqlite-wal ## Run the offline single-session FakeCLI regression
 	@set -eu; \
@@ -97,6 +102,3 @@ sweep: ## Launch the 12-task Code-as-Action suite through Codex; uses normal quo
 
 pilot: ## Launch four separate live Code-as-Action participants; uses normal quota
 	"$(VENV)/bin/devbench-live" --backend code-action --tasks 4 --timeout-sec 90
-
-notebook: ## Build the self-contained Colab notebook locally; no upload or model call
-	"$(VENV)/bin/python" "$(PROJECT)/scripts/build_colab_notebook.py"

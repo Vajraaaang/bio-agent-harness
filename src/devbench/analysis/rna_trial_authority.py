@@ -132,17 +132,6 @@ _CUSTODY_PATHS = (
     'devbench/analysis/rna_grant_signing.py',
     'devbench/analysis/rna_approval_setup.py',
     'devharness_controlled/native_runtime.py',
-    'devbench/analysis/colab_qualification_contract.py',
-    'devbench/analysis/colab_execution_authority.py',
-    'devbench/analysis/colab_execution_contract.py',
-    'devbench/analysis/colab_result_import.py',
-    'devbench/analysis/colab_job.py',
-    'devbench/analysis/colab_transport.py',
-    'devbench/analysis/colab_remote_worker.py',
-    'devbench/analysis/colab_bundle_helpers.py',
-    'devbench/analysis/colab_workflow.py',
-    'devbench/analysis/workflow_protocol_qualification.py',
-    'devbench/analysis/workflow_candidate_freeze.py',
     'devbench/analysis/workbench.py',
     'devbench/analysis/workbench_proposals.py',
     'devbench/analysis/scientific_objects.py',
@@ -330,8 +319,7 @@ class AuthenticatedTrialAuthority:
     an atomic durable ledger enforces global issuer/grant and binding one-use.
     """
     def __init__(self, path, *, workspace, issuer_keys, runtime_verifier, clock=None,
-                 mediated_backend=None, execution_qualification=None, signedin_backend=None,
-                 colab_qualification_context=None):
+                 mediated_backend=None, execution_qualification=None, signedin_backend=None):
         self.workspace, self.path = _absolute(workspace), _absolute(path)
         if not self.path.is_relative_to(self.workspace):
             raise ValueError("Trusted trial ledger must be inside the assigned workspace")
@@ -347,7 +335,6 @@ class AuthenticatedTrialAuthority:
         self.mediated_backend = mediated_backend
         self.signedin_backend = signedin_backend
         self.execution_qualification = execution_qualification
-        self.colab_qualification_context = colab_qualification_context
         self._runtime_context = None
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self._inode = None
@@ -609,88 +596,3 @@ class AuthenticatedTrialAuthority:
                 canonical_json(deepcopy(allocation)).decode(), digest(allocation)))
         return {"purpose": purpose, "binding_sha256": binding_sha256, "dispatch_id": dispatch_id,
             "allocation_sha256": digest(allocation), "status": "reserved_no_refund_on_uncertainty"}
-
-
-    def _validated_colab_qualification(self, request, grant, *, job):
-        """Separate synthetic bootstrap; never enters native/offline trial admission."""
-        from .colab_execution_authority import ColabQualificationContext
-        from .colab_qualification_contract import unsigned_colab_qualification_grant_subject
-        from .rna_grant_signing import verify_authority_signature
-        if type(self.colab_qualification_context) is not ColabQualificationContext:
-            raise PermissionError("Exact trusted Colab bootstrap context is required")
-        request, job = self.colab_qualification_context.verify(request, workspace=self.workspace,
-            job=job, now=self.clock())
-        if type(grant) is not dict or set(grant) != _GRANT_FIELDS:
-            raise PermissionError("Authenticated closed Colab issuer grant is required")
-        from .rna_approval_setup import _name
-        _name(grant["issuer_id"])
-        _name(grant["grant_id"])
-        key = self.issuer_keys.get(grant["issuer_id"])
-        if not isinstance(key, Ed25519PublicKey):
-            raise PermissionError("Colab grant issuer is not an explicitly trusted public root")
-        expected = unsigned_colab_qualification_grant_subject(request, issuer_id=grant["issuer_id"],
-            grant_id=grant["grant_id"], now=self.clock())
-        payload = {key:value for key,value in grant.items() if key != "signature"}
-        if payload != expected:
-            raise PermissionError("Colab authenticated grant exact subject differs")
-        verified = verify_authority_signature(payload, grant["signature"], public_key=key)
-        return request, job, verified
-
-
-    def export_colab_public_approval(self, request, grant, *, job):
-        """Public material only; this neither reserves nor dispatches computation."""
-        from cryptography.hazmat.primitives import serialization
-        request, job, grant = self._validated_colab_qualification(request, grant, job=job)
-        key = self.issuer_keys[grant["issuer_id"]]
-        return {"request":request, "grant":grant, "issuer":{"issuer_id":grant["issuer_id"],
-            "public_key_hex":key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()}}
-
-
-    def consume_and_reserve_colab_qualification(self, request, grant, *, dispatch_id, allocation, job):
-        """Atomically spend one authenticated bootstrap grant and one full dispatch.
-
-        There is no refund, replay, partial budget reuse, local fallback or retry
-        after this durable transaction commits, including uncertain dispatch.
-        """
-        request, job, grant = self._validated_colab_qualification(request, grant, job=job)
-        if dispatch_id != job["job_id"] or canonical_json(allocation) != canonical_json(job["limits"]):
-            raise PermissionError("Colab dispatch identity or complete preventive allocation differs")
-        with self._database() as db:
-            db.execute("BEGIN IMMEDIATE")
-            request, job, grant = self._validated_colab_qualification(request, grant, job=job)
-            db.execute("INSERT INTO grants VALUES(?,?,?,?,?,?)", (grant["issuer_id"], grant["grant_id"],
-                "trial_execution", grant["binding_sha256"], canonical_json(grant).decode(), digest(grant)))
-            reserved = deepcopy(request["allocation"])
-            db.execute("INSERT INTO dispatches VALUES(?,?,?,?,?)", (grant["issuer_id"], grant["grant_id"], dispatch_id,
-                canonical_json(reserved).decode(), digest(reserved)))
-            self._validated_colab_qualification(request, grant, job=job)
-        return {"format":"devbench.colab-execution-reservation/1", "job_id":job["job_id"],
-            "job_sha256":digest(job), "grant_id":grant["grant_id"], "dispatch_id":dispatch_id,
-            "request_sha256":digest(request), "allocation":deepcopy(allocation)}
-
-
-    @contextmanager
-    def colab_qualification_signing_preflight(self, request, *, payload, job):
-        """Lock one exact unspent subject while the dedicated existing signer acts."""
-        from .colab_execution_authority import ColabQualificationContext
-        from .colab_qualification_contract import unsigned_colab_qualification_grant_subject
-        from .rna_approval_setup import _UNSIGNED_FIELDS
-        if type(self.colab_qualification_context) is not ColabQualificationContext:
-            raise PermissionError("Exact trusted Colab bootstrap context is required")
-        if type(payload) is not dict or set(payload) != _UNSIGNED_FIELDS:
-            raise PermissionError("Closed unsigned Colab grant subject is required")
-        with self._database() as db:
-            db.execute("BEGIN IMMEDIATE")
-            request, job = self.colab_qualification_context.verify(request, workspace=self.workspace, job=job, now=self.clock())
-            expected = unsigned_colab_qualification_grant_subject(request, issuer_id=payload["issuer_id"],
-                grant_id=payload["grant_id"], now=self.clock())
-            if payload != expected:
-                raise PermissionError("Colab signing subject differs")
-            key = self.issuer_keys.get(payload["issuer_id"])
-            if not isinstance(key, Ed25519PublicKey):
-                raise PermissionError("Signing issuer lacks an explicitly injected public root")
-            if db.execute("SELECT 1 FROM grants WHERE (issuer_id=? AND grant_id=?) OR (purpose=? AND binding_sha256=?)",
-                    (payload["issuer_id"],payload["grant_id"],"trial_execution",payload["binding_sha256"])).fetchone() is not None:
-                raise PermissionError("Colab grant or binding already consumed; replay denied")
-            yield key
-            self.colab_qualification_context.verify(request, workspace=self.workspace, job=job, now=self.clock())

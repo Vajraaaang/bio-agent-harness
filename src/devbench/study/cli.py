@@ -58,47 +58,6 @@ def build_parser():
     verify.add_argument("--input-sha256", required=True)
     verify.add_argument("--implementation-sha256", required=True)
     verify.add_argument("--authorize-evidence-read", action="store_true")
-    preview = commands.add_parser("langsmith-export", help="Prepare a redacted post-run trace preview; never upload")
-    for name in ("run-dir", "output"):
-        preview.add_argument("--" + name, type=absolute_path, required=True)
-    preview.add_argument("--data-scope", choices=("synthetic", "public_processed"), required=True)
-    preview.add_argument("--project", default="devbench")
-    preview.add_argument("--workspace-root", type=absolute_path, help="Optional allowed root for redacted final-answer reads")
-    preview.add_argument("--expected-manifest-sha256")
-    preview.add_argument("--max-spans", type=int, default=2000)
-    preview.add_argument("--authorize-evidence-read", action="store_true")
-    upload = commands.add_parser("langsmith-upload", help="Upload an explicitly approved trace payload after measurement")
-    upload.add_argument("--payload", type=absolute_path, required=True)
-    upload.add_argument("--expected-sha256", required=True)
-    upload.add_argument("--output", type=absolute_path, required=True)
-    upload.add_argument("--endpoint", default="https://api.smith.langchain.com")
-    upload.add_argument("--timeout-sec", type=int, default=15)
-    upload.add_argument("--max-spans", type=int, default=2000)
-    upload.add_argument("--authorize-upload", action="store_true")
-    rna_preview = commands.add_parser("rna-langsmith-preview", help="Prepare a local RNA trace preview; never upload")
-    for name in ("snapshot", "output"):
-        rna_preview.add_argument("--" + name, type=absolute_path, required=True)
-    rna_preview.add_argument("--expected-snapshot-sha256", required=True)
-    rna_preview.add_argument("--data-scope", choices=("synthetic", "public_processed"), required=True)
-    rna_preview.add_argument("--project", required=True)
-    rna_preview.add_argument("--export-namespace", help="Reuse the locally retained UUID for an identical derived view")
-    rna_preview.add_argument("--max-spans", type=int, default=2000)
-    rna_preview.add_argument("--authorize-evidence-read", action="store_true")
-    rna_outbox = commands.add_parser("rna-langsmith-outbox", help="Create a local immutable export-only journal")
-    for name in ("payload", "output"):
-        rna_outbox.add_argument("--" + name, type=absolute_path, required=True)
-    rna_outbox.add_argument("--expected-sha256", required=True)
-    rna_outbox.add_argument("--endpoint", default="https://api.smith.langchain.com")
-    rna_outbox.add_argument("--project", required=True)
-    rna_outbox.add_argument("--max-attempts", type=int, default=3)
-    rna_deliver = commands.add_parser("rna-langsmith-deliver", help="Deliver an exactly reviewed RNA outbox")
-    rna_deliver.add_argument("--outbox", type=absolute_path, required=True)
-    rna_deliver.add_argument("--expected-sha256", required=True)
-    rna_deliver.add_argument("--authorize-upload", action="store_true")
-    rna_deliver.add_argument("--timeout-sec", type=int, default=15)
-    rna_deliver.add_argument("--deadline-sec", type=int, default=60)
-    rna_status = commands.add_parser("rna-langsmith-status", help="Read an existing export journal without creating storage")
-    rna_status.add_argument("--outbox", type=absolute_path, required=True)
     from .biology_cli import register_commands
     register_commands(commands, absolute_path)
     from .public_cli import register_commands as register_public_commands
@@ -116,32 +75,6 @@ def _load_plan(path):
 
 
 def _run_command(args):
-    if args.command == "rna-langsmith-preview":
-        from .rna_langsmith_export import prepare_rna_export
-        return prepare_rna_export(snapshot_path=args.snapshot, output_dir=args.output,
-            data_scope=args.data_scope, project=args.project, expected_snapshot_sha256=args.expected_snapshot_sha256,
-            allow_evidence_read=args.authorize_evidence_read, max_spans=args.max_spans,
-            export_namespace=args.export_namespace)
-    if args.command == "rna-langsmith-outbox":
-        from .langsmith_outbox import ExportOutbox
-        return ExportOutbox.create(args.output, payload_path=args.payload, expected_sha256=args.expected_sha256,
-            endpoint=args.endpoint, project=args.project, max_attempts=args.max_attempts).status()
-    if args.command == "rna-langsmith-status":
-        from .langsmith_outbox import ExportOutbox
-        return ExportOutbox.open_readonly(args.outbox).status()
-    if args.command == "rna-langsmith-deliver":
-        from .rna_langsmith_export import deliver_rna_outbox
-        return deliver_rna_outbox(outbox_path=args.outbox, expected_sha256=args.expected_sha256,
-            allow_upload=args.authorize_upload, timeout_seconds=args.timeout_sec, deadline_seconds=args.deadline_sec)
-    if args.command == "langsmith-export":
-        from .langsmith_export import prepare_export
-        return prepare_export(args.run_dir, args.output, data_scope=args.data_scope, project=args.project,
-            workspace_root=args.workspace_root, max_spans=args.max_spans,
-            expected_manifest_sha256=args.expected_manifest_sha256, allow_evidence_read=args.authorize_evidence_read)
-    if args.command == "langsmith-upload":
-        from .langsmith_export import upload_export
-        return upload_export(args.payload, args.expected_sha256, args.output, endpoint=args.endpoint,
-            timeout_sec=args.timeout_sec, max_spans=args.max_spans, allow_upload=args.authorize_upload)
     if args.command.startswith("public-"):
         from .public_cli import run_command
         return run_command(args)
@@ -230,10 +163,6 @@ def main(argv=None):
     try:
         result = _run_command(args)
         print(json.dumps(result, allow_nan=False, sort_keys=True))
-        if args.command == "langsmith-upload" and result.get("status") != "uploaded":
-            return 1
-        if args.command == "rna-langsmith-deliver" and result.get("state") != "acknowledged":
-            return 1
     except (ValueError, TypeError, OSError, RuntimeError, KeyError) as error:
         print(f"devbench-study: {type(error).__name__}: {error}", file=sys.stderr)
         return 2

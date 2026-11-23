@@ -20,11 +20,11 @@ def tmp_path(workspace_tmp_path):
     return workspace_tmp_path
 
 
-def _capsule(tmp_path, *, paired=False, with_review=True):
+def _capsule(tmp_path, *, paired=False, with_review=True, reference=True):
     from devbench.core.publication_families import FamilyAllocation, FamilySpec
     from devharness_controlled.erql_contracts import bind_erql_families
 
-    plan, request = prepare(tmp_path, reference=True, add_filtered=True, paired=paired)
+    plan, request = prepare(tmp_path, reference=reference, add_filtered=True, paired=paired)
     primary = plan.allocation.family(plan.family_id).model_copy(update={"weight": None})
     sibling = FamilySpec(family_id="withheld-sibling", population="unavailable",
                          numerator=request["numerator"], denominator=request["denominator"])
@@ -60,7 +60,7 @@ def test_cli_primary_scope_is_rejected_before_accessing_capsule(tmp_path):
 def test_cli_requires_grant_and_reviewer_approval(tmp_path):
     result = _run_cli(tmp_path, tmp_path / "absent", allow=False)
     assert result.returncode == 2 and "requires --allow-data-execution" in result.stderr
-    capsule, _ = _capsule(tmp_path, with_review=False)
+    capsule, _ = _capsule(tmp_path, with_review=False, reference=False)
     result = _run_cli(tmp_path, capsule)
     assert result.returncode == 1 and "one author and one reviewer" in result.stderr
     assert not (tmp_path / "out").exists()
