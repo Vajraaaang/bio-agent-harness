@@ -370,6 +370,7 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             (_EXPRESSION, ("spatial_coordinates",)),
             assays=_SPATIAL,
             align="observations",
+            curated_operation="spatial_pattern",
         ),
         "spatial_domains": QuestionContract(
             9,

@@ -240,6 +240,33 @@ def test_embedding_cannot_substitute_for_spatial_coordinates():
         _measurement("spatial_coordinates", slot="obsm/spatial")
 
 
+def test_spatial_pattern_uses_curated_operation_and_domains_stay_unbound():
+    request = AnswerabilityRequest(
+        family_id=9,
+        question="spatial_pattern",
+        assay="spatial_transcriptomics",
+        entry_point="annotated_object",
+    )
+    coords = _measurement(
+        "spatial_coordinates",
+        slot="obsm/spatial",
+        coordinate_frame="tissue-slide",
+        coordinate_units="um",
+    )
+    runtime = RuntimeEvidence(
+        question="spatial_pattern",
+        tier="tier_a",
+        operation_id="spatial_pattern",
+        runtime_sha256=_RUNTIME,
+    )
+    result = assess_answerability(
+        request, measurements=(_measurement("gene_counts"), coords), runtime=runtime,
+    )
+    assert result.status == "ready"
+    assert result.execution_route == "tier_a"
+    assert RNA_QUESTIONS["spatial_domains"].curated_operation is None
+
+
 def test_ase_requires_exact_genotype_sample_and_variant_axes():
     request = _request(12, "allele_specific_expression")
     counts = _measurement("allele_counts", value="a" * 64, reference=_REFERENCE)

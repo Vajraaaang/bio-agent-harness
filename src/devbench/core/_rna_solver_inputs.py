@@ -176,3 +176,25 @@ def solver_receipt(
         "clinical_release_allowed": False,
     }
     return {**receipt, "receipt_sha256": canonical_sha256(receipt)}
+
+
+def read_count_and_metadata(
+    counts_path: Path,
+    metadata_path: Path,
+    counts_sha256: str,
+    metadata_sha256: str,
+    observation_id: str,
+) -> tuple[NDArray[np.float64], pd.DataFrame, list[str]]:
+    """Read aligned observation-by-feature raw counts without normalization."""
+    from rna_kernels.normalization import count_like
+
+    frame = indexed_rows(read_solver_csv(counts_path, counts_sha256), observation_id)
+    metadata = indexed_rows(
+        read_solver_csv(metadata_path, metadata_sha256), observation_id
+    )
+    if set(frame.index) != set(metadata.index):
+        raise ValueError("counts_and_metadata_observation_ids_must_match")
+    counts = numeric_matrix(frame)
+    if not count_like(counts) or np.any(counts.sum(axis=1) > 2**53):
+        raise ValueError("count1_requires_bounded_nonnegative_integer_counts")
+    return counts, metadata.loc[frame.index], list(frame.columns)
