@@ -303,6 +303,7 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             (("transcript_counts",),),
             min_units_per_group=2,
             reference_required=True,
+            curated_operation="bulk_dtu",
         ),
         "splice_junction_usage": QuestionContract(
             4,

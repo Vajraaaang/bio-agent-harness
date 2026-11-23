@@ -12,9 +12,10 @@ from numpy.typing import NDArray
 from pydantic import Field, model_validator
 
 from ._files import read_bounded_file
+from ._hashing import canonical_sha256
 from .design import require_design_condition
 from .publication_families import budgeted_bh
-from .scientific_types import FrozenContract
+from .scientific_types import FrozenContract, content_sha256
 
 MAX_INPUT_BYTES = 100_000_000
 MAX_MATRIX_ENTRIES = MAX_INPUT_BYTES // np.dtype(np.float64).itemsize
@@ -112,6 +113,8 @@ class ConditionContrast(FrozenContract):
 def donor_design(
     metadata: pd.DataFrame,
     contrast: ConditionContrast,
+    *,
+    min_units_per_group: int = 3,
 ) -> tuple[tuple[str, ...], NDArray[np.float64], dict[str, Any]]:
     """Construct an independent-donor design with declared categorical effects."""
     columns = ("donor_id", "condition", *contrast.technical_factors)
@@ -124,8 +127,10 @@ def donor_design(
     if set(conditions) - levels:
         raise ValueError("unexpected_donor_condition")
     counts = {label: int((conditions == label).sum()) for label in sorted(levels)}
-    if min(counts.values()) < 3:
-        raise ValueError("at_least_three_donors_per_condition_required")
+    if min(counts.values()) < min_units_per_group:
+        if min_units_per_group == 3:
+            raise ValueError("at_least_three_donors_per_condition_required")
+        raise ValueError("insufficient_biological_units_per_condition")
     values = [
         np.ones(len(profiles)),
         (conditions == contrast.numerator).to_numpy(float),
@@ -153,3 +158,21 @@ def adjust_probabilities(probabilities: list[float | None]) -> list[float | None
     return [
         result["q_local"] for result in budgeted_bh(probabilities, "1", pad_failed=True)
     ]
+
+
+def solver_receipt(
+    result_format: str,
+    spec: FrozenContract,
+    inputs: dict[str, str | None],
+    details: dict[str, Any],
+) -> dict[str, Any]:
+    specification = spec.model_dump(mode="json")
+    receipt = {
+        **details,
+        "format": result_format,
+        "specification": specification,
+        "specification_sha256": content_sha256(specification),
+        "input_sha256s": {name: digest for name, digest in inputs.items() if digest},
+        "clinical_release_allowed": False,
+    }
+    return {**receipt, "receipt_sha256": canonical_sha256(receipt)}
