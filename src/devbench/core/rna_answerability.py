@@ -497,6 +497,7 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             ),
             align="observations",
             min_units_per_group=2,
+            curated_operation="phenotype_prediction",
         ),
         "published_reproduction": QuestionContract(
             19,

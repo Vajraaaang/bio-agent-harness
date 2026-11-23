@@ -207,6 +207,7 @@ _PROBES = (
         ("gene_counts", "phenotype_outcomes", "independent_evaluation_partition"),
         "independent_evaluation_partition",
         (("independent_evaluation_partition",),),
+        "phenotype_prediction",
     ),
     _Probe(
         19,
