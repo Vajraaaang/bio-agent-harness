@@ -2,10 +2,10 @@
 
 This development snapshot publishes the Python 3.13 source layout, Companion Studio, the local Codex MCP plugin, and the RNA kernel interfaces. The published tree keeps the prior public evidence archives and the existing benchmark reference data.
 
-- A locked install in a fresh publication checkout passed 93 portable Workbench, plugin configuration, answerability, and source custody tests.
+- A locked install in the publication checkout passed 93 focused Workbench, plugin configuration, answerability, and source custody tests with the local runtime.
 - Eight local MCP integration tests passed with patched SQLite. The tests exercise real STDIO transport and synthetic operations without a model provider.
 - The documented offline CLI served the simulation over loopback. A separate Chromium run of the same source showed 287,463 generated observations. Selecting Batch 01 showed 94,817. Restoring all batches restored 287,463. That browser run produced no page errors, failed HTTP responses, or off-origin requests.
-- The published CI job runs the portable test matrix. The full development suite, historical host fixtures, and container, hosted-model, and scientific qualification have separate requirements.
+- Public CI checks the Workbench, source custody, plugin packaging, and admission guards on macOS and Linux. Configured plugin execution requires patched SQLite. The full development suite, historical host fixtures, and container, hosted-model, and scientific qualification have separate requirements.
 
 The browser simulation exercises presentation. The MCP tests exercise software contracts. Clinical release remains held. The [publication manifest](PUBLICATION_MANIFEST.json) records the snapshot identities, changes, and exclusions.
 

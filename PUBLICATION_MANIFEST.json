@@ -8,11 +8,11 @@
   "scope": "Selected current code, portable verification, Codex MCP plugin, and synthetic Workbench demo. Historical public evidence remains in the publication history.",
   "historical_publication_manifest": "The manifest at base_commit records the preceding public snapshot and its source hashes.",
   "publication_changes_sha256": {
-    ".github/workflows/ci.yml": "14a74ff1f714d989ba9f9a113accb3682f58d80829e11d530dc687984c6632da",
+    ".github/workflows/ci.yml": "d9891d743a6c86495422d2a7baf76b8999071c6df7b613307eb3be6ccc00cccf",
     ".gitignore": "89e43e09244227152b002351c74cdea933a299a64ab69faaaaf8f439964445fa",
     "Makefile": "1afa26eb2c9c4e2c9ad484e1c7a20f4973b09ba31fb6854e0bdd336422a75470",
-    "README.md": "2780e7b21dee159638db619c5225491d178b2a069b62a61d491fc3f34cbf0fd6",
-    "RELEASE_READINESS.md": "9ef56659248e387611c3e78fb42bebfd317cc9c226613c70d809592b8f7b7370",
+    "README.md": "50dd705e45044b08d43bf94080d67b95a1cfc51fc59fa9fc3a834ed22daabcd9",
+    "RELEASE_READINESS.md": "cf10c88c3909f243adb630511a4c2b455d10816995a12cc8a438d0521ccea7d5",
     "containers/erql-1.1/Dockerfile": "ef4d82f787f102ab786c133658297ee7b238a2e487de1eca9f0b4cdd214b6960",
     "containers/erql-1.1/install-packages.R": "ddf0c8c7f77d639ae0e1828ef71c951e83fe68ba8f746c21022cfc31a7495f4b",
     "containers/erql-1.1/reference-smoke.R": "0f2abb150ca66da3b796604f92ee9f0782c92a4b2d9f95c6a8204f120dfc5b32",
@@ -100,9 +100,11 @@
     "docs/scientific-method-planner.md": "e233acfc9537c4d9cacb2a6d72e5a717718f0860c2e8156e85bd3814e5fc1dee",
     "docs/workbench-ui.md": "4db307c17c71400a7068fe3bcf18af0e4a33312a50680a33a082474c79bfa9b5",
     "integrations/codex/devharness/.codex-plugin/plugin.json": "b749c68b25aff854c3688eb8b80c149f25be61f0f5ee00e4484b5873f4121c13",
+    "integrations/codex/devharness/.mcp.json": "d8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02",
     "integrations/codex/devharness/README.md": "002471a3f33a10b6024b09a7ed88e3e4b97d68cfd27e3a6e3f2e383f0389190f",
     "integrations/codex/devharness/scripts/configure.py": "c609fd83895da57af7526151f9dd094bb54eb5c0f973f6cad79ff059d2c183b3",
     "integrations/codex/devharness/skills/rna-workbench/SKILL.md": "2d57d869625baa2b00ef58dd9fb297de3fb3c24852c2d973d7e68556cd30ab15",
+    "integrations/codex/devharness/skills/rna-workbench/references/mcp-payload-contracts.md": "28d0c7312014ef8b6edb25df8d8195831c8affc5ca7a34bf053f543f64f9d835",
     "integrations/codex/tests/test_plugin.py": "bd02ca6d33ba759231ac3e303a6ca028c4d3ee5bd522e93082d06047a6edb5ce",
     "methods/airway-2015/compiled-v2/workflow-manifest.json": "44d2eca3b74bfe4fc403aab6b21639d607c8149ae9bafb4e8a230111c83d39c4",
     "methods/airway-2015/compiled-v3/workflow-manifest.json": "b568da47a515e9984418ce21620cddabec2de74027656911e4a62a1b46733c76",
@@ -919,14 +921,14 @@
   },
   "publication_changes_scope": "SHA-256 of each added or modified public path except this manifest. Symlinks hash the stored link target bytes.",
   "verification": {
-    "portable_tests_passed": 93,
     "local_patched_sqlite_mcp_tests_passed": 8,
     "browser_synthetic_observations": 287463,
     "browser_synthetic_batch_01": 94817,
     "public_colab_bundle_members": 700,
     "public_colab_bundle_cap": 768,
     "hosted_model_trials": "not_run",
-    "scientific_or_clinical_qualification": "not_established"
+    "scientific_or_clinical_qualification": "not_established",
+    "local_focused_tests_passed": 93
   },
   "publication_overrides": [
     "Portable protocol references in the documentation and bundled asset",

@@ -37,5 +37,14 @@ jobs:
             tests/test_workbench_project_scope.py \
             tests/test_workbench_studio_drawer.py \
             tests/test_thesis_answerability_matrix.py \
-            tests/test_source_bundle_verification.py \
-            integrations/codex/tests/test_plugin.py
+            tests/test_source_bundle_verification.py
+      # Configured plugin execution requires a separately verified patched SQLite runtime.
+      - name: Verify plugin packaging and admission guards
+        run: |
+          .venv/bin/python -m pytest -q \
+            integrations/codex/tests/test_plugin.py::test_manifest_and_inactive_template \
+            integrations/codex/tests/test_plugin.py::test_workspace_scope_is_explicit \
+            integrations/codex/tests/test_plugin.py::test_missing_runtime_preserves_destination \
+            integrations/codex/tests/test_plugin.py::test_package_rejects_symlink_references \
+            integrations/codex/tests/test_plugin.py::test_existing_destination_is_preserved \
+            integrations/codex/tests/test_plugin.py::test_unpatched_runtime_is_refused_and_darwin_can_retry

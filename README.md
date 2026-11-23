@@ -57,7 +57,7 @@ The typed MCP interface exposes seven tools over local STDIO. Inspection and pla
 
 | Published checkpoint | Observed result |
 | --- | --- |
-| [Companion Studio source update](RELEASE_READINESS.md) | 93 portable tests and eight local MCP tests passed. The offline browser simulation initialized successfully, and batch filtering changed the displayed count from 287,463 to 94,817 and back. |
+| [Companion Studio source update](RELEASE_READINESS.md) | 93 focused tests and eight local MCP tests passed. The offline browser simulation initialized successfully, and batch filtering changed the displayed count from 287,463 to 94,817 and back. |
 | [Synthetic Workbench simulation](reports/workbench-integrated-simulation-20261029/README.md) | The historical publication snapshot passed 144 focused tests. Browser checks covered six generated projects, point counts, batch filtering and SVG/PNG downloads. |
 | [Plot family gallery](reports/workbench-plot-families-20261029/README.md) | Browser checks exported 48 PNGs across eight descriptive plot families using the Workbench controls. |
 | [Gaussian calibration prototype](reports/selection-calibration/README.md) | Corrected null rejection was 5.045%–5.225% under equal variance. It remained 8.610%–9.065% under unequal variance at a nominal 5% threshold. |
