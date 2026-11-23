@@ -375,6 +375,32 @@ def test_cell_communication_admits_curated_route_with_explicit_reference():
     assert missing.missing_measurements == (("ligand_receptor_reference",),)
 
 
+def test_neighborhood_da_admits_embedding_and_preserves_design_gate():
+    request = _request(3, "compositional_abundance")
+    runtime = RuntimeEvidence(
+        question=request.question,
+        tier="tier_a",
+        operation_id="scrna_neighborhood_da",
+        runtime_sha256=_RUNTIME,
+    )
+    embedding = _measurement("latent_embedding")
+    complete = assess_answerability(
+        request, measurements=(embedding,), design=_design(), runtime=runtime
+    )
+    assert (complete.status, complete.execution_route) == ("ready", "tier_a")
+    incomplete = assess_answerability(
+        request, measurements=(_measurement("cell_type_counts"),), runtime=runtime
+    )
+    assert incomplete.missing_measurements == (("latent_embedding",),)
+    mismatched = assess_answerability(
+        request,
+        measurements=(embedding,),
+        design=_design(observation_axis_sha256="a" * 64),
+        runtime=runtime,
+    )
+    assert mismatched.reason == "design_axis_incompatible"
+
+
 def test_raw_read_archive_download_is_refused_even_with_local_metadata():
     request = _request(
         5,

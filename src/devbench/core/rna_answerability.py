@@ -8,7 +8,7 @@ discovering software, or granting execution or publication authority.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Annotated, Literal
 
@@ -289,6 +289,7 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             assays=_CELLS,
             min_units_per_group=3,
             curated_operation="scrna_sccoda",
+            curated_alternatives=("scrna_neighborhood_da",),
         ),
         "bulk_deconvolution": QuestionContract(
             3,
@@ -669,6 +670,15 @@ def assess_answerability(
         return result
     if contract.assays and request.assay not in contract.assays:
         return result.model_copy(update={"reason": "assay_incompatible"})
+    if (
+        request.question == "compositional_abundance"
+        and runtime is not None
+        and runtime.question == request.question
+        and runtime.tier == "tier_a"
+        and runtime.operation_id == "scrna_neighborhood_da"
+    ):
+        # The solver counts donor membership in KNN neighborhoods from this axis.
+        contract = replace(contract, measurements=(("latent_embedding",),))
     selected, issue = _select_measurements(request, contract, measurements)
     if issue is not None:
         reason, missing = issue
