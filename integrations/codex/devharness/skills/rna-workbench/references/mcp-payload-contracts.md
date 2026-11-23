@@ -291,6 +291,314 @@ For `fgsea` or `decoupleR`, omit `foreground_q_max`. Ranked staging uses the sig
 
 Supply a valid local FASTQ plan and pinned references. The plan requires staged reads and performs no data archive downloads. Set `quantification_only: false` only with an admitted design and its pinned count-model runtime.
 
+### Local Python solvers
+
+These routes use bounded, digest-pinned CSV inputs and the declared JSON format
+for an independent phenotype holdout. Use the SHA-256 reported by
+`inspect_rna_inputs` in place of the example hashes. Reference inputs use
+`role: "reference"` and must be staged with the other inputs. The solver
+checks the actual values and reconciles the observation and feature axes.
+Original normalization history, physical coordinate frames, and biological
+identity still depend on the supplied provenance.
+
+To check readiness before planning, pass the same `inputs` to
+`check_answerability`. Include `local_solver` with the example’s `operation`
+and `parameters` and, for DTU, its `transcript_reference`. Pair the request with
+the matching registry entry.
+
+| Operation | Family | Question | Assay | Entry point |
+|---|---:|---|---|---|
+| `scrna_ccc` | 10 | `cell_communication` | `single_cell_rna_seq` | `normalized_expression` |
+| `scrna_neighborhood_da` | 3 | `compositional_abundance` | `single_cell_rna_seq` | `annotated_object` |
+| `bulk_deconvolution` | 3 | `bulk_deconvolution` | `bulk_rna_seq` | `normalized_expression` for CPM, `count_matrix` for counts |
+| `bulk_dtu` | 4 | `transcript_usage` | `bulk_rna_seq` | `transcript_quantification` |
+| `spatial_pattern` | 9 | `spatial_pattern` | `spatial_transcriptomics` | `count_matrix` |
+| `perturbation_response` | 11 | `perturbation_response` | `single_cell_rna_seq` | `count_matrix` |
+| `phenotype_prediction` | 18 | `phenotype_prediction` | `bulk_rna_seq` | `count_matrix` |
+
+Approval uses the frozen plan digest. The worker compares the local Python runtime
+fingerprint to the plan, stages read-only input copies, and verifies both hashes
+and source identities. Mounted routes still require their pinned image.
+The receipt carries scalars, bounded tables, and a digest for the full
+`runs/<run_id>/solver-result.json` workspace artifact. The local routes carry
+`clinical_release_allowed: false`.
+
+#### Cell–cell communication
+
+Use a cell-by-gene CSV with a `cell_id` column and nonnegative library-size-normalized or log1p expression. Match `cell_id,donor_id,cell_type` in metadata. Use `interaction_id,ligand,receptor` in the reference, with pipe-separated subunits. Differential mode requires a donor-level contrast and at least three donors per arm. The receipt scope is correlational coexpression.
+
+```json
+{
+  "operation": "scrna_ccc",
+  "objective": "Test cell-type specificity for interactions from the measured reference.",
+  "inputs": [
+    {
+      "path": "/data/synthetic/normalized-cells.csv",
+      "role": "expression",
+      "data_classification": "synthetic"
+    },
+    {
+      "path": "/data/synthetic/cell-annotations.csv",
+      "role": "metadata",
+      "data_classification": "synthetic"
+    },
+    {
+      "path": "/data/synthetic/ligand-receptor.csv",
+      "role": "reference",
+      "data_classification": "synthetic"
+    }
+  ],
+  "parameters": {
+    "expression_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "metadata_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "ligand_receptor_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "mode": "within_condition_specificity",
+    "normalization": "library_size_log1p",
+    "min_cells_per_donor_type": 10,
+    "complex_aggregation": "min",
+    "n_perm": 999,
+    "seed": 17
+  }
+}
+```
+
+#### Neighborhood differential abundance
+
+Use one row per cell with `cell_id` and finite embedding coordinates. Metadata must match cell IDs and include `donor_id`, `condition`, and any declared covariates. Supply at least three donors per arm. Read back both standard BH and spatial FDR.
+
+```json
+{
+  "operation": "scrna_neighborhood_da",
+  "objective": "Test relative neighborhood abundance between treated and control donors.",
+  "inputs": [
+    {
+      "path": "/data/synthetic/pca-coordinates.csv",
+      "role": "expression",
+      "data_classification": "synthetic"
+    },
+    {
+      "path": "/data/synthetic/donor-conditions.csv",
+      "role": "metadata",
+      "data_classification": "synthetic"
+    }
+  ],
+  "parameters": {
+    "embedding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "metadata_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "contrast": {
+      "numerator": "treated",
+      "denominator": "control",
+      "technical_factors": [
+        "batch"
+      ]
+    },
+    "k": 40,
+    "prop": 0.1,
+    "seed": 17
+  }
+}
+```
+
+#### Bulk deconvolution
+
+Stage gene-by-bulk-sample and gene-by-reference-cell CSVs with `gene_id` and optional `chromosome`. The annotations contain exactly `cell_id,donor_id,cell_type`. Each reference type requires at least two distinct donors. Declare the bulk scale as linear counts or CPM.
+
+```json
+{
+  "operation": "bulk_deconvolution",
+  "objective": "Estimate reference-conditioned cell-type proportions in bulk samples.",
+  "inputs": [
+    {
+      "path": "/data/synthetic/bulk-cpm.csv",
+      "role": "expression",
+      "data_classification": "synthetic"
+    },
+    {
+      "path": "/data/synthetic/reference-counts.csv",
+      "role": "reference",
+      "data_classification": "synthetic"
+    },
+    {
+      "path": "/data/synthetic/reference-cells.csv",
+      "role": "metadata",
+      "data_classification": "synthetic"
+    }
+  ],
+  "parameters": {
+    "bulk_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "reference_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "bulk_measurement": "cpm",
+    "reference_measurement": "raw_counts",
+    "min_shared_genes": 20,
+    "exclude_ribosomal": false
+  }
+}
+```
+
+#### Differential transcript usage
+
+Stage a sample-by-feature CSV with `sample_id`, aligned metadata containing `donor_id,condition` and covariates, and an exact `transcript_id,gene_id` map. Pin the map to the declared annotation release. Optional effective lengths must cover the same feature axis. For disjoint exon bins, use `exon_counts` and an `exon_id,gene_id` map.
+
+```json
+{
+  "operation": "bulk_dtu",
+  "objective": "Test treatment-related shifts in within-gene transcript usage.",
+  "inputs": [
+    {
+      "path": "/data/synthetic/transcript-counts.csv",
+      "role": "expression",
+      "data_classification": "synthetic"
+    },
+    {
+      "path": "/data/synthetic/sample-design.csv",
+      "role": "metadata",
+      "data_classification": "synthetic"
+    },
+    {
+      "path": "/data/synthetic/transcript-map.csv",
+      "role": "reference",
+      "data_classification": "synthetic"
+    }
+  ],
+  "parameters": {
+    "counts_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "metadata_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "mapping_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "measurement": "transcript_counts",
+    "count_scale": "raw_counts",
+    "contrast": {
+      "numerator": "treated",
+      "denominator": "control",
+      "technical_factors": [
+        "batch"
+      ]
+    },
+    "target_ofdr": 0.05
+  },
+  "transcript_reference": {
+    "organism": "synthetic",
+    "genome_build": "fixture-v1",
+    "annotation_source": "synthetic annotation",
+    "annotation_release": "1",
+    "reference_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  }
+}
+```
+
+#### Spatial pattern and colocalization
+
+Stage a spot-by-gene raw-count CSV keyed by `spot_id` and matched `spot_id,donor_id,section_id,x,y,cell_type` metadata. Declare a physical frame and physical units. Graphs are bounded by donor and section. Spatial domains remain gated.
+
+```json
+{
+  "operation": "spatial_pattern",
+  "objective": "Check within-section spatial expression and cell-type associations.",
+  "inputs": [
+    {
+      "path": "/data/synthetic/spot-counts.csv",
+      "role": "expression",
+      "data_classification": "synthetic"
+    },
+    {
+      "path": "/data/synthetic/spot-coordinates.csv",
+      "role": "metadata",
+      "data_classification": "synthetic"
+    }
+  ],
+  "parameters": {
+    "counts_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "metadata_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "coordinate_frame": "registered-tissue",
+    "coordinate_units": "um",
+    "k": 6,
+    "n_perm": 999,
+    "seed": 17
+  }
+}
+```
+
+#### Perturbation response
+
+Use a cell-by-gene raw-count CSV with `cell_id`, aligned with `cell_id,donor_id,perturbation` and optional `batch`. The label `NTC` must be observed, with valid replicated contrasts. Guide efficacy scores are exploratory.
+
+```json
+{
+  "operation": "perturbation_response",
+  "objective": "Measure the response associated with the guide against the non-targeting control.",
+  "inputs": [
+    {
+      "path": "/data/synthetic/cell-counts.csv",
+      "role": "expression",
+      "data_classification": "synthetic"
+    },
+    {
+      "path": "/data/synthetic/guide-assignments.csv",
+      "role": "metadata",
+      "data_classification": "synthetic"
+    }
+  ],
+  "parameters": {
+    "counts_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "metadata_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "non_targeting_control": "NTC",
+    "target_genes": [
+      [
+        "guide-A",
+        "GENE_A"
+      ]
+    ],
+    "n_neighbors": 10,
+    "pca_components": 20,
+    "n_perm": 999,
+    "seed": 17
+  }
+}
+```
+
+#### Phenotype prediction
+
+Use sample-by-gene raw counts with `sample_id` and aligned `sample_id,donor_id,label` metadata, with binary labels `0` and `1`. When grouping by cohort, include `cohort_id` in training and `cohort` in the holdout. The JSON reference contains `features` and `rows`, with each row giving `observation`, `unit`, string `label`, and original integer `counts` in feature order. Training and evaluation must have disjoint sample, donor and declared cohort identities.
+
+```json
+{
+  "operation": "phenotype_prediction",
+  "objective": "Estimate donor-level binary predictive performance on locked evaluation data.",
+  "inputs": [
+    {
+      "path": "/data/synthetic/training-counts.csv",
+      "role": "expression",
+      "data_classification": "synthetic"
+    },
+    {
+      "path": "/data/synthetic/training-labels.csv",
+      "role": "metadata",
+      "data_classification": "synthetic"
+    },
+    {
+      "path": "/data/synthetic/independent-evaluation.json",
+      "role": "reference",
+      "data_classification": "synthetic"
+    }
+  ],
+  "parameters": {
+    "counts_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "metadata_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "independent_evaluation_partition_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "n_splits": 5,
+    "inner_splits": 3,
+    "n_hvg": 200,
+    "regularization_c": [
+      0.01,
+      0.1,
+      1.0,
+      10.0
+    ],
+    "seed": 17
+  }
+}
+```
+
 ## execute_reviewed_plan
 
 ```json
