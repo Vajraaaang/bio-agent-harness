@@ -229,6 +229,52 @@
       .studio-rail-footer > a { font-size: .78rem; text-align: right; }
       .metric-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 142px), 1fr)); }
     }
+    .investigation-nav { min-width: 0; }
+    .investigation-nav > summary { color: var(--s-muted); font-size: .78rem; font-weight: 650; cursor: pointer; margin-bottom: 7px; }
+    #checkpoint-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+    #checkpoint-list button { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px; border-radius: 7px; border: 1px solid transparent; background: transparent; color: var(--s-body); text-align: left; cursor: pointer; font-size: .78rem; }
+    #checkpoint-list button[aria-current="step"] { background: var(--s-teal-soft); border-color: var(--s-hairline); color: var(--s-teal); font-weight: 650; }
+    #checkpoint-list button:disabled { cursor: default; color: var(--s-muted); }
+    .step-number { color: var(--s-muted); font: .7rem ui-monospace, monospace; min-width: 2ch; }
+    .run-status { display: flex; gap: 14px; align-items: center; color: var(--s-muted); font-size: .82rem; }
+    .run-status progress { accent-color: var(--s-teal); max-width: 240px; flex: 1; min-width: 80px; height: 7px; }
+    .investigation-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+    .checkpoint-card, .checkpoint-evidence { align-content: start; gap: 13px; }
+    .checkpoint-card h2 { font-size: clamp(20px, 2.4vw, 28px); letter-spacing: -.025em; }
+    .checkpoint-evidence h2 { font-size: 1rem; }
+    .checkpoint-evidence dl { display: grid; gap: 7px; margin: 0; }
+    .checkpoint-evidence dt { color: var(--s-muted); font-size: .76rem; }
+    .checkpoint-evidence dd { margin: 0; color: var(--s-ink); font-size: .92rem; overflow-wrap: anywhere; }
+    .evidence-fact { display: grid; gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--s-hairline); }
+    #decision-fields { padding: 0; border: 0; min-inline-size: 0; margin: 0; }
+    #decision-fields legend { color: var(--s-ink); font-weight: 650; padding: 4px 0 8px; }
+    #decision-options, #sensitivity { display: grid; gap: 8px; }
+    #sensitivity { background: var(--s-surface-2); padding: 10px; border-radius: 9px; }
+    #donor-inspector { border-top: 1px solid var(--s-hairline); padding-top: 10px; }
+    #donor-inspector > summary { cursor: pointer; color: var(--s-teal); font-weight: 650; }
+    #donor-inspector .setting { margin-block: 8px; }
+    #donor-inspector .table-wrapper { max-height: 220px; }
+    #donor-inspector thead { position: sticky; top: 0; }
+    #donor-inspector th, #donor-inspector td { padding: 6px 9px; white-space: nowrap; }
+    .decision-option { display: flex; gap: 10px; align-items: baseline; padding: 10px 12px; border: 1px solid var(--s-hairline-strong); border-radius: 8px; cursor: pointer; }
+    .decision-option:has(input:checked) { background: var(--s-teal-soft); border-color: var(--s-teal); }
+    .decision-option input { flex: none; accent-color: var(--s-teal); }
+    .decision-feedback { padding: 10px 12px; border-radius: 8px; margin-top: 9px; }
+    .decision-feedback[data-outcome="held"] { color: var(--s-warn); background: var(--s-warn-soft); }
+    .decision-feedback[data-outcome="accepted"] { color: var(--s-ok); background: var(--s-ok-soft); }
+    .checkpoint-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; margin-top: 13px; }
+    .finding-cards { display: grid; gap: 12px; }
+    #decision-log { display: grid; gap: 8px; padding-left: 1.25rem; }
+    #decision-log li > div { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; }
+    #decision-log .note { margin-top: 4px; }
+    @media (max-width: 900px) { .investigation-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 720px) {
+      .investigation-nav { grid-column: 1 / -1; }
+      #checkpoint-list { display: flex; overflow-x: auto; }
+      #checkpoint-list li { flex: none; }
+      #checkpoint-list button { width: auto; white-space: nowrap; }
+      #reset-demo { font-size: .72rem; padding: 4px 7px; }
+    }
   </style>
 </head>
 <body>
@@ -240,10 +286,14 @@
         <span class="eyebrow">Companion Research Studio</span>
       </div>
       <div class="s-card project">
-        <span class="eyebrow">Demo investigation</span>
-        <strong>Single-cell composition</strong>
+        <span class="eyebrow">Guided investigation</span>
+        <strong>Composition and expression</strong>
         <small><span class="mono-chip">cells_demo.h5ad</span></small>
       </div>
+      <details class="investigation-nav" open>
+        <summary>Investigation path</summary>
+        <ol id="checkpoint-list"></ol>
+      </details>
       <div class="studio-rail-footer">
         <label class="setting" for="theme-select">Theme
           <select id="theme-select">
@@ -252,6 +302,7 @@
             <option value="dark">Dark</option>
           </select>
         </label>
+        <button id="reset-demo" class="s-btn" type="button">Restart demo</button>
         <a href="https://github.com/Vajraaaang/bio-agent-harness">View source on GitHub</a>
       </div>
     </aside>
@@ -261,10 +312,10 @@
         <div class="header-wrap">
           <div class="header-info">
             <div class="row">
-              <span class="s-pill s-pill-teal"><span class="s-dot" aria-hidden="true"></span>Public demo</span>
+              <span class="s-pill s-pill-teal"><span class="s-dot" aria-hidden="true"></span>Synthetic case</span>
               <span class="mono-chip">cells_demo.h5ad</span>
             </div>
-            <h1>State A composition in treated donors</h1>
+            <h1>Does treatment change State A?</h1>
           </div>
           <nav class="s-tablist" role="tablist" aria-label="Investigation views" id="tablist">
             <span class="tab-indicator" aria-hidden="true"></span>
@@ -280,73 +331,79 @@
 
       <div class="studio-stage">
         <section id="overview" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
-          <div class="panel-intro">
-            <h2>Investigation overview</h2>
-            <p>A public walkthrough of a single-cell composition investigation. The values below come from the supplied demo summary. This page contains no underlying expression data.</p>
+          <div id="run-status" class="run-status">
+            <span id="progress-label"></span><progress id="investigation-progress" max="10" value="0" aria-labelledby="progress-label"></progress>
           </div>
-          <div class="metric-grid">
-            <article class="s-card s-card-interactive panel-card"><h3>State A log-fold change</h3><strong class="metric">+1.636</strong></article>
-            <article class="s-card s-card-interactive panel-card"><h3>Relative ratio change</h3><strong class="metric">5.14×</strong></article>
-            <article class="s-card s-card-interactive panel-card"><h3>Posterior inclusion probability</h3><strong class="metric">1.000</strong></article>
+          <div class="investigation-grid">
+            <article class="s-card panel-card checkpoint-card">
+              <p id="checkpoint-phase" class="eyebrow"></p>
+              <h2 id="checkpoint-title" tabindex="-1"></h2>
+              <p id="checkpoint-context"></p>
+              <form id="decision-form">
+                <fieldset id="decision-fields"><legend id="checkpoint-prompt"></legend><div id="decision-options"></div></fieldset>
+                <p id="checkpoint-feedback" class="decision-feedback" role="status" hidden></p>
+                <div class="checkpoint-actions">
+                  <button class="s-btn" type="button" id="previous-step">Back</button>
+                  <button class="s-btn s-btn-primary" type="submit" id="check-decision">Check decision</button>
+                  <button class="s-btn s-btn-primary" type="button" id="next-step" hidden>Continue</button>
+                </div>
+              </form>
+              <noscript>Enable JavaScript to work through the investigation.</noscript>
+            </article>
+            <aside class="s-card panel-card checkpoint-evidence" aria-labelledby="checkpoint-evidence-title">
+              <h2 id="checkpoint-evidence-title">Checkpoint evidence</h2>
+              <dl id="checkpoint-facts"></dl>
+              <details id="donor-inspector">
+                <summary>Inspect donor manifest</summary>
+                <label class="setting">Show donors <select id="donor-filter">
+                  <option value="all">All</option><option value="Control">Control</option>
+                  <option value="Treated">Treated</option><option value="excluded">QC exclusion</option>
+                </select></label>
+                <div class="table-wrapper" tabindex="0" role="region" aria-label="Donor manifest">
+                  <table><thead><tr>
+                    <th scope="col">Donor</th><th scope="col">Arm</th><th scope="col">Batch</th><th scope="col">Files</th>
+                    <th scope="col">Cells</th><th scope="col">Mito.</th><th scope="col">QC</th>
+                  </tr></thead><tbody id="donor-rows"></tbody></table>
+                </div>
+              </details>
+              <div id="sensitivity" hidden>
+                <label class="setting">Denominator <select id="reference-select"><option value="reference">Reference state</option><option value="state-b">State B</option></select></label>
+                <label class="setting">Donor exclusion <select id="donor-select"><option value="none">None</option><option value="T04">Omit T04</option></select></label>
+                <p id="sensitivity-result" class="note" aria-live="polite"></p>
+              </div>
+              <p id="checkpoint-note" class="note"></p>
+            </aside>
           </div>
-          <article class="s-card s-card-interactive panel-card">
-            <h2>Research question</h2>
-            <p>What change in state A abundance does the donor-level model report for treated versus control donors, relative to the model’s reference cell state?</p>
-            <p class="note">Cells are measured observations. Donors are the independent biological units.</p>
-          </article>
         </section>
 
         <section id="findings" role="tabpanel" aria-labelledby="tab-findings" tabindex="0" hidden>
-          <div class="panel-intro">
-            <h2>Findings</h2>
-            <p>The supplied scCODA summary reports a higher state A ratio relative to the reference in treated donors.</p>
-          </div>
-          <article class="s-card s-card-interactive panel-card">
-            <h2>Reported composition effect</h2>
-            <div class="table-wrapper">
-              <table>
-                <caption>Reported values for the demo contrast</caption>
-                <thead><tr><th scope="col">Cell state</th><th scope="col">Contrast</th><th scope="col">Log-fold change</th><th scope="col">Ratio change</th><th scope="col">PIP</th></tr></thead>
-                <tbody><tr><th scope="row">State A</th><td>Treated vs control</td><td>+1.636</td><td>5.14×</td><td>1.000</td></tr></tbody>
-              </table>
-            </div>
-            <p class="note">The reported ratio is reference-dependent. PIP is the posterior inclusion probability under the specified model and prior. Absolute cell abundance and causal effects remain unresolved.</p>
-          </article>
+          <div class="panel-intro"><h2>Findings</h2><p id="findings-message"></p></div>
+          <div id="finding-cards" class="finding-cards"></div>
         </section>
 
         <section id="workflows" role="tabpanel" aria-labelledby="tab-workflows" tabindex="0" hidden>
-          <div class="panel-intro">
-            <h2>Workflow and checkpoints</h2>
-            <p>These stages describe how the local Workbench separates data checks, analysis decisions, and evidence review.</p>
-          </div>
-          <article class="s-card s-card-interactive panel-card">
-            <h2>Donor-aware composition</h2>
-            <ol class="workflow-steps">
-              <li><strong>Intake</strong> Identify count measurements, donor labels, and treatment groups.</li>
-              <li><strong>Quality control</strong> Review capture-level cell counts, filtering, and doublet flags.</li>
-              <li><strong>Plan review</strong> Record the contrast and reference, then check whether the donor design supports the comparison.</li>
-              <li><strong>Model fit</strong> Use donor-by-state counts to estimate composition changes relative to the reference.</li>
-              <li><strong>Evidence review</strong> Inspect diagnostics and retain outcomes, retries, and unresolved assumptions.</li>
-            </ol>
-            <div><button class="s-btn" type="button" data-receipt="workflow">Inspect workflow receipt example</button></div>
+          <div class="panel-intro"><h2>Workflow and checkpoints</h2><p>Inspect the sequence from input inventory through claim review. Held proposals stay in the evidence log.</p></div>
+          <article class="s-card panel-card">
+            <ol id="workflow-list" class="workflow-steps"></ol>
           </article>
         </section>
 
         <section id="figures" role="tabpanel" aria-labelledby="tab-figures" tabindex="0" hidden>
           <div class="panel-intro">
             <h2>Interactive figures</h2>
-            <p>Hover or focus a mark to see its value. Both figures use illustrative data.</p>
+            <p>Hover or focus a mark to see its value. Each panel labels how its values were produced.</p>
           </div>
+          <p id="figures-message" class="note"></p>
           <div class="figure-grid">
-            <figure class="s-card s-card-interactive panel-card">
-              <figcaption><h2>scCODA composition view</h2><p class="note">Illustrative fractions by condition. The reported model effect is in Findings.</p></figcaption>
+            <figure id="composition-figure" class="s-card s-card-interactive panel-card" hidden>
+              <figcaption><h2>Donor composition by condition</h2><p class="note">Equal-donor average of state fractions computed from the eligible synthetic cohort.</p></figcaption>
               <svg class="chart" id="composition-chart" viewBox="0 0 420 196" role="group" aria-labelledby="composition-title">
-                <title id="composition-title">Illustrative stacked fractions for control and treated donors</title>
+                <title id="composition-title">Synthetic donor-average stacked fractions by condition</title>
               </svg>
               <ul class="legend" id="composition-legend" aria-label="Cell states"></ul>
             </figure>
-            <figure class="s-card s-card-interactive panel-card">
-              <figcaption><h2>Volcano plot</h2><p class="note">Illustrative differential-expression data from a separate example. Values are generated for this demo.</p></figcaption>
+            <figure id="expression-figure" class="s-card s-card-interactive panel-card" hidden>
+              <figcaption><h2>State A donor pseudobulk</h2><p class="note">Illustrative volcano plot from staged model output. Gene effects were supplied for the scenario.</p></figcaption>
               <svg class="chart" id="volcano-chart" viewBox="0 0 420 255" role="group" aria-labelledby="volcano-title">
                 <title id="volcano-title">Illustrative gene effects and adjusted p-values</title>
               </svg>
@@ -355,36 +412,19 @@
         </section>
 
         <section id="code" role="tabpanel" aria-labelledby="tab-code" tabindex="0" hidden>
-          <div class="panel-intro">
-            <h2>Analysis configuration</h2>
-            <p>Example of the inputs recorded when reviewing a donor-aware composition plan.</p>
-          </div>
-          <article class="s-card s-card-interactive panel-card">
-            <h2>Illustrative plan</h2>
-            <pre><code>{
-  "dataset": "cells_demo.h5ad",
-  "analysis": "scCODA composition",
-  "experimental_unit": "donor",
-  "contrast": "treated vs control",
-  "reference": "reference cell state",
-  "scope": "public demo"
-}</code></pre>
-            <p class="note">A reproducible fit also requires the reviewed inputs, model parameters, and execution environment.</p>
-          </article>
+          <div class="panel-intro"><h2>Reviewed plan</h2><p id="plan-message"></p></div>
+          <article id="plan-card" class="s-card panel-card" hidden><h2>Simulated execution contract</h2><pre><code id="plan-code"></code></pre></article>
         </section>
 
         <section id="evidence" role="tabpanel" aria-labelledby="tab-evidence" tabindex="0" hidden>
           <div class="panel-intro">
-            <h2>Research evidence</h2>
-            <p>The installed Workbench records identities for plans, input files, and outputs. The cards here show the types of evidence a reader can inspect.</p>
+            <h2>Evidence and decisions</h2>
+            <p>Inspect each recorded decision, its outcome and the earlier records it depends on. All records belong to this synthetic walkthrough.</p>
           </div>
-          <article class="s-card s-card-interactive panel-card">
-            <h2>Receipt examples</h2>
-            <div class="row">
-              <button class="s-btn" type="button" data-receipt="model">Inspect scCODA receipt example</button>
-              <button class="s-btn" type="button" data-receipt="package">Inspect package manifest example</button>
-            </div>
-            <p class="note">Checking a package against an independently retained SHA-256 root can detect changes. This preview does not include an authenticated receipt or the original research package.</p>
+          <article class="s-card panel-card">
+            <div class="row"><h2>Decision log</h2><button class="s-btn" id="export-record" type="button" hidden>Download demo record</button></div>
+            <p id="log-empty" class="note">Check a decision to start the log.</p>
+            <ol id="decision-log" class="workflow-steps"></ol>
           </article>
         </section>
       </div>
@@ -396,7 +436,7 @@
   <dialog id="receipt-drawer" class="s-drawer" aria-labelledby="drawer-title" aria-describedby="drawer-description">
     <div class="drawer-body">
       <div class="drawer-heading">
-        <span class="eyebrow">Illustrative receipt</span>
+        <span class="eyebrow">Synthetic decision receipt</span>
         <form method="dialog"><button class="s-btn" type="submit" autofocus>Close</button></form>
       </div>
       <h2 id="drawer-title">Receipt details</h2>
@@ -466,40 +506,155 @@
       } catch {}
     });
 
-    const receiptDrawer = document.getElementById("receipt-drawer");
-    const receiptExamples = {
-      workflow: {
-        title: "Workflow receipt",
-        description: "The local workflow preserves the admitted plan, runtime result, and diagnostics for each attempted step.",
-        fields: "Example fields · plan identity, stage, outcome, diagnostic summary"
-      },
-      model: {
-        title: "scCODA execution receipt",
-        description: "A model receipt links a fitted result to its approved contrast, donor-level inputs, and execution environment.",
-        fields: "Example fields · input hash, plan hash, engine identity, output hash"
-      },
-      package: {
-        title: "Research package manifest",
-        description: "A package manifest lists member digests. An independently retained root gives a reader a reference for checking integrity.",
-        fields: "Example fields · manifest version, member hashes, execution root"
-      }
+    // These small donor summaries are synthetic. No statistical model runs in the browser.
+    const groups = {
+      Control: [
+        [480, 14, 24, 49], [640, 18, 22, 48], [590, 18, 23, 49], [550, 13, 22, 50],
+        [750, 16, 22, 46], [590, 15, 24, 47], [620, 21, 25, 44], [700, 19, 23, 47],
+        [440, 16, 22, 49], [610, 18, 24, 47], [810, 17, 25, 45], [700, 21, 22, 46]
+      ],
+      Treated: [
+        [560, 34, 20, 34], [640, 33, 22, 32], [590, 25, 23, 37], [790, 65, 10, 16],
+        [660, 30, 21, 37], [610, 29, 24, 34], [770, 35, 20, 33], [690, 37, 20, 31],
+        [520, 32, 22, 32], [600, 31, 22, 35], [810, 40, 18, 30], [190, 24, 18, 37]
+      ]
     };
-
-    document.querySelectorAll("[data-receipt]").forEach(button => {
-      button.addEventListener("click", () => {
-        const example = receiptExamples[button.dataset.receipt];
-        document.getElementById("drawer-title").textContent = example.title;
-        document.getElementById("drawer-description").textContent = example.description;
-        document.getElementById("drawer-fields").textContent = example.fields;
-        receiptDrawer.showModal();
-      });
-    });
-
-    // The plots illustrate different views. Neither array contains retained run data.
-    const composition = [
-      { label: "Control", fractions: [18, 23, 48, 11] },
-      { label: "Treated", fractions: [42, 19, 25, 14] }
+    const donors = Object.entries(groups).flatMap(([arm, rows]) => rows.map(([cells, a, b, ref], index) => {
+      const id = arm[0] + String(index + 1).padStart(2, "0");
+      const counts = [a, b, ref].map(fraction => Math.round(cells * fraction / 100));
+      counts.push(cells - counts.reduce((sum, count) => sum + count, 0));
+      return { id, arm, batch: 1 + Math.floor(index / 4), cells, counts,
+        captureFiles: ["C02", "T04"].includes(id) ? 2 : 1,
+        mitochondrialPercent: id === "T12" ? 21 : 4 + index % 6 };
+    }));
+    const cohort = donors.filter(donor => donor.cells >= 300 && donor.mitochondrialPercent <= 15);
+    const expressionCohort = cohort.filter(donor => donor.counts[0] >= 80);
+    const byArm = (rows, arm) => rows.filter(donor => donor.arm === arm);
+    const armCounts = rows => byArm(rows, "Control").length + " control · " + byArm(rows, "Treated").length + " treated";
+    function designRank(rows) {
+      const batches = [...new Set(rows.map(donor => donor.batch))];
+      // With batch indicators and a binary arm, arm adds rank only if a batch contains both arms.
+      const mixedBatch = batches.some(batch => new Set(rows.filter(donor => donor.batch === batch).map(donor => donor.arm)).size === 2);
+      return { rank: batches.length + Number(mixedBatch), columns: batches.length + 1 };
+    }
+    const shortcut = cohort.filter(donor => (donor.batch === 1 && donor.arm === "Control") || (donor.batch === 3 && donor.arm === "Treated"));
+    const rankLabel = rows => {
+      const { rank, columns } = designRank(rows);
+      return "Rank " + rank + " of " + columns + " · " + rows.length + " donors";
+    };
+    const mean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
+    const percent = value => value.toFixed(1) + "%";
+    const ratio = value => value.toFixed(2) + "×";
+    function descriptiveRatio(reference, omitted) {
+      const rows = cohort.filter(donor => donor.id !== omitted);
+      const column = reference === "reference" ? 2 : 1;
+      const avgLogRatio = arm => mean(byArm(rows, arm).map(donor => Math.log(donor.counts[0] / donor.counts[column])));
+      return Math.exp(avgLogRatio("Treated") - avgLogRatio("Control"));
+    }
+    const composition = Object.keys(groups).map(label => ({
+      label,
+      fractions: [0, 1, 2, 3].map(index => mean(byArm(cohort, label).map(donor => 100 * donor.counts[index] / donor.cells)))
+    }));
+    const plan = {
+      revision: 1, assay: "single-cell RNA-seq", dataset: "cells_demo.h5ad",
+      scope: "synthetic walkthrough; fits are staged",
+      unit: "donor", contrast: "treated vs control", batch: "three processing batches",
+      design_checks: { refused_shortcut: designRank(shortcut), composition: designRank(cohort), expression: designRank(expressionCohort) },
+      qc: { min_retained_cells: 300, max_mitochondrial_percent: 15, excluded_donors: ["T12"] },
+      composition: { method_example: "scCODA", formula: "batch + condition", reference: "Reference state",
+        donor_ids: cohort.map(donor => donor.id) },
+      expression: { method_example: "edgeR quasi-likelihood pseudobulk", state: "A", formula: "batch + condition",
+        min_state_a_cells: 80, offset: "normalized library size", multiplicity: "BH within a frozen gene family",
+        donor_ids: expressionCohort.map(donor => donor.id) }
+    };
+    const steps = [
+      { nav: "Donor inventory", phase: "Data", title: "Reconcile libraries with donors",
+        context: "An organoid treatment experiment appears to enrich a repair-like cell state. Before testing that claim, reconcile the count matrix with the sample manifest.",
+        prompt: "What is the independent biological unit?", correct: 1,
+        facts: [["Assay", "Raw single-cell UMI counts"], ["File manifest", donors.reduce((sum, donor) => sum + donor.captureFiles, 0) + " capture files; C02 and T04 each have a resequenced capture"],
+          ["Biological inventory", donors.length + " donors · " + armCounts(donors)]],
+        options: [["Treat each cell as independent", "Cells share donor-level exposure. Cell-level replication would inflate the apparent sample size."],
+          ["Use donors; reconcile repeat captures", "The unit is the donor. Repeated captures contribute measurements without creating replicates."],
+          ["Use capture files as biological replicates", "Two extra files share donor identities. Counting them would overweight C02 and T04."]] },
+      { nav: "Sample QC", phase: "Data", title: "Apply sample QC before looking at effects",
+        context: "Donor T12 has low recovered cell yield and high mitochondrial fraction. The sample-level thresholds were frozen before either model was consulted.",
+        prompt: "How should the exclusion be handled?", correct: 2,
+        facts: [["Frozen QC", "At least 300 retained cells and at most 15% mitochondrial counts per donor"],
+          ["Flagged sample", "T12 · 190 cells · 21% mitochondrial"], ["Eligible composition cohort", armCounts(cohort)]],
+        options: [["Keep T12 to preserve equal arm sizes", "Equal group sizes do not repair failed sample QC."],
+          ["Tune the cutoff after checking the treatment effect", "Outcome-dependent QC would make the reported evidence selection-dependent."],
+          ["Keep the QC criteria and log the exclusion", "T12 is excluded by the frozen criteria. Record the reason and keep the donor-level cohort visible."]] },
+      { nav: "Batch and design", phase: "Design", title: "Challenge a batch-confounded shortcut",
+        context: "A fast first proposal compares Batch 1 controls with Batch 3 treated donors. The preflight returns a rank-deficient design because batch identifies the arm in that slice.",
+        prompt: "What makes the treatment contrast estimable?", correct: 0,
+        facts: [["Refused shortcut", "Batch 1 controls vs Batch 3 treated · " + rankLabel(shortcut)],
+          ...[1, 2, 3].map(batch => ["Eligible Batch " + batch, armCounts(cohort.filter(donor => donor.batch === batch))]),
+          ["Eligible design", rankLabel(cohort)]],
+        options: [["Use all eligible donors and include batch", "Treatment varies within each batch after restoring the eligible cohort. The shortcut stays in the evidence trail."],
+          ["Drop batch from the shortcut model", "Dropping the aliased term does not tell you whether treatment or batch explains the shortcut contrast."],
+          ["Use the shortcut and add more cells", "Additional cells from the same donors cannot recover a missing arm-by-batch combination."]] },
+      { nav: "Separate estimands", phase: "Design", title: "Separate the two biological questions",
+        context: "A state can form a larger fraction of recovered cells even when its cells do not change their expression profile. The two hypotheses require different inputs and denominators.",
+        prompt: "What should the plan estimate?", correct: 1,
+        facts: [["Composition", "Donor-by-state counts · State A relative to a declared reference"],
+          ["Expression", "Raw UMI sums within State A, one pseudobulk profile per eligible donor"],
+          ["Absolute expansion", "A cell census or suitable external denominator would be needed"]],
+        options: [["Use the strongest State A marker as the abundance estimate", "Within-state expression and relative representation are distinct quantities."],
+          ["Freeze separate composition and within-state expression estimands", "The reference-based contrast and within-state pseudobulk contrast now have separate inputs and claims."],
+          ["Treat the observed fraction as an absolute cell count", "Single-cell recovery fractions do not identify absolute abundance."]] },
+      { nav: "Plan approval", phase: "Review", title: "Review the contract before execution",
+        context: "The proposed plan pins the cohort, contrast, reference, batch term and gene family. State labels come from a frozen annotation rule; the demo does not reuse tested expression hits to redefine State A.",
+        prompt: "Do the two routes have distinct, reviewable input contracts?", correct: 2,
+        facts: [["Composition cohort", armCounts(cohort)], ["Expression cohort", armCounts(expressionCohort) + " at ≥80 State A cells per donor"],
+          ["Pinned plan", "scCODA reference state · edgeR pseudobulk · batch + condition · BH within the frozen gene family"]],
+        options: [["Approve but choose the reference after seeing the result", "Changing the reference after seeing fit outputs would require a new plan revision."],
+          ["Run execution before confirming the donor-level inputs", "An execution request stays on hold until its inputs, contrast and plan are approved."],
+          ["Approve the frozen plan and its separate cohorts", "Revision 1 is recorded. The simulated model checkpoints can now open."]] },
+      { nav: "Composition fit", phase: "Execution", title: "Keep a failed composition fit in the record",
+        context: "The staged first fit missed its sampler diagnostic limits. Review a retry under the same approved cohort, model and reference before interpreting the result.",
+        prompt: "How should the first fit be handled?", correct: 0,
+        facts: [["Attempt 1 · held", "R̂ 1.09 · bulk ESS 140"], ["Frozen diagnostic gates", "R̂ ≤1.01 and bulk ESS ≥400"],
+          ["Retry fixture", "R̂ 1.00 · bulk ESS 840 · same plan revision"]],
+        options: [["Keep the failed attempt and review the same-plan retry", "The held result stays visible. Only the illustrative retry meets the scenario’s diagnostic gates."],
+          ["Publish the first fit because its PIP is high", "A posterior summary does not override a failed sampling diagnostic."],
+          ["Remove a donor or switch reference to make the chains pass", "Changing inputs or reference would require a new approved plan."]] },
+      { nav: "Pseudobulk", phase: "Execution", title: "Check within-state pseudobulk expression",
+        context: "The expression route uses a different eligibility rule because it needs enough State A cells to form a usable pseudobulk profile. A volcano plot summarizes an illustrative fit.",
+        prompt: "Which expression result belongs in the evidence package?", correct: 1,
+        facts: [["Eligible donors", armCounts(expressionCohort)], ["Design check", rankLabel(expressionCohort)],
+          ["Count model", "Raw-count sums · normalized library-size offset · batch term"],
+          ["Multiplicity", "BH-adjusted q-values across the frozen tested gene family"]],
+        options: [["Test individual cells and report their nominal p-values", "This would duplicate donor-level exposure and omit the planned family-level correction."],
+          ["Use donor-level fit and retain the tested family and exclusions", "The staged fit and its eligible donor set belong in a separate expression record."],
+          ["Pick markers for State A from these hits and retest them on the same data", "That would reuse the outcome data for selection and inference. The state definition is frozen."]] },
+      { nav: "Sensitivity", phase: "Diagnostics", title: "Stress-test the composition direction",
+        context: "The panel calculates the treatment-to-control ratio of geometric mean State A-to-reference ratios from the embedded donor counts. This descriptive check is separate from the staged Bayesian fit.",
+        prompt: "After checking both alternatives, how should you report the sensitivity?", correct: 2,
+        facts: [["Primary calculation", "Reference state denominator; all eligible donors"],
+          ["Checks to run", "State B with all donors; reference state with T04 omitted"], ["T04", "High State A fraction. Omission is for sensitivity only."]],
+        options: [["Replace the approved estimate with the largest ratio", "Choosing the largest estimate after observing several results would bias the reported effect."],
+          ["Call the ratio change invariant if all directions agree", "Agreement in direction does not establish agreement in magnitude."],
+          ["Retain the primary fit and report direction plus magnitude sensitivity", "Both descriptive checks stay attached. They qualify the magnitude without replacing the staged model result."]] },
+      { nav: "Evidence review", phase: "Review", title: "Resolve the evidence before signing off",
+        context: "The composition and expression panels now have separate records. Verify lineage from cohort → approved revision → model or diagnostic outcome. A completed retry does not erase the earlier hold.",
+        prompt: "What is needed for the evidence review?", correct: 0,
+        facts: [["Composition branch", "Revision 1 · held attempt · retry fixture · sensitivity outputs"],
+          ["Expression branch", "Revision 1 · separate state-specific eligibility · illustrative volcano table"],
+          ["Replay scope", "Decision log and synthetic summaries; no real fit or authenticated signing"]],
+        options: [["Review both branches and retain the holds and exclusions", "The record keeps failures and exclusions visible alongside approved illustrative outcomes."],
+          ["Drop held records so the package shows only successful outputs", "Removing failed attempts would break the history needed to reproduce the decision."],
+          ["Use a figure alone as proof that the dataset and plan match", "Visual output alone does not bind the underlying inputs or reviewed plan."]] },
+      { nav: "Scope the claim", phase: "Synthesis", title: "Choose a claim the evidence can support",
+        context: "Summarize what the case shows without transferring a result from one estimand to another. The entire investigation is synthetic.",
+        prompt: "Which conclusion preserves those limits?", correct: 1,
+        facts: [["Relative composition", "Illustrative increase relative to the reference; magnitude depends on the denominator and donor set"],
+          ["Within-state expression", "Illustrative changes in selected genes among eligible State A donor profiles"],
+          ["Open questions", "Absolute cell numbers, causal mechanism, and external replication"]],
+        options: [["Treatment increased the absolute number of State A cells", "The relative ratio does not establish absolute population size."],
+          ["Relative representation and within-state expression changed in the synthetic example", "Both claims remain scoped to their estimands and separate cohorts. The demo record can be downloaded."],
+          ["Expression changes prove why State A became more common", "Separate association outputs do not identify a causal mechanism."]] }
     ];
+
     const cellStates = [
       { label: "State A", color: "#0f766e" },
       { label: "State B", color: "#5975a6" },
@@ -513,6 +668,7 @@
       [0.65, 1.25], [0.91, 0.9], [1.07, 1.9], [1.24, 1.4], [1.5, 2.6],
       [1.72, 3.0], [1.97, 4.4], [2.23, 3.7], [2.47, 5.0], [2.73, 5.6]
     ];
+    plan.expression.tested_genes = volcanoPoints.map((_, index) => "Demo gene " + (index + 1));
 
     function svgElement(parent, name, attributes, content) {
       const node = document.createElementNS("http://www.w3.org/2000/svg", name);
@@ -560,7 +716,7 @@
         fractions.forEach((fraction, index) => {
           const cellState = cellStates[index];
           const width = fraction * barWidth / 100;
-          chartMark(chart, "rect", { x, y, width, height: 27, fill: cellState.color }, label + " · " + cellState.label + " · " + fraction + "%");
+          chartMark(chart, "rect", { x, y, width, height: 27, fill: cellState.color }, label + " · " + cellState.label + " · " + percent(fraction));
           x += width;
         });
       });
@@ -600,10 +756,294 @@
       });
     }
 
+    const el = id => document.getElementById(id);
+    const storageKey = "devharness-guided-investigation-v1";
+    let completed = 0;
+    let current = 0;
+    let attempts = [];
+    const sensitivityChecks = new Set();
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey));
+      if (Number.isInteger(saved?.completed) && saved.completed >= 0 && saved.completed <= steps.length) {
+        completed = saved.completed;
+        current = Math.min(completed, steps.length - 1);
+        attempts = Array.isArray(saved.attempts) ? saved.attempts.filter(item =>
+          Number.isInteger(item?.step) && Number.isInteger(item?.choice) && steps[item.step]?.options[item.choice]) : [];
+        for (const check of ["state-b/none", "reference/T04"]) {
+          if (saved.sensitivityChecks?.includes(check)) sensitivityChecks.add(check);
+        }
+      }
+    } catch {}
+
+    function persist() {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify({ completed, attempts, sensitivityChecks: [...sensitivityChecks] }));
+      } catch {}
+    }
+
+    function node(tag, text, className) {
+      const item = document.createElement(tag);
+      if (text) item.textContent = text;
+      if (className) item.className = className;
+      return item;
+    }
+
+    function feedback(outcome, text) {
+      const message = el("checkpoint-feedback");
+      message.dataset.outcome = outcome;
+      message.textContent = text;
+      message.hidden = !text;
+    }
+
+    function statusFor(index) {
+      return index < completed ? "Reviewed" : index === completed ? "Open" : "Pending";
+    }
+
+    function navigateTo(index) {
+      current = index;
+      selectTab(tabs[0]);
+      renderCheckpoint();
+      el("checkpoint-title").focus({ preventScroll: true });
+      el("overview").scrollIntoView({ block: "nearest" });
+    }
+
+    function stepButton(step, index, showStatus = false) {
+      const button = node("button", null, showStatus ? "s-btn" : "");
+      button.type = "button";
+      button.disabled = index > completed;
+      const number = node("span", String(index + 1).padStart(2, "0"), "step-number");
+      button.append(number, node("span", showStatus ? step.title + " · " + statusFor(index) : step.nav));
+      if (index === current && !showStatus) button.setAttribute("aria-current", "step");
+      button.addEventListener("click", () => navigateTo(index));
+      return button;
+    }
+
+    function renderNavigation() {
+      for (const [id, showStatus] of [["checkpoint-list", false], ["workflow-list", true]]) {
+        el(id).replaceChildren(...steps.map((step, index) => {
+          const entry = node("li");
+          entry.append(stepButton(step, index, showStatus));
+          return entry;
+        }));
+      }
+      el("investigation-progress").value = completed;
+      el("progress-label").textContent = completed + " of " + steps.length + " checkpoints reviewed";
+    }
+
+    function renderCheckpoint() {
+      const step = steps[current];
+      const reviewed = current < completed;
+      el("checkpoint-phase").textContent = step.phase + " · Checkpoint " + (current + 1);
+      el("checkpoint-title").textContent = step.title;
+      el("checkpoint-context").textContent = step.context;
+      el("checkpoint-prompt").textContent = step.prompt;
+      el("decision-options").replaceChildren(...step.options.map(([label], index) => {
+        const row = node("label", null, "decision-option");
+        const radio = node("input");
+        radio.type = "radio";
+        radio.name = "decision";
+        radio.value = index;
+        radio.required = true;
+        radio.checked = reviewed && index === step.correct;
+        row.append(radio, node("span", label));
+        return row;
+      }));
+      el("decision-fields").disabled = reviewed;
+      el("check-decision").hidden = reviewed;
+      el("previous-step").disabled = current === 0;
+      el("next-step").hidden = !reviewed;
+      el("next-step").textContent = current === steps.length - 1 ? "See findings" : "Continue";
+      el("sensitivity").hidden = current !== 7;
+      el("donor-inspector").hidden = current > 2;
+      el("checkpoint-facts").replaceChildren(...step.facts.map(([name, value]) => {
+        const fact = node("div", null, "evidence-fact");
+        fact.append(node("dt", name), node("dd", value));
+        return fact;
+      }));
+      el("checkpoint-note").textContent = step.phase === "Execution"
+        ? "Model output is staged. The browser displays the decision gates and computes descriptive summaries."
+        : "Synthetic input fixture. Decisions are recorded locally in this browser.";
+      feedback("accepted", reviewed ? step.options[step.correct][1] : "");
+      renderNavigation();
+      if (current === 7) updateSensitivity();
+    }
+
+    function renderDonors() {
+      const filter = el("donor-filter").value;
+      const rows = donors.filter(donor => filter === "all" || filter === donor.arm
+        || (filter === "excluded" && !cohort.includes(donor)));
+      el("donor-rows").replaceChildren(...rows.map(donor => {
+        const row = node("tr");
+        const heading = node("th", donor.id);
+        heading.scope = "row";
+        row.append(heading, ...[donor.arm, donor.batch, donor.captureFiles, donor.cells,
+          donor.mitochondrialPercent + "%", cohort.includes(donor) ? "Eligible" : "Excluded"]
+          .map(value => node("td", String(value))));
+        return row;
+      }));
+    }
+
+    function updateSensitivity() {
+      const reference = el("reference-select").value;
+      const omitted = el("donor-select").value;
+      const key = reference + "/" + omitted;
+      if (key === "state-b/none" || key === "reference/T04") sensitivityChecks.add(key);
+      el("sensitivity-result").textContent = "Computed ratio: " + ratio(descriptiveRatio(reference, omitted))
+        + " · " + (cohort.length - (omitted === "none" ? 0 : 1)) + " donors · "
+        + sensitivityChecks.size + " of 2 alternative checks inspected";
+      persist();
+    }
+
+    function finding(title, text, detail) {
+      const card = node("article", null, "s-card panel-card");
+      card.append(node("h2", title), node("p", text), node("p", detail, "note"));
+      return card;
+    }
+
+    function renderResults() {
+      const hasComposition = completed >= 6;
+      const hasExpression = completed >= 7;
+      const cards = [];
+      if (hasComposition) cards.push(finding("Relative composition · staged retry",
+        "State A: +1.636 log-fold change, 5.14× relative ratio, PIP 1.000.",
+        "Illustrative posterior under the approved reference and cohort. The initial fit was held for failed diagnostics."));
+      if (hasExpression) {
+        const hit = volcanoPoints[22];
+        cards.push(finding("Within-State A expression · staged pseudobulk",
+          "Demo gene 23: +" + hit[0].toFixed(2) + " log₂ fold change, BH q = " + (10 ** -hit[1]).toPrecision(2) + ".",
+          armCounts(expressionCohort) + ". This is a separate result in the eligible State A donor cohort."));
+      }
+      if (completed >= 8) cards.push(finding("Sensitivity · computed from the embedded counts",
+        "Reference: " + ratio(descriptiveRatio("reference", "none")) + " · State B: " + ratio(descriptiveRatio("state-b", "none"))
+          + " · Reference without T04: " + ratio(descriptiveRatio("reference", "T04")),
+        "The direction agrees across the three descriptive calculations. Their magnitudes differ. They are not posterior estimates."));
+      if (completed === steps.length) cards.push(finding("Reviewed conclusion",
+        "The synthetic example supports higher relative State A representation and within-state expression changes in selected genes.",
+        "The two results use different cohorts. Absolute abundance, causal mechanism and external replication remain open."));
+      el("findings-message").textContent = cards.length ? "Each result is tied to its own cohort and evidence type." : "Findings unlock after the plan and fit checks.";
+      el("finding-cards").replaceChildren(...cards);
+      el("composition-figure").hidden = !hasComposition;
+      el("expression-figure").hidden = !hasExpression;
+      el("figures-message").textContent = hasExpression ? "" : hasComposition
+        ? "The expression plot opens after the pseudobulk checkpoint." : "Figures open as their checkpoints are reviewed.";
+      el("plan-message").textContent = completed >= 5 ? "The simulated execution inputs are pinned to revision 1." : "Approve the plan to reveal its frozen inputs.";
+      el("plan-card").hidden = completed < 5;
+      el("plan-code").textContent = completed >= 5 ? JSON.stringify(plan, null, 2) : "";
+      el("export-record").hidden = completed !== steps.length;
+    }
+
+    function decisionRecords() {
+      const records = attempts.map(({ step, choice }) => ({
+        step, title: steps[step].title, decision: steps[step].options[choice][0],
+        outcome: choice === steps[step].correct ? "Reviewed" : "Held", explanation: steps[step].options[choice][1]
+      }));
+      if (completed >= 2) records.unshift({
+        step: 2, title: "Batch-sliced request", decision: "Preflight Batch 1 controls vs Batch 3 treated",
+        outcome: "Held", explanation: "Simulated preflight found the arm and batch aliased. No fit was admitted."
+      });
+      if (completed >= 5) records.unshift({
+        step: 5, title: "Composition attempt 1", decision: "Inspect the staged first fit",
+        outcome: "Held", explanation: "R̂ 1.09 and bulk ESS 140 missed the frozen limits. Posterior results stayed on hold."
+      });
+      return records.sort((a, b) => a.step - b.step);
+    }
+
+    function renderEvidence() {
+      const logged = decisionRecords();
+      el("log-empty").hidden = logged.length > 0;
+      el("decision-log").replaceChildren(...logged.map(record => {
+        const entry = node("li");
+        const row = node("div");
+        const label = node("strong", record.title);
+        const badge = node("span", record.outcome, "s-pill " + (record.outcome === "Held" ? "s-pill-warn" : "s-pill-ok"));
+        const button = node("button", "Inspect receipt", "s-btn");
+        button.type = "button";
+        button.setAttribute("aria-label", "Inspect receipt: " + record.title);
+        button.addEventListener("click", () => {
+          el("drawer-title").textContent = record.title;
+          el("drawer-description").textContent = record.outcome + " · " + record.decision;
+          const prior = record.step > 0 ? "Preceding checkpoint: " + steps[record.step - 1].title + ". " : "";
+          el("drawer-fields").textContent = prior + record.explanation;
+          el("receipt-drawer").showModal();
+        });
+        row.append(label, badge, button);
+        entry.append(row, node("p", record.decision, "note"));
+        return entry;
+      }));
+    }
+
+    el("decision-form").addEventListener("submit", event => {
+      event.preventDefault();
+      if (current < completed) return;
+      const choice = new FormData(event.currentTarget).get("decision");
+      if (choice === null) return;
+      if (current === 7 && sensitivityChecks.size !== 2) {
+        feedback("held", "Inspect both alternatives first: State B with all donors, then the reference state with T04 omitted.");
+        return;
+      }
+      const selected = Number(choice);
+      const step = steps[current];
+      attempts.push({ step: current, choice: selected });
+      if (selected === step.correct) {
+        completed++;
+        renderCheckpoint();
+        renderResults();
+        el("next-step").focus();
+      } else {
+        feedback("held", step.options[selected][1]);
+      }
+      renderEvidence();
+      persist();
+    });
+
+    el("previous-step").addEventListener("click", () => navigateTo(current - 1));
+    el("next-step").addEventListener("click", () => {
+      if (current < steps.length - 1) navigateTo(current + 1);
+      else selectTab(tabs[1], true);
+    });
+    el("reference-select").addEventListener("change", updateSensitivity);
+    el("donor-select").addEventListener("change", updateSensitivity);
+    el("donor-filter").addEventListener("change", renderDonors);
+    el("reset-demo").addEventListener("click", () => {
+      completed = 0;
+      attempts = [];
+      sensitivityChecks.clear();
+      el("reference-select").value = "reference";
+      el("donor-select").value = "none";
+      el("donor-filter").value = "all";
+      navigateTo(0);
+      renderDonors();
+      renderResults();
+      renderEvidence();
+      persist();
+    });
+    el("export-record").addEventListener("click", () => {
+      if (completed !== steps.length) return;
+      const record = {
+        format: "devharness.guided-studio-demo/1",
+        scope: "synthetic fixture, illustrative fits, unsigned decision log",
+        plan, donors, decisions: decisionRecords(),
+        summaries: { composition,
+          reference_ratio: descriptiveRatio("reference", "none"),
+          state_b_ratio: descriptiveRatio("state-b", "none"),
+          without_t04_ratio: descriptiveRatio("reference", "T04") }
+      };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(record, null, 2)], { type: "application/json" }));
+      const link = node("a");
+      link.href = url;
+      link.download = "devharness-synthetic-investigation.json";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
     window.addEventListener("scroll", () => { tooltip.hidden = true; }, { passive: true });
     document.addEventListener("keydown", event => { if (event.key === "Escape") tooltip.hidden = true; });
     drawComposition();
     drawVolcano();
+    renderCheckpoint();
+    renderDonors();
+    renderResults();
+    renderEvidence();
   </script>
 </body>
 </html>

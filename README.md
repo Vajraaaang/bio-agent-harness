@@ -9,7 +9,7 @@ DevHarness is a local RNA-seq workbench with a Codex copilot and a browser-based
 
 **[Launch Interactive Studio Demo](https://vajraaaang.github.io/bio-agent-harness/)** · [Architecture](#architecture) · [Evidence](#verification-and-limits)
 
-Explore a preloaded single-cell composition investigation through Overview, Findings, Workflows, Figures, Code, and Evidence. The public showcase includes interactive illustrative charts and a receipt inspector. Real fitting runs in the local Workbench under the applicable input, review, and execution controls.
+Work through ten checkpoints in a synthetic single-cell treatment study. Reconcile donor IDs, apply frozen QC, repair a batch-confounded design, and review separate composition and pseudobulk branches. The demo computes cohort and sensitivity summaries from embedded donor records, shows staged model diagnostics, and exports the decision trail. Real fitting runs in the local Workbench.
 
 ## Operate DevHarness two ways
 
