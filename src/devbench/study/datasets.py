@@ -223,9 +223,14 @@ def _write_json(path: Path, value: Any) -> None:
 
 
 def _generator_implementation_sha256() -> str:
+    from devbench._layout import PROJECT_ROOT, package_root
+
     study = Path(__file__).resolve().parent
-    source_paths = {"generator": study / "data.py", "contracts": study / "contracts.py",
-                    "storage": __import__("devbench._layout", fromlist=["PROJECT_ROOT"]).PROJECT_ROOT / "devharness_core" / "storage.py"}
+    source_paths = {
+        "generator": study / "data.py",
+        "contracts": study / "contracts.py",
+        "storage": package_root(PROJECT_ROOT, "devharness_core") / "storage.py",
+    }
     return content_sha256({name: _hash_file(path.resolve(), MAX_SOURCE_BYTES)[0]
                            for name, path in source_paths.items()})
 

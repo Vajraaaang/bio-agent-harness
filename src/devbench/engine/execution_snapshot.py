@@ -138,7 +138,7 @@ def _installed_build_files(project):
     import zipfile
     from importlib import metadata
 
-    resource = project / "devbench" / "analysis" / "assets" / "source-bundle.zip"
+    resource = package_root(project, "devbench") / "analysis" / "assets" / "source-bundle.zip"
     if (project / "pyproject.toml").is_file() or not resource.is_file():
         return {}
     from scripts.source_bundle import _read_installed_resource

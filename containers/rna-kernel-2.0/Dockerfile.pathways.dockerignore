@@ -4,12 +4,11 @@
 !containers/rna-kernel-2.0/Dockerfile.pathways
 !containers/rna-kernel-2.0/install-pathway-packages.R
 !containers/rna-kernel-2.0/r-pathway-sources.lock.json
-!devharness_server/
-!devharness_server/__init__.py
-!devharness_server/tools_rna_pathways.py
-!devharness_server/r/
-!devharness_server/r/rna_pathways.R
-!src/
+!src/devharness_server/
+!src/devharness_server/__init__.py
+!src/devharness_server/tools_rna_pathways.py
+!src/devharness_server/r/
+!src/devharness_server/r/rna_pathways.R
 !src/devbench/
 !src/devbench/core/
 !src/devbench/core/publication_families.py

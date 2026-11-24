@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 ASSET = (
-    Path(__file__).resolve().parents[1] / "devbench/analysis/assets/workbench-ui.html"
+    Path(__file__).resolve().parents[1] / "src/devbench/analysis/assets/workbench-ui.html"
 )
 NODE = shutil.which("node")
 

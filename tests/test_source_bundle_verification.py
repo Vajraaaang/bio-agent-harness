@@ -21,6 +21,9 @@ def _fixture(tmp_path):
     (source / "pyproject.toml").write_text("[project]\nname='synthetic-source'\nversion='1'\n")
     (source / "README.md").write_text("Synthetic source verification fixture.\n")
     (source / "scripts/source_bundle.py").write_text("print('x')\n")
+    core = source / "src/devharness_core"
+    core.mkdir(parents=True)
+    (core / "storage.py").write_text("# synthetic module\n")
     bundle = build_source_bundle(source)
     output = tmp_path / "extracted"
     extract_source_bundle(bundle["base64"], output, bundle["sha256"])
@@ -33,6 +36,9 @@ def test_checkout_and_wheel_stage_share_the_git_source_inventory(tmp_path):
     project = tmp_path / "checkout"
     (project / "scripts").mkdir(parents=True)
     (project / "benchmarks").mkdir()
+    driver = project / "src/devharness_server/r/native_nb.R"
+    driver.parent.mkdir(parents=True)
+    driver.write_text("# synthetic driver\n")
     (project / "pyproject.toml").write_text("[project]\nname='synthetic-source'\nversion='1'\n")
     (project / "README.md").write_text("Synthetic source verification fixture.\n")
     (project / "scripts/source_bundle.py").write_text("print('x')\n")
@@ -48,7 +54,24 @@ def test_checkout_and_wheel_stage_share_the_git_source_inventory(tmp_path):
     assert "benchmarks/planted_discovery.py" not in checkout["files"]
     assert "benchmarks/credential_sample.py" not in checkout["files"]
     assert "benchmarks/visible.py" in checkout["files"]
+    assert "src/devharness_server/r/native_nb.R" in checkout["files"]
     assert checkout == build_source_bundle(staging)
+
+
+def test_flat_execution_snapshot_exports_rebuildable_src_layout(tmp_path):
+    project = tmp_path / "snapshot"
+    (project / "scripts").mkdir(parents=True)
+    (project / "devharness_core").mkdir()
+    (project / "pyproject.toml").write_text('[tool.setuptools.package-dir]\n"" = "src"\n')
+    (project / "README.md").write_text("Synthetic execution snapshot.\n")
+    (project / "scripts/source_bundle.py").write_text("# source exporter\n")
+    (project / "devharness_core/storage.py").write_text("# synthetic module\n")
+
+    bundle = build_source_bundle(project)
+    assert "src/devharness_core/storage.py" in bundle["files"]
+    extracted = tmp_path / "extracted"
+    extract_source_bundle(bundle["base64"], extracted, bundle["sha256"])
+    assert build_source_bundle(extracted) == bundle
 
 
 def test_source_resource_consistency_check_preserves_existing_bytes(tmp_path):
@@ -74,7 +97,7 @@ def _state(path):
     return result
 
 
-def _wheel_resource_fixture(tmp_path):
+def _wheel_resource_fixture(tmp_path, *, core_prefix=""):
     from importlib.metadata import PackagePath
     from types import SimpleNamespace
 
@@ -85,6 +108,10 @@ def _wheel_resource_fixture(tmp_path):
     (project / "README.md").write_text("Frozen source epoch\n")
     (project / "uv.lock").write_text("version = 1\n")
     (project / "scripts/source_bundle.py").write_text("print('epoch')\n")
+    core_member = "devharness_core/storage.py"
+    core_source = project / core_prefix / core_member
+    core_source.parent.mkdir(parents=True)
+    core_source.write_text("# frozen runtime module\n")
     generated = build_source_resource(project)
     installed = tmp_path / "site-packages"
     asset = installed / "devbench/analysis/assets/source-bundle.zip"
@@ -97,13 +124,23 @@ def _wheel_resource_fixture(tmp_path):
     record_asset.hash = SimpleNamespace(mode="sha256", value=base64.urlsafe_b64encode(hashlib.sha256(asset.read_bytes()).digest()).decode().rstrip("="))
     record_asset.size = asset.stat().st_size
     record_code = PackagePath("scripts/source_bundle.py")
-    distribution = SimpleNamespace(files=[record_asset, record_code], locate_file=lambda member: installed / member)
+    installed_core = installed / core_member
+    installed_core.parent.mkdir()
+    installed_core.write_bytes(core_source.read_bytes())
+    distribution = SimpleNamespace(
+        files=[record_asset, record_code, PackagePath(core_member)],
+        locate_file=lambda member: installed / member,
+    )
     return project, asset, code, distribution
 
 
-def test_wheel_resource_matches_frozen_source_and_excludes_itself(tmp_path):
+@pytest.mark.parametrize("core_prefix", ["", "src"])
+def test_wheel_resource_matches_frozen_source_and_excludes_itself(tmp_path, core_prefix):
     from scripts.source_bundle import _installed_source_bundle
-    project, asset, _, distribution = _wheel_resource_fixture(tmp_path)
+
+    project, asset, _, distribution = _wheel_resource_fixture(
+        tmp_path, core_prefix=core_prefix
+    )
     actual = _installed_source_bundle(asset, distribution)
     assert actual == build_source_bundle(project)
     assert "devbench/analysis/assets/source-bundle.zip" not in actual["files"]
@@ -263,6 +300,7 @@ def test_standalone_source_verifier_runs_without_repository_imports(tmp_path):
     assert namespace["SOURCE_BUNDLE_MAX_FILES"] == source_bundle.SOURCE_BUNDLE_MAX_FILES == 768
     verify = namespace["extract_source_bundle"]
     assert verify(bundle["base64"], output, bundle["sha256"], verify_only=True) == output
+    assert (output / "src/devharness_core/storage.py").is_file()
     (output / "scripts/source_bundle.py").unlink()
     with pytest.raises(ValueError, match="changed"):
         verify(bundle["base64"], output, bundle["sha256"], verify_only=True)

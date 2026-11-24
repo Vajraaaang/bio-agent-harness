@@ -6,7 +6,7 @@ from tests.test_workbench_ui_agent_asset import run_script
 
 
 def test_history_is_an_open_section_and_empty_history_stays_out_of_the_way():
-    page = (Path(__file__).resolve().parents[1] / "devbench/analysis/assets/workbench-ui.html").read_text()
+    page = (Path(__file__).resolve().parents[1] / "src/devbench/analysis/assets/workbench-ui.html").read_text()
     assert re.search(r'<section\b[^>]*id="legacy-history"[^>]*aria-labelledby="legacy-history-title"', page)
     assert not re.search(r'<details\b[^>]*id="legacy-history"', page)
     run_script(r"""

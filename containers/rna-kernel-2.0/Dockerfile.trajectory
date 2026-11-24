@@ -9,8 +9,8 @@ COPY src/devbench/core/design.py \
     src/devbench/core/scrna_donor_trajectory.py \
     src/devbench/core/trajectory_evidence.py \
     /opt/rna/runtime/devbench/core/
-COPY rna_kernels/mounted_scrna.py \
-    rna_kernels/scrna_upstream_contract.py \
+COPY src/rna_kernels/mounted_scrna.py \
+    src/rna_kernels/scrna_upstream_contract.py \
     /opt/rna/runtime/rna_kernels/
 
 RUN --network=none python3.13 -c \

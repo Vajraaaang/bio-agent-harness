@@ -158,10 +158,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.seed == args.serve or not 0 <= args.port <= 65535:
         parser.error("Choose exactly one of --seed or --serve and a valid port")
-    if args.runtime_source:
-        sys.path.insert(0, str(args.runtime_source))
-    else:
-        sys.path.insert(0, str(PROJECT))
+    source = args.runtime_source or PROJECT
+    sys.path[:0] = [str(source / "src"), str(source)]
     from devbench.analysis.resources import configure_threads
     configure_threads()
     args.root.mkdir(parents=True, exist_ok=True, mode=0o700)

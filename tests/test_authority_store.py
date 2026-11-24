@@ -12,7 +12,7 @@ from tests.test_governed_native_contracts import governed
 
 
 def api():
-    path=Path(__file__).resolve().parents[1]/"devharness_controlled/authority_store.py"
+    path=Path(__file__).resolve().parents[1]/"src/devharness_controlled/authority_store.py"
     assert path.is_file(),"Authority store implementation is missing"
     return importlib.import_module("devharness_controlled.authority_store")
 

@@ -10,6 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from devbench._layout import package_root
 from devbench.analysis.episode_proposals import _load, _seal
 from devbench.study.contracts import canonical_json_bytes
 from devbench.study.biology_planning import (
@@ -67,7 +68,12 @@ def _source_identity():
         "devharness_core/provenance.py", "devbench/engine/provenance.py",
         "rna_kernels/__init__.py", "rna_kernels/canonical.py",
     )
-    return {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in names}
+    sources = {}
+    for name in names:
+        package, member = name.split("/", 1)
+        path = package_root(ROOT, package) / member
+        sources[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return sources
 
 
 def prepare(output):

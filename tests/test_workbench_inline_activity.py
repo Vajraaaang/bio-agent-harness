@@ -205,7 +205,7 @@ assert.match(elements['workspace-dataset'].textContent,/80 observations × 60 fe
 
 
 def test_working_text_has_white_left_to_right_sweep_and_accessible_static_fallback():
-    theme = (Path(__file__).resolve().parents[1] / 'devbench/analysis/assets/workbench-theme.css').read_text()
+    theme = (Path(__file__).resolve().parents[1] / 'src/devbench/analysis/assets/workbench-theme.css').read_text()
     rules = tinycss2.parse_stylesheet(theme, skip_comments=True, skip_whitespace=True)
     assert not [rule for rule in rules if rule.type == 'error']
     sweeps = [tinycss2.serialize(rule.content) for rule in rules if rule.type == 'at-rule' and rule.lower_at_keyword == 'keyframes' and 'wc-working-sweep' in tinycss2.serialize(rule.prelude)]
@@ -217,7 +217,7 @@ def test_working_text_has_white_left_to_right_sweep_and_accessible_static_fallba
 
 
 def test_white_sweep_keeps_small_working_text_readable_on_the_light_surface():
-    theme = (Path(__file__).resolve().parents[1] / 'devbench/analysis/assets/workbench-theme.css').read_text()
+    theme = (Path(__file__).resolve().parents[1] / 'src/devbench/analysis/assets/workbench-theme.css').read_text()
     text_rule = re.search(r'\.wc-activity-text\s*\{([^}]+)\}', theme).group(1)
     sweep_rule = re.search(r'\.wc-activity-working \.wc-activity-text::after\s*\{([^}]+)\}', theme).group(1)
     color_token = re.search(r'color:var\((--[^)]+)\)', text_rule).group(1)

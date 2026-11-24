@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from devbench._layout import PROJECT_ROOT
+from devbench._layout import PROJECT_ROOT, package_root
 from devbench.adapters.code_action import _file_hash
 from devbench.engine.workspace import bounded_unix_socket, validate_relocated_socket
 
@@ -621,7 +621,7 @@ def _prepare_launch(
         Path(__file__).with_name("permissions.py"),
         Path(__file__).with_name("cli_identity.py"),
         Path(__file__).parents[1] / "adapters" / "code_action.py",
-        PROJECT_ROOT / "devbench_engine" / "adapters.py",
+        package_root(PROJECT_ROOT, "devbench_engine") / "adapters.py",
         Path(__file__).parents[1] / "engine" / "workspace.py",
     )
     evidence.update(

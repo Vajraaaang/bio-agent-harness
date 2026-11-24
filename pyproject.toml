@@ -79,7 +79,10 @@ devbench-analyze = "devbench.analysis.workbench:main"
 devbench-fastq-de = "devbench.analysis.fastq_cli:main"
 
 [tool.setuptools.package-dir]
-devbench = "src/devbench"
+"" = "src"
+benchmarks = "benchmarks"
+experiments = "experiments"
+scripts = "scripts"
 
 [tool.setuptools.packages.find]
 where = ["src", "."]
@@ -108,7 +111,7 @@ select = ["E", "F", "B", "I", "UP", "C90"]
 
 [tool.mypy]
 python_version = "3.13"
-files = ["src/devbench", "devharness_core", "devharness_controlled", "devharness_server", "rna_kernels"]
+files = ["src/devbench", "src/devharness_core", "src/devharness_controlled", "src/devharness_server", "src/rna_kernels"]
 exclude = ["(^|/)\\.[^/]+/", "(^|/)build/", "(?i)grader|grading|golden|private|secret|credential"]
 ignore_missing_imports = true
 

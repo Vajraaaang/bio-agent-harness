@@ -9,7 +9,7 @@ import pytest
 
 MODULE = (
     Path(__file__).resolve().parents[1]
-    / "devbench/analysis/assets/workbench-investigations.js"
+    / "src/devbench/analysis/assets/workbench-investigations.js"
 )
 
 

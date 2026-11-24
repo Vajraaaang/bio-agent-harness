@@ -15,6 +15,15 @@ from pathlib import Path, PurePosixPath
 
 # Room for separately packaged kernel and validation modules. Byte limits still apply.
 SOURCE_BUNDLE_MAX_FILES = 768
+_SRC_PACKAGES = (
+    "devbench",
+    "devbench_engine",
+    "devharness",
+    "devharness_controlled",
+    "devharness_core",
+    "devharness_server",
+    "rna_kernels",
+)
 _RETIRED_NOTEBOOK_MEMBERS = {
     "scripts/build_colab_notebook.py",
     "scripts/build_controlled_notebook.py",
@@ -149,7 +158,11 @@ def allowed_bundle_path(name):
         or any(part in (".", "..") for part in name.split("/"))
     ):
         return False
-    if path.parts[:2] == ("src", "devbench"):
+    if (
+        len(path.parts) > 2
+        and path.parts[0] == "src"
+        and path.parts[1] in _SRC_PACKAGES
+    ):
         return allowed_bundle_path(path.relative_to("src").as_posix())
     denied = {
         ".git",
@@ -175,18 +188,7 @@ def allowed_bundle_path(name):
     if _listed_bundle_member(name):
         return True
     if (
-        path.parts[0]
-        in {
-            "devharness",
-            "devharness_controlled",
-            "devbench",
-            "devharness_core",
-            "devharness_server",
-            "devbench_engine",
-            "rna_kernels",
-            "benchmarks",
-            "experiments",
-        }
+        path.parts[0] in (*_SRC_PACKAGES, "benchmarks", "experiments")
         and path.suffix == ".py"
     ):
         return True
@@ -232,6 +234,14 @@ def checkout_source_paths(project: Path, *scopes: str) -> list[Path]:
     return sorted({project / name for name in os.fsdecode(listing).split("\0") if name})
 
 
+def runtime_source_paths(project: Path) -> tuple[str, ...]:
+    """Locate checkout packages and historical flat archive packages."""
+    return tuple(
+        f"src/{name}" if (project / "src" / name).is_dir() else name
+        for name in _SRC_PACKAGES
+    )
+
+
 def _bundle_source_candidates(root):
     build_files = (
         "pyproject.toml",
@@ -240,15 +250,8 @@ def _bundle_source_candidates(root):
         "LICENSE",
         "AGENTS.md",
     )
-    devbench_path = "src/devbench" if (root / "src/devbench").is_dir() else "devbench"
     packages = (
-        "devharness",
-        "devharness_controlled",
-        devbench_path,
-        "devharness_core",
-        "devharness_server",
-        "devbench_engine",
-        "rna_kernels",
+        *runtime_source_paths(root),
         "benchmarks",
         "experiments",
         "scripts",
@@ -270,13 +273,8 @@ def _read_bundle_sources(root, candidates):
         layout = _read_source_file(root / "pyproject.toml", 2_000_000).decode("utf-8")
     except FileNotFoundError as error:
         raise ValueError("Source bundle is missing required project files") from error
-    src_layout = (
-        tomllib.loads(layout)
-        .get("tool", {})
-        .get("setuptools", {})
-        .get("package-dir", {})
-        .get("devbench")
-        == "src/devbench"
+    package_dirs = (
+        tomllib.loads(layout).get("tool", {}).get("setuptools", {}).get("package-dir", {})
     )
     selected = []
     total = 0
@@ -304,10 +302,12 @@ def _read_bundle_sources(root, candidates):
             raise ValueError(
                 "Source bundle exceeds uncompressed size or file-count limit"
             )
-        if src_layout and name.startswith("devbench/"):
+        package = name.split("/", 1)[0]
+        source_dir = package_dirs.get(package, package_dirs.get(""))
+        if package in _SRC_PACKAGES and source_dir in {"src", f"src/{package}"}:
             name = "src/" + name
         selected.append((name, content))
-    return selected, total
+    return sorted(selected), total
 
 
 def build_source_bundle(project):
@@ -390,9 +390,10 @@ def _installed_source_bundle(resource, distribution):
             if path.is_file() and path.name != ".colab_bundle.sha256"
         )
         names = [path.relative_to(source).as_posix() for path in members]
-        if not {"pyproject.toml", "README.md", "uv.lock"}.issubset(names) or not {
+        archived = set(names)
+        if not {"pyproject.toml", "README.md", "uv.lock"}.issubset(archived) or not {
             "scripts/source_bundle.py", "scripts/colab_run.py"
-        }.intersection(names):
+        }.intersection(archived):
             raise ValueError(
                 "Packaged source resource is missing required project files"
             )
@@ -403,12 +404,9 @@ def _installed_source_bundle(resource, distribution):
                 and allowed_bundle_path(name)
                 and not _excluded_source(name)
             ):
-                source_name = (
-                    "src/" + name
-                    if name.startswith("devbench/") and "src/" + name in names
-                    else name
-                )
-                if source_name not in names:
+                src_name = f"src/{name}"
+                source_name = src_name if src_name in archived else name
+                if source_name not in archived:
                     raise ValueError(
                         "Packaged source resource omits installed module: " + name
                     )
@@ -579,6 +577,7 @@ def source_bundle_extractor_source():
     return "\n".join(
         [
             f"SOURCE_BUNDLE_MAX_FILES = {SOURCE_BUNDLE_MAX_FILES}",
+            f"_SRC_PACKAGES = {_SRC_PACKAGES!r}",
             *(inspect.getsource(helper) for helper in helpers),
         ]
     )

@@ -9,7 +9,7 @@ import pytest
 from tests.test_figure_artifacts import figure_store, exported_figures
 
 
-MODULE = Path(__file__).resolve().parents[1] / "devbench/analysis/assets/scientific-figure.js"
+MODULE = Path(__file__).resolve().parents[1] / "src/devbench/analysis/assets/scientific-figure.js"
 
 
 def run_js(source):

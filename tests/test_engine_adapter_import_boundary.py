@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def isolated(code):
     process = subprocess.run([sys.executable, '-I', '-c',
-        'import sys; sys.path.insert(0, ' + repr(str(ROOT)) + ');\n' + code],
+        'import sys; sys.path[:0] = ' + repr([str(ROOT / 'src'), str(ROOT)]) + '\n' + code],
         capture_output=True, text=True, timeout=20, cwd=ROOT)
     assert process.returncode == 0, process.stderr
 

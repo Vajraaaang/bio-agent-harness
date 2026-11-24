@@ -31,9 +31,9 @@ COPY containers/rna-kernel-2.0/r-pathway-sources.lock.json /opt/rna/
 COPY src/devbench/core/publication_families.py src/devbench/core/rna_pathway_analysis.py \
     src/devbench/core/scientific_types.py \
     /opt/rna/runtime/devbench/core/
-COPY devharness_server/__init__.py devharness_server/tools_rna_pathways.py \
+COPY src/devharness_server/__init__.py src/devharness_server/tools_rna_pathways.py \
     /opt/rna/runtime/devharness_server/
-COPY devharness_server/r/rna_pathways.R /opt/rna/runtime/devharness_server/r/
+COPY src/devharness_server/r/rna_pathways.R /opt/rna/runtime/devharness_server/r/
 ENV R_LIBS_USER=/opt/rna/pathway-R-library:${R_LIBS_USER}
 RUN --network=none --mount=type=tmpfs,target=/tmp \
     cmp /opt/rna/pathway-package-build.lock.json /opt/rna/r-pathway-sources.lock.json \

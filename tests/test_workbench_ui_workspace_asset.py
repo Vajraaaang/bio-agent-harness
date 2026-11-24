@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 from tests.test_workbench_ui_agent_asset import run_script as run
 
-ASSET=Path(__file__).resolve().parents[1]/"devbench/analysis/assets/workbench-ui.html"
+ASSET=Path(__file__).resolve().parents[1]/"src/devbench/analysis/assets/workbench-ui.html"
 
 FIGURE_SETUP="""
 server.state.status='completed_review_failed';

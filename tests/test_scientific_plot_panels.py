@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 import pytest
 
 
-MODULE = Path(__file__).resolve().parents[1] / "devbench/analysis/assets/scientific-plot-panels.js"
+MODULE = Path(__file__).resolve().parents[1] / "src/devbench/analysis/assets/scientific-plot-panels.js"
 
 
 def workspace():

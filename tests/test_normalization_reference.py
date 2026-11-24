@@ -11,7 +11,7 @@ from devharness_controlled.contracts import FrozenContract, JSON_LIMIT_BYTES
 
 
 def api():
-    source = Path(__file__).resolve().parents[1] / "devharness_controlled" / "normalization_reference.py"
+    source = Path(__file__).resolve().parents[1] / "src/devharness_controlled" / "normalization_reference.py"
     assert source.is_file(), "Normalization reference contract implementation is missing"
     return importlib.import_module("devharness_controlled.normalization_reference")
 

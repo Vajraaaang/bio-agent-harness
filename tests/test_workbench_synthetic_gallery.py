@@ -6,7 +6,7 @@ import subprocess
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSET = ROOT / "devbench/analysis/assets/workbench-synthetic.js"
+ASSET = ROOT / "src/devbench/analysis/assets/workbench-synthetic.js"
 
 
 def test_deterministic_cells_filters_and_aggregations():

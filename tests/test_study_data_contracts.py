@@ -12,13 +12,13 @@ from devbench.study.contracts import DatasetRecipe
 
 
 def api():
-    source = Path(__file__).resolve().parents[1] / "devbench" / "study" / "data.py"
+    source = Path(__file__).resolve().parents[1] / "src/devbench/study" / "data.py"
     assert source.is_file(), "Opt-in study data API is not implemented"
     return importlib.import_module("devbench.study.data")
 
 
 def test_import_does_not_import_scientific_dependencies(monkeypatch):
-    source = Path(__file__).resolve().parents[1] / "devbench" / "study" / "data.py"
+    source = Path(__file__).resolve().parents[1] / "src/devbench/study" / "data.py"
     assert source.is_file(), "Opt-in study data API is not implemented"
     original_import = builtins.__import__
 

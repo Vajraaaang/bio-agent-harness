@@ -8,32 +8,9 @@
 
 [Quickstart](#quickstart) · [Workflows](docs/capabilities.md) · [MCP reference](docs/mcp-tools.md) · [Evaluation](docs/evaluation.md) · [Interactive Studio demo](https://vajraaaang.github.io/bio-agent-harness/)
 
-## A batch-confounded contrast, caught before fitting
+![Reviewed RNA-seq workflow from input inspection to reviewing findings, with a branch for missing evidence and a loop to revise the plan.](docs/assets/workflow-map.gif)
 
-The synthetic bulk example has six libraries from six donors. Every control
-was processed in one batch and every treated sample in the other.
-
-> Can these counts estimate a treated-versus-control effect after adjusting for batch? Audit the matrix if the contrast is blocked.
-
-The local STDIO server returns the following results in the runnable walkthrough.
-
-```text
-inspect_rna_inputs       counts.csv and design.csv
-check_answerability     refused · rank_deficient_or_confounded_design
-plan_rna_workflow       matrix_audit · plan digest returned
-execute_reviewed_plan   queued · run ID returned
-get_run_status          completed
-get_execution_receipt   6 features · 6 libraries · replay bundle SHA-256
-```
-
-The receipt covers the descriptive audit. The condition effect remains
-unresolved. [Run the bulk RNA-seq example](examples/bulk-rnaseq/README.md)
-
-## What the server does
-
-- **Checks the study design.** Inspect counts and metadata, confirm the biological unit, and check model rank and contrast estimability before model fitting.
-- **Binds review to the plan.** Freeze input identities, parameters, and the route. Numerical runs follow the approval rules for that exact plan.
-- **Retains execution evidence.** Read back bounded results, artifact identities, and the execution receipt. Keep the receipt digest to verify the retained evidence later.
+[Static workflow map](docs/assets/workflow-map.png)
 
 ## Quickstart
 
@@ -66,8 +43,15 @@ Claude Code, Cursor, and generic STDIO clients can use the same server command.
 
 > Use DevHarness to inspect these files. The synthetic study has distinct donors identified by `donor_id`. Check whether treated versus control is estimable with `~ condition + batch`. If the contrast is blocked, explain why and run a descriptive audit of the original counts.
 
+The [bulk walkthrough](examples/bulk-rnaseq/README.md) shows the design refusal and matrix-audit receipt.
 The [single-cell example](examples/single-cell-rnaseq/README.md) shows how accepted
 QC and donor identity govern pseudobulk and relative composition workflows.
+
+## What the server does
+
+- **Checks the study design.** Inspect counts and metadata, confirm the biological unit, and check model rank and contrast estimability before model fitting.
+- **Binds review to the plan.** Freeze input identities, parameters, and the route. Numerical runs follow the approval rules for that exact plan.
+- **Retains execution evidence.** Read back bounded results, artifact identities, and the execution receipt. Keep the receipt digest to verify the retained evidence later.
 
 ## Workflows
 
@@ -98,16 +82,6 @@ The exact methods, required inputs, and review points are in the [workflow guide
 [Request examples and field definitions](docs/mcp-tools.md)
 
 ## Architecture
-
-```mermaid
-flowchart LR
-    A["Local inputs and question"] --> B["Inspect and check design"]
-    B --> C["Freeze a plan"]
-    B --> D["Ask for evidence or refuse"]
-    C --> E["Review exact plan"]
-    E --> F["Execute in the selected runtime"]
-    F --> G["Verify receipt and inspect results"]
-```
 
 The MCP server and local Workbench share investigation state. [Architecture and trust boundaries](docs/architecture.md)
 

@@ -94,8 +94,9 @@ for key in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLI
 for key, directory in (("MPLCONFIGDIR", ".cache/matplotlib"), ("NUMBA_CACHE_DIR", ".cache/numba"), ("CELLTYPIST_FOLDER", ".cache/celltypist")):
     os.environ[key] = str(bundle_root / directory)
 import sys
-if (bundle_root / "source").is_dir():
-    sys.path.insert(0, str(bundle_root / "source"))
+source = bundle_root / "source"
+if source.is_dir():
+    sys.path[:0] = [str(source / "src"), str(source)]
 import json
 from devbench.analysis.resources import StageMeasurement
 from devbench.analysis.pipeline import confined_path, export_outputs, write_json

@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 
-MODULE = Path(__file__).resolve().parents[1] / "devbench/analysis/assets/workbench-artifacts.js"
+MODULE = Path(__file__).resolve().parents[1] / "src/devbench/analysis/assets/workbench-artifacts.js"
 
 
 def run_js(source):

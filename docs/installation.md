@@ -9,6 +9,9 @@ repo="$(pwd -P)"
 "$repo/.venv/bin/python" -c 'import platform, sqlite3; print(platform.machine(), sqlite3.sqlite_version)'
 ```
 
+After pulling an update that relocates source files, rerun the sync command
+with the extras you use to refresh an existing editable install.
+
 On Apple Silicon, use an arm64 terminal and Python. The lockfile also offers
 `--extra dev` for tests and linters, `--extra analysis` for the optional
 single-cell packages, and `--extra reporting` for local figure exports.

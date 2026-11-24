@@ -9,7 +9,7 @@ from tests.test_workbench_ui_agent_asset import run_script
 def test_new_investigation_is_visible_outside_the_collapsible_body():
     page = (
         Path(__file__).resolve().parents[1]
-        / "devbench/analysis/assets/workbench-ui.html"
+        / "src/devbench/analysis/assets/workbench-ui.html"
     ).read_text()
     section = re.search(
         r'<details id="chat-section" open>(.*?)</details>', page, re.S

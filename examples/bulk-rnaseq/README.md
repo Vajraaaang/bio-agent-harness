@@ -20,9 +20,16 @@ repo="$(pwd -P)"
 ```
 
 The script uses the real STDIO MCP server and saves the requests and responses
-in `trace.json`. It calls `inspect_rna_inputs`, `check_answerability`,
-`plan_rna_workflow`, `execute_reviewed_plan`, `get_run_status` when needed, and
-`get_execution_receipt`.
+in `trace.json`. Here is the observed call sequence.
+
+```text
+inspect_rna_inputs       counts.csv and design.csv
+check_answerability     refused · rank_deficient_or_confounded_design
+plan_rna_workflow       matrix_audit · plan digest returned
+execute_reviewed_plan   queued · run ID returned
+get_run_status          completed
+get_execution_receipt   6 features · 6 libraries · replay bundle SHA-256
+```
 
 ## Result
 

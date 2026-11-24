@@ -123,7 +123,7 @@ if __name__ == "__main__":
 '''
     repo = Path(__file__).resolve().parents[1]
     result = subprocess.run([sys.executable, "-c", program, str(root / "workspace"), str(root / "inputs"), phase],
-        cwd=repo, env={**os.environ, "PYTHONPATH": str(repo)}, capture_output=True, text=True, timeout=30)
+        cwd=repo, env={**os.environ, "PYTHONPATH": os.pathsep.join((str(repo / "src"), str(repo)))}, capture_output=True, text=True, timeout=30)
     assert result.returncode == 73, result.stderr
     reopened = service(root)
     try:

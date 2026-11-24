@@ -13,7 +13,7 @@ pytestmark = pytest.mark.skipif(
 )
 _DRIVER = (
     Path(__file__).resolve().parents[1]
-    / "devharness_server/r/bulk_latent_diagnostics.R"
+    / "src/devharness_server/r/bulk_latent_diagnostics.R"
 )
 
 _R_FIXTURE = """

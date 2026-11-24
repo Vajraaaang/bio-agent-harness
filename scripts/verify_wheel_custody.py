@@ -16,6 +16,7 @@ from scripts.source_bundle import (
     allowed_bundle_path,
     build_source_bundle,
     checkout_source_paths,
+    runtime_source_paths,
 )
 
 REGRESSION = (
@@ -157,13 +158,6 @@ MILESTONE_WHEEL_MEMBERS = (
     "rna_kernels/scrna_upstream_contract.py",
 )
 SOURCE_ROOTS = (
-    "src/devbench",
-    "devharness",
-    "devharness_core",
-    "devharness_controlled",
-    "devharness_server",
-    "devbench_engine",
-    "rna_kernels",
     "benchmarks",
     "experiments",
     "scripts",
@@ -250,7 +244,9 @@ def _copy(project: Path, destination: Path, relative: Path) -> None:
 
 def _copy_sources(project: Path, staging: Path) -> None:
     denied = ("grader", "grading", "golden", "private", "credential", "secret")
-    for source in checkout_source_paths(project, *SOURCE_ROOTS):
+    for source in checkout_source_paths(
+        project, *runtime_source_paths(project), *SOURCE_ROOTS
+    ):
         path = source.relative_to(project)
         if any(word in part.lower() for part in path.parts for word in denied):
             continue

@@ -8,7 +8,7 @@ from tests.test_workbench_ui_agent_asset import run_script
 
 def test_project_settings_are_compact_and_keep_rename_controls():
     root = Path(__file__).resolve().parents[1]
-    page = (root / "devbench/analysis/assets/workbench-ui.html").read_text()
+    page = (root / "src/devbench/analysis/assets/workbench-ui.html").read_text()
     overview = re.search(r'<section id="overview".*?(?=<section id="investigation-inputs")', page, re.S).group(0)
     for identity in ["overview-name", "overview-stats", "project-name-input", "save-project-name", "project-identity", "overview-recent"]:
         assert 'id="' + identity + '"' in overview

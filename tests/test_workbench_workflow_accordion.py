@@ -192,7 +192,7 @@ def test_monochrome_activity_motion_is_disabled_for_reduced_motion():
     from pathlib import Path
     import tinycss2
 
-    theme = (Path(__file__).resolve().parents[1] / 'devbench/analysis/assets/workbench-theme.css').read_text()
+    theme = (Path(__file__).resolve().parents[1] / 'src/devbench/analysis/assets/workbench-theme.css').read_text()
     rules = tinycss2.parse_stylesheet(theme, skip_comments=True, skip_whitespace=True)
     assert not [rule for rule in rules if rule.type == 'error']
     reduced = [tinycss2.serialize(rule.content) for rule in rules if rule.type == 'at-rule' and rule.lower_at_keyword == 'media' and 'prefers-reduced-motion:reduce' in tinycss2.serialize(rule.prelude)]

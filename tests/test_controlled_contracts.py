@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 
 def api(name="contracts"):
-    path = Path(__file__).resolve().parents[1] / "devharness_controlled" / f"{name}.py"
+    path = Path(__file__).resolve().parents[1] / "src/devharness_controlled" / f"{name}.py"
     assert path.is_file(), f"Controlled {name} implementation is missing"
     return importlib.import_module(f"devharness_controlled.{name}")
 

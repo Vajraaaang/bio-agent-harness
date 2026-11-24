@@ -46,7 +46,7 @@ check-sqlite-wal: check-platform ## Require SQLite 3.51.3+ or a documented WAL b
 	@$(VERIFY) -c 'import sqlite3; from devbench.engine.scientific_authority import require_patched_wal; print("SQLite", sqlite3.sqlite_version, flush=True); require_patched_wal()'
 
 lint: ## Check project Python with Ruff
-	$(RUFF) check "$(PROJECT)/src" "$(PROJECT)/devharness_core" "$(PROJECT)/devharness_controlled" "$(PROJECT)/devharness_server" "$(PROJECT)/rna_kernels" "$(PROJECT)/devbench_engine" "$(PROJECT)/scripts" "$(PROJECT)/tests"
+	$(RUFF) check "$(PROJECT)/src" "$(PROJECT)/scripts" "$(PROJECT)/tests"
 
 typecheck: ## Check product Python with mypy
 	$(MYPY) --config-file "$(PROJECT)/pyproject.toml"

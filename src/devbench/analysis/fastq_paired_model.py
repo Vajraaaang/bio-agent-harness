@@ -15,16 +15,30 @@ from .fastq_analysis_policy import FastqAdmissionError, validate_analysis_policy
 
 
 def check_paired_model():
-    from devbench._layout import PACKAGE_ROOT as root, PROJECT_ROOT as project
-    sources=['analysis/fastq_paired_model.py','study/biology_tools_bulk.py','study/biology_tool_io.py','core/family_fitting.py',
-             'core/design.py','core/observed_data.py','core/estimators.py','core/bulk_fit_evidence.py']
-    files=[root/name for name in sources]
-    files += [project/'devharness_server'/name for name in ('tools_bulk.py','normalization.py','tools_stat.py','dispatcher.py')]
-    files += [project/'devharness_core'/name for name in ('units.py','normalization.py')]
-    files += sorted((project / 'rna_kernels').glob('*.py'))
-    files += [project / 'devharness_server/_runtime_scope.py']
+    from devbench._layout import PACKAGE_ROOT, PROJECT_ROOT, package_root
+
+    devbench_files = (
+        "analysis/fastq_paired_model.py", "study/biology_tools_bulk.py",
+        "study/biology_tool_io.py", "core/family_fitting.py", "core/design.py",
+        "core/observed_data.py", "core/estimators.py", "core/bulk_fit_evidence.py",
+    )
+    server = package_root(PROJECT_ROOT, "devharness_server")
+    core = package_root(PROJECT_ROOT, "devharness_core")
+    kernels = package_root(PROJECT_ROOT, "rna_kernels")
+    files = [PACKAGE_ROOT / name for name in devbench_files]
+    files.extend(server / name for name in (
+        "tools_bulk.py", "normalization.py", "tools_stat.py", "dispatcher.py",
+    ))
+    files.extend(core / name for name in ("units.py", "normalization.py"))
+    files.extend(sorted(kernels.glob("*.py")))
+    files.append(server / "_runtime_scope.py")
+    source_sha256 = {
+        path.relative_to(PROJECT_ROOT).as_posix().removeprefix("src/"):
+        hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in files
+    }
     return {'package':'devbench_existing_bulk_core','version':'registered_bulk_condition_contrast/1',
-            'source_sha256':{("devbench/" + p.relative_to(root).as_posix() if p.is_relative_to(root) else p.relative_to(project).as_posix()):hashlib.sha256(p.read_bytes()).hexdigest() for p in files},
+            'source_sha256':source_sha256,
             'dependency_versions':{name:importlib.metadata.version(name) for name in ('numpy','scipy','statsmodels','pydeseq2')}}
 
 

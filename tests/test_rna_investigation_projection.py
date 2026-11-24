@@ -18,7 +18,7 @@ from tests.test_extensible_methods import custom
 
 def projection():
     assert Path(__file__).resolve().parents[1].joinpath(
-        "devbench/analysis/rna_investigation_projection.py").is_file(), "Receipt projection implementation is absent"
+        "src/devbench/analysis/rna_investigation_projection.py").is_file(), "Receipt projection implementation is absent"
     return importlib.import_module("devbench.analysis.rna_investigation_projection")
 
 

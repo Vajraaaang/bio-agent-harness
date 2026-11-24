@@ -79,7 +79,7 @@ assert.equal(posts().filter(
 
 
 def test_project_activity_is_secondary_and_motion_cannot_intercept_clicks():
-    assets = Path(__file__).resolve().parents[1] / "devbench/analysis/assets"
+    assets = Path(__file__).resolve().parents[1] / "src/devbench/analysis/assets"
     page = (assets / "workbench-ui.html").read_text()
     theme = (assets / "workbench-theme.css").read_text()
     tools = re.search(r'<nav id="project-activity-tabs".*?</nav>', page, re.S)

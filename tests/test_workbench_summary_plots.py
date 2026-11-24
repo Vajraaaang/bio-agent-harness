@@ -22,7 +22,7 @@ assert.ok(Math.abs(s.correlation[1][2]-1)<1e-12);assert.equal(api.summarize(data
 assert.equal(api.quantile([1,2,3,4],.5),2.5);assert.deepEqual(Array.from(api.ecdfKnots([1,1,2,3])[0]),[1,.5]);assert.deepEqual(Array.from(api.ecdfKnots([1,1,2,3]).at(-1)),[3,1]);assert.equal(Object.keys(api.titles).length,8);
 assert.throws(()=>api.summarize(data,'bad'));console.log('ok');
 '''
-    completed=subprocess.run([node,'-e',source,str(ROOT/'devbench/analysis/assets/workbench-summary-plots.js')],capture_output=True,text=True)
+    completed=subprocess.run([node,'-e',source,str(ROOT/'src/devbench/analysis/assets/workbench-summary-plots.js')],capture_output=True,text=True)
     assert completed.returncode==0,completed.stderr
 
 def test_packaged_and_composed_summary_renderer():
@@ -49,5 +49,5 @@ for(const batch of ['all','0','1','2']){
  assert.equal(result.batches.reduce((n,b)=>n+b.mitoBins.reduce((a,x)=>a+x,0),0),result.n);
 }
 '''
-    result=subprocess.run([node,'-e',program,str(ROOT/'devbench/analysis/assets/workbench-summary-plots.js')],capture_output=True,text=True)
+    result=subprocess.run([node,'-e',program,str(ROOT/'src/devbench/analysis/assets/workbench-summary-plots.js')],capture_output=True,text=True)
     assert result.returncode == 0, result.stderr
