@@ -74,7 +74,10 @@ def completed(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(code_backend, "implementation_path", lambda: source)
     app = SimpleNamespace(
-        offline_only=True, allow_data_execution=False, _path=tmp_path.joinpath
+        offline_only=True,
+        allow_data_execution=False,
+        workspace=tmp_path,
+        _path=tmp_path.joinpath,
     )
     return SimpleNamespace(
         app=app,
