@@ -2,7 +2,6 @@
 import http.client
 import json
 from pathlib import Path
-import tempfile
 import threading
 import sys
 import tomllib
@@ -112,60 +111,57 @@ class Hub:
 
 
 @pytest.fixture
-def routing():
-    parent = Path(__file__).resolve().parents[1] / "reports" / ".project-http-tests"
-    parent.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=parent) as directory:
-        root = Path(directory).resolve()
-        apps = {A: App(A, JA, IA, FA, root), B: App(B, JB, IB, FB, root)}
-        hub = Hub(apps)
-        servers = []
+def routing(workspace_tmp_path):
+    root = workspace_tmp_path
+    apps = {A: App(A, JA, IA, FA, root), B: App(B, JB, IB, FB, root)}
+    hub = Hub(apps)
+    servers = []
 
-        def start(*, use_hub=True, default=A):
-            server = make_server(apps[A], port=0, project_hub=hub if use_hub else None,
-                                 default_project_id=default if use_hub else None)
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            servers.append((server, thread))
-            return server.server_port
+    def start(*, use_hub=True, default=A):
+        server = make_server(apps[A], port=0, project_hub=hub if use_hub else None,
+                             default_project_id=default if use_hub else None)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        servers.append((server, thread))
+        return server.server_port
 
-        port = start()
+    port = start()
 
-        def request(path, *, project=None, method="GET", body=None,
-                    origin=None, duplicate=False, host=None, selected_port=port):
-            connection = http.client.HTTPConnection("127.0.0.1", selected_port, timeout=5)
-            headers = {"Host": host or "127.0.0.1:" + str(selected_port)}
-            if project is not None:
-                headers["X-Workbench-Project"] = project
-            if method == "POST":
-                headers["Content-Type"] = "application/json"
-                origin = origin or "http://127.0.0.1:" + str(selected_port)
-            if origin is not None:
-                headers["Origin"] = origin
-            payload = None if body is None else json.dumps(body)
-            if duplicate:
-                connection.putrequest(method, path, skip_host=True)
-                for name, value in headers.items():
-                    connection.putheader(name, value)
-                connection.putheader("X-Workbench-Project", project)
-                connection.endheaders()
-            else:
-                connection.request(method, path, payload, headers)
-            response = connection.getresponse()
-            payload = response.read()
-            value = (json.loads(payload) if response.getheader("Content-Type", "").split(";", 1)[0] == "application/json"
-                     else payload)
-            status = response.status
-            connection.close()
-            return status, value
+    def request(path, *, project=None, method="GET", body=None,
+                origin=None, duplicate=False, host=None, selected_port=port):
+        connection = http.client.HTTPConnection("127.0.0.1", selected_port, timeout=5)
+        headers = {"Host": host or "127.0.0.1:" + str(selected_port)}
+        if project is not None:
+            headers["X-Workbench-Project"] = project
+        if method == "POST":
+            headers["Content-Type"] = "application/json"
+            origin = origin or "http://127.0.0.1:" + str(selected_port)
+        if origin is not None:
+            headers["Origin"] = origin
+        payload = None if body is None else json.dumps(body)
+        if duplicate:
+            connection.putrequest(method, path, skip_host=True)
+            for name, value in headers.items():
+                connection.putheader(name, value)
+            connection.putheader("X-Workbench-Project", project)
+            connection.endheaders()
+        else:
+            connection.request(method, path, payload, headers)
+        response = connection.getresponse()
+        payload = response.read()
+        value = (json.loads(payload) if response.getheader("Content-Type", "").split(";", 1)[0] == "application/json"
+                 else payload)
+        status = response.status
+        connection.close()
+        return status, value
 
-        try:
-            yield apps, hub, request, start
-        finally:
-            for server, thread in servers:
-                server.shutdown()
-                server.server_close()
-                thread.join(5)
+    try:
+        yield apps, hub, request, start
+    finally:
+        for server, thread in servers:
+            server.shutdown()
+            server.server_close()
+            thread.join(5)
 
 
 def test_project_header_scopes_config_jobs_inputs_and_scientific_catalog(routing):

@@ -18,10 +18,13 @@ def runtime_root(monkeypatch):
     if (
         len(os.fsencode(sample_socket)) > workspace.UNIX_SOCKET_PATH_MAX
         and (checkout / ".git").is_file()
-        and (checkout.parent / ".git").is_dir()
     ):
         # A nested worktree can exhaust the socket budget before the lease checks.
-        runs = checkout.parent / ".runs"
+        enclosing_checkout = next(
+            (parent for parent in checkout.parents if (parent / ".git").is_dir()),
+            checkout,
+        )
+        runs = enclosing_checkout / ".runs"
     workspace.protected_path(runs)
     runs.mkdir(mode=0o700, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="s-", dir=runs) as directory:
