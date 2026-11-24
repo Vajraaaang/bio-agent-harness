@@ -186,6 +186,7 @@
 .studio-chart-positive { fill: var(--trend-1); }
 .studio-chart-negative { fill: var(--trend-2); }
 .studio-figure-preview { max-width: min(100%,700px); height: auto; border-radius: 8px; }
+.studio-retained-figure { display: block; width: 100%; height: auto; }
 @media (min-width: 861px) and (max-width: 1180px) {
   .inspector-close { display: none; }
 }

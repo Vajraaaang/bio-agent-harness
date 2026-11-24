@@ -321,3 +321,45 @@ def test_composed_studio_uses_no_html_assignment_or_external_style_urls():
     assert "innerHTML" not in script
     styles = re.findall(r"<style\b[^>]*>(.*?)</style>", page, re.S)
     assert styles and all("https://" not in style for style in styles)
+
+
+def test_studio_presents_retained_comparison_on_its_session_tabs():
+    _run(r"""
+const title = 'Matched developmental stages';
+const path = '/api/scientific/adaptive/'+sessionId+'/comparison/'+'b'.repeat(64)+'.png';
+const model = {session_id:sessionId, plugin_linked:true, graph:{entries:[]},
+  retained_comparison:{title,
+    stages:[{label:'E09',dataset:'e09.h5ad',cells:80},{label:'E10',dataset:'e10.h5ad',cells:40}],
+    tables:[{caption:'Motor neuron programs · all cells',
+      columns:['Program','E09','E10'],rows:[['Somatic motor','9 (11%)','10 (25%)']]},
+    {caption:'Cell states · screened cells',
+      columns:['State','E09','E10'],rows:[['Motor-like','12 (20%)','15 (75%)']]}],
+    figures:[{title:'Shared UMAP',download_path:path},
+      {title:'Other session',download_path:path.replace(sessionId,'c'.repeat(32))},
+      {title:'External path',download_path:'https://example.com/out.png'},
+      {title:'Unexpected query',download_path:path+'?other=1'}],
+    limitations:['Biological replicates remain unverified.']}};
+const navigation=[];
+const render = tab => WorkbenchStudio.renderSession(container,tab,model,{navigate:tab=>navigation.push(tab)});
+render('overview');
+assert.ok(textIn(container).includes(title));
+assert.ok(textIn(container).includes('e09.h5ad'));
+assert.ok(!textIn(container).includes('Completed / failed steps'));
+findButton(container,'View findings').onclick();
+findButton(container,'View figures').onclick();
+assert.deepEqual(navigation,['findings','figures']);
+render('findings');
+assert.ok(textIn(container).includes('Motor neuron programs · all cells'));
+assert.ok(textIn(container).includes('Cell states · screened cells'));
+assert.ok(textIn(container).includes('Biological replicates remain unverified.'));
+assert.ok(!textIn(container).includes('No current numerical tables are available. Review the recorded workflow and its evidence holds.'));
+render('figures');
+assert.deepEqual(walk(container).filter(item=>item.tagName==='img')
+  .map(item=>[item.src,item.alt]),[[path,'Shared UMAP']]);
+assert.ok(textIn(container).includes('Cell states · screened cells'));
+assert.equal(WorkbenchStudio.handoffView('workflows',model),'figures');
+assert.equal(WorkbenchStudio.handoffView('overview',model),'overview');
+assert.equal(WorkbenchStudio.handoffView('findings',model),'findings');
+assert.equal(WorkbenchStudio.handoffView('workflows',{...model,plugin_linked:false}),'workflows');
+assert.equal(WorkbenchStudio.handoffView('workflows',{...model,retained_comparison:null}),'workflows');
+""")

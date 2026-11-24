@@ -980,6 +980,18 @@ class _WorkbenchHandler:
             from .workbench_adaptive import adaptive_session_catalog
 
             return self._json(adaptive_session_catalog(request.app), admitted=True)
+        figure = re.fullmatch(
+            r"/api/scientific/adaptive/([0-9a-f]{32})/comparison/([0-9a-f]{64})\.png",
+            path,
+        )
+        if figure is not None:
+            from .workbench_retained_comparison import local_comparison_figure
+
+            session_id, sha256 = figure.groups()
+            content = local_comparison_figure(request.app, session_id, sha256)
+            return self._publication_bytes(
+                content, "image/png", None, source_sha256=sha256
+            )
         package = re.fullmatch(
             r"/api/scientific/adaptive/([0-9a-f]{32})/package/([0-9a-f]{32})/zip",
             path,
@@ -999,7 +1011,7 @@ class _WorkbenchHandler:
 
         studio = {
             key: view.pop(key)
-            for key in ("session_summary", "plugin_session", "packages")
+            for key in ("session_summary", "plugin_session", "packages", "retained_comparison")
             if key in view
         }
         projected = project_subject_metadata(

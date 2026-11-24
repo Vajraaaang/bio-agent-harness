@@ -1498,7 +1498,7 @@
     renderWorkspaceHeader();
   };
   el('studio-export').onclick=()=>downloadStudioPackage(studioPackagePath(studioSessionGraph));
-  async function openWorkflowSession(id, view, aim=null){
+  async function openWorkflowSession(id, view, aim=null, fromHandoff=false){
     const stamp=++studioNavigation;
     try{
       const graph=await read('/api/scientific/adaptive/'+id);
@@ -1521,7 +1521,8 @@
       if(stamp!==studioNavigation)return;
       updateStudioMode();
       renderStudioRail();
-      showCanvas(view==='qc'?'workflows':view);
+      const landing=fromHandoff?window.WorkbenchStudio?.handoffView?.(view,graph)||view:view;
+      showCanvas(landing==='qc'?'workflows':landing);
       if(view==='qc')requestAnimationFrame(()=>{
         el('investigation-adaptive-panel').querySelector('[data-workflow-band="execution"]')
           ?.scrollIntoView({block:'start'});
@@ -2420,7 +2421,7 @@
       const link=requestedStudioLink;
       if(link||restoreWorkflowAlias){
         await investigationController?.ready;
-        if(link)await openWorkflowSession(link.id,link.view);
+        if(link)await openWorkflowSession(link.id,link.view,null,true);
         else if(investigationWorkflowSession)showCanvas('workflows');
         else {
           const sid=scientificSelection.planner_session_id||allInvestigations

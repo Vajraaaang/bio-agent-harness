@@ -1427,6 +1427,18 @@ def _studio_readback(app, binding, flow, plan, revision) -> dict[str, Any]:
             extra["packages"] = _local_packages(app, binding, flow, revision)
     except (OperationBlocked, OSError, sqlite3.DatabaseError):
         pass  # Keep the admitted graph usable if optional retained evidence is absent.
+    if (
+        app.offline_only and classification == "private"
+        and binding.delivery.context_id == "plugin-scientist-" + flow.lineage_id
+    ):
+        from .workbench_retained_comparison import local_comparison_view
+
+        try:
+            comparison = local_comparison_view(app, flow.lineage_id)
+        except (OperationBlocked, OSError, ValueError, KeyError, sqlite3.DatabaseError):
+            comparison = None  # Retained results with stale or unavailable evidence fail closed.
+        if comparison is not None:
+            extra["retained_comparison"] = comparison
     if _graph_revision(flow) != revision:
         raise OperationConflict(
             "Adaptive graph changed while preparing Studio evidence"

@@ -368,6 +368,18 @@
   const verifiedTable = table => table && typeof table.caption === 'string' &&
     asList(table.columns).length && asList(table.rows).some(Array.isArray);
 
+  function retainedFigures(view) {
+    return asList(view.retained_comparison?.figures).filter(figure => {
+      if (typeof figure?.title !== 'string' || typeof figure.download_path !== 'string') return false;
+      const route = /^\/api\/scientific\/adaptive\/([a-f0-9]{32})\/comparison\/[a-f0-9]{64}\.png$/.exec(figure.download_path);
+      return route !== null && route[0] === figure.download_path && route[1] === view.session_id;
+    });
+  }
+
+  function handoffView(tab, view) {
+    return tab === 'workflows' && view.plugin_linked && retainedFigures(view).length ? 'figures' : tab;
+  }
+
   function tableView(columns, rows, title) {
     const wrap = node('div');
     wrap.className = 'studio-table-scroll';
@@ -375,6 +387,7 @@
     wrap.setAttribute('role', 'region');
     wrap.setAttribute('aria-label', title);
     const table = node('table'), head = node('thead'), body = node('tbody'), header = node('tr');
+    table.setAttribute('aria-label', title);
     for (const item of columns) {
       const cell = node('th', item === 'Posterior inclusion probability' ? 'PIP' : item);
       cell.scope = 'col';
@@ -402,6 +415,40 @@
     table.append(head, body);
     wrap.append(table);
     return wrap;
+  }
+
+  function retainedComparison(host, tab, view, options) {
+    const comparison = view.retained_comparison;
+    const panel = section(host, comparison.title);
+    if (tab === 'overview') {
+      const stages = asList(comparison.stages);
+      const cellCount = stages.reduce((total, stage) => total + stage.cells, 0);
+      panel.append(pill('succeeded', 'Completed offline comparison'),
+        node('p', `${cellCount.toLocaleString()} cells across ${stages.length} datasets.`),
+        tableView(['Stage', 'Dataset', 'Cells'], stages
+          .map(({label, dataset, cells}) => [label, dataset, cells]), 'Comparison datasets'));
+      const links = node('div');
+      links.className = 'studio-session-meta';
+      links.append(button('View findings', () => options.navigate?.('findings')),
+        button('View figures', () => options.navigate?.('figures')));
+      panel.append(links);
+    } else {
+      if (tab === 'figures') {
+        for (const figure of retainedFigures(view)) {
+          const card = section(panel, figure.title, 'studio-table-card');
+          const image = node('img');
+          image.src = figure.download_path;
+          image.alt = figure.title;
+          image.className = 'studio-retained-figure';
+          card.append(image);
+        }
+      }
+      for (const table of asList(comparison.tables).filter(verifiedTable)) {
+        section(panel, table.caption, 'studio-table-card')
+          .append(tableView(table.columns, table.rows, table.caption));
+      }
+      for (const note of asList(comparison.limitations)) panel.append(node('p', note));
+    }
   }
 
   function sessionData(view, options) {
@@ -618,6 +665,10 @@
     host.replaceChildren();
     host.hidden = !view || !views[tab];
     if (host.hidden) return;
+    if (typeof view.retained_comparison?.title === 'string' && ['overview', 'findings', 'figures'].includes(tab)) {
+      retainedComparison(host, tab, view, options);
+      return;
+    }
     const data = sessionData(view, options);
     if (tab === 'overview') overview(host, view, data, options);
     else if (tab === 'evidence') evidence(host, data, options);
@@ -626,6 +677,7 @@
 
   root.WorkbenchStudio = {
     sessionLink,
+    handoffView,
     mountDrawer,
     mountTabIndicator,
     revealCanvas,
