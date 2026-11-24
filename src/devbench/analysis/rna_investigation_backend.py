@@ -11,7 +11,7 @@ import importlib
 import json
 import os
 from pathlib import Path
-from devbench._layout import ANALYSIS_ASSETS, PROJECT_ROOT
+from devbench._layout import ANALYSIS_ASSETS, PROJECT_ROOT, package_root
 import re
 import shutil
 import sys
@@ -269,8 +269,8 @@ class AuditedInvestigationBackend:
                   "2026-11-04-workbench-compute-contracts.schema.json",
                   "official-client-pins.json", "owned-host-sentinel.txt")
         resources = [ANALYSIS_ASSETS / name for name in assets]
-        resources.extend(PROJECT_ROOT / "devharness_server" / "r" / driver
-                         for driver in ("erql_1_2.R", "erql_1_3.R"))
+        drivers = package_root(PROJECT_ROOT, "devharness_server") / "r"
+        resources.extend(drivers / driver for driver in ("erql_1_2.R", "erql_1_3.R"))
         paths = (*map(Path, origins.values()), *map(_canonical, resources))
         sources = {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
         executable = shutil.which(self.selector.executable)

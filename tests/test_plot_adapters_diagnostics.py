@@ -185,7 +185,7 @@ def test_scatter_preserves_original_saved_numeric_entries():
 
 
 def test_retained_summary_correlation_routes_only_measured_variable_panels():
-    asset = Path(__file__).resolve().parents[1] / "devbench/analysis/assets/workbench-summary-plots.js"
+    asset = Path(__file__).resolve().parents[1] / "src/devbench/analysis/assets/workbench-summary-plots.js"
     script = """
 const assert = require('node:assert/strict');
 require(process.argv[1]);

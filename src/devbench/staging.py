@@ -60,9 +60,9 @@ def stage_python(workspace: Path, *, assisted: bool = True, profile: str = "host
         linked.append(name)
     copied = {}
     if assisted:
-        from devbench._layout import PROJECT_ROOT as root
+        from devbench._layout import PROJECT_ROOT, package_root
         for package in (*RUNTIME_PACKAGES, *_SHARED_RUNTIME_PACKAGES):
-            source = root / package
+            source = package_root(PROJECT_ROOT, package)
             if not source.is_dir():
                 raise RuntimeError("Runtime package is missing: " + package)
             destination = target_site / package

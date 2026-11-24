@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 
-MODULE = Path(__file__).resolve().parents[1] / "devbench/analysis/assets/bulk-scientific-figure.js"
+MODULE = Path(__file__).resolve().parents[1] / "src/devbench/analysis/assets/bulk-scientific-figure.js"
 
 
 def run_js(code):

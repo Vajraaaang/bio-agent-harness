@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / "devbench/analysis/assets/workbench-conversation.js"
+MODULE = ROOT / "src/devbench/analysis/assets/workbench-conversation.js"
 
 
 def run_js(source):

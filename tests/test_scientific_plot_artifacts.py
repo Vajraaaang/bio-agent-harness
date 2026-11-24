@@ -159,7 +159,7 @@ def test_filter_membership_and_bounds_match_shared_browser(filters, selection, e
     script = ("const f=require(process.argv[1]);const w=JSON.parse(require('fs').readFileSync(0,'utf8'));"
               "const m=f.project(w,w.panels[0].id);console.log(JSON.stringify({bounds:m.bounds,view:f.filteredMarks(m,"
               + json.dumps(state) + ")}));")
-    result = subprocess.run([shutil.which("node"), "-e", script, str(ROOT / "devbench/analysis/assets/scientific-plot-panels.js")],
+    result = subprocess.run([shutil.which("node"), "-e", script, str(ROOT / "src/devbench/analysis/assets/scientific-plot-panels.js")],
                             input=json.dumps(w), text=True, capture_output=True, timeout=30)
     assert result.returncode == 0, result.stderr
     browser = json.loads(result.stdout)
@@ -258,7 +258,7 @@ def test_exact_256_color_scale_matches_browser_and_has_no_pdf_image(palette):
     for i, mark in enumerate(p["marks"]):
         mark["value"] = p["color_scale"]["domain"][i]
     script = "const p=require(process.argv[1]);console.log(JSON.stringify(p.lut(process.argv[2])));"
-    result = subprocess.run([shutil.which("node"), "-e", script, str(ROOT / "devbench/analysis/assets/scientific-palettes.js"), palette],
+    result = subprocess.run([shutil.which("node"), "-e", script, str(ROOT / "src/devbench/analysis/assets/scientific-palettes.js"), palette],
                             text=True, capture_output=True, timeout=30)
     assert result.returncode == 0, result.stderr
     expected = json.loads(result.stdout)

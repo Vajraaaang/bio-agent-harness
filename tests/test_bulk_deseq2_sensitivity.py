@@ -17,7 +17,7 @@ _DRIVER = (
     Path(__file__)
     .resolve()
     .parents[1]
-    .joinpath("devharness_server", "r", "bulk_deseq2_sensitivity.R")
+    .joinpath("src", "devharness_server", "r", "bulk_deseq2_sensitivity.R")
 )
 
 _TEST = """

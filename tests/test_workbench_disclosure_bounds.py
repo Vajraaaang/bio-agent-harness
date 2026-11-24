@@ -31,7 +31,7 @@ assert.ok(nodes.every(n=>n.innerHTML===undefined));
 
 
 def test_disclosures_and_native_pickers_have_readable_responsive_bounds():
-    theme=(Path(__file__).resolve().parents[1]/'devbench/analysis/assets/workbench-theme.css').read_text()
+    theme=(Path(__file__).resolve().parents[1]/'src/devbench/analysis/assets/workbench-theme.css').read_text()
     assert '.wc-kv-grid.wc-kv-stacked' in theme
     assert 'grid-template-columns: minmax(0,1fr)' in theme
     assert 'container-type: inline-size' in theme

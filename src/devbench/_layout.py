@@ -15,7 +15,7 @@ def package_root(project, name):
     """Resolve a named package without following checkout compatibility aliases."""
     project = Path(project)
     canonical = project / "src" / name
-    return canonical if name == "devbench" and canonical.is_dir() else project / name
+    return canonical if canonical.is_dir() else project / name
 
 
 def resolve_analysis_asset(checkout_path: str) -> Path:
@@ -40,7 +40,7 @@ def resolve_analysis_asset(checkout_path: str) -> Path:
 def resolve_runtime_source(checkout_path: str) -> Path:
     """Resolve product Python by its canonical source label in either layout."""
     relative = PurePosixPath(checkout_path)
-    parts = relative.parts[1:] if relative.parts[:2] == ("src", "devbench") else relative.parts
+    parts = relative.parts[1:] if relative.parts[:1] == ("src",) else relative.parts
     if relative.is_absolute() or ".." in parts or len(parts) < 2 or relative.suffix != ".py":
         raise ValueError("Invalid runtime source path")
     package, *member = parts

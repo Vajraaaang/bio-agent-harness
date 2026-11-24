@@ -10,7 +10,7 @@ from devbench.study.contracts import CohortPlan, DatasetRecipe, StudyPlan, conte
 
 
 def api():
-    source = Path(__file__).resolve().parents[1] / "devbench" / "study" / "datasets.py"
+    source = Path(__file__).resolve().parents[1] / "src/devbench/study" / "datasets.py"
     assert source.is_file(), "Gated cohort preparation is not implemented"
     return importlib.import_module("devbench.study.datasets")
 

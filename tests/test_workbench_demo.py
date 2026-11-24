@@ -43,7 +43,7 @@ assert.throws(()=>sandbox.window.WorkbenchSynthetic.generate(1,[1,2]));
 assert.throws(()=>demo.figure(data,'unknown','all'));assert.throws(()=>demo.figure(data,'landscape','42'));
 console.log('287463 actual generated cells, computed summaries, explicit simulation contracts verified');
 '''
-    result = subprocess.run([node, '-e', program, str(ROOT / 'devbench/analysis/assets')], capture_output=True, text=True)
+    result = subprocess.run([node, '-e', program, str(ROOT / 'src/devbench/analysis/assets')], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 
 
@@ -56,7 +56,7 @@ def test_demo_assets_are_shipped_and_connection_entry_is_explicit():
     assert 'Open simulated project' in page
     assert 'mountSimulation(canvas' in page
     assert 'Scripted conversation prompts' in page
-    assert 'data-synthetic-gallery' not in (ROOT / 'devbench/analysis/assets/workbench-ui.html').read_text()
+    assert 'data-synthetic-gallery' not in (ROOT / 'src/devbench/analysis/assets/workbench-ui.html').read_text()
     for suffix in ('js', 'css'):
         name = f'devbench/analysis/assets/workbench-demo.{suffix}'
         assert allowed_bundle_path(name)
@@ -87,5 +87,5 @@ for(const project of demo.projects){
 assert.throws(()=>demo.generateProject('missing'));
 console.log('Six independently generated project populations validated');
 '''
-    result = subprocess.run([node, '-e', program, str(ROOT / 'devbench/analysis/assets')], capture_output=True, text=True)
+    result = subprocess.run([node, '-e', program, str(ROOT / 'src/devbench/analysis/assets')], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

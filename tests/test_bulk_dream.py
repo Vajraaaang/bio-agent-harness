@@ -13,7 +13,7 @@ _IMAGE = os.environ.get("DEVBENCH_RNA_KERNEL_TEST_IMAGE", "")
 pytestmark = pytest.mark.skipif(
     not _IMAGE, reason="Set DEVBENCH_RNA_KERNEL_TEST_IMAGE to a locked local image ID"
 )
-_DRIVER = Path(__file__).resolve().parents[1] / "devharness_server/r/bulk_dream.R"
+_DRIVER = Path(__file__).resolve().parents[1] / "src/devharness_server/r/bulk_dream.R"
 _FIXTURE = r"""
 source("/driver.R")
 set.seed(413)

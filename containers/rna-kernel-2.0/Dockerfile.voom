@@ -2,11 +2,11 @@
 ARG KERNEL_IMAGE=devbench-rna-kernel:2.0-thesis-trajectory-reviewed-arm64
 FROM ${KERNEL_IMAGE}
 
-COPY devharness_server/r/bulk_voom_sensitivity.R \
-    devharness_server/r/mounted_general.R \
+COPY src/devharness_server/r/bulk_voom_sensitivity.R \
+    src/devharness_server/r/mounted_general.R \
     /opt/rna/runtime/devharness_server/r/
-COPY rna_kernels/bulk_solver_policy.py \
-    rna_kernels/mounted_model.py \
+COPY src/rna_kernels/bulk_solver_policy.py \
+    src/rna_kernels/mounted_model.py \
     /opt/rna/runtime/rna_kernels/
 
 RUN --network=none Rscript --vanilla -e \

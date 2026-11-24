@@ -138,7 +138,7 @@ def test_cell_true_palette_samples_and_category_shape_fallback():
 
     module = (
         Path(__file__).resolve().parents[1]
-        / "devbench/analysis/assets/scientific-figure.js"
+        / "src/devbench/analysis/assets/scientific-figure.js"
     )
     code = (
         "const f=require("

@@ -57,9 +57,10 @@ def source_freeze():
     root = Path(__file__).resolve().parents[1]
     files = [Path(__file__).resolve(), *[root / "analysis" / name for name in
              ("validation.py", "inference.py", "resources.py", "__init__.py")]]
-    from devbench._layout import PROJECT_ROOT as repo
-    for directory in (root / "study", repo / "devharness_core", repo / "devharness_server", repo / "rna_kernels"):
-        files.extend(directory.glob("*.py"))
+    from devbench._layout import PROJECT_ROOT as repo, package_root
+    files.extend((root / "study").glob("*.py"))
+    for name in ("devharness_core", "devharness_server", "rna_kernels"):
+        files.extend(package_root(repo, name).glob("*.py"))
     files.extend([root / "study/biology_catalog.json", repo / "pyproject.toml", repo / "uv.lock"])
     return {str(path): _digest(path) for path in sorted(set(files))}
 

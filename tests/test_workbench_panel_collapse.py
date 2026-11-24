@@ -54,8 +54,8 @@ assert.equal(posts().length,0);
 
 def test_collapse_controls_and_zero_width_desktop_layout_are_explicit():
     root=Path(__file__).resolve().parents[1]
-    page=(root/'devbench/analysis/assets/workbench-ui.html').read_text()
-    theme=(root/'devbench/analysis/assets/workbench-theme.css').read_text()
+    page=(root/'src/devbench/analysis/assets/workbench-ui.html').read_text()
+    theme=(root/'src/devbench/analysis/assets/workbench-theme.css').read_text()
     for name,target in [('toggle-navigation','workspace-rail'),('toggle-workbench','workspace-canvas')]:
         assert re.search(r'id="'+name+r'"[^>]+type="button"[^>]+aria-controls="'+target+r'"[^>]+aria-expanded="true"',page)
     assert '.layout[data-rail-collapsed=true][data-canvas-collapsed=true] { grid-template-columns: 0 0 minmax(0,1fr) 0 0; }' in theme

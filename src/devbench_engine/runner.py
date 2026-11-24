@@ -209,13 +209,15 @@ class _MemorySampler:
 
 
 def _code_fingerprint() -> str:
-    root = Path(__file__).resolve().parent.parent
+    from devbench._layout import PROJECT_ROOT, package_root
+
     digest = hashlib.sha256()
     for package in ("devharness_core", "devharness_server", "devbench_engine", "benchmarks", "experiments"):
-        for path in sorted((root / package).rglob("*.py")):
-            digest.update(str(path.relative_to(root)).encode())
+        source = package_root(PROJECT_ROOT, package)
+        for path in sorted(source.rglob("*.py")):
+            digest.update((Path(package) / path.relative_to(source)).as_posix().encode())
             digest.update(path.read_bytes())
-    guidance = root / "devbench_engine" / "AGENTS.md"
+    guidance = Path(__file__).resolve().with_name("AGENTS.md")
     digest.update(b"devbench_engine/AGENTS.md")
     digest.update(guidance.read_bytes())
     return digest.hexdigest()

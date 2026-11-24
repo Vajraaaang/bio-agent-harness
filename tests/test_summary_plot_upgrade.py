@@ -7,9 +7,10 @@ import subprocess
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SUMMARY = ROOT / "devbench/analysis/assets/workbench-summary-plots.js"
-ATLAS = ROOT / "devbench/analysis/assets/workbench-synthetic.js"
-PANELS = ROOT / "devbench/analysis/assets/scientific-plot-panels.js"
+ASSETS = ROOT / "src/devbench/analysis/assets"
+SUMMARY = ASSETS / "workbench-summary-plots.js"
+ATLAS = ASSETS / "workbench-synthetic.js"
+PANELS = ASSETS / "scientific-plot-panels.js"
 
 BASE = r"""
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');

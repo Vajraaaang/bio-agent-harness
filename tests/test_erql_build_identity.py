@@ -94,7 +94,7 @@ def test_valid_image_identity_has_finite_scoped_receipt():
 
 
 def test_checked_in_erql_lock_is_accepted_with_matching_synthetic_inspection():
-    lock_bytes = (ROOT / "devharness_controlled" / "erql-package-sources.lock.json").read_bytes()
+    lock_bytes = (ROOT / "src/devharness_controlled" / "erql-package-sources.lock.json").read_bytes()
     receipt = _guard().validate_image_identity("ERQL-1.1", lock_bytes, IMAGE_ID, _inspection(lock_bytes))
     assert receipt["packages"] == VERSIONS
 

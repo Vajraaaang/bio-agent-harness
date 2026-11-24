@@ -10,8 +10,8 @@ from tests.test_scientific_plot_suite import fixtures
 from devbench.analysis.scientific_plot_suite import prepare_scientific_plot_workspace
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / 'devbench/analysis/assets/scientific-plot-workbench.js'
-PANELS = ROOT / 'devbench/analysis/assets/scientific-plot-panels.js'
+MODULE = ROOT / 'src/devbench/analysis/assets/scientific-plot-workbench.js'
+PANELS = ROOT / 'src/devbench/analysis/assets/scientific-plot-panels.js'
 
 
 def run_js(workspace, code):

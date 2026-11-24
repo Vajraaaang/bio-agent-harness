@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 
 def api():
-    source = Path(__file__).resolve().parents[1] / "devbench" / "study" / "contracts.py"
+    source = Path(__file__).resolve().parents[1] / "src/devbench/study" / "contracts.py"
     assert source.is_file(), "Study contracts are not implemented"
     return importlib.import_module("devbench.study")
 

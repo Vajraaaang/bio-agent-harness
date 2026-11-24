@@ -6,7 +6,7 @@ import json
 
 ROOT = Path("/Users/vajraang/Documents/ChatGPT/bio-agent-harness")
 REPORT = ROOT / "reports/rna-airway-implementation/2026-10-22-v1/grant-bridge"
-SOURCE = ROOT / "devbench/analysis/rna_trial_authority.py"
+SOURCE = ROOT / "src/devbench/analysis/rna_trial_authority.py"
 
 
 def main():

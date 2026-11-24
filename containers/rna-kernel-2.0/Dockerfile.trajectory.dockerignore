@@ -2,10 +2,9 @@
 !containers/
 !containers/rna-kernel-2.0/
 !containers/rna-kernel-2.0/Dockerfile.trajectory
-!rna_kernels/
-!rna_kernels/mounted_scrna.py
-!rna_kernels/scrna_upstream_contract.py
-!src/
+!src/rna_kernels/
+!src/rna_kernels/mounted_scrna.py
+!src/rna_kernels/scrna_upstream_contract.py
 !src/devbench/
 !src/devbench/core/
 !src/devbench/core/design.py

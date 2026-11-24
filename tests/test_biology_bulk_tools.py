@@ -216,7 +216,7 @@ def test_answer_fragment_schema_validation_uses_json_semantics():
 def test_observed_tool_modules_do_not_import_generators_or_scoring():
     import ast
 
-    package = Path(__file__).resolve().parents[1] / "devbench" / "study"
+    package = Path(__file__).resolve().parents[1] / "src/devbench/study"
     for filename in ("biology_tool_io.py", "biology_tools_bulk.py"):
         tree = ast.parse((package / filename).read_text())
         imports = [node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]

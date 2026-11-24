@@ -70,41 +70,44 @@ def _source_stat(path):
 
 def _sources(cache=None):
     """Fingerprint used implementation paths, never reference answers/graders."""
-    from devbench._layout import PROJECT_ROOT as project, PACKAGE_ROOT
+    from devbench._layout import PACKAGE_ROOT, PROJECT_ROOT, package_root
 
-    paths = {Path(__file__), project / "devbench/analysis/episodes.py",
-             project / "devbench/engine/episode_codex.py", project / "devbench/engine/runtime_lease.py", *(project / "devharness_core").rglob("*.py"),
-             *(project / "devharness_server").rglob("*.py"),
-             *(project / "rna_kernels").rglob("*.py"),
-             *(project / "devharness_server").rglob("*.R")}
-    paths.update(project / "devbench" / "analysis" / name for name in
+    server = package_root(PROJECT_ROOT, "devharness_server")
+    paths = {
+        Path(__file__),
+        PACKAGE_ROOT / "analysis/episodes.py",
+        PACKAGE_ROOT / "engine/episode_codex.py",
+        PACKAGE_ROOT / "engine/runtime_lease.py",
+        package_root(PROJECT_ROOT, "devbench_engine") / "adapters.py",
+        *package_root(PROJECT_ROOT, "devharness_core").rglob("*.py"),
+        *server.rglob("*.py"),
+        *server.rglob("*.R"),
+        *package_root(PROJECT_ROOT, "rna_kernels").rglob("*.py"),
+    }
+    paths.update(PACKAGE_ROOT / "analysis" / name for name in
                  ("checkpoints.py", "resources.py", "runtime.py", "episode_agent.py", "episode_evidence_queries.py", "model_authority.py", "episode_codex.py", "episode_cli.py", "episode_handoff.py", "episode_synthesis.py", "episode_proposals.py", "episode_planning.py", "scientific_analysis_spec.py", "method_planner_contract.py"))
-    paths.add(project / "devbench/analysis/episode_synthesis_artifacts.py")
-    paths.update(project / name for name in ("devbench_engine/adapters.py", "devbench/staging.py",
-        "devbench/adapters/code_action.py", "devbench/adapters/execution_capture.py", "devbench/study/execution.py",
-        "devbench/study/adapter.py", "devbench/study/exec_preflight.py",
-        "devbench/study/cli_identity.py", "devbench/study/model_telemetry.py",
-        "devbench/core/__init__.py", "devbench/core/family_fitting.py", "devbench/core/design.py",
-        "devbench/core/observed_data.py", "devbench/core/estimators.py", "devbench/core/bulk_fit_evidence.py",
-        "devbench/core/expression_io.py", "devbench/core/tenx.py", "devbench/core/population_contract.py",
-        "devbench/core/input_files.py", "devbench/core/population_data.py", "devbench/core/population_statistics.py",
-        "devbench/platform/scrna_population_analysis.py",
-        "devbench/engine/__init__.py", "devbench/engine/provenance.py", "devbench/engine/watchdog.py", "devbench/engine/permissions.py",
-        "devbench/engine/workspace.py", "devbench/engine/transport.py", "devbench/engine/runtime_contracts.py",
-        "devbench/engine/supervision.py", "devbench/engine/execution_snapshot.py"))
-    paths.update(project / "devbench" / "study" / name for name in (
+    paths.add(PACKAGE_ROOT / "analysis/episode_synthesis_artifacts.py")
+    paths.update(PACKAGE_ROOT / name for name in ("staging.py",
+        "adapters/code_action.py", "adapters/execution_capture.py", "study/execution.py",
+        "study/adapter.py", "study/exec_preflight.py",
+        "study/cli_identity.py", "study/model_telemetry.py",
+        "core/__init__.py", "core/family_fitting.py", "core/design.py",
+        "core/observed_data.py", "core/estimators.py", "core/bulk_fit_evidence.py",
+        "core/expression_io.py", "core/tenx.py", "core/population_contract.py",
+        "core/input_files.py", "core/population_data.py", "core/population_statistics.py",
+        "platform/scrna_population_analysis.py",
+        "engine/__init__.py", "engine/provenance.py", "engine/watchdog.py", "engine/permissions.py",
+        "engine/workspace.py", "engine/transport.py", "engine/runtime_contracts.py",
+        "engine/supervision.py", "engine/execution_snapshot.py"))
+    paths.update(PACKAGE_ROOT / "study" / name for name in (
         "biology_broker.py", "broker.py", "biology_tools_bulk.py", "biology_tools_singlecell.py",
         "biology_tool_io.py", "biology_input_limits.py", "zarr_bounds.py", "biology_answers.py", "contracts.py",
         "permissions.py", "evidence.py", "evidence_keys.py", "execution_ledger.py", "transport.py", "supervision.py"))
-    paths.add(project / "devbench/_layout.py")
+    paths.add(PACKAGE_ROOT / "_layout.py")
     manifest = {}
     current = {}
     for path in sorted(paths):
-        name = path.relative_to(project).as_posix()
-        if name.startswith("src/devbench/"):
-            name = name.removeprefix("src/")
-        if name.startswith("devbench/"):
-            path = PACKAGE_ROOT / name.removeprefix("devbench/")
+        name = path.relative_to(PROJECT_ROOT).as_posix().removeprefix("src/")
         signature = _source_stat(path)
         previous = cache.get(name) if cache is not None else None
         if previous is not None and previous[0] == signature:

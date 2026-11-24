@@ -13,7 +13,7 @@ from pydantic import ValidationError
 def api():
     source = (
         Path(__file__).resolve().parents[1]
-        / "devharness_controlled"
+        / "src/devharness_controlled"
         / "native_contracts.py"
     )
     assert source.is_file(), "Native signed-plan contract implementation is missing"

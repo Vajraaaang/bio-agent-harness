@@ -33,7 +33,7 @@ from scipy.stats import beta, t
 
 REPO = Path(__file__).resolve().parent.parent
 PROTOCOL = REPO / "validation/native_nb_pilot_v1.json"
-DRIVER = REPO / "devharness_server/r/native_nb.R"
+DRIVER = REPO / "src/devharness_server/r/native_nb.R"
 LOCK = REPO / "results/native-nb-runtime-2026-09-07/package-lock/package-sources.lock.json"
 DEFAULT_OUTPUT = REPO / "results/native-validation-pilot-2026-09-07"
 DOCKER = "/usr/local/bin/docker"

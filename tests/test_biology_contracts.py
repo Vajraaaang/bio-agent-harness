@@ -322,7 +322,7 @@ def test_registry_rejects_noncallable_and_wildcard_support():
 
 
 def test_new_module_imports_no_scientific_runtime_and_catalog_is_finite_json():
-    module_path = Path(__file__).resolve().parents[1] / "devbench" / "study" / "biology.py"
+    module_path = Path(__file__).resolve().parents[1] / "src/devbench/study" / "biology.py"
     tree = ast.parse(module_path.read_text())
     imported = {n.module.split('.')[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
     imported |= {alias.name.split('.')[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for alias in n.names}

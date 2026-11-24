@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "reports/workbench-redesign/2026-10-28/performance"
-MODULE = ROOT / "devbench/analysis/assets/scientific-figure.js"
+MODULE = ROOT / "src/devbench/analysis/assets/scientific-figure.js"
 COLORS = {"A": "#0072b2", "B": "#d55e00", "C": "#009e73", "D": "#cc79a7"}
 
 

@@ -10,7 +10,7 @@ import pytest
 
 
 def api():
-    source = Path(__file__).resolve().parents[1] / "devbench" / "study" / "zarr_bounds.py"
+    source = Path(__file__).resolve().parents[1] / "src/devbench/study" / "zarr_bounds.py"
     assert source.is_file(), "Bounded Zarr preflight is not implemented"
     return importlib.import_module("devbench.study.zarr_bounds")
 

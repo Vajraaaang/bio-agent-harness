@@ -335,7 +335,7 @@ assert.equal(sciPosts()[2].body.legacy_analysis_id,undefined);assert.equal(sciPo
 
 
 def test_five_scientific_questions_are_visible_in_order_with_controls_in_context():
-    page = (Path(__file__).resolve().parents[1] / "devbench/analysis/assets/workbench-ui.html").read_text()
+    page = (Path(__file__).resolve().parents[1] / "src/devbench/analysis/assets/workbench-ui.html").read_text()
     questions = [
         "What data do I have?",
         "What question am I investigating?",

@@ -59,7 +59,7 @@ stopifnot(grepl("nested", error, fixed=TRUE))
 
 def test_general_edger_nested_and_tximport_offsets(workspace_tmp_path):
     assert re.fullmatch(r"sha256:[a-f0-9]{64}", _IMAGE), "Use a local image content ID"
-    driver = Path(__file__).resolve().parents[1] / "devharness_server/r/bulk_edger.R"
+    driver = Path(__file__).resolve().parents[1] / "src/devharness_server/r/bulk_edger.R"
     check = workspace_tmp_path / "check.R"
     check.write_text(_R)
     subprocess.run(

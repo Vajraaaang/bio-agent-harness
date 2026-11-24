@@ -12,7 +12,7 @@ from devharness_controlled.native_contracts import NativeAnalysisPlan
 
 
 def api():
-    source = Path(__file__).resolve().parents[1] / "devharness_controlled" / "native_results.py"
+    source = Path(__file__).resolve().parents[1] / "src/devharness_controlled" / "native_results.py"
     assert source.is_file(), "Native result validator is missing"
     return importlib.import_module("devharness_controlled.native_results")
 
