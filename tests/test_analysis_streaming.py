@@ -89,12 +89,30 @@ def test_qc_resume_reuses_finished_chunks_after_failure(tmp_path, monkeypatch):
     assert len(list((store.root/"failures").glob("*.json"))) == 1
 
 
-def test_zero_mitochondrial_matches_fail_before_any_checkpoint(tmp_path):
-    path = tmp_path/"input.h5ad"
+def test_zero_mitochondrial_matches_are_unavailable_in_qc_checkpoint(tmp_path):
+    path = tmp_path / "input.h5ad"
     data = fixture(path)
     data.var_names = [f"ENSMUSG{i}" for i in range(data.n_vars)]
     data.write_h5ad(path)
-    store = CheckpointStore(tmp_path/"checkpoints", {"input": sha256(path)})
-    with pytest.raises(ValueError, match="mitochondrial_annotation_unavailable"):
-        stream_qc(path, store, layer=None, batch_key="batch")
-    assert not list(store.root.glob("qc_*"))
+    store = CheckpointStore(tmp_path / "checkpoints", {"input": sha256(path)})
+    result = stream_qc(
+        path,
+        store,
+        layer=None,
+        batch_key="batch",
+        block_rows=128,
+        min_genes=3,
+        mad_limit=None,
+    )
+    assert store.verify("qc", ("qc_00000000",)) is not None
+    metrics = read_table(result / "metrics.csv")
+    assert metrics.index.tolist() == data.obs_names.tolist()
+    assert metrics["qc_pass"].all()
+    for metric in ("total_counts_mt", "log1p_total_counts_mt", "pct_counts_mt"):
+        assert metrics[metric].isna().all()
+    np.testing.assert_array_equal(
+        metrics["total_counts"], np.asarray(data.X.sum(axis=1)).ravel()
+    )
+    report = json.loads((result / "report.json").read_text())
+    assert report["mitochondrial_features"] == 0
+    assert "mitochondrial_annotation_unavailable" in report["warnings"]

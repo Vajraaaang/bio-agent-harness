@@ -340,9 +340,10 @@ def test_mounted_edger_checkout_filters_bh_and_retains_scores(
         "rna_kernels/mounted_model.py",
         "rna_kernels/rank_sensitivity.py",
     ):
+        source = root / "src" / path
         destination = f"/opt/rna/runtime/{path}"
         command.extend(
-            ["--mount", f"type=bind,src={root / 'src' / path},dst={destination},readonly"]
+            ["--mount", f"type=bind,src={source},dst={destination},readonly"]
         )
     run = subprocess.run(
         [
