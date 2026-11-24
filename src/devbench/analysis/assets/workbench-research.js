@@ -127,7 +127,7 @@
     });
   }
 
-  function scalarParameters(parent, schema, initial = {}) {
+  function scalarParameters(parent, schema, initial = {}, rangeField) {
     const values = [];
     for (const [name, property] of Object.entries(schema?.properties || {})) {
       const choices = property.anyOf || [property];
@@ -147,6 +147,24 @@
         input.step = shape.type === 'integer' ? '1' : 'any';
         if (Number.isFinite(shape.minimum)) input.min = String(shape.minimum);
         if (Number.isFinite(shape.maximum)) input.max = String(shape.maximum);
+        if (name === rangeField && shape.type === 'integer' &&
+            Number.isSafeInteger(fallback) && Number.isSafeInteger(shape.minimum) &&
+            Number.isSafeInteger(shape.maximum)) {
+          const slider = field(parent, 'Adjust minimum genes', 'input', fallback);
+          slider.type = 'range';
+          slider.min = input.min;
+          slider.max = String(Math.min(shape.maximum, Math.max(1000, fallback * 2)));
+          slider.step = '1';
+          slider.value = String(fallback);
+          slider.addEventListener('input', () => { input.value = slider.value; });
+          input.addEventListener('input', () => {
+            if (input.value !== '' && Number.isSafeInteger(Number(input.value))) {
+              slider.max = String(Math.min(shape.maximum,
+                Math.max(Number(slider.max), Number(input.value))));
+              slider.value = input.value;
+            }
+          });
+        }
       }
       values.push({name, input, shape, nullable, hasInitial: Object.hasOwn(initial, name)});
     }
@@ -265,7 +283,7 @@
         const schema = (view.operations || []).find(item => item.id === step.operation)?.parameters_schema;
         const fields = node('div', null, 'studio-qc-layout');
         form.append(fields);
-        const revised = scalarParameters(fields, schema, original);
+        const revised = scalarParameters(fields, schema, original, 'min_genes');
         const advanced = disclosure(form, 'Advanced QC parameters');
         const parameters = field(advanced, 'Revised QC parameters (JSON)', 'textarea', '{}');
         const read = () => ({...original, ...revised(), ...object(parameters, 'QC parameters')});

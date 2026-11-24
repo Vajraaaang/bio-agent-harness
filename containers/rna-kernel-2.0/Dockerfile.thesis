@@ -4,6 +4,8 @@ FROM ${PATHWAY_IMAGE}
 
 COPY src/devbench/__init__.py \
     /opt/rna/runtime/devbench/
+COPY src/devbench/adaptive/models.py \
+    /opt/rna/runtime/devbench/adaptive/
 COPY src/devbench/analysis/__init__.py \
     src/devbench/analysis/annotation.py \
     src/devbench/analysis/checkpoints.py \
@@ -24,9 +26,11 @@ COPY src/devbench/core/__init__.py \
     src/devbench/core/scientific_types.py \
     src/devbench/core/scrna_composition.py \
     src/devbench/core/scrna_composition_solver.py \
+    src/devbench/core/scrna_qc_selection.py \
     src/devbench/core/tenx.py \
     /opt/rna/runtime/devbench/core/
 COPY src/devbench/engine/__init__.py \
+    src/devbench/engine/provenance.py \
     src/devbench/engine/runtime_contracts.py \
     /opt/rna/runtime/devbench/engine/
 COPY src/devharness_core/__init__.py \

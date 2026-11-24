@@ -10,7 +10,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, BinaryIO, Final, Literal
 
-from pydantic import model_serializer, model_validator
+from pydantic import Field, model_serializer, model_validator
 
 from devbench.core._files import read_bounded_file
 from devbench.core._hashing import contract_json_bytes
@@ -25,6 +25,7 @@ from devbench.core.rna_pathway_analysis import (
     TestedGeneUniverse,
     UniverseVerifier,
     admit_pathway_request,
+    matches_foreground_direction,
 )
 from devbench.core.scrna_marker_inference import MarkerCustodyVerifier, MarkerResult
 from devbench.engine.runtime_contracts import FrozenContract
@@ -159,20 +160,22 @@ class PathwayStageSpec(FrozenContract):
         "rna_pathway_nb_marker_ora",
     ]
     lineage_id: Identity
-    request: PathwayRequest
+    admitted_request: PathwayRequest = Field(alias="request")
     marker_review_sha256: Digest | None = None
     nb_marker_fit_sha256: Digest | None = None
 
     @model_serializer(mode="wrap")
     def preserve_legacy_recipe(self, serialize):
         fields = serialize(self)
+        if "admitted_request" in fields:
+            fields["request"] = fields.pop("admitted_request")
         if self.nb_marker_fit_sha256 is None:
             fields.pop("nb_marker_fit_sha256", None)
         return fields
 
     @model_validator(mode="after")
     def _check_operation(self) -> PathwayStageSpec:
-        route = _operation(self.request)
+        route = _operation(self.admitted_request)
         if self.nb_marker_fit_sha256 is not None:
             if route != _MARKERS:
                 raise ValueError("Confirmed NB fits require post-clustering ORA")
@@ -185,10 +188,26 @@ class PathwayStageSpec(FrozenContract):
         return self
 
     @property
+    def request(self) -> PathwayRequest:
+        """Project the verified selection into the pinned worker's v1 format."""
+        request = self.admitted_request
+        if request.plan.foreground_direction == "all":
+            return request
+        assert request.universe is not None
+        return request.model_copy(
+            update={
+                "plan": request.plan.model_copy(update={"foreground_direction": "all"}),
+                "universe": request.universe.model_copy(
+                    update={"selected": request.foreground}
+                ),
+            }
+        )
+
+    @property
     def expected_inputs(self) -> dict[str, str]:
         if self.nb_marker_fit_sha256 is not None:
             return {"marker_fit": self.nb_marker_fit_sha256}
-        camera, universe = self.request.camera, self.request.universe
+        camera, universe = self.admitted_request.camera, self.admitted_request.universe
         if camera is not None:
             return {
                 "pathway_expression": camera.expression_sha256,
@@ -203,7 +222,7 @@ class PathwayStageSpec(FrozenContract):
         if self.nb_marker_fit_sha256 is not None:
             # The native route resolves the accepted independent review on use.
             return frozenset()
-        camera, universe = self.request.camera, self.request.universe
+        camera, universe = self.admitted_request.camera, self.admitted_request.universe
         if camera is not None:
             return frozenset((camera.design_receipt_sha256,))
         assert universe is not None
@@ -329,35 +348,38 @@ def require_current_pooled_pathway_input(
     from devbench.platform.adaptive_workflow import AdaptiveWorkflow
 
     if artifact is not None and artifact.version_id.startswith(JOINT_BH_OUTPUT_PREFIX):
-        assert spec.request.universe is not None
         workflow = AdaptiveWorkflow(executor.ledger, spec.lineage_id)
-        _verify_tested_receipt(executor, workflow, artifact, spec.request.universe)
-        with open_pathway_input(executor, "pathway_statistics", artifact):
-            pass
+        _verify_retained_tested_family(
+            executor, workflow, artifact, spec.admitted_request
+        )
 
 
 def _verify_retained_tested_family(
     executor: TierAExecutor,
     workflow: AdaptiveWorkflow,
     artifact: ArtifactVersion,
-    universe: TestedGeneUniverse,
+    request: PathwayRequest,
     *,
     connection: Connection | None = None,
 ) -> None:
     import pyarrow.parquet as pq
 
+    universe = request.universe
+    assert universe is not None
     _verify_tested_receipt(
         executor, workflow, artifact, universe, connection=connection
     )
     genes = []
+    direction = request.plan.foreground_direction
+    directional_foreground = set(request.foreground) if direction != "all" else set()
+    columns = ["gene_id", "estimate_status", "p_value", "q_value"]
+    if directional_foreground:
+        columns.append("effect")
     with open_pathway_input(executor, "pathway_statistics", artifact) as stream:
         table = pq.ParquetFile(stream)
         if table.metadata.num_rows > 100_000:
             raise ValueError("Gene-statistics evidence exceeds its row budget")
-        for batch in table.iter_batches(
-            batch_size=1024,
-            columns=["gene_id", "estimate_status", "p_value", "q_value"],
-        ):
+        for batch in table.iter_batches(batch_size=1024, columns=columns):
             for row in batch.to_pylist():
                 if row["estimate_status"] != "estimated":
                     continue
@@ -366,11 +388,20 @@ def _verify_retained_tested_family(
                     raise ValueError(
                         "Retained gene-statistics probabilities are invalid"
                     )
-                genes.append(row["gene_id"])
+                gene = row["gene_id"]
+                if gene in directional_foreground and not matches_foreground_direction(
+                    row.get("effect"), direction
+                ):
+                    raise PermissionError(
+                        "ORA foreground conflicts with the retained effect direction"
+                    )
+                genes.append(gene)
     if tuple(genes) != universe.genes:
         raise PermissionError(
-            "ORA requires the exact ordered filtered tested background"
+            "Pathway analysis requires the exact ordered filtered tested background"
         )
+    # Rank keys are bound to universe.genes on admission and checked against the
+    # ordered retained family here, including genes outside the ORA foreground.
 
 
 def register_pathway_step(
@@ -447,11 +478,22 @@ def register_confirmed_nb_marker_ora(
         raise PermissionError("NB marker ORA requires the bound workflow")
     result, universe = authority.confirm(fit_step_id)
     assert result.proof is not None
+    if foreground is None:
+        foreground = (
+            universe.selected
+            if plan.foreground_direction == "all"
+            else tuple(
+                row.gene_id
+                for row in result.gene_statistics
+                if row.selected
+                and matches_foreground_direction(row.score, plan.foreground_direction)
+            )
+        )
     request = admit_pathway_request(
         plan,
         universe=universe,
         verify_universe=authority.verify_universe,
-        foreground=universe.selected if foreground is None else foreground,
+        foreground=foreground,
         marker_result=result,
         verify_marker=authority.verify_marker,
     )
@@ -520,10 +562,10 @@ def _pooled_pathway_source(
     ):
         yield None
         return
-    assert spec.request.universe is not None
+    assert spec.admitted_request.universe is not None
     with workflow.authority._execution_tx(workflow.lineage_id) as db:
         release, artifact = _require_pooled_release(
-            workflow, db, version_id, spec.request.universe
+            workflow, db, version_id, spec.admitted_request.universe
         )
         projection = workflow._projection(db)
         state, _ = projection
@@ -567,7 +609,7 @@ def _nb_authority(executor: TierAExecutor, lineage: str):
 def require_confirmed_marker_fit(executor, spec, inputs) -> None:
     authority = _nb_authority(executor, spec.lineage_id)
     authority.require_pathway_fit(
-        spec.request.universe,
+        spec.admitted_request.universe,
         inputs["marker_fit"].sha256,
         spec.marker_review_sha256,
     )
@@ -633,12 +675,11 @@ def _verify_current_sources(
     if spec.operation == NB_MARKER_ORA:
         require_confirmed_marker_fit(executor, spec, inputs)
     elif spec.operation == _TESTED:
-        assert spec.request.universe is not None
         _verify_retained_tested_family(
             executor,
             workflow,
             inputs["pathway_statistics"],
-            spec.request.universe,
+            spec.admitted_request,
             connection=connection,
         )
     else:

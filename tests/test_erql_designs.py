@@ -91,6 +91,29 @@ def test_confounded_batch_is_retained_and_refuses_even_if_alias_is_declared():
     assert any(column.factor == "batch" for column in result.columns)
 
 
+def test_full_rank_ill_conditioned_design_is_held():
+    width = 16
+    fields = tuple(f"factor-{column:02}" for column in range(width))
+    extra = tuple(ProfileKey(f"extra-{i}", f"extra-{i}", "base", None)
+                  for i in range(width))
+    index = {key: i for i, key in enumerate(extra)}
+
+    def technical(key):
+        row = index.get(key)
+        return {name: "on" if row is not None and column - row in (0, 1, 3)
+                else "off" for column, name in enumerate(fields)}
+
+    counts = profiles("B-I", extra=extra, technical=technical)
+    result = compile_contrast_design(
+        counts, replace(spec("B-I"), technical_factors=fields),
+    )
+    assert result.rank == len(result.columns)
+    assert result.estimable
+    assert np.linalg.cond(result.matrix) > 1000
+    assert result.status == "held"
+    assert result.refusal_codes == ("ill_conditioned_design",)
+
+
 def test_capture_alias_has_reconstructable_nuisance_only_proof():
     counts = profiles("B-P", technical=lambda key: {"capture": key.unit_id})
     result = compile_contrast_design(counts, replace(spec("B-P"), technical_factors=("capture",),

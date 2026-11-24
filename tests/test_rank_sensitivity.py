@@ -27,7 +27,6 @@ def _cohort(n=120, group=None, **kwargs):
 
 def test_routes_balance_strata_covariates_and_sparse_strata():
     assert _cohort().method == "wilcoxon"
-    assert _cohort(group=["A"] * 75 + ["B"] * 45).method == "freedman_lane"
     assert (
         _cohort(strata=np.repeat(["batch1", "batch2", "batch3"], 40)).method
         == "van_elteren"
@@ -38,10 +37,11 @@ def test_routes_balance_strata_covariates_and_sparse_strata():
 
 def test_wilcoxon_signed_effect_asymptotic_reference_and_incomplete_rows():
     rng = np.random.default_rng(4)
-    values = rng.integers(0, 15, size=(5, 120)).astype(float)
+    values = rng.integers(0, 15, size=(6, 120)).astype(float)
     values[0, 1::2] += 5
     values[3, :] = 2
     values[4, 17] = np.nan
+    values[5, :] = 0
     effect, p, codes = run_block(_cohort(), values)
     reference = mannwhitneyu(
         values[:3, 1::2], values[:3, ::2], axis=1, method="asymptotic"
@@ -49,13 +49,28 @@ def test_wilcoxon_signed_effect_asymptotic_reference_and_incomplete_rows():
     np.testing.assert_allclose(p[:3], reference.pvalue)
     np.testing.assert_allclose(effect[:3], reference.statistic / (60 * 60) - 0.5)
     assert effect[0] > 0
-    assert codes.tolist() == [0, 0, 0, 3, 3]
+    assert codes.tolist() == [0, 0, 0, 3, 3, 1]
     assert np.isnan(p[3:]).all() and np.isnan(effect[3:]).all()
     np.testing.assert_allclose(
-        rank_family_bh(np.array([0.01, 0.02, np.nan]), np.array([0, 0, 3])),
-        np.array([0.03, 0.03, np.nan]),
+        rank_family_bh(np.array([0.01, 0.02, np.nan, np.nan]), np.array([0, 0, 3, 1])),
+        np.array([0.03, 0.03, np.nan, np.nan]),
         equal_nan=True,
     )
+
+
+def test_unbalanced_wilcoxon_matches_asymptotic_reference():
+    plan = _cohort(group=["A"] * 70 + ["B"] * 50)
+    values = np.random.default_rng(51).integers(0, 15, size=(3, 120))
+    values[0, 70:] += 6
+    effect, p, codes = run_block(plan, values)
+    reference = mannwhitneyu(
+        values[:, 70:], values[:, :70], axis=1, method="asymptotic"
+    )
+    assert plan.method == "wilcoxon" and plan.permutations == 0
+    assert plan.evidence()["minimum_permutation_p"] is None
+    np.testing.assert_array_equal(codes, [0, 0, 0])
+    np.testing.assert_allclose(effect, reference.statistic / (70 * 50) - 0.5)
+    np.testing.assert_allclose(p, reference.pvalue)
 
 
 def test_van_elteren_cancels_pooled_batch_signal():

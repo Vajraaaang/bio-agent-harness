@@ -36,39 +36,35 @@ bulk_voom_sensitivity <- function(counts, design, units, groups, factors,
     bulk_edger_replication(design, units, groups, paired)
     normal <- bulk_edger_normalization(counts, "raw_counts", factors, NULL)
     eligible <- normal$abundance >= 1
-    separated <- colSums(rowsum(t(counts), group = groups, reorder = FALSE) == 0) > 0
-    keep <- eligible & !separated
     rows <- data.frame(
         gene_id = rownames(counts),
         estimate_status = ifelse(eligible, "failed", "filtered"),
-        missing_reason = ifelse(eligible, "zero_group_marginal",
+        missing_reason = ifelse(eligible, "insufficient_voom_feature_support",
                                 "independent_low_count_filter"),
         effect = NA_real_, p_value = NA_real_, q_value = NA_real_,
         stringsAsFactors = FALSE
     )
-    if (sum(keep) >= 2L) {
-        fitted <- fit_voom_directed(normal$dge[keep, , keep.lib.sizes = TRUE],
+    if (sum(eligible) >= 2L) {
+        fitted <- fit_voom_directed(normal$dge[eligible, , keep.lib.sizes = TRUE],
                                     design, directed)
         result <- fitted$model
         index <- fitted$frozen_coef
-        if (!identical(rownames(result$p.value), rows$gene_id[keep])) {
+        if (!identical(rownames(result$p.value), rows$gene_id[eligible])) {
             stop("limma-voom changed the fitted gene family")
         }
         probabilities <- result$p.value[, index]
         effects <- result$coefficients[, index]
         good <- is.finite(effects) & is.finite(probabilities) &
             probabilities >= 0 & probabilities <= 1
-        selected <- which(keep)[good]
-        rows$missing_reason[keep] <- "invalid_or_failed_voom_test"
+        selected <- which(eligible)[good]
+        rows$missing_reason[eligible] <- "invalid_or_failed_voom_test"
         rows$estimate_status[selected] <- "estimated"
         rows$missing_reason[selected] <- NA_character_
         rows$effect[selected] <- effects[good]
         rows$p_value[selected] <- probabilities[good]
         family <- rows$p_value[eligible]
         family[is.na(family)] <- 1
-        rows$q_value[selected] <- p.adjust(family, method = "BH")[match(selected, which(eligible))]
-    } else {
-        rows$missing_reason[keep] <- "insufficient_voom_feature_support"
+        rows$q_value[selected] <- pmax(probabilities[good], p.adjust(family, method = "BH")[good])
     }
     list(rows = rows, method = list(
         version = as.character(utils::packageVersion("limma")),

@@ -77,7 +77,9 @@ from .adaptive_workflow_state import (
 ADAPTIVE_MODE = "adaptive/1"
 _MAX_STEPS = 512
 RESEARCH_INFERENCE = "admitted_research_inference"
-_RECOVERABLE_BACKENDS = {"local_registered_tier_a_1", "local_exploratory_oci_1"}
+_RECOVERABLE_BACKENDS = {
+    "local_registered_tier_a_1", "local_exploratory_oci_1", "local_registered_plugin_1"
+}
 
 
 def request_digest(envelope):
@@ -1732,7 +1734,13 @@ class AdaptiveWorkflow:
         from devbench.engine.exploratory_oci import ExploratoryOCI
         from devbench.engine.tier_a_executor import TierAExecutor
 
-        kind = {ExploratoryOCI: "oci", TierAExecutor: "tier_a"}.get(type(executor))
+        from .plugin_graph import RegisteredPluginExecutor
+
+        kind = {
+            ExploratoryOCI: "oci",
+            TierAExecutor: "tier_a",
+            RegisteredPluginExecutor: "plugin_native",
+        }.get(type(executor))
         if kind is not None and executor.ledger.path != self.ledger.path:
             raise PermissionError(
                 "Recovery requires the workflow's exact executor ledger",
@@ -1764,8 +1772,11 @@ class AdaptiveWorkflow:
         recovered = []
         for token, _, attempt in self._unresolved_dispatches(executor, step_id):
             previous = self._load_dispatch(token)[1]
-            if kind == "tier_a" and attempt["execution_state"] == "reserved":
-                # Tier A cannot start without the committed submission intent.
+            if (
+                kind in {"tier_a", "plugin_native"}
+                and attempt["execution_state"] == "reserved"
+            ):
+                # Local executors cannot start without committed submission intent.
                 proof = request_digest({"reserved_without_submission": attempt})
                 result = self.authority.reconcile_attempt(
                     token,
@@ -1961,6 +1972,12 @@ class AdaptiveWorkflow:
         return None
 
     def _dispatch_once(self, step_id, executor, actor, expected_revision):
+        from .plugin_graph import (
+            RegisteredPluginExecutor,
+            is_registered_plugin_step,
+            plugin_dispatch_identity,
+        )
+
         backend_id = getattr(executor, "backend_id", None)
         if not _matches(_ID, actor) or not _matches(_ID, backend_id):
             raise ValueError(
@@ -1978,7 +1995,12 @@ class AdaptiveWorkflow:
             expected_revision,
         )
         oci = envelope["step"].get("oci_method_version_id") is not None
-        code_sha256 = self._dispatch_code(executor, envelope)
+        native = is_registered_plugin_step(envelope["step"])
+        code_sha256 = (
+            plugin_dispatch_identity(self.ledger, executor, envelope)
+            if native or backend_id == RegisteredPluginExecutor.backend_id
+            else self._dispatch_code(executor, envelope)
+        )
         diagnostic_preflight = self._prepare_diagnostic_admission(envelope)
         tier_a = _requires_tier_a(envelope["step"])
         generation = envelope["generation"]
@@ -2015,7 +2037,7 @@ class AdaptiveWorkflow:
             nonlocal receipt
             receipt = StepReceipt.model_validate(
                 executor.run(deepcopy(envelope), token=_token)
-                if oci
+                if oci or native
                 else executor.run(deepcopy(envelope))
             )
             return receipt.job_id
@@ -2046,7 +2068,12 @@ class AdaptiveWorkflow:
             return retained["envelope"], state.outcomes.get(token["attempt_id"])
 
     def _require_receipt_verifier(self, token, envelope, receipt, verify):
-        if envelope["step"].get("oci_method_version_id") is not None:
+        from .plugin_graph import RegisteredPluginExecutor, is_registered_plugin_step
+
+        if is_registered_plugin_step(envelope["step"]):
+            expected = RegisteredPluginExecutor
+            reason = "adaptive_plugin_receipt_requires_bound_verifier"
+        elif envelope["step"].get("oci_method_version_id") is not None:
             from devbench.engine.exploratory_oci import ExploratoryOCI
 
             expected = ExploratoryOCI

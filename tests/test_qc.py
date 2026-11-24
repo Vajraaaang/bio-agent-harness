@@ -1,9 +1,22 @@
 """Quality diagnostics use measured data, explicit backgrounds and real workers."""
 import json
+import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+
+
+def test_scran_pools_with_quick_cluster_assignments():
+    root = Path(__file__).resolve().parents[1]
+    driver = root / "src" / "devharness_server" / "r" / "scrna_scran.R"
+    script = driver.read_text()
+    assert re.search(r"clusters\s*<-\s*scran::quickCluster\(sce\b", script)
+    assert re.search(
+        r"scran::computeSumFactors\(sce,\s*clusters\s*=\s*clusters,\s*positive\s*=\s*TRUE",
+        script,
+    )
 
 
 def cohort(tmp_path, values=None, specimens=None):

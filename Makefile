@@ -21,7 +21,7 @@ export SINGLE_THREAD ?= 1
 export NUMBA_NUM_THREADS ?= 1
 export NUMBA_THREADING_LAYER ?= workqueue
 
-.PHONY: help install sync-runtimes check-platform check-sqlite-wal test lint typecheck test-fake-cli test-wheel-custody controlled-demo demo sweep pilot
+.PHONY: help install sync-runtimes check-platform check-sqlite-wal test lint typecheck test-fake-cli test-wheel-custody test-rna-release controlled-demo demo sweep pilot
 help: ## Show local commands; pilot and sweep invoke live models
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "%-18s %s\n", $$1, $$2}' "$(PROJECT)/Makefile"
 
@@ -73,6 +73,9 @@ test-fake-cli: check-sqlite-wal ## Run the offline single-session FakeCLI regres
 
 test-wheel-custody: check-sqlite-wal ## Build and test an isolated non-editable wheel
 	$(VERIFY) "$(PROJECT)/scripts/verify_wheel_custody.py" --project "$(PROJECT)" $(WHEEL_CUSTODY_ARGS)
+
+test-rna-release: check-sqlite-wal ## Require installed Plugin execution and Studio readback for RNA release
+	$(VERIFY) "$(PROJECT)/scripts/verify_rna_execution_release.py"
 
 controlled-demo: ## Run real synthetic analyses, signed-plan checks, repeats and R references
 	@set -eu; \

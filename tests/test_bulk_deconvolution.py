@@ -248,6 +248,20 @@ def test_cross_donor_variance_downweights_noisy_genes(tmp_path):
     assert failed["proportions"] is None
 
 
+@pytest.mark.parametrize("outlier_gene", ["g1", "g2"])
+def test_single_bulk_outlier_is_damped_and_reported(tmp_path, outlier_gene):
+    paths, spec, bulk, _ = _mixture_files(tmp_path, zero_variance=True)
+    bulk.loc[bulk.gene_id == outlier_gene, "sample"] += 264
+    changed = spec.model_copy(update={"bulk_sha256": _write(bulk, paths[0])})
+    sample = fit_bulk_deconvolution(*paths, changed)["samples"][0]
+    assert sample["status"] == "estimated"
+    assert abs(sample["proportions"]["left"] - 0.75) < 0.03
+    assert (
+        sample["residual_diagnostics"]["largest_absolute_residual_gene"] == outlier_gene
+    )
+    assert sample["residual_diagnostics"]["weighted_rmse"] < sample["rmse"]
+
+
 def test_reference_library_size_includes_unmatched_retained_genes(tmp_path):
     paths, spec, _, reference = _mixture_files(tmp_path)
     reference.loc[len(reference)] = ["reference_only", 80, 80, 20, 20]

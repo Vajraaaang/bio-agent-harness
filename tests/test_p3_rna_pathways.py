@@ -108,6 +108,22 @@ def test_ora_rejects_foreground_drift_and_missing_custody():
         run_ora(_plan("ora"), universe, foreground=universe.selected)
 
 
+@pytest.mark.parametrize("direction", ["up_only", "down_only"])
+def test_directional_ora_retains_full_tested_background(direction):
+    universe = _universe()
+    plan = _plan("ora").model_copy(update={"foreground_direction": direction})
+    for invalid in ((), ("g7",), ("outside",), ("g0", "g0")):
+        with pytest.raises(PermissionError, match="frozen foreground"):
+            run_ora(plan, universe, foreground=invalid, verify_universe=lambda _: True)
+    with pytest.raises(PermissionError, match="frozen foreground"):
+        run_ora(
+            _plan("ora"), universe, foreground=("g1",), verify_universe=lambda _: True
+        )
+    result = run_ora(plan, universe, foreground=("g1",), verify_universe=lambda _: True)
+    assert result.tested_gene_count == 8
+    assert result.results[0].p_value == pytest.approx(3 / 8)
+
+
 def test_ora_rechecks_post_clustering_marker_eligibility():
     universe = _universe()
     context = MarkerContext(
@@ -205,6 +221,82 @@ def test_ora_accepts_independently_verified_complete_marker_selection():
     )
     assert result.status == "completed"
     assert result.tested_set_count == 2
+    directional = run_ora(
+        _plan("ora").model_copy(update={"foreground_direction": "up_only"}),
+        universe,
+        foreground=("g1",),
+        marker_result=verified,
+        verify_universe=lambda actual: actual == universe,
+        verify_marker=lambda actual: actual == proof,
+    )
+    assert directional.results[0].p_value == pytest.approx(3 / 8)
+
+
+@pytest.mark.parametrize("kind", ["regulon", "motif"])
+def test_reference_without_eligible_members_does_not_inflate_bh(
+    workspace_tmp_path, kind
+):
+    from devharness_server.tools_network import _enrichment_worker
+
+    background = [f"g{i}" for i in range(8)]
+    reference = workspace_tmp_path / "reference.tsv"
+    if kind == "regulon":
+        lines = ["tf\ttarget", "signal\tg0", "signal\tg1", "tested\tg3"]
+        lines += [f"empty{i}\toutside" for i in range(18)]
+    else:
+        lines = ["gene\tmotif\thit"]
+        for i, gene in enumerate(background):
+            lines += [f"{gene}\tsignal\t{int(i < 2)}", f"{gene}\ttested\t{int(i == 3)}"]
+            lines += [f"{gene}\tempty{j}\t0" for j in range(18)]
+    reference.write_text("\n".join(lines) + "\n")
+    result = _enrichment_worker(background[:2], background, str(reference), kind, 1)
+    assert result["provenance"]["tested_sets"] == 2
+    assert result["provenance"]["untestable_sets"] == 18
+    assert result["results"][0]["q_value"] == pytest.approx(2 / 28)
+
+
+def test_temporal_network_removes_signal_explained_by_target_history(
+    workspace_tmp_path,
+):
+    from devharness_server.tools_network import infer_regulatory_network
+
+    rng = np.random.default_rng(775)
+    driver = rng.normal(size=80)
+    target = np.zeros_like(driver)
+    for i in range(1, len(target)):
+        target[i] = 0.95 * target[i - 1] + driver[i - 1]
+    ids = [f"s{i}" for i in range(len(target))]
+    expressions = workspace_tmp_path / "expression.csv"
+    rows = (("proxy", target), ("driver", driver), ("target", target))
+    expressions.write_text(
+        "gene,"
+        + ",".join(ids)
+        + "\n"
+        + "\n".join(gene + "," + ",".join(map(str, values)) for gene, values in rows)
+        + "\n"
+    )
+    metadata = workspace_tmp_path / "metadata.csv"
+    metadata.write_text(
+        "sample_id,embryonic_age\n"
+        + "\n".join(f"{sample},{i}" for i, sample in enumerate(ids))
+        + "\n"
+    )
+    args = (str(expressions), str(metadata), ["proxy", "driver"], ["target"])
+    uncontrolled = infer_regulatory_network(*args, data_type="continuous")
+    controlled = infer_regulatory_network(
+        *args, data_type="continuous", control_target_history=True
+    )
+    assert controlled["provenance"]["control_target_history"] is True
+    assert controlled["provenance"]["interpretation"] == (
+        "associative temporal prediction; no direct or causal regulatory claim"
+    )
+    assert controlled["edges"][0]["tf"] == "driver"
+    assert controlled["edges"][0]["score"] > 0.2
+    assert controlled["edges"][1]["score"] == pytest.approx(0, abs=1e-12)
+    assert (
+        next(edge["score"] for edge in uncontrolled["edges"] if edge["tf"] == "proxy")
+        > 0.4
+    )
 
 
 def _camera_input(root, *, singular=False):

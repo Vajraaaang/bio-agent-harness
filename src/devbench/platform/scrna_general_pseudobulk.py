@@ -42,6 +42,7 @@ from devbench.platform.scrna_population_analysis import (
 )
 from devbench.study.evidence import _read
 from devharness_core.provenance import canonical_json, copy_artifact, hash_artifact
+from rna_kernels.bulk_solver_policy import require_dream_coefficient
 from rna_kernels.mounted_model import compile_mounted_model
 from rna_kernels.units import UNKNOWN_UNIT_MARKERS
 
@@ -128,11 +129,13 @@ class GeneralPseudobulkSpec(BaseModel):
             )
         aliases = set(self.candidate_aliases)
         if aliases and (
-            self.regime == "S-I"
+            self.model.units != "paired_fixed"
             or len(aliases) != len(self.candidate_aliases)
             or not aliases <= set(self.technical_factors)
         ):
-            raise ValueError("Donor alias candidates require paired technical factors")
+            raise ValueError(
+                "Donor alias candidates require fixed pairing and technical factors"
+            )
         if any(
             not _label(value)
             for value in (self.family_id, self.condition, self.population)
@@ -163,15 +166,23 @@ def _validate_hypothesis(spec: GeneralPseudobulkSpec) -> None:
         raise ValueError(
             "Within-cell-type designs require one population across groups"
         )
-    expected_units = "independent" if spec.regime == "S-I" else "paired_fixed"
+    expected_units = (
+        {"independent"} if spec.regime == "S-I" else {"paired_fixed", "mixed"}
+    )
     if (
-        spec.model.units != expected_units
+        spec.model.units not in expected_units
         or spec.model.artifact_digests()
         or spec.model.latent_method
     ):
         raise ValueError(
             "Bind the declared donor design to an original-count mounted model"
         )
+    if spec.model.units == "mixed":
+        require_dream_coefficient("raw_counts", spec.model.comparison)
+        if len(groups) != 2 or spec.model.sensitivity_method is not None:
+            raise ValueError(
+                "Mixed pseudobulk requires a primary two-group coefficient"
+            )
 
 
 @dataclass(frozen=True)
@@ -339,11 +350,28 @@ def _profile_rows(
     ]
 
 
-def _check_units(expected: list[_ProfileKey], spec: GeneralPseudobulkSpec) -> list[str]:
-    if spec.regime == "S-I":
+def _check_units(
+    expected: list[_ProfileKey],
+    observed: list[_ProfileKey],
+    spec: GeneralPseudobulkSpec,
+) -> list[str]:
+    if spec.model.units == "independent":
         counts = Counter(key.donor for key in expected)
         if any(count > 1 for count in counts.values()):
             return ["Repeated specimens or conditions violate independent donors"]
+        return []
+    if spec.model.units == "mixed":
+        # A donor intercept also covers specimen clustering when the two
+        # identities coincide. Repeated profiles within multiple specimens
+        # from one donor require a second grouping term.
+        profiles = Counter(key.specimen for key in observed)
+        donor_specimens = {(row.donor, row.specimen) for row in observed}
+        specimens = Counter(donor for donor, _ in donor_specimens)
+        if any(
+            profiles[specimen] > 1 and specimens[donor] > 1
+            for donor, specimen in donor_specimens
+        ):
+            return ["Nested repeat profiles require a specimen effect within donor"]
         return []
     if len(spec.groups) != 2:
         return ["Mounted fixed pairing requires exactly two explicit target groups"]
@@ -525,8 +553,8 @@ def _stage_panel(directory, source, spec, label_evidence, qc_selection):
     if kept is not None:
         indices[~kept] = -1
     rows, refusals = _profile_rows(keys, indices, source, spec)
-    refusals.extend(_check_units(expected, spec))
-    if spec.regime != "S-I" and missing:
+    refusals.extend(_check_units(expected, keys, spec))
+    if missing and (spec.model.units == "paired_fixed" or spec.regime == "P-P"):
         refusals.append("Absent target profiles leave an incomplete donor pair")
     if not all(map(_label, features)):
         raise ValueError(

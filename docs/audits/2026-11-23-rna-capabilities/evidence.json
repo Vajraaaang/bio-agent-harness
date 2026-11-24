@@ -1,0 +1,930 @@
+{
+  "report": "Scientific Capability Audit Report",
+  "date_local": "2026-11-23",
+  "checkout": "ad1d74724e1e4d12a3c0fe6840e6521bd34a445b",
+  "scope": "Repository audit, synthetic software and statistical checks and a separately attributed historical public aggregate.",
+  "host_runtime": {
+    "python": "3.13.5",
+    "architecture": "arm64",
+    "sqlite": "3.53.4",
+    "packages": {
+      "pytest": "9.1.1",
+      "numpy": "2.5.3",
+      "scipy": "1.18.1",
+      "statsmodels": "0.14.6",
+      "pydeseq2": "0.5.4",
+      "anndata": "0.12.19",
+      "matplotlib": "3.11.1"
+    }
+  },
+  "mounted_runtime": {
+    "image": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+    "platform": "linux/arm64",
+    "python": "3.13.18",
+    "python_packages": {
+      "pertpy": "1.5.0",
+      "numpyro": "0.21.0",
+      "jax": "0.12.0.1",
+      "scanpy": "1.12.4"
+    },
+    "r_package_metadata": [
+      "R version 4.6.1 (2026-06-24) ",
+      "edgeR 4.10.7 ",
+      "limma 3.68.5 ",
+      "variancePartition 1.42.0 ",
+      "sva 3.60.0 ",
+      "fgsea 1.38.0 ",
+      "decoupleR 2.17.0 ",
+      "tximport 1.40.0 ",
+      "DESeq2 1.52.0"
+    ],
+    "compared_driver_files": {
+      "rna_kernels/mounted_bulk.py": {
+        "matches": true,
+        "host": "36eaa555b504f9af36a224f858673b6579b78ab92f96895fa0731d5aef1f3a1e",
+        "image": "36eaa555b504f9af36a224f858673b6579b78ab92f96895fa0731d5aef1f3a1e"
+      },
+      "rna_kernels/mounted_model.py": {
+        "matches": true,
+        "host": "f98fe08e75cf5a72d90fe4113c3fbe1a6d1d57a6227be3623a1cf0b417c6413f",
+        "image": "f98fe08e75cf5a72d90fe4113c3fbe1a6d1d57a6227be3623a1cf0b417c6413f"
+      },
+      "rna_kernels/mounted_scrna.py": {
+        "matches": true,
+        "host": "01c05ffe34b753bc549316d53b6228f0da1fffed2f582e073f3d4f8cb65932b0",
+        "image": "01c05ffe34b753bc549316d53b6228f0da1fffed2f582e073f3d4f8cb65932b0"
+      },
+      "rna_kernels/scrna_nb_countsplit.py": {
+        "matches": true,
+        "host": "c6bd111b37b82f504b7d8eb18fbbba28b2365e98446d3eccd1a05b25ca54737f",
+        "image": "c6bd111b37b82f504b7d8eb18fbbba28b2365e98446d3eccd1a05b25ca54737f"
+      },
+      "rna_kernels/scrna_nb_marker_fit.py": {
+        "matches": true,
+        "host": "7afcce663c8cb96ab91dd19f20673c81e8d322628ae619c962171e776e9f15d9",
+        "image": "7afcce663c8cb96ab91dd19f20673c81e8d322628ae619c962171e776e9f15d9"
+      },
+      "devharness_server/r/bulk_edger.R": {
+        "matches": true,
+        "host": "3a7ada9f128cf875e26fd4cd6c48c2d8e649409d247994a1a298c2d26d45f1bb",
+        "image": "3a7ada9f128cf875e26fd4cd6c48c2d8e649409d247994a1a298c2d26d45f1bb"
+      },
+      "devharness_server/r/bulk_dream.R": {
+        "matches": true,
+        "host": "1b050b410986038ec5cf17481cf18dab0e02f232b2bb40df886361024b3e4ad3",
+        "image": "1b050b410986038ec5cf17481cf18dab0e02f232b2bb40df886361024b3e4ad3"
+      },
+      "devharness_server/r/rna_pathways.R": {
+        "matches": true,
+        "host": "a364add38da5c1d60584528fb833e78df7ee2bac0f64f41ad52eb3426357275c",
+        "image": "a364add38da5c1d60584528fb833e78df7ee2bac0f64f41ad52eb3426357275c"
+      },
+      "devbench/core/scrna_composition_solver.py": {
+        "matches": true,
+        "host": "91bfa7f62b98b2242c806a468671c4a57a67c3f0f0a5eedf8fc90233d7b36881",
+        "image": "91bfa7f62b98b2242c806a468671c4a57a67c3f0f0a5eedf8fc90233d7b36881"
+      },
+      "devbench/core/rna_pathway_analysis.py": {
+        "matches": true,
+        "host": "ab1e59323902d188dbd60792ae06f6d6f729aca8eef493932b541699a73fc798",
+        "image": "ab1e59323902d188dbd60792ae06f6d6f729aca8eef493932b541699a73fc798"
+      }
+    }
+  },
+  "software_verification": {
+    "unique_test_cases": 458,
+    "unique_outcomes": {
+      "passed": 453,
+      "skipped": 5
+    },
+    "remaining_skips": [
+      "tests/test_computed_contrasts.py::test_cellular_definition_preserves_the_actual_producer_definition",
+      "tests/test_computed_contrasts.py::test_computed_cellular_contrast_does_not_fill_missing_type_estimates",
+      "tests/test_computed_contrasts.py::test_reported_contrast_is_computed_not_copied_from_requested_prose[False-False]",
+      "tests/test_computed_contrasts.py::test_reported_contrast_is_computed_not_copied_from_requested_prose[False-True]",
+      "tests/test_computed_contrasts.py::test_reported_contrast_is_computed_not_copied_from_requested_prose[True-False]"
+    ],
+    "deduplication": "Match pytest module and parametrized test name across runs. A passing image rerun resolves a configuration skip. The separate frozen scientific suite is excluded here.",
+    "runs": {
+      "initial_38_files": {
+        "counts": {
+          "passed": 406,
+          "skipped": 49
+        },
+        "wall_seconds": 132.386,
+        "workspace_junit": ".pytest-workspaces/scientific-capability-audit.qPHq1wgj/regression.xml",
+        "junit_sha256": "b6fa6ddb9a3de2fc0e155fb5640178b7dfdf804a302cae9f5d0be1e2fe8d591c",
+        "files": [
+          "tests/test_annotation_judgment_policy.py",
+          "tests/test_bulk_deconvolution.py",
+          "tests/test_bulk_dtu.py",
+          "tests/test_bulk_solver_policy.py",
+          "tests/test_computed_contrasts.py",
+          "tests/test_evidence_access_policy.py",
+          "tests/test_method_comparison_provenance.py",
+          "tests/test_mounted_bulk.py",
+          "tests/test_mounted_general.py",
+          "tests/test_mounted_result_validation.py",
+          "tests/test_mounted_scrna.py",
+          "tests/test_p3_donor_trajectory.py",
+          "tests/test_p3_general_pseudobulk.py",
+          "tests/test_p3_marker_inference.py",
+          "tests/test_p3_rna_pathways.py",
+          "tests/test_p3_scrna_composition.py",
+          "tests/test_p3_scrna_droplets.py",
+          "tests/test_p3_scrna_embedding.py",
+          "tests/test_p3_scrna_qc.py",
+          "tests/test_perturbation_analysis.py",
+          "tests/test_phenotype_prediction.py",
+          "tests/test_rna_answerability.py",
+          "tests/test_rna_p4_integration.py",
+          "tests/test_scientific_plot_verification.py",
+          "tests/test_scrna_ccc.py",
+          "tests/test_scrna_neighborhood_da.py",
+          "tests/test_spatial_analysis.py",
+          "tests/test_streaming_rle.py",
+          "tests/test_thesis_answerability_matrix.py",
+          "tests/test_thesis_benchmark_actions.py",
+          "tests/test_thesis_bulk_acceptance.py",
+          "tests/test_thesis_joint_bh.py",
+          "tests/test_thesis_single_cell_acceptance.py",
+          "tests/test_tier_a_donor_trajectory.py",
+          "tests/test_tier_a_pathways.py",
+          "tests/test_tier_a_sccoda.py",
+          "tests/test_tier_a_scrna.py",
+          "tests/test_workbench_pseudobulk.py"
+        ],
+        "skipped": [
+          {
+            "node": "tests/test_p3_scrna_droplets.py::test_emptydrops_actual_pinned_runtime",
+            "outcome": "skipped",
+            "reason": "Set DEVBENCH_RNA_KERNEL_TEST_IMAGE to the pinned P3.1 OCI image"
+          },
+          {
+            "node": "tests/test_p3_scrna_droplets.py::test_cellbender_actual_pinned_runtime",
+            "outcome": "skipped",
+            "reason": "Set DEVBENCH_RNA_KERNEL_TEST_IMAGE to the pinned P3.1 OCI image"
+          },
+          {
+            "node": "tests/test_p3_general_pseudobulk.py::test_pseudobulk_plan_registers_and_runs_the_mounted_lrt[False]",
+            "outcome": "skipped",
+            "reason": "Set the exact local RNA kernel image ID"
+          },
+          {
+            "node": "tests/test_p3_general_pseudobulk.py::test_pseudobulk_plan_registers_and_runs_the_mounted_lrt[True]",
+            "outcome": "skipped",
+            "reason": "Set the exact local RNA kernel image ID"
+          },
+          {
+            "node": "tests/test_p3_general_pseudobulk.py::test_pseudobulk_voom_retains_checked_sensitivity_receipt[False]",
+            "outcome": "skipped",
+            "reason": "Set the exact local limma-voom RNA kernel image ID"
+          },
+          {
+            "node": "tests/test_p3_general_pseudobulk.py::test_pseudobulk_voom_retains_checked_sensitivity_receipt[True]",
+            "outcome": "skipped",
+            "reason": "Set the exact local limma-voom RNA kernel image ID"
+          },
+          {
+            "node": "tests/test_p3_scrna_composition.py::test_mounted_sccoda_recovers_planted_relative_compositional_effect",
+            "outcome": "skipped",
+            "reason": "Select the pinned scCODA image via DEVBENCH_RNA_KERNEL_TEST_IMAGE"
+          },
+          {
+            "node": "tests/test_p3_rna_pathways.py::test_camera_uses_locked_limma_and_reports_variance_inflation",
+            "outcome": "skipped",
+            "reason": "DEVBENCH_RNA_KERNEL_TEST_IMAGE is unset"
+          },
+          {
+            "node": "tests/test_p3_rna_pathways.py::test_ranked_methods_execute_their_locked_packages[fgsea-1.38.0]",
+            "outcome": "skipped",
+            "reason": "DEVBENCH_RNA_KERNEL_TEST_IMAGE is unset"
+          },
+          {
+            "node": "tests/test_p3_rna_pathways.py::test_ranked_methods_execute_their_locked_packages[decoupleR-2.17.0]",
+            "outcome": "skipped",
+            "reason": "DEVBENCH_RNA_KERNEL_TEST_IMAGE is unset"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-lrt-independent-True-edger_v4-None-52]",
+            "outcome": "skipped",
+            "reason": "pinned local RNA kernel image required"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[tximport_estimated_counts-coefficient-independent-True-edger_v4-None-52]",
+            "outcome": "skipped",
+            "reason": "pinned local RNA kernel image required"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-contrast-independent-True-edger_v4-None-52]",
+            "outcome": "skipped",
+            "reason": "pinned local RNA kernel image required"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-contrast-independent-False-deseq2-None-6]",
+            "outcome": "skipped",
+            "reason": "pinned local RNA kernel image required"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-lrt-independent-False-deseq2-None-6]",
+            "outcome": "skipped",
+            "reason": "pinned local RNA kernel image required"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-coefficient-paired_fixed-True-edger_v4-None-100]",
+            "outcome": "skipped",
+            "reason": "pinned local RNA kernel image required"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[continuous-coefficient-mixed-True-dream-None-100]",
+            "outcome": "skipped",
+            "reason": "pinned local RNA kernel image required"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-coefficient-mixed-True-dream-None-100]",
+            "outcome": "skipped",
+            "reason": "pinned local RNA kernel image required"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-coefficient-independent-True-edger_v4-ruvg-6]",
+            "outcome": "skipped",
+            "reason": "pinned local RNA kernel image required"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-coefficient-independent-True-edger_v4-svaseq-6]",
+            "outcome": "skipped",
+            "reason": "pinned local RNA kernel image required"
+          },
+          {
+            "node": "tests/test_tier_a_scrna.py::test_single_cell_mounted_qc_and_replayed_receipt",
+            "outcome": "skipped",
+            "reason": "Set DEVBENCH_RNA_KERNEL_TEST_IMAGE to a pinned single-cell image"
+          },
+          {
+            "node": "tests/test_tier_a_scrna.py::test_nb_countsplit_tier_a_requires_review_and_seals_inference",
+            "outcome": "skipped",
+            "reason": "Set DEVBENCH_RNA_KERNEL_TEST_IMAGE to the pinned NB fit image"
+          },
+          {
+            "node": "tests/test_tier_a_scrna.py::test_thesis_replays_single_cell_artifacts_and_reuses_parent_outputs",
+            "outcome": "skipped",
+            "reason": "Select a pinned single-cell image for thesis replay"
+          },
+          {
+            "node": "tests/test_tier_a_sccoda.py::test_sccoda_workflow_retains_a_bayesian_result",
+            "outcome": "skipped",
+            "reason": "Set DEVBENCH_RNA_KERNEL_TEST_IMAGE to a pinned scCODA image"
+          },
+          {
+            "node": "tests/test_tier_a_donor_trajectory.py::test_curated_workflow_dispatches_donor_trajectory[paired-donors]",
+            "outcome": "skipped",
+            "reason": "Select a pinned donor trajectory kernel image"
+          },
+          {
+            "node": "tests/test_tier_a_donor_trajectory.py::test_curated_workflow_dispatches_donor_trajectory[cell-level-trade-seq]",
+            "outcome": "skipped",
+            "reason": "Select a pinned donor trajectory kernel image"
+          },
+          {
+            "node": "tests/test_tier_a_donor_trajectory.py::test_curated_workflow_dispatches_donor_trajectory[unverified-axis]",
+            "outcome": "skipped",
+            "reason": "Select a pinned donor trajectory kernel image"
+          },
+          {
+            "node": "tests/test_tier_a_donor_trajectory.py::test_curated_workflow_dispatches_donor_trajectory[repeated-donors]",
+            "outcome": "skipped",
+            "reason": "Select a pinned donor trajectory kernel image"
+          },
+          {
+            "node": "tests/test_tier_a_donor_trajectory.py::test_curated_candidate_trajectory_requires_and_retains_verified_review",
+            "outcome": "skipped",
+            "reason": "Select a pinned reviewed donor trajectory kernel image"
+          },
+          {
+            "node": "tests/test_tier_a_pathways.py::test_registered_camera_executes_pinned_oci_and_reopens_receipt",
+            "outcome": "skipped",
+            "reason": "Set DEVBENCH_RNA_KERNEL_TEST_IMAGE to a pinned pathway image"
+          },
+          {
+            "node": "tests/test_tier_a_pathways.py::test_registered_ora_checks_retained_product_axis_before_mounted_dispatch",
+            "outcome": "skipped",
+            "reason": "Set DEVBENCH_RNA_KERNEL_TEST_IMAGE to a pinned pathway image"
+          },
+          {
+            "node": "tests/test_thesis_joint_bh.py::test_joint_release_requires_every_receipt_and_revokes_as_one[mounted]",
+            "outcome": "skipped",
+            "reason": "Set the exact local RNA kernel image ID"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_reviewed_workbench_comparison_uses_the_authoritative_scheduler[False-False]",
+            "outcome": "skipped",
+            "reason": "Select the locked limma-voom image for the Workbench dispatch"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_reviewed_workbench_comparison_uses_the_authoritative_scheduler[True-False]",
+            "outcome": "skipped",
+            "reason": "Select the locked limma-voom image for the Workbench dispatch"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_reviewed_workbench_comparison_uses_the_authoritative_scheduler[False-True]",
+            "outcome": "skipped",
+            "reason": "Select the locked limma-voom image for the Workbench dispatch"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_confirmatory_aim_keeps_sensitivity_with_its_exact_primary_fit[False]",
+            "outcome": "skipped",
+            "reason": "Select the locked limma-voom image for companion-fit custody"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_confirmatory_aim_keeps_sensitivity_with_its_exact_primary_fit[True]",
+            "outcome": "skipped",
+            "reason": "Select the locked limma-voom image for companion-fit custody"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_mixed_frontier_offers_qc_and_reviewed_fit_without_outcomes[True]",
+            "outcome": "skipped",
+            "reason": "Select the locked limma-voom image for mixed Workbench dispatch"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_mixed_frontier_offers_qc_and_reviewed_fit_without_outcomes[False]",
+            "outcome": "skipped",
+            "reason": "Select the locked limma-voom image for mixed Workbench dispatch"
+          },
+          {
+            "node": "tests/test_thesis_single_cell_acceptance.py::test_l3_mounted_single_cell_acceptance",
+            "outcome": "skipped",
+            "reason": "Set DEVBENCH_RNA_KERNEL_TEST_IMAGE to the pinned scCODA image"
+          },
+          {
+            "node": "tests/test_thesis_bulk_acceptance.py::test_l1_mounted_factorial_bulk_validates_and_replays",
+            "outcome": "skipped",
+            "reason": "Set the exact local RNA kernel image ID"
+          },
+          {
+            "node": "tests/test_thesis_bulk_acceptance.py::test_l2_governed_paired_tximport_keeps_lengths_and_donor_identity",
+            "outcome": "skipped",
+            "reason": "Set the exact local RNA kernel image ID"
+          },
+          {
+            "node": "tests/test_thesis_bulk_acceptance.py::test_l2_retains_unavailable_paired_diagnostic_with_null_estimates",
+            "outcome": "skipped",
+            "reason": "Set the exact local RNA kernel image ID"
+          },
+          {
+            "node": "tests/test_thesis_bulk_acceptance.py::test_l2_independent_svaseq_is_diagnostic_and_preserves_primary_fit",
+            "outcome": "skipped",
+            "reason": "Set the exact local RNA kernel image ID"
+          },
+          {
+            "node": "tests/test_computed_contrasts.py::test_reported_contrast_is_computed_not_copied_from_requested_prose[False-True]",
+            "outcome": "skipped",
+            "reason": "Requires the authorized small local numerical fixtures"
+          },
+          {
+            "node": "tests/test_computed_contrasts.py::test_reported_contrast_is_computed_not_copied_from_requested_prose[False-False]",
+            "outcome": "skipped",
+            "reason": "Requires the authorized small local numerical fixtures"
+          },
+          {
+            "node": "tests/test_computed_contrasts.py::test_reported_contrast_is_computed_not_copied_from_requested_prose[True-False]",
+            "outcome": "skipped",
+            "reason": "Requires the authorized small local numerical fixtures"
+          },
+          {
+            "node": "tests/test_computed_contrasts.py::test_computed_cellular_contrast_does_not_fill_missing_type_estimates",
+            "outcome": "skipped",
+            "reason": "Requires the authorized small local numerical fixtures"
+          },
+          {
+            "node": "tests/test_computed_contrasts.py::test_cellular_definition_preserves_the_actual_producer_definition",
+            "outcome": "skipped",
+            "reason": "Requires the authorized small local numerical fixtures"
+          }
+        ]
+      },
+      "mounted_representatives": {
+        "counts": {
+          "passed": 8
+        },
+        "wall_seconds": 82.407,
+        "workspace_junit": ".pytest-workspaces/scientific-capability-mounted.iW8GDFAq/mounted.xml",
+        "junit_sha256": "a76ddcafb990687b4509d21a40a495f106f6f3bf7b12ed65022206b6ff6285d9",
+        "cases": [
+          {
+            "node": "tests/test_p3_general_pseudobulk.py::test_pseudobulk_plan_registers_and_runs_the_mounted_lrt[False]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_p3_general_pseudobulk.py::test_pseudobulk_plan_registers_and_runs_the_mounted_lrt[True]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_thesis_bulk_acceptance.py::test_l2_governed_paired_tximport_keeps_lengths_and_donor_identity",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_bulk_dream.py::test_bulk_dream_locked_image[raw_counts]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_tier_a_pathways.py::test_registered_camera_executes_pinned_oci_and_reopens_receipt",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_tier_a_pathways.py::test_registered_ora_checks_retained_product_axis_before_mounted_dispatch",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_tier_a_scrna.py::test_nb_countsplit_tier_a_requires_review_and_seals_inference",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_tier_a_sccoda.py::test_sccoda_workflow_retains_a_bayesian_result",
+            "outcome": "passed"
+          }
+        ]
+      },
+      "droplets_pathways_trajectory": {
+        "counts": {
+          "passed": 5
+        },
+        "wall_seconds": 37.078,
+        "workspace_junit": ".pytest-workspaces/scientific-capability-audit.qPHq1wgj/extra.xml",
+        "junit_sha256": "a4f1b5028edf87f660a7b1c08c36826d981650a994d587a58d988d4f15b50150",
+        "cases": [
+          {
+            "node": "tests/test_p3_scrna_droplets.py::test_emptydrops_actual_pinned_runtime",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_p3_scrna_droplets.py::test_cellbender_actual_pinned_runtime",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_p3_rna_pathways.py::test_ranked_methods_execute_their_locked_packages[fgsea-1.38.0]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_p3_rna_pathways.py::test_ranked_methods_execute_their_locked_packages[decoupleR-2.17.0]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_tier_a_donor_trajectory.py::test_curated_candidate_trajectory_requires_and_retains_verified_review",
+            "outcome": "passed"
+          }
+        ]
+      },
+      "image_recovery_and_mcp_1": {
+        "counts": {
+          "passed": 17
+        },
+        "wall_seconds": 183.418,
+        "workspace_junit": ".pytest-workspaces/scientific-capability-mounted.iW8GDFAq/recovery-1.xml",
+        "junit_sha256": "dfd1561bf4c50b4fd21fe3112b3e6beda5b44b8ff34f0ccdf4c6704134a9a2c1",
+        "cases": [
+          {
+            "node": "tests/test_thesis_single_cell_acceptance.py::test_l3_mounted_single_cell_acceptance",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[continuous-coefficient-mixed-True-dream-None-100]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-coefficient-independent-True-edger_v4-ruvg-6]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-coefficient-independent-True-edger_v4-svaseq-6]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-coefficient-mixed-True-dream-None-100]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-coefficient-paired_fixed-True-edger_v4-None-100]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-contrast-independent-False-deseq2-None-6]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-contrast-independent-True-edger_v4-None-52]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-lrt-independent-False-deseq2-None-6]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[raw_counts-lrt-independent-True-edger_v4-None-52]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_mounted_general.py::test_generalized_mounted_bioconductor_dispatch[tximport_estimated_counts-coefficient-independent-True-edger_v4-None-52]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_p3_rna_pathways.py::test_camera_uses_locked_limma_and_reports_variance_inflation",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_p3_scrna_composition.py::test_mounted_sccoda_recovers_planted_relative_compositional_effect",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_tier_a_donor_trajectory.py::test_curated_workflow_dispatches_donor_trajectory[cell-level-trade-seq]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_tier_a_donor_trajectory.py::test_curated_workflow_dispatches_donor_trajectory[paired-donors]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_tier_a_donor_trajectory.py::test_curated_workflow_dispatches_donor_trajectory[repeated-donors]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_tier_a_donor_trajectory.py::test_curated_workflow_dispatches_donor_trajectory[unverified-axis]",
+            "outcome": "passed"
+          }
+        ]
+      },
+      "image_recovery_and_mcp_2": {
+        "counts": {
+          "passed": 17
+        },
+        "wall_seconds": 269.618,
+        "workspace_junit": ".pytest-workspaces/scientific-capability-mounted.iW8GDFAq/recovery-2.xml",
+        "junit_sha256": "6341e7a978c99ee65e3f5b46c1edfcff7a88e6c91f1177277b3bb5527b0a702b",
+        "cases": [
+          {
+            "node": "tests/test_plugin_mcp_new_solvers.py::test_h5ad_attestation_checks_values_and_declarations",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_plugin_mcp_new_solvers.py::test_local_solvers_round_trip",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_p3_general_pseudobulk.py::test_pseudobulk_voom_retains_checked_sensitivity_receipt[False]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_p3_general_pseudobulk.py::test_pseudobulk_voom_retains_checked_sensitivity_receipt[True]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_thesis_bulk_acceptance.py::test_l1_mounted_factorial_bulk_validates_and_replays",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_thesis_bulk_acceptance.py::test_l2_independent_svaseq_is_diagnostic_and_preserves_primary_fit",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_thesis_bulk_acceptance.py::test_l2_retains_unavailable_paired_diagnostic_with_null_estimates",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_thesis_joint_bh.py::test_joint_release_requires_every_receipt_and_revokes_as_one[mounted]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_tier_a_scrna.py::test_single_cell_mounted_qc_and_replayed_receipt",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_tier_a_scrna.py::test_thesis_replays_single_cell_artifacts_and_reuses_parent_outputs",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_confirmatory_aim_keeps_sensitivity_with_its_exact_primary_fit[False]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_confirmatory_aim_keeps_sensitivity_with_its_exact_primary_fit[True]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_mixed_frontier_offers_qc_and_reviewed_fit_without_outcomes[False]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_mixed_frontier_offers_qc_and_reviewed_fit_without_outcomes[True]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_reviewed_workbench_comparison_uses_the_authoritative_scheduler[False-False]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_reviewed_workbench_comparison_uses_the_authoritative_scheduler[False-True]",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_workbench_pseudobulk.py::test_reviewed_workbench_comparison_uses_the_authoritative_scheduler[True-False]",
+            "outcome": "passed"
+          }
+        ]
+      },
+      "frozen_scientific_calibration": {
+        "counts": {
+          "passed": 2,
+          "failure": 1
+        },
+        "wall_seconds": 65.026,
+        "workspace_junit": ".pytest-workspaces/scientific-capability-audit.qPHq1wgj/calibration.xml",
+        "junit_sha256": "d1bfa2645f1fda0f1f3c249ea7b597565fde72df1afa9eaccf41df1ed316313e",
+        "cases": [
+          {
+            "node": "tests/test_thesis_calibration.py::test_calibration_fixture_binds_distinct_donors_cells_and_truth",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_thesis_calibration.py::test_calibration_intervals_use_the_cohort_and_leave_the_gate_unchanged",
+            "outcome": "passed"
+          },
+          {
+            "node": "tests/test_thesis_calibration.py::test_thesis_calibration_n_sim_200",
+            "outcome": "failure",
+            "reason": "assert False\n +  where False = all(<generator object test_thesis_calibration_n_sim_200.<locals>.<genexpr> at 0x1336e6810>)"
+          }
+        ]
+      }
+    }
+  },
+  "frozen_de_calibration": {
+    "confounded": {
+      "empirical_null_fdr": null,
+      "minimum_donors": 104,
+      "planted_tpr": null,
+      "refused": 200
+    },
+    "distinct_generated_cohorts": 2200,
+    "edgeR_version": "4.10.7",
+    "evidence_scope": "synthetic_count_model_calibration",
+    "execution_seconds": 37.485,
+    "failed_cohorts": [],
+    "genes_per_cohort": 192,
+    "metric_threshold": 0.05,
+    "monte_carlo_uncertainty": {
+      "confidence_level": 0.95,
+      "null_fdr_method": "clopper_pearson_on_any_rejection",
+      "sampling_unit": "independent_simulated_cohort",
+      "tpr_method": "hoeffding_on_cohort_recovery_fraction",
+      "used_for_acceptance": false
+    },
+    "n_sim": 200,
+    "normal_mounted_sentinels": [
+      "bi-confounded-000",
+      "bi-planted-000",
+      "bp-planted-000",
+      "pp-planted-000",
+      "si-planted-000",
+      "sp-planted-000"
+    ],
+    "pinned_image": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+    "preparation_seconds": 24.98,
+    "regimes": {
+      "B-I": {
+        "calibrated": false,
+        "empirical_null_fdr": 0.09,
+        "empirical_null_fdr_ci95": [
+          0.05421425445609637,
+          0.13850820847382217
+        ],
+        "fit_seconds": 10.611999999999997,
+        "null_cohorts_with_rejections": 18,
+        "null_completed": 200,
+        "null_fdr_ceiling": 0.075,
+        "planted_completed": 200,
+        "planted_opportunities": 4800,
+        "planted_tpr": 0.99625,
+        "planted_tpr_ci95": [
+          0.9002177208680079,
+          1.0
+        ],
+        "planted_tpr_floor": 0.6,
+        "planted_true_discoveries": 4782,
+        "planted_wrong_directions": 0
+      },
+      "B-P": {
+        "calibrated": true,
+        "empirical_null_fdr": 0.065,
+        "empirical_null_fdr_ci95": [
+          0.03506070865697905,
+          0.10858723650381524
+        ],
+        "fit_seconds": 16.319000000000003,
+        "null_cohorts_with_rejections": 13,
+        "null_completed": 200,
+        "null_fdr_ceiling": 0.075,
+        "planted_completed": 200,
+        "planted_opportunities": 4800,
+        "planted_tpr": 1.0,
+        "planted_tpr_ci95": [
+          0.9039677208680079,
+          1.0
+        ],
+        "planted_tpr_floor": 0.7,
+        "planted_true_discoveries": 4800,
+        "planted_wrong_directions": 0
+      },
+      "P-P": {
+        "calibrated": true,
+        "empirical_null_fdr": 0.045,
+        "empirical_null_fdr_ci95": [
+          0.02078042222700435,
+          0.08370268807585397
+        ],
+        "fit_seconds": 14.657999999999987,
+        "null_cohorts_with_rejections": 9,
+        "null_completed": 200,
+        "null_fdr_ceiling": 0.075,
+        "planted_completed": 200,
+        "planted_opportunities": 4800,
+        "planted_tpr": 1.0,
+        "planted_tpr_ci95": [
+          0.9039677208680079,
+          1.0
+        ],
+        "planted_tpr_floor": 0.7,
+        "planted_true_discoveries": 4800,
+        "planted_wrong_directions": 0
+      },
+      "S-I": {
+        "calibrated": false,
+        "empirical_null_fdr": 0.105,
+        "empirical_null_fdr_ci95": [
+          0.06618122702871175,
+          0.15601870554750283
+        ],
+        "fit_seconds": 9.25,
+        "null_cohorts_with_rejections": 21,
+        "null_completed": 200,
+        "null_fdr_ceiling": 0.075,
+        "planted_completed": 200,
+        "planted_opportunities": 4800,
+        "planted_tpr": 0.9966666666666667,
+        "planted_tpr_ci95": [
+          0.9006343875346746,
+          1.0
+        ],
+        "planted_tpr_floor": 0.6,
+        "planted_true_discoveries": 4784,
+        "planted_wrong_directions": 0
+      },
+      "S-P": {
+        "calibrated": false,
+        "empirical_null_fdr": 0.08,
+        "empirical_null_fdr_ci95": [
+          0.046417608399822556,
+          0.1266648560220817
+        ],
+        "fit_seconds": 17.047000000000004,
+        "null_cohorts_with_rejections": 16,
+        "null_completed": 200,
+        "null_fdr_ceiling": 0.075,
+        "planted_completed": 200,
+        "planted_opportunities": 4800,
+        "planted_tpr": 1.0,
+        "planted_tpr_ci95": [
+          0.9039677208680079,
+          1.0
+        ],
+        "planted_tpr_floor": 0.7,
+        "planted_true_discoveries": 4800,
+        "planted_wrong_directions": 0
+      }
+    },
+    "seed": 20261117,
+    "threshold_origin": "implementation_preregistration",
+    "wall_seconds": 63.599,
+    "warning_counts": {}
+  },
+  "stress_probes": {
+    "source": "reproduce_probes.py",
+    "source_sha256": "52d888a93b19986ae0452d099bf4850c3d9bb28a7d7b792c48e6e6cc5d7751e5",
+    "independent_repeat_identical": true,
+    "results": {
+      "dtu": [
+        {
+          "depth_multiplier": 1,
+          "generated": 250,
+          "estimable": 250,
+          "rejected": 16,
+          "rate": 0.064,
+          "exact_ci95": [
+            0.03702073823106942,
+            0.10185303061434915
+          ]
+        },
+        {
+          "depth_multiplier": 100,
+          "generated": 250,
+          "estimable": 250,
+          "rejected": 184,
+          "rate": 0.736,
+          "exact_ci95": [
+            0.6767600775685871,
+            0.7895492051347189
+          ]
+        }
+      ],
+      "count_split": [
+        {
+          "true_theta": 4,
+          "supplied_theta": 1,
+          "correlation": -0.35216994126482914,
+          "counts_conserved": true
+        },
+        {
+          "true_theta": 4,
+          "supplied_theta": 4,
+          "correlation": 0.005037777478724853,
+          "counts_conserved": true
+        },
+        {
+          "true_theta": 4,
+          "supplied_theta": 16,
+          "correlation": 0.3532889338800122,
+          "counts_conserved": true
+        }
+      ],
+      "standalone_enrichment": [
+        {
+          "background_size": 8,
+          "p_value": 0.017857142857142856,
+          "q_value": 0.017857142857142856
+        },
+        {
+          "background_size": 1000,
+          "p_value": 6.018042090186378e-09,
+          "q_value": 6.018042090186378e-09
+        }
+      ],
+      "integer_log": {
+        "hdf5_accepted": true,
+        "bulk_count_values_valid": true
+      },
+      "spatial_depth": {
+        "donors": 2,
+        "spots": 288,
+        "genes": 32,
+        "depths": [
+          48,
+          4800
+        ],
+        "moran_q_below_0.05": 14,
+        "geary_q_below_0.05": 14,
+        "library_size_diagnostic": {
+          "measurement": "total_counts",
+          "moran_i": 0.9163987138263665,
+          "p_value": 0.005,
+          "q_value": 0.005
+        }
+      },
+      "spatial_gap": {
+        "edges": 5,
+        "cross_gap_edges": 3
+      }
+    }
+  },
+  "figure": {
+    "path": "null-calibration.png",
+    "sha256": "55a82fe5da53e3cad17c874728bc58e4f5b99108ef1bf2525d72848d608954b4",
+    "panel_a": "frozen_de_calibration.regimes, exact binomial cohort intervals",
+    "panel_b": "stress_probes.results.dtu, exact binomial cohort intervals"
+  },
+  "historical_airway_audit": {
+    "original_workspace_file": "reports/live-airway-workbench-2026-11-01/independent-numerical-audit.json",
+    "source_sha256": "fb7d810c4d15864f1b1efa83a8936a41bf52ac8a55638e9683764bc8daab09a5",
+    "aggregate": {
+      "root_hash": "b5356f316f0f1bd551bddf32b370a28af851f7fb19e44394b5b82ead6e04394d",
+      "libraries": 8,
+      "biological_units": 4,
+      "family_genes": 64102,
+      "design_rank": 5,
+      "gene_status_counts": {
+        "estimated": 33469,
+        "failed": 30633
+      },
+      "all_zero_genes": 30633,
+      "failed_p_q_preserved_null": true,
+      "independent_full_family_BH_maximum_absolute_error": 0.0,
+      "episode_outcome": "scientific_failure",
+      "scope": "execution_integrity_and_adjustment_arithmetic_not_independent_scientific_validation",
+      "scientific_agreement": "not_evaluated",
+      "clinical_validation": "not_established"
+    }
+  },
+  "verification_notes": [
+    "The first all-package R namespace inspection exited 137. Reading installed package metadata subsequently succeeded. Separate mounted numerical tests exercised the reported operations.",
+    "An incidental duplicate supplemental pytest invocation was interrupted after consolidation. Its results are excluded. All selected scientific and software cases are accounted for in the completed runs.",
+    "Historical cross-architecture tolerance findings were read from the tracked assessment. This audit did not run a matched ARM64/AMD64 equivalence study.",
+    "No named external agent benchmark was executed. Its published results are used as comparators for failure modes only."
+  ]
+}

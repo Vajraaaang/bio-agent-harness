@@ -18,7 +18,13 @@ from devbench.core.expression_io import open_expression
 
 from .checkpoints import CheckpointStore, atomic_json
 from .scrna_qc import MadDefinition, declared_groups, pin_configuration
-from .singlecell import filter_qc_metrics, gene_symbols, validate_counts
+from .singlecell import (
+    calculate_cell_qc,
+    filter_qc_metrics,
+    gene_symbols,
+    qc_feature_masks,
+    validate_counts,
+)
 
 
 def read_table(path, *, label_columns: tuple[str, ...] = ()):
@@ -54,8 +60,6 @@ def stream_qc(
     retention_group_key: str | None = None,
     mad_definition: MadDefinition = "absolute_mad",
 ) -> Path:
-    import scanpy as sc
-
     governed = (qc_group_key, retention_group_key, mad_definition) != (
         None,
         None,
@@ -65,11 +69,7 @@ def stream_qc(
         if batch_key not in source.obs or source.obs[batch_key].isna().any():
             raise ValueError("observed_batch_identities_required")
         symbols, symbol_source = gene_symbols(source, symbol_column)
-        mito = np.asarray(symbols.str.upper().str.startswith("MT-"))
-        if not mito.any():
-            raise ValueError(
-                "mitochondrial_annotation_unavailable: zero symbol matches"
-            )
+        masks = qc_feature_masks(symbols)
         labels, dependencies = _stream_qc_roles(
             source,
             store,
@@ -97,13 +97,10 @@ def stream_qc(
                 data = source.subset(range(start, stop), max_bytes=max_block_bytes)
                 validate_counts(data.X)
                 data.obs = data.obs[list(labels)].copy()
-                data.var["mt"] = mito
-                sc.pp.calculate_qc_metrics(
+                calculate_cell_qc(
                     data,
-                    qc_vars=["mt"],
+                    masks,
                     percent_top=[20] if data.n_vars >= 20 else None,
-                    log1p=True,
-                    inplace=True,
                 )
                 if data.n_vars < 20:
                     data.obs["pct_counts_in_top_20_genes"] = np.nan
@@ -118,7 +115,7 @@ def stream_qc(
                 [
                     read_table(
                         store.path(name) / "metrics.csv",
-                        label_columns=labels if governed else (),
+                        label_columns=labels,
                     )
                     for name in chunks
                 ]
@@ -131,7 +128,7 @@ def stream_qc(
                 min_genes=min_genes,
                 mad_limit=mad_limit,
                 max_mito_percent=max_mito_percent,
-                mitochondrial_features=int(mito.sum()),
+                mitochondrial_features=int(masks["mt"].sum()),
                 symbol_source=symbol_source,
                 qc_group_key=qc_group_key,
                 retention_group_key=retention_group_key,
@@ -465,12 +462,16 @@ def stream_selected(
     store,
     *,
     layer,
+    batch_key=None,
     block_rows=128,
     max_block_bytes=64 * 1024**2,
     max_selected_bytes=512 * 1024**2,
     use_scran_factors=False,
 ):
-    metrics = read_table(store.path("qc") / "metrics.csv")
+    metrics = read_table(
+        store.path("qc") / "metrics.csv",
+        label_columns=(batch_key,) if batch_key is not None else (),
+    )
     factors = _scran_factors(store, metrics) if use_scran_factors else None
     hvg = read_table(store.path("hvg") / "features.csv")
     features = np.flatnonzero(hvg["highly_variable"].to_numpy(dtype=bool))

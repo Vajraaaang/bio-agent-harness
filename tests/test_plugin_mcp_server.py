@@ -27,6 +27,27 @@ TOOLS = {
 }
 
 
+@pytest.mark.parametrize(
+    ("status", "view"), [("completed", "overview"), ("running", "workflows")]
+)
+def test_run_card_lands_on_results_after_completion(status, view):
+    from types import SimpleNamespace
+
+    from devbench.platform.plugin_mcp import Plugin
+
+    sid = "a" * 32
+    owner = SimpleNamespace(_handoff=lambda session_id, tab: {
+        "studio_url": f"http://127.0.0.1:8765/?session_id={session_id}&view={tab}",
+    })
+    row = {
+        "stage_json": "{}", "status": status, "session_id": sid, "run_id": "b" * 32,
+        "started_at": 1, "finished_at": 2, "error_text": None,
+    }
+    assert Plugin._status(owner, row, {})["studio_url"] == (
+        f"http://127.0.0.1:8765/?session_id={sid}&view={view}"
+    )
+
+
 def test_bulk_replay_links_the_exact_verified_tier_a_receipt(workspace_tmp_path):
     from concurrent.futures import ThreadPoolExecutor
 
@@ -136,6 +157,62 @@ def test_pathway_queue_reads_a_json_frozen_method(monkeypatch):
         plugin_mcp._queue_reviewed_pathway(None, None, plan, {"de_source": {}})
 
 
+def test_pathway_review_ranks_by_signed_evidence_and_derives_directional_foreground():
+    from io import BytesIO
+    from types import SimpleNamespace
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from devbench.platform import plugin_mcp
+
+    rows = pa.table(
+        {
+            "gene_id": ["noisy", "strong", "negative", "excluded", "underflow"],
+            "estimate_status": [
+                "estimated",
+                "estimated",
+                "estimated",
+                "filtered",
+                "estimated",
+            ],
+            "effect": [100.0, 0.5, -0.4, None, -0.2],
+            "p_value": [0.5, 0.0001, 0.001, None, 0.0],
+            "q_value": [0.6, 0.001, 0.01, None, 0.0],
+        }
+    )
+    buffer = BytesIO()
+    pq.write_table(rows, buffer)
+    executor = SimpleNamespace(open_output=lambda _: BytesIO(buffer.getvalue()))
+    source = {
+        "receipt_sha256": "a" * 64,
+        "artifact": {
+            "version_id": "fixture",
+            "sha256": "b" * 64,
+            "representation": "gene_statistics",
+            "biological_unit": "donor",
+            "kind": "table",
+            "unit_membership_sha256": "c" * 64,
+        },
+    }
+    universe, scores = plugin_mcp._pathway_universe(
+        executor, source, q_max=None, ranked=True
+    )
+    assert universe.genes == ("noisy", "strong", "negative", "underflow")
+    assert scores == pytest.approx(
+        {"noisy": 0.30103, "strong": 4, "negative": -3, "underflow": -300}
+    )
+    universe, effects = plugin_mcp._pathway_universe(
+        executor, source, q_max=0.05, ranked=False
+    )
+    assert universe.selected == ("strong", "negative", "underflow")
+    for direction, expected in [
+        ("up_only", ("strong",)),
+        ("down_only", ("negative", "underflow")),
+    ]:
+        assert plugin_mcp._pathway_foreground(universe, effects, direction) == expected
+
+
 def test_stdio_real_async_matrix_audit(workspace_tmp_path):
     from devharness_controlled.native_contracts import limma_voom_kernel_images
 
@@ -151,6 +228,7 @@ def test_stdio_real_async_matrix_audit(workspace_tmp_path):
             "-m",
             "devbench.platform.cli",
             "plugin-mcp",
+            "--no-auto-studio",
             "--input-root",
             str(inputs),
             "--workspace",
@@ -805,6 +883,224 @@ def _studio_readback(workspace, inputs, sid):
         server.server_close()
         thread.join(timeout=10)
         app.close()
+
+
+def test_stdio_large_private_h5ad_retains_reference_without_copy(workspace_tmp_path):
+    import hashlib
+
+    import h5py
+
+    from devbench.analysis.method_validation import MAX_DATASET_BYTES
+    from devbench.engine.methods import MethodService
+    from devbench.platform.plugin_jobs import JobStore
+    from devbench.platform.workbench_ui import WorkbenchService, make_server
+
+    inputs = workspace_tmp_path / "inputs"
+    inputs.mkdir(mode=0o700)
+    matrix = inputs / "counts.h5ad"
+    with h5py.File(matrix, "w") as handle:
+        handle.create_dataset("X", data=[[5]])
+        handle.create_group("obs").create_dataset("_index", data=[b"cell"])
+        handle.create_group("var").create_dataset("_index", data=[b"gene"])
+    size = MAX_DATASET_BYTES + 1
+    with matrix.open("r+b") as handle:
+        handle.truncate(size)
+    with matrix.open("rb") as handle:
+        checksum = hashlib.file_digest(handle, "sha256").hexdigest()
+
+    workspace = workspace_tmp_path / "workspace"
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=[
+            "-m", "devbench.platform.cli", "plugin-mcp", "--no-auto-studio", "--input-root", str(inputs),
+            "--workspace", str(workspace),
+        ],
+        env={
+            key: value for key, value in os.environ.items()
+            if key in {"PATH", "PYTHONPATH", "DYLD_LIBRARY_PATH"}
+        },
+    )
+    selected = {"path": str(matrix), "data_classification": "private"}
+
+    async def roundtrip():
+        async with stdio_client(params) as (reader, writer):
+            async with ClientSession(reader, writer) as client:
+                await client.initialize()
+                planned = await client.call_tool("plan_rna_workflow", {
+                    "operation": "matrix_audit", "inputs": [selected],
+                    "objective": "Inspect matrix in offline Studio",
+                })
+                assert not planned.isError, planned.structuredContent
+                handoff = planned.structuredContent
+                assert handoff["status"] == "local_studio_only"
+                assert checksum not in json.dumps(handoff)
+                assert str(matrix) not in json.dumps(handoff)
+                for tool, arguments in [
+                    ("execute_reviewed_plan", {key: handoff[key] for key in (
+                        "session_id", "plan_id", "plan_sha256",
+                    )}),
+                    ("inspect_rna_inputs", {
+                        "inputs": [{**selected, "data_classification": "public"}],
+                    }),
+                ]:
+                    denied = await client.call_tool(tool, arguments)
+                    assert denied.isError
+                    assert (
+                        denied.structuredContent["reason"]
+                        == "private_data_local_studio_only"
+                    )
+                return handoff["session_id"]
+
+    app = WorkbenchService(
+        workspace, [inputs], offline_only=True, enable_scientific=True,
+        interactive_adaptive=True,
+    )
+    server = make_server(app, port=0)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+    try:
+        sid = asyncio.run(roundtrip())
+        plan = JobStore(workspace).plan(sid)
+        profile = plan["profiles"][0]
+        assert (profile["source"], profile["sha256"], profile["size_bytes"]) == (
+            str(matrix), checksum, size,
+        )
+        methods = MethodService(workspace / "methods", readonly=True)
+        assert not (methods.root / "objects" / checksum).exists()
+        (reference,) = methods.list_records("artifact")
+        assert reference["artifact_type"] == "rna_local_input_reference"
+        reference_path = methods.artifact_path(reference["artifact_id"])
+        assert json.loads(reference_path.read_text()) == {
+            "format": "devbench.local-input-reference/1",
+            "file_type": "h5ad", "sha256": checksum, "size_bytes": size,
+        }
+
+        connection.request("GET", "/api/scientific/sessions")
+        response = connection.getresponse()
+        assert response.status == 200
+        (session,) = json.loads(response.read())["sessions"]
+        assert session["session_id"] == sid
+        assert session["data_classification"] == "private"
+        connection.request("GET", f"/api/scientific/adaptive/{sid}")
+        response = connection.getresponse()
+        assert response.status == 200
+        graph = json.loads(response.read())
+        assert graph["status"] == "available"
+        assert "plugin_session" not in graph
+        anchors = app.scientific._plan(sid)["scientific_anchors"]
+        (dataset_ref,) = anchors["dataset_versions"]
+        store = app.scientific.store()
+        dataset = store.get("dataset", dataset_ref["object_id"])
+        assert dataset["locations"] == {"expression-0": str(matrix)}
+        member = store.resolve(dataset_ref)["manifest"]["members"]["expression-0"]
+        assert member["artifact_id"] == reference["artifact_id"]
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=10)
+        app.close()
+
+
+def test_stdio_explicit_files_outside_input_root(workspace_tmp_path):
+    inputs = workspace_tmp_path / "inputs"
+    inputs.mkdir()
+    external = workspace_tmp_path / "other-folder"
+    external.mkdir()
+    counts = external / "counts.csv"
+    counts.write_text("gene,sample-a,sample-b\ng1,2,4\ng2,1,3\n")
+    symlink = external / "linked.csv"
+    symlink.symlink_to(counts)
+    workspace = workspace_tmp_path / "workspace"
+
+    async def roundtrip(allow_external):
+        args = [
+            "-m", "devbench.platform.plugin_mcp", "--no-auto-studio", "--input-root", str(inputs),
+            "--workspace", str(workspace),
+        ]
+        if allow_external:
+            args.append("--allow-external-input-files")
+        params = StdioServerParameters(
+            command=sys.executable, args=args,
+            env={key: value for key, value in os.environ.items()
+                 if key in {"PATH", "PYTHONPATH", "DYLD_LIBRARY_PATH"}},
+        )
+        async with stdio_client(params) as (reader, writer):
+            async with ClientSession(reader, writer) as client:
+                await client.initialize()
+                selected = {"path": str(counts), "data_classification": "synthetic"}
+                inspected = await client.call_tool(
+                    "inspect_rna_inputs", {"inputs": [selected]}
+                )
+                if not allow_external:
+                    assert inspected.isError
+                    return
+                assert not inspected.isError, inspected.structuredContent
+                profile = inspected.structuredContent["inputs"][0]
+                assert profile["size_bytes"] == counts.stat().st_size
+                cases = (
+                    ({"path": str(counts)}, "private_data_local_studio_only"),
+                    ({**selected, "path": str(symlink)}, "invalid_request"),
+                )
+                for raw, expected in cases:
+                    denied = await client.call_tool(
+                        "inspect_rna_inputs", {"inputs": [raw]}
+                    )
+                    assert denied.isError
+                    assert denied.structuredContent["reason"] == expected
+                planned = await client.call_tool("plan_rna_workflow", {
+                    "operation": "matrix_audit",
+                    "objective": "Inspect synthetic counts",
+                    "measurement": "non_umi_counts", "inputs": [selected],
+                })
+                assert not planned.isError, planned.structuredContent
+                frozen = planned.structuredContent
+                assert frozen["status"] == "planned"
+                started = await client.call_tool("execute_reviewed_plan", {
+                    key: frozen[key] for key in ("session_id", "plan_id", "plan_sha256")
+                })
+                assert not started.isError, started.structuredContent
+                run = started.structuredContent
+                key = {field: run[field] for field in ("session_id", "run_id")}
+                async with asyncio.timeout(60):
+                    while run["status"] in {"queued", "running"}:
+                        await asyncio.sleep(0.15)
+                        status = await client.call_tool("get_run_status", key)
+                        assert not status.isError, status.structuredContent
+                        run = status.structuredContent
+                assert run["status"] == "completed", run["warnings"]
+                private = await client.call_tool("plan_rna_workflow", {
+                    "operation": "matrix_audit", "objective": "Inspect locally",
+                    "inputs": [{"path": str(counts)}],
+                })
+                assert not private.isError, private.structuredContent
+                assert private.structuredContent["status"] == "local_studio_only"
+                assert str(counts) not in json.dumps(private.structuredContent)
+
+    asyncio.run(roundtrip(False))
+    asyncio.run(roundtrip(True))
+
+
+def test_selected_private_h5ad_does_not_inherit_discovery_cap(workspace_tmp_path):
+    import h5py
+
+    from devbench.analysis.workbench_inputs import InputDiscovery
+    from devbench.platform.plugin_mcp import Input, _profile
+
+    root = workspace_tmp_path
+    matrix = root / "cells.h5ad"
+    with h5py.File(matrix, "w") as handle:
+        handle.create_dataset("X", data=[[7]])
+        handle.create_group("obs").create_dataset("_index", data=[b"cell"])
+        handle.create_group("var").create_dataset("_index", data=[b"gene"])
+    discovery = InputDiscovery([root], max_file_bytes=1024)
+    item = Input(path=str(matrix), data_classification="private")
+    assert _profile(discovery, root, item)["observed"]["cells"] == 1
+    with pytest.raises(ValueError, match="inspection byte budget"):
+        discovery.inspect(matrix)
+    with pytest.raises(ValueError, match="inspection byte budget"):
+        _profile(discovery, root, Input(path=str(matrix), data_classification="public"))
 
 
 def test_single_cell_summary_preserves_safe_labels(monkeypatch):

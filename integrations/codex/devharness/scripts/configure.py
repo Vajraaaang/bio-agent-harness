@@ -288,6 +288,7 @@ def configure(
     expected_version=None,
     mounted_image_id=None,
     write_marketplace=None,
+    allow_external_input_files=False,
 ):
     python, input_root, workspace, output = _configuration_paths(
         python,
@@ -333,6 +334,8 @@ def configure(
     ]
     if image:
         arguments += ["--mounted-image-id", image]
+    if allow_external_input_files:
+        arguments.append("--allow-external-input-files")
     mcp = {
         "mcpServers": {
             "devharness": {
@@ -372,6 +375,7 @@ def main():
     parser.add_argument("--expect-version")
     parser.add_argument("--mounted-image-id")
     parser.add_argument("--write-marketplace", type=Path)
+    parser.add_argument("--allow-external-input-files", action="store_true")
     args = parser.parse_args()
     try:
         result = configure(
@@ -382,6 +386,7 @@ def main():
             expected_version=args.expect_version,
             mounted_image_id=args.mounted_image_id,
             write_marketplace=args.write_marketplace,
+            allow_external_input_files=args.allow_external_input_files,
         )
     except (ValueError, OSError, subprocess.TimeoutExpired) as error:
         parser.exit(2, str(error) + "\n")

@@ -315,9 +315,93 @@ for (const [tab, content] of Object.entries({overview:'Summary',
 """)
 
 
+def test_completed_plugin_report_and_workflow_use_the_matching_run_record():
+    _run(r"""
+const plan = 'b'.repeat(32), other = 'c'.repeat(32);
+const data = {session_id:sessionId,plugin_linked:true,graph:{entries:[]},
+  plugin_session:{dataset_label:'counts.csv', plans:[
+    {plan_id:other,inputs:[{name:'unrelated.csv'}]},
+    {plan_id:plan,plan_sha256:'a'.repeat(64),
+      inputs:[{name:'counts.csv',role:'expression',file_type:'csv'}],
+      design_summary:{measurement:'non_umi_counts',parameters:{threshold:3}}},
+  ],runs:[
+    {plan_id:plan,status:'completed',operation:'matrix_audit',run_id:'e'.repeat(32),
+      metrics:{genes:18},summary_tables:[{caption:'Expression audit',
+      columns:['Metric','Value'],rows:[['Genes',18]]}],
+      tool_receipts:[{step:'Matrix inspection',receipt_sha256:'d'.repeat(64)}],
+      limitations:['Counts were inspected without a statistical fit.']},
+  ]}};
+const actions=[];
+WorkbenchStudio.renderSession(container,'overview',data,{navigate:x=>actions.push(x)});
+assert.ok(textIn(container).includes('Run summary'));
+assert.ok(textIn(container).includes('Expression audit'));
+assert.ok(textIn(container).includes('18'));
+findButton(container,'View workflow').onclick();
+assert.deepEqual(actions,['workflows']);
+container.replaceChildren();
+assert.equal(WorkbenchStudio.pluginWorkflow(container,data),true);
+assert.ok(textIn(container).includes('Workflow record'));
+assert.ok(textIn(container).includes('counts.csv'));
+assert.ok(textIn(container).includes('Matrix inspection'));
+assert.ok(!textIn(container).includes('unrelated.csv'));
+WorkbenchStudio.renderSession(container,'code',data,{});
+assert.ok(textIn(container).includes('Recorded executions'));
+assert.ok(textIn(container).includes('execute_reviewed_plan'));
+assert.ok(findButton(container,'Download run record'));
+const attempt = {plugin_linked:true,graph:{entries:[
+  {entry_kind:'step',step_id:'fit',status:'succeeded'},
+]}};
+WorkbenchStudio.renderSession(container,'overview',attempt,{});
+assert.ok(textIn(container).includes('Run summary'));
+assert.ok(!textIn(container).includes('Expression audit'));
+""")
+
+
 def test_composed_studio_uses_no_html_assignment_or_external_style_urls():
     page = workbench_ui.render_page("studio-verification")
     script, = re.findall(r"<script\b[^>]*>(.*?)</script>", page, re.S)
     assert "innerHTML" not in script
     styles = re.findall(r"<style\b[^>]*>(.*?)</style>", page, re.S)
     assert styles and all("https://" not in style for style in styles)
+
+
+def test_studio_presents_retained_comparison_on_its_session_tabs():
+    _run(r"""
+const title = 'Matched developmental stages';
+const path = '/api/scientific/adaptive/'+sessionId+'/comparison/'+'b'.repeat(64)+'.png';
+const model = {session_id:sessionId, plugin_linked:true, graph:{entries:[]},
+  retained_comparison:{title,
+    stages:[{label:'E09',dataset:'e09.h5ad',cells:80},{label:'E10',dataset:'e10.h5ad',cells:40}],
+    tables:[{caption:'Motor neuron programs · all cells',
+      columns:['Program','E09','E10'],rows:[['Somatic motor','9 (11%)','10 (25%)']]},
+    {caption:'Cell states · screened cells',
+      columns:['State','E09','E10'],rows:[['Motor-like','12 (20%)','15 (75%)']]}],
+    figures:[{title:'Shared UMAP',download_path:path},
+      {title:'Other session',download_path:path.replace(sessionId,'c'.repeat(32))},
+      {title:'External path',download_path:'https://example.com/out.png'},
+      {title:'Unexpected query',download_path:path+'?other=1'}],
+    limitations:['Biological replicates remain unverified.']}};
+const navigation=[];
+const render = tab => WorkbenchStudio.renderSession(container,tab,model,{navigate:tab=>navigation.push(tab)});
+render('overview');
+assert.ok(textIn(container).includes(title));
+assert.ok(textIn(container).includes('e09.h5ad'));
+assert.ok(!textIn(container).includes('Completed / failed steps'));
+findButton(container,'View findings').onclick();
+findButton(container,'View figures').onclick();
+assert.deepEqual(navigation,['findings','figures']);
+render('findings');
+assert.ok(textIn(container).includes('Motor neuron programs · all cells'));
+assert.ok(textIn(container).includes('Cell states · screened cells'));
+assert.ok(textIn(container).includes('Biological replicates remain unverified.'));
+assert.ok(!textIn(container).includes('No current numerical tables are available. Review the recorded workflow and its evidence holds.'));
+render('figures');
+assert.deepEqual(walk(container).filter(item=>item.tagName==='img')
+  .map(item=>[item.src,item.alt]),[[path,'Shared UMAP']]);
+assert.ok(textIn(container).includes('Cell states · screened cells'));
+assert.equal(WorkbenchStudio.handoffView('workflows',model),'figures');
+assert.equal(WorkbenchStudio.handoffView('overview',model),'overview');
+assert.equal(WorkbenchStudio.handoffView('findings',model),'findings');
+assert.equal(WorkbenchStudio.handoffView('workflows',{...model,plugin_linked:false}),'workflows');
+assert.equal(WorkbenchStudio.handoffView('workflows',{...model,retained_comparison:null}),'workflows');
+""")

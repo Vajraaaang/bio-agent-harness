@@ -46,6 +46,8 @@ _RESOURCES = {
     "devharness_server/r/scrna_emptydrops.R",
     "devharness_server/r/scrna_scran.R",
     "devbench/analysis/assets/scientific-plot-verification.json",
+    "devbench/analysis/assets/plotly-strict.min.js.gz",
+    "devbench/analysis/assets/plotly-strict.LICENSE.txt",
     "devbench/analysis/assets/agentic-rna-v24-evaluation-protocol.md",
     "devbench/analysis/assets/2026-11-04-workbench-compute-contracts.schema.json",
     "devbench/analysis/assets/official-client-pins.json",

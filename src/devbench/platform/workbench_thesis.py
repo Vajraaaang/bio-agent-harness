@@ -341,59 +341,85 @@ def bind_workbench_pseudobulk(
     expected_revision: int,
 ) -> dict[str, Any]:
     """Bind a verified local pseudobulk capsule before separate research review."""
+    _validate_expected_revision(expected_revision)
+    with app._lock:
+        flow, lifecycle, executor = _checked_thesis_owner(app, session_id)
+        return _bind_pseudobulk_capsule(
+            flow, lifecycle, executor, (app.workspace, app.scientific.root),
+            staged=staged, step_id=step_id, branch_id=branch_id, profile=profile,
+            aim_id=aim_id, request=request, measurements=measurements,
+            design=design, expected_revision=expected_revision,
+        )
+
+
+def _bind_pseudobulk_capsule(
+    flow, lifecycle, executor, roots: tuple[Path, ...], *,
+    staged: StagedPseudobulk, step_id: str, branch_id: str,
+    profile: ProcedureProfile, aim_id: str, request: AnswerabilityRequest,
+    measurements: tuple[AttestedMeasurement, ...], design: DesignEvidence | None,
+    expected_revision: int,
+) -> dict[str, Any]:
+    """Bind the capsule under the graph transaction for an authorized owner."""
     from devbench.engine.mounted_kernel_oci import require_mounted_pipeline_runtime
 
     from .scrna_general_pseudobulk import register_general_pseudobulk
 
     _validate_expected_revision(expected_revision)
-    with app._lock:
-        flow, lifecycle, executor = _checked_thesis_owner(app, session_id)
-        _check_graph_revision(flow, expected_revision)
-        _workspace_path(staged.directory, (app.workspace, app.scientific.root))
-        plan = _pseudobulk_scope(staged, request, measurements, design)
-        require_mounted_pipeline_runtime(
-            plan, executor.mounted_image_id, representation="raw_counts_h5",
+    session_id = flow.lineage_id
+    if (
+        type(lifecycle) is not ThesisWorkflow
+        or type(executor) is not TierAExecutor
+        or lifecycle.lineage_id != session_id
+        or lifecycle.ledger.path != executor.ledger.path
+        or flow.ledger.path != executor.ledger.path
+    ):
+        raise PermissionError("Use the current scientific lineage and executor")
+    _check_graph_revision(flow, expected_revision)
+    _workspace_path(staged.directory, roots)
+    plan = _pseudobulk_scope(staged, request, measurements, design)
+    require_mounted_pipeline_runtime(
+        plan, executor.mounted_image_id, representation="raw_counts_h5",
+    )
+    parameters, inputs = register_general_pseudobulk(
+        executor, staged, workflow=flow,
+    )
+    preflight = executor.mounted_design_preflight(parameters)
+    step = _pseudobulk_step(
+        plan, profile, step_id, branch_id, executor, parameters, inputs,
+    )
+    runtime = RuntimeEvidence(
+        question=request.question, tier="tier_a",
+        operation_id=TIER_A_BULK_OPERATION,
+        runtime_sha256=executor.environment_sha256,
+    )
+    with flow.authority._execution_tx(session_id) as db:
+        _check_graph_revision(flow, expected_revision, connection=db)
+        _retain_pseudobulk_inputs(flow, db, staged, inputs)
+        candidate, decision = lifecycle.bind_step(
+            step, aim_id=aim_id, request=request, measurements=measurements,
+            backend_id=executor.backend_id, design=design, runtime=runtime,
+            connection=db,
         )
-        parameters, inputs = register_general_pseudobulk(
-            executor, staged, workflow=flow,
-        )
-        preflight = executor.mounted_design_preflight(parameters)
-        step = _pseudobulk_step(
-            plan, profile, step_id, branch_id, executor, parameters, inputs,
-        )
-        runtime = RuntimeEvidence(
-            question=request.question, tier="tier_a",
-            operation_id=TIER_A_BULK_OPERATION,
-            runtime_sha256=executor.environment_sha256,
-        )
-        with flow.authority._execution_tx(session_id) as db:
-            _check_graph_revision(flow, expected_revision, connection=db)
-            _retain_pseudobulk_inputs(flow, db, staged, inputs)
-            candidate, decision = lifecycle.bind_step(
-                step, aim_id=aim_id, request=request, measurements=measurements,
-                backend_id=executor.backend_id, design=design, runtime=runtime,
-                connection=db,
+        ready = decision.status == "ready"
+        if ready:
+            scope = lifecycle.require_step(
+                db, candidate, inputs=inputs, basis=flow._state(db).basis,
+                environment=executor.environment_sha256,
             )
-            ready = decision.status == "ready"
-            if ready:
-                scope = lifecycle.require_step(
-                    db, candidate, inputs=inputs, basis=flow._state(db).basis,
-                    environment=executor.environment_sha256,
-                )
-                check_thesis_backend(
-                    {"step": candidate.model_dump(mode="json"), "thesis_scope": scope},
-                    executor.backend_id, validated_specification=plan,
-                )
-                flow.insert(
-                    candidate, connection=db, evidence_sha256=staged.provenance_sha256,
-                )
-            return {
-                "step_id": candidate.step_id if ready else None,
-                "decision": decision.model_dump(mode="json"),
-                "revision": _graph_revision(flow, connection=db),
-                "capsule_sha256": staged.provenance_sha256,
-                "structural_design_sha256": preflight["sha256"],
-            }
+            check_thesis_backend(
+                {"step": candidate.model_dump(mode="json"), "thesis_scope": scope},
+                executor.backend_id, validated_specification=plan,
+            )
+            flow.insert(
+                candidate, connection=db, evidence_sha256=staged.provenance_sha256,
+            )
+        return {
+            "step_id": candidate.step_id if ready else None,
+            "decision": decision.model_dump(mode="json"),
+            "revision": _graph_revision(flow, connection=db),
+            "capsule_sha256": staged.provenance_sha256,
+            "structural_design_sha256": preflight["sha256"],
+        }
 
 
 def write_workbench_thesis_package(

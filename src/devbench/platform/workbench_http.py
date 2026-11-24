@@ -11,10 +11,68 @@ import secrets
 import shutil
 from dataclasses import dataclass
 from http.client import HTTPMessage
+from importlib import import_module
 from typing import Any
 from urllib.parse import SplitResult, parse_qs, quote, urlencode, urlsplit
 
 _UNHANDLED_ROUTE = object()
+_PLOTLY_FRAME = re.compile(
+    r"/api/scientific/adaptive/([0-9a-f]{32})/"
+    r"(motor-umap|comparison)/([0-9a-f]{64})/plotly"
+)
+_RECEIPT_PLOTLY_FRAME = re.compile(
+    r"/api/scientific/adaptive/([0-9a-f]{32})/receipt-plot/"
+    r"([0-9a-f]{32})/(0|[1-9][0-9]{0,2})/([0-9a-f]{64})/plotly"
+)
+
+
+def _plotly_options(query: str) -> tuple[str, str | None]:
+    params = parse_qs(query, strict_parsing=True, keep_blank_values=True)
+    if set(params) - {"theme", "project_id"} or any(
+        len(values) != 1 for values in params.values()
+    ):
+        raise ValueError("Invalid interactive figure options")
+    theme = params.get("theme", ["light"])[0]
+    project = params["project_id"][0] if "project_id" in params else None
+    if theme not in {"light", "dark"} or (
+        project is not None and not re.fullmatch(r"[0-9a-f]{32}", project)
+    ):
+        raise ValueError("Invalid interactive figure options")
+    return theme, project
+
+
+def _motor_figure_artifact(app, session_id, kind, checksum):
+    motor = import_module(".plugin_motor_umap", __package__)
+    graph_reader = getattr(motor, "studio_graph_artifact", None)
+    if graph_reader is not None:
+        verified = graph_reader(app, session_id, kind, checksum)
+        if verified is not None:
+            return verified, True
+    return motor.studio_artifact(app, session_id, kind, checksum), False
+
+
+def _require_local_graph_source(app, checksum):
+    from devbench.analysis.scientific_publication import (
+        _known_adaptive_identity,
+        _visible_publication_ledgers,
+    )
+    from devbench.engine.partition_authority import embargoed
+    from devbench.engine.scientific_authority import check_schema
+    from devbench.engine.workflow_operations import LEDGER_NAME, WorkflowOperationLedger
+
+    # The verified artifact reader checks the current output and embargoes in
+    # its own ledger. Retain any matching veto from another visible authority.
+    owned = (app.workspace / "methods" / LEDGER_NAME).resolve()
+    for path in _visible_publication_ledgers(app):
+        if path == owned:
+            continue
+        ledger = WorkflowOperationLedger(path, readonly=True)
+        with ledger._database() as db:
+            db.execute("BEGIN")
+            if check_schema(db) and (
+                embargoed(db, checksum) or _known_adaptive_identity(ledger, db, checksum)
+            ):
+                raise PermissionError("publication_source_withheld")
 
 
 @dataclass(frozen=True)
@@ -152,6 +210,7 @@ class _WorkbenchHandler:
         source_sha256,
         revision_root=None,
         presentation_request=None,
+        plotly_nonce=None,
     ):
         ui = self._ui
         if not re.fullmatch(r"[0-9a-f]{64}", source_sha256 or ""):
@@ -196,6 +255,8 @@ class _WorkbenchHandler:
             len(content),
             filename=filename,
             revision_root=revision_root,
+            nonce=plotly_nonce,
+            plotly_frame=plotly_nonce is not None,
         )
         self.wfile.write(content)
 
@@ -207,6 +268,19 @@ class _WorkbenchHandler:
         self._publication_response = rendered
         self._headers(200, media_type, len(rendered.content), filename=filename)
         self.wfile.write(rendered.content)
+
+    def _local_graph_presentation_bytes(
+        self, content, media_type, filename, *, source_sha256, plotly_nonce=None,
+    ):
+        """Present exact, current graph bytes to the local Studio operator."""
+        if self._response_app.offline_only is not True or self._delivery() is not None:
+            raise PermissionError("Private figures require local offline Studio")
+        _require_local_graph_source(self._response_app, source_sha256)
+        self._headers(
+            200, media_type, len(content), filename=filename,
+            nonce=plotly_nonce, plotly_frame=plotly_nonce is not None,
+        )
+        return self.wfile.write(content)
 
     def end_headers(self):
         if not self._headers_prepared:
@@ -229,6 +303,7 @@ class _WorkbenchHandler:
         nonce=None,
         filename=None,
         revision_root=None,
+        plotly_frame=False,
     ):
         self._reserve_response(content_type, size)
         self._headers_prepared = True
@@ -238,16 +313,24 @@ class _WorkbenchHandler:
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("X-Frame-Options", "DENY")
-        csp = (
-            "default-src 'none'; base-uri 'none'; "
-            "frame-ancestors 'none'; form-action 'none'"
-        )
-        if nonce:
-            csp += (
-                f"; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
-                "connect-src 'self'; img-src 'self' blob: data:"
+        self.send_header("X-Frame-Options", "SAMEORIGIN" if plotly_frame else "DENY")
+        if plotly_frame:
+            csp = (
+                "default-src 'none'; base-uri 'none'; form-action 'none'; "
+                "frame-ancestors 'self'; sandbox allow-scripts; "
+                f"script-src 'nonce-{nonce}'; style-src 'unsafe-inline'; "
+                "img-src data: blob:"
             )
+        else:
+            csp = (
+                "default-src 'none'; base-uri 'none'; "
+                "frame-ancestors 'none'; form-action 'none'"
+            )
+            if nonce:
+                csp += (
+                    f"; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
+                    "connect-src 'self'; img-src 'self' blob: data:; frame-src 'self'"
+                )
         self.send_header("Content-Security-Policy", csp)
         if filename:
             fallback = re.sub(r"[^a-zA-Z0-9._ -]", "_", filename)
@@ -389,10 +472,14 @@ class _WorkbenchHandler:
         self.wfile.write(body)
         return
 
-    def _bind_project(self):
+    def _bind_project(self, frame_project: str | None = None):
         project_hub = self._project_hub
         default_project_id, default_app = self._default_project_id, self._default_app
         project_headers = self.headers.get_all("X-Workbench-Project") or []
+        if frame_project is not None:
+            if project_headers and project_headers != [frame_project]:
+                raise ValueError("Interactive figure project mismatch")
+            project_headers = [frame_project]
         if len(project_headers) > 1:
             raise ValueError("Use one project identifier")
         if project_headers and (
@@ -923,6 +1010,23 @@ class _WorkbenchHandler:
             admitted=True,
         )
 
+    def _private_plugin_routes(self, request: _Request):
+        target = request.target
+        app = request.app
+        private_run = re.fullmatch(
+            r"/api/scientific/adaptive/([0-9a-f]{32})/plugin-execute", target.path,
+        )
+        if not private_run or not request.mutation or target.query:
+            return _UNHANDLED_ROUTE
+        if app.offline_only is not True or app.allow_data_execution is not True or (
+            self._project_hub is not None
+            and self._project_hub.read_only(request.project_id)
+        ):
+            raise PermissionError("Private graph steps require offline Studio execution")
+        from .plugin_graph_studio import studio_launch
+
+        return self._json(studio_launch(app, private_run[1], request.body), 202, admitted=True)
+
     def _adaptive_routes(self, request: _Request):
         target = request.target
         app = request.app
@@ -972,6 +1076,57 @@ class _WorkbenchHandler:
                 return self._json(release_evaluation_view())
         return _UNHANDLED_ROUTE
 
+    def _shared_motor_umap_routes(self, request: _Request):
+        code = re.fullmatch(
+            r"/api/scientific/adaptive/([0-9a-f]{32})/motor-umap/"
+            r"code/(source|replay)/([0-9a-f]{64})",
+            request.target.path,
+        )
+        if code is not None and not request.mutation and not request.target.query:
+            from .plugin_motor_umap import studio_code_artifact
+
+            content, media, filename = studio_code_artifact(request.app, *code.groups())
+            return self._publication_bytes(
+                content, media, filename, source_sha256=code[3],
+            )
+        route = re.fullmatch(
+            r"/api/scientific/adaptive/([0-9a-f]{32})/motor-umap"
+            r"(?:/(umap|markers|coordinates|composition|parameters)/([0-9a-f]{64}))?",
+            request.target.path,
+        )
+        if (
+            route is None or request.target.query
+            or request.mutation != (route[2] is None)
+        ):
+            return _UNHANDLED_ROUTE
+        if request.app.offline_only is not True:
+            raise PermissionError("Shared motor-neuron UMAP requires offline Studio")
+        session_id, kind, checksum = route.groups()
+        if request.mutation:
+            return self._launch_shared_motor_umap(request, session_id)
+
+        (content, media, filename), local_graph = _motor_figure_artifact(
+            request.app, session_id, kind, checksum,
+        )
+        filename = None if media == "image/png" else filename
+        if local_graph:
+            return self._local_graph_presentation_bytes(
+                content, media, filename, source_sha256=checksum,
+            )
+        return self._publication_bytes(
+            content, media, filename, source_sha256=checksum,
+        )
+
+    def _launch_shared_motor_umap(self, request: _Request, session_id: str):
+        if request.app.allow_data_execution is not True or (
+            self._project_hub is not None
+            and self._project_hub.read_only(request.project_id)
+        ):
+            raise PermissionError("Local execution is disabled for this workspace")
+        from .plugin_motor_umap import studio_launch
+
+        return self._json(studio_launch(request.app, session_id, request.body), 202)
+
     def _studio_read_routes(self, request: _Request):
         if request.mutation or request.target.query:
             return _UNHANDLED_ROUTE
@@ -980,6 +1135,28 @@ class _WorkbenchHandler:
             from .workbench_adaptive import adaptive_session_catalog
 
             return self._json(adaptive_session_catalog(request.app), admitted=True)
+        figure = re.fullmatch(
+            r"/api/scientific/adaptive/([0-9a-f]{32})/comparison/([0-9a-f]{64})\.png",
+            path,
+        )
+        if figure is not None:
+            from .workbench_retained_comparison import local_comparison_figure
+
+            session_id, sha256 = figure.groups()
+            content = local_comparison_figure(request.app, session_id, sha256)
+            return self._publication_bytes(
+                content, "image/png", None, source_sha256=sha256
+            )
+        local_analysis = re.fullmatch(
+            r"/api/scientific/adaptive/([0-9a-f]{32})/local-analysis/([0-9a-f]{64})\.png",
+            path,
+        )
+        if local_analysis is not None:
+            from .workbench_local_analysis import local_analysis_figure
+
+            session_id, sha256 = local_analysis.groups()
+            content = local_analysis_figure(request.app, session_id, sha256)
+            return self._publication_bytes(content, "image/png", None, source_sha256=sha256)
         package = re.fullmatch(
             r"/api/scientific/adaptive/([0-9a-f]{32})/package/([0-9a-f]{32})/zip",
             path,
@@ -994,14 +1171,61 @@ class _WorkbenchHandler:
         )
         return self.wfile.write(content)
 
+    def _studio_plotly_route(self, request: _Request):
+        frame = _PLOTLY_FRAME.fullmatch(request.target.path)
+        receipt = _RECEIPT_PLOTLY_FRAME.fullmatch(request.target.path)
+        if request.mutation or (frame is None and receipt is None):
+            return _UNHANDLED_ROUTE
+        if request.app.offline_only is not True:
+            raise PermissionError("Interactive figures require offline Studio")
+        from .workbench_plotly import motor_umap_figure, render_plotly_frame
+
+        theme, _ = _plotly_options(request.target.query)
+        local_graph = False
+        if receipt is not None:
+            from .workbench_receipt_plots import receipt_plotly
+
+            session_id, run_id, index, identity = receipt.groups()
+            figure, checksum = receipt_plotly(
+                request.app, session_id, run_id, int(index), identity,
+            )
+        elif frame is not None and frame[2] == "motor-umap":
+            session_id, _, checksum = frame.groups()
+            (coordinates, _, _), local_graph = _motor_figure_artifact(
+                request.app, session_id, "coordinates", checksum,
+            )
+            figure = motor_umap_figure(coordinates)
+        else:
+            from .workbench_retained_comparison import local_comparison_plotly
+
+            assert frame is not None
+            session_id, _, checksum = frame.groups()
+            figure = local_comparison_plotly(request.app, session_id, checksum)
+        content, nonce = render_plotly_frame(figure, theme)
+        if local_graph:
+            return self._local_graph_presentation_bytes(
+                content, "text/html; charset=utf-8", None,
+                source_sha256=checksum, plotly_nonce=nonce,
+            )
+        return self._publication_bytes(
+            content, "text/html; charset=utf-8", None,
+            source_sha256=checksum, plotly_nonce=nonce,
+        )
+
     def _adaptive_json(self, app, view):
         from devbench.analysis.scientific_publication import project_subject_metadata
 
         studio = {
             key: view.pop(key)
-            for key in ("session_summary", "plugin_session", "packages")
+            for key in (
+                "session_summary", "plugin_session", "packages", "retained_comparison",
+                "shared_motor_umap", "private_workflow", "local_analysis",
+            )
             if key in view
         }
+        if app.offline_only is not True:
+            studio.pop("private_workflow", None)
+            studio.pop("local_analysis", None)
         projected = project_subject_metadata(
             app,
             view,
@@ -1318,7 +1542,10 @@ class _WorkbenchHandler:
         response = _route_to(
             request,
             (
+                self._studio_plotly_route,
                 self._studio_read_routes,
+                self._shared_motor_umap_routes,
+                self._private_plugin_routes,
                 self._adaptive_routes,
                 self._research_routes,
                 self._scientific_publication_routes,
@@ -1365,7 +1592,13 @@ class _WorkbenchHandler:
                 raise ValueError("Use an allowed local route")
             if not mutation and target.path == "/":
                 return self._render_home(target)
-            app, project_id = self._bind_project()
+            frame_project = None
+            if not mutation and (
+                _PLOTLY_FRAME.fullmatch(target.path)
+                or _RECEIPT_PLOTLY_FRAME.fullmatch(target.path)
+            ):
+                _, frame_project = _plotly_options(target.query)
+            app, project_id = self._bind_project(frame_project)
             if mutation and target.path == "/api/inputs/import":
                 if self._project_hub is not None and self._project_hub.read_only(
                     project_id,

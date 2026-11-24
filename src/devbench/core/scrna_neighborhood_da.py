@@ -11,13 +11,13 @@ import pandas as pd
 from numpy.typing import NDArray
 from pydantic import Field, model_validator
 from scipy.spatial import cKDTree
+from scipy.stats import chi2, rankdata
 
-from rna_kernels.nb_irls import DenseDesign, NBIRLSGene, fit_statsmodels_nb
+from rna_kernels.nb_irls import DenseDesign, NBIRLSGene, _deviance, fit_statsmodels_nb
 from rna_kernels.normalization import (
     MAX_BLOCK_BYTES,
     calibrate_count_family,
     calibrate_counts,
-    median_ratio_factors,
     select_calibration_panel_indices,
 )
 
@@ -51,6 +51,7 @@ class NeighborhoodDASpec(FrozenContract):
     k: int = Field(ge=1)
     prop: float = Field(gt=0, le=1)
     seed: int = Field(ge=0, lt=2**32)
+    refined: bool = True
 
 
 class NeighborhoodDAStatistic(FrozenContract):
@@ -150,14 +151,23 @@ def _graph(
 
     rng = np.random.default_rng(spec.seed)
     centers = np.sort(rng.choice(n_cells, n_centers, replace=False))
-    # The query contains the center; the final column is the k-th other cell.
-    distances, members = cKDTree(coordinates).query(coordinates[centers], k=spec.k + 1)
+    tree = cKDTree(coordinates)
+    distances, members = tree.query(coordinates[centers], k=spec.k + 1)
+    if spec.refined and np.all(np.isfinite(distances[:, -1]) & (distances[:, -1] > 0)):
+        medians = np.stack(
+            [
+                np.median(coordinates[neighbors[neighbors != center]], axis=0)
+                for center, neighbors in zip(centers, members, strict=True)
+            ]
+        )
+        centers = np.unique(tree.query(medians, k=1)[1])
+        distances, members = tree.query(coordinates[centers], k=spec.k + 1)
     radii = distances[:, -1].copy()
     if not np.isfinite(radii).all():
         raise ValueError("nonfinite_kth_neighbor_distance")
     if np.any(radii <= 0):
         raise ValueError("zero_kth_neighbor_distance")
-    counts = np.empty((n_centers, n_donors), dtype=np.int64)
+    counts = np.empty((len(centers), n_donors), dtype=np.int64)
     for row, neighbors in enumerate(members):
         counts[row] = np.bincount(donor_indexes[neighbors], minlength=n_donors)
     return _Neighborhoods(centers, members, radii, counts)
@@ -191,21 +201,69 @@ def _spatial_fdr(
     return result
 
 
+def _tmm_offsets(
+    counts: _Counts, total_cells: _Counts, donor_ids: pd.Index
+) -> tuple[_Floats, dict]:
+    upper_quartiles = np.quantile(counts, 0.75, axis=0) / total_cells
+    reference = int(
+        np.argmax(np.sqrt(counts).sum(axis=0))
+        if np.median(upper_quartiles) < 1e-20
+        else np.argmin(np.abs(upper_quartiles - upper_quartiles.mean()))
+    )
+    log_factors = np.zeros(len(total_cells))
+    fallback = []
+    for i, library in enumerate(total_cells):
+        if i == reference:
+            continue
+        shared = (counts[:, i] > 0) & (counts[:, reference] > 0)
+        observed, baseline = counts[shared, i], counts[shared, reference]
+        log_obs = np.log(observed / library)
+        log_ref = np.log(baseline / total_cells[reference])
+        m, a = log_obs - log_ref, (log_obs + log_ref) / 2
+        count_variance = (1 - observed / library) / observed + (
+            1 - baseline / total_cells[reference]
+        ) / baseline
+        trim_m, trim_a = int(0.30 * len(m)), int(0.05 * len(a))
+        mr, ar = rankdata(m), rankdata(a)
+        keep = (
+            (mr >= trim_m + 1)
+            & (mr <= len(m) - trim_m)
+            & (ar >= trim_a + 1)
+            & (ar <= len(a) - trim_a)
+            & (count_variance > 0)
+        )
+        if keep.any():
+            log_factors[i] = np.average(m[keep], weights=1 / count_variance[keep])
+        else:
+            fallback.append(donor_ids[i])
+    log_factors -= log_factors.mean()
+    effective = np.log(total_cells) + log_factors
+    factors = np.exp(effective - effective.mean())
+    return factors, {
+        "method": "tmm",
+        "scope": "all_sampled_neighborhoods_with_total_donor_cell_libraries",
+        "reference_donor": donor_ids[reference],
+        "per_donor_total_cells": dict(
+            zip(donor_ids, total_cells.tolist(), strict=True)
+        ),
+        "per_donor_tmm_factors": dict(
+            zip(donor_ids, np.exp(log_factors).tolist(), strict=True)
+        ),
+        "per_donor_size_factors": dict(zip(donor_ids, factors.tolist(), strict=True)),
+        "donors_without_tmm_weight_support": fallback,
+    }
+
+
 def _calibrate(
     counts: _Counts,
     centers: tuple[str, ...],
     design: pd.DataFrame,
     seed: int,
+    total_cells: _Counts,
 ) -> tuple[_Floats, dict, dict, dict, list[dict], list[str]]:
-    factors, normalization = median_ratio_factors(counts, centers)
-    normalization.update(
-        scope="all_sampled_neighborhoods",
-        reference_feature="neighborhood_center_cell_id",
-        per_donor_size_factors=dict(zip(design.index, factors.tolist(), strict=True)),
-    )
+    factors, normalization = _tmm_offsets(counts, total_cells, design.index)
 
-    # Fit one bounded empirical-Bayes pilot with the whole-neighborhood RLE
-    # factors, then reuse its dispersion reference for every tested row.
+    # Reuse the same empirical-Bayes dispersion reference and TMM exposure.
     indices, panel = select_calibration_panel_indices(
         centers, len(design), (), seed=seed
     )
@@ -261,6 +319,81 @@ def _test_estimate(batch: Any, row: int, alpha: float, contrast: _Floats) -> _Es
     )
 
 
+def _nb_fitted_mean(
+    counts: _Floats, design: DenseDesign, alpha: float, offset: _Floats
+) -> _Floats | None:
+    # The streaming IRLS kernel deliberately rejects exact fits. A saturated
+    # model's likelihood supremum is the saturated likelihood, including zeros.
+    if design.size == len(counts):
+        return counts
+    fitted = fit_statsmodels_nb(design, counts[None, :], [alpha], offset)
+    if fitted.converged[0]:
+        return np.exp(design.matrix @ fitted.params[0] + offset)
+    if np.all(counts > 0):
+        log_mean = np.log(counts) - offset
+        coefficients = np.linalg.lstsq(design.matrix, log_mean, rcond=None)[0]
+        if np.allclose(design.matrix @ coefficients, log_mean, rtol=0, atol=1e-10):
+            return counts
+    return None
+
+
+def _nb_boundary_contrast(
+    counts: _Floats, design: DenseDesign, offset: _Floats, alpha: float
+) -> _Estimate:
+    """NB LRT on observed counts when one arm's fitted means reach zero."""
+    matrix = design.matrix
+    treated = matrix[:, 1] == 1
+    if not counts.any():
+        return _Estimate(alpha=alpha, reason="nb_boundary_all_counts_zero")
+    positive_arm = treated if counts[treated].any() else ~treated
+    nuisance = np.delete(matrix, 1, axis=1)
+    null = _nb_fitted_mean(counts, DenseDesign(nuisance), alpha, offset)
+    # On the nonzero arm, nuisance levels can drop out. Use a full-rank
+    # basis for the original fitted subspace.
+    u, singular, _ = np.linalg.svd(nuisance[positive_arm], full_matrices=False)
+    rank = np.count_nonzero(
+        singular > singular[0] * max(nuisance.shape) * np.finfo(float).eps
+    )
+    active_counts = counts[positive_arm]
+    alternative = _nb_fitted_mean(
+        active_counts, DenseDesign(u[:, :rank]), alpha, offset[positive_arm]
+    )
+    if null is None or alternative is None:
+        return _Estimate(alpha=alpha, reason="nb_boundary_likelihood_nonconvergence")
+    null_dev = _deviance(counts[None, :], null[None, :], alpha)[0]
+    active_dev = (
+        0.0
+        if alternative is active_counts
+        else _deviance(active_counts[None, :], alternative[None, :], alpha)[0]
+    )
+    statistic = float(null_dev - active_dev)
+    if not math.isfinite(statistic) or statistic < -1e-7:
+        return _Estimate(alpha=alpha, reason="nb_boundary_likelihood_invalid")
+
+    # Use a library-scaled prior count only for the finite descriptive effect
+    # and its model-based SE. The LRT above uses the original counts.
+    exposure = np.exp(offset)
+    stabilized = counts + 0.5 * exposure / exposure.mean()
+    mu = _nb_fitted_mean(stabilized, design, alpha, offset)
+    if mu is None:
+        return _Estimate(alpha=alpha, reason="nb_boundary_prior_count_nonconvergence")
+    contrast = np.eye(design.size)[[1]]
+    effect = np.linalg.lstsq(matrix, np.log(mu) - offset, rcond=None)[0][1]
+    variance = design.contrast_covariance((mu / (1 + alpha * mu))[None, :], contrast)[
+        0, 0, 0
+    ]
+    if not math.isfinite(variance) or variance <= 0:
+        return _Estimate(
+            alpha=alpha, reason="nb_boundary_prior_count_covariance_unavailable"
+        )
+    return _Estimate(
+        alpha,
+        float(effect / math.log(2)),
+        math.sqrt(variance) / math.log(2),
+        max(math.ulp(0.0), float(chi2.sf(statistic, 1))),
+    )
+
+
 def _fit_estimates(
     counts: _Counts,
     centers: tuple[str, ...],
@@ -279,17 +412,19 @@ def _fit_estimates(
         alpha = entry.get("dispersion_alpha")
         if center in filtered:
             estimates.append(_Estimate(reason=filtered[center]))
-        elif not (counts[row, treated].any() and counts[row, ~treated].any()):
-            estimates.append(_Estimate(reason="condition_without_count_support"))
         elif not entry.get("dispersion_converged") or (
             alpha is None or not math.isfinite(alpha) or alpha < 1e-7
         ):
             estimates.append(_Estimate(reason="dispersion_unavailable_or_nonconverged"))
-        else:
+        elif counts[row, treated].any() and counts[row, ~treated].any():
             estimates.append(_Estimate(alpha))
+        else:
+            estimates.append(_nb_boundary_contrast(counts[row], design, offset, alpha))
 
     eligible = [
-        row for row, estimate in enumerate(estimates) if estimate.reason is None
+        row
+        for row, estimate in enumerate(estimates)
+        if estimate.reason is None and estimate.probability is None
     ]
     with warnings.catch_warnings(record=True) as observed:
         warnings.simplefilter("always")
@@ -388,7 +523,13 @@ def fit_neighborhood_da(
         filtered,
         calibration_diagnostics,
         cal_warnings,
-    ) = _calibrate(neighborhoods.counts, center_ids, design, spec.seed)
+    ) = _calibrate(
+        neighborhoods.counts,
+        center_ids,
+        design,
+        spec.seed,
+        np.bincount(donor_indexes, minlength=len(donors)),
+    )
     estimates, fit_warnings = _fit_estimates(
         neighborhoods.counts,
         center_ids,
@@ -423,10 +564,16 @@ def fit_neighborhood_da(
         neighborhoods=rows,
         limitations=(
             "Each neighborhood contains its center and k nearest other cells.",
+            "Refinement snaps each sampled neighbor median to the nearest vertex "
+            "and deduplicates the centers.",
             "The count hash uses row-major little-endian signed int64 counts.",
-            "RLE assumes most neighborhoods are stable or changes are balanced.",
+            "TMM uses total cells per donor as library sizes and assumes stable "
+            "or balanced neighborhoods.",
             "Relative abundance estimates condition on the supplied embedding.",
-            f"Two-sided {NB_NORMAL_WALD_REFERENCE}.",
+            f"Two-sided {NB_NORMAL_WALD_REFERENCE} when both arms have counts. "
+            "An all-zero arm uses a conditional NB likelihood-ratio test on observed "
+            "counts and a library-scaled 0.5 prior count for the finite log2 effect "
+            "and standard error.",
             "Probability underflow uses the smallest positive float.",
             "Failed tests contribute p=1 to correction; statistics remain null.",
         ),

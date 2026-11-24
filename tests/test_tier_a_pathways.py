@@ -10,6 +10,8 @@ from devbench.core.rna_pathway_analysis import (
     GeneSet,
     PathwayPlan,
     PathwayResult,
+    admit_pathway_request,
+    ranked_scores_sha256,
 )
 from devbench.core.rna_pathway_analysis import (
     TestedGeneUniverse as GeneUniverse,
@@ -20,7 +22,13 @@ from devbench.platform.adaptive_workflow_state import ArtifactVersion, BasisUse
 from devbench.platform.workflow_actions import WorkflowActions
 from devharness_controlled.native_contracts import pathway_kernel_images
 from tests.test_investigation_invalidation import digest, make
-from tests.test_p3_rna_pathways import _camera_input, _plan, _universe
+from tests.test_p3_rna_pathways import (
+    _camera_input,
+    _mounts,
+    _plan,
+    _run_pinned,
+    _universe,
+)
 from tests.test_tier_a_executor import _fixture, _submit
 
 pytestmark = pytest.mark.wal
@@ -106,6 +114,122 @@ def test_pathway_registration_requires_independent_design_and_current_basis(
     with pytest.raises(PermissionError, match="current pathway evidence basis"):
         _register(executor, flow, camera, verify_design=lambda actual: actual == camera)
     assert not flow.authority.attempts(flow.lineage_id)
+
+
+def test_ranked_and_directional_recipes_check_the_retained_gene_family(monkeypatch):
+    from io import BytesIO
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from devbench.engine import tier_a_pathways
+    from devbench.engine.tier_a_scrna import mounted_single_cell_request
+
+    universe = _universe()
+    effects = [1.0, -1.0, *([0.0] * 6), 8.0]
+    rows = pa.table(
+        {
+            "gene_id": [*universe.genes, "untested"],
+            "estimate_status": [*(["estimated"] * 8), "filtered"],
+            "p_value": [*([0.01] * 8), None],
+            "q_value": [*([0.04] * 8), None],
+            "effect": effects,
+        }
+    )
+    handle = BytesIO()
+    pq.write_table(rows, handle)
+    monkeypatch.setattr(
+        tier_a_pathways, "_verify_tested_receipt", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        tier_a_pathways, "open_pathway_input", lambda *_: BytesIO(handle.getvalue())
+    )
+    ranked_plan = _plan("fgsea")
+    scores = dict(zip(universe.genes, effects, strict=False))
+    ranked = universe.model_copy(
+        update={
+            "ranked_scores_sha256": ranked_scores_sha256(
+                universe.genes, tuple(scores.values())
+            )
+        }
+    )
+    accepted = admit_pathway_request(
+        ranked_plan,
+        universe=ranked,
+        verify_universe=lambda _: True,
+        ranked_scores=scores,
+    )
+    tier_a_pathways._verify_retained_tested_family(None, None, None, accepted)
+    foreign = dict(scores)
+    foreign["untested"] = foreign.pop("g7")
+    with pytest.raises(ValueError, match="scores for every tested gene"):
+        admit_pathway_request(
+            ranked_plan,
+            universe=ranked,
+            verify_universe=lambda _: True,
+            ranked_scores=foreign,
+        )
+    altered_axis = ranked.model_copy(
+        update={
+            "genes": tuple(foreign),
+            "ranked_scores_sha256": ranked_scores_sha256(
+                tuple(foreign), tuple(foreign.values())
+            ),
+        }
+    )
+    altered = admit_pathway_request(
+        ranked_plan,
+        universe=altered_axis,
+        verify_universe=lambda _: True,
+        ranked_scores=foreign,
+    )
+    with pytest.raises(
+        PermissionError, match="exact ordered filtered tested background"
+    ):
+        tier_a_pathways._verify_retained_tested_family(None, None, None, altered)
+
+    plan = _plan("ora").model_copy(update={"foreground_direction": "up_only"})
+    accepted = admit_pathway_request(
+        plan, universe=universe, verify_universe=lambda _: True, foreground=("g0",)
+    )
+    tier_a_pathways._verify_retained_tested_family(None, None, None, accepted)
+    wrong_sign = admit_pathway_request(
+        plan, universe=universe, verify_universe=lambda _: True, foreground=("g1",)
+    )
+    with pytest.raises(PermissionError, match="retained effect direction"):
+        tier_a_pathways._verify_retained_tested_family(None, None, None, wrong_sign)
+    spec = tier_a_pathways.PathwayStageSpec(
+        operation="rna_pathway_tested", lineage_id="fixture", request=accepted
+    )
+    reloaded = tier_a_pathways.PathwayStageSpec.model_validate_json(
+        spec.model_dump_json()
+    )
+    assert reloaded.admitted_request.plan.foreground_direction == "up_only"
+    assert reloaded.admitted_request.universe.selected == ("g0", "g1")
+    mounted = mounted_single_cell_request(None, reloaded, {}, envelope={})
+    assert "foreground_direction" not in mounted["plan"]
+    assert mounted["universe"]["genes"] == list(universe.genes)
+    assert mounted["universe"]["selected"] == mounted["foreground"] == ["g0"]
+
+
+def test_pinned_ora_worker_runs_directional_selection(workspace_tmp_path):
+    from devbench.engine.tier_a_pathways import PathwayStageSpec
+
+    inputs, outputs = _mounts(workspace_tmp_path)
+    universe = _universe()
+    request = admit_pathway_request(
+        _plan("ora").model_copy(update={"foreground_direction": "down_only"}),
+        universe=universe,
+        verify_universe=lambda actual: actual == universe,
+        foreground=("g1",),
+    )
+    recipe = PathwayStageSpec(
+        operation="rna_pathway_tested", lineage_id="fixture", request=request
+    )
+    result = _run_pinned(inputs, outputs, recipe.request)
+    assert result.status == "completed"
+    assert result.tested_gene_count == 8
+    assert result.results[0].p_value == pytest.approx(3 / 8)
 
 
 def test_registered_camera_refuses_stale_evidence_before_dispatch(

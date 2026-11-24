@@ -83,7 +83,7 @@
     if (rank != ncol(fixed) || residual <= 1L || !is.finite(conditioning) || conditioning > 1000) {
         stop("dream fixed design fails the rank, conditioning, or residual-information check")
     }
-    list(data=data, treated=treated, formula=stats::reformulate(c(terms, "(1 | donor_group)")),
+    list(data=data, formula=stats::reformulate(c(terms, "(1 | donor_group)")),
          diagnostics=list(donor_count=length(repeats), repeated_donor_count=sum(repeats > 1),
                           biological_units_by_condition=setNames(as.list(donor_counts), c(denominator, numerator)),
                           balanced_donor_profile_counts=length(unique(repeats)) == 1L,
@@ -97,7 +97,7 @@
         stop("dream needs positive raw library sizes within exact count bounds")
     }
     if (is.null(size_factors)) {
-        libraries <- libraries * edgeR::calcNormFactors(expression, method="TMM")
+        libraries <- libraries * edgeR::normLibSizes(expression, method="TMM")
         method <- "TMM_effective_library_sizes"
     } else {
         center <- mean(log(libraries))
@@ -110,12 +110,12 @@
     list(sizes=libraries, method=method)
 }
 
-.dream_eligible <- function(expression, treated, raw_counts) {
-    if (raw_counts) {
-        numerator <- rowSums(expression[, treated, drop=FALSE]) > 0
-        denominator <- rowSums(expression[, !treated, drop=FALSE]) > 0
-        return(ifelse(numerator & denominator, NA_character_,
-                      ifelse(numerator | denominator, "zero_marginal_condition_count", "all_zero_gene")))
+.dream_eligible <- function(expression, libraries) {
+    if (!is.null(libraries)) {
+        relative_sizes <- exp(log(libraries) - mean(log(libraries)))
+        abundance <- drop(expression %*% (1 / relative_sizes)) / ncol(expression)
+        return(ifelse(rowSums(expression) == 0, "all_zero_gene",
+                      ifelse(abundance >= 1, NA_character_, "independent_low_count_filter")))
     }
     constant <- rowSums(expression == expression[, 1L]) == ncol(expression)
     ifelse(constant, "constant_continuous_gene", NA_character_)
@@ -129,10 +129,11 @@ bulk_dream <- function(expression, metadata, condition_col, donor_col, numerator
     design <- .dream_design(metadata, condition_col, donor_col, numerator, denominator, technical_factors)
     raw_counts <- identical(measurement, "raw_counts")
     libraries <- if (raw_counts) .dream_library_sizes(expression, size_factors) else NULL
-    reasons <- .dream_eligible(expression, design$treated, raw_counts)
+    reasons <- .dream_eligible(expression, libraries$sizes)
     eligible <- which(is.na(reasons))
     rows <- data.frame(gene_id=rownames(expression), effect=NA_real_, p_value=NA_real_,
                        q_value=NA_real_, estimate_status="not_estimable", missing_reason=reasons)
+    rows$estimate_status[which(reasons == "independent_low_count_filter")] <- "filtered"
     rows$estimate_status[eligible] <- "failed"
     rows$missing_reason[eligible] <- "insufficient_genes_for_moderation"
     diagnostics <- c(design$diagnostics, list(
@@ -142,7 +143,8 @@ bulk_dream <- function(expression, metadata, condition_col, donor_col, numerator
         normalization=if (raw_counts) libraries$method else "none_already_continuous",
         measurement=measurement, effect_scale=if (raw_counts) "log2_CPM" else "input_units",
         denominator_df="Satterthwaite", moderated=TRUE,
-        multiplicity="BH_full_family_unestimated_as_one_missing_in_output"
+        filter=if (raw_counts) "label_blind_overall_normalized_mean_at_least_one" else "constant_rows",
+        multiplicity="BH_failed_eligible_tests_padded_with_one"
     ))
     if (length(eligible) >= 2L) {
         counts <- expression[eligible, , drop=FALSE]
@@ -172,8 +174,10 @@ bulk_dream <- function(expression, metadata, condition_col, donor_col, numerator
         rows$p_value[fitted] <- probabilities[valid]
         rows$estimate_status[fitted] <- "estimated"
         rows$missing_reason[fitted] <- NA_character_
-        adjusted <- stats::p.adjust(ifelse(is.na(rows$p_value), 1, rows$p_value), method="BH")
-        rows$q_value[fitted] <- pmax(rows$p_value[fitted], adjusted[fitted])
+        family <- rows$p_value[eligible]
+        family[is.na(family)] <- 1
+        adjusted <- stats::p.adjust(family, method="BH")
+        rows$q_value[fitted] <- pmax(rows$p_value[fitted], adjusted[match(fitted, eligible)])
     }
     list(rows=rows, diagnostics=diagnostics)
 }

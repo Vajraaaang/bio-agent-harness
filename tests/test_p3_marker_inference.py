@@ -224,3 +224,38 @@ def test_clusterde_keeps_native_selection_and_never_fabricates_bh(
             result, foreground=("g1",), tested_background=("g1", "g2"),
             verify_custody=verify,
         )
+
+
+@pytest.mark.parametrize(
+    ("denominator", "missing", "rest_cells_per_donor"),
+    [("0", 0, 1), ("__rest__", 1, 2)],
+)
+def test_nb_pair_completeness_uses_only_donors_in_the_contrast(
+    denominator, missing, rest_cells_per_donor,
+):
+    from rna_kernels.scrna_nb_pseudobulk import _paired_design, _profile_inventory
+    from rna_kernels.scrna_upstream_contract import CountSplitPseudobulkParameters
+
+    parameters = CountSplitPseudobulkParameters(
+        condition="fixed", numerator="1", denominator=denominator,
+    )
+    donors = [(f"donor-{i}", ["0", "1", "2"]) for i in range(3)]
+    donors += [("only-other", ["2"]), ("unassigned", [None])]
+    rows = [
+        ({"cluster_id": cluster}, {
+            "donor": donor, "specimen": f"specimen-{donor}", "condition": "fixed",
+        })
+        for donor, clusters in donors
+        for cluster in clusters
+    ]
+    profiles, indices, pairs, absent = _profile_inventory(rows, parameters)
+    assert pairs == 3
+    assert absent == missing
+    assert indices[-1] == -1
+    assert (indices[-2] == -1) == (denominator == "0")
+    assert [
+        row["cell_count"] for row in profiles
+        if row["condition"] == denominator and row["donor"].startswith("donor-")
+    ] == [rest_cells_per_donor] * 3
+    paired = [row for row in profiles if row["donor"].startswith("donor-")]
+    assert _paired_design(paired, parameters)["residual_df"] == 2
