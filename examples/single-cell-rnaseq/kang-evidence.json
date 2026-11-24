@@ -1,0 +1,209 @@
+{
+  "dataset_sha256": "e6a5adac64dcdeb36eaba27db49b63e0c64bb0ed4a64c6705971506b41c39830",
+  "mcp_source_inspection": {
+    "status": "held",
+    "reason": "local_workflow_unavailable"
+  },
+  "h5ad_cells_by_features": [
+    24673,
+    15706
+  ],
+  "cells_matching_nCount_RNA": 24673,
+  "cell_counts_by_condition": {
+    "stim": 12358,
+    "ctrl": 12315
+  },
+  "populations": {
+    "Megakaryocytes": {
+      "cells": {
+        "D01": {
+          "ctrl": 1,
+          "stim": 0
+        },
+        "D02": {
+          "ctrl": 1,
+          "stim": 3
+        },
+        "D03": {
+          "ctrl": 1,
+          "stim": 0
+        },
+        "D04": {
+          "ctrl": 53,
+          "stim": 58
+        },
+        "D05": {
+          "ctrl": 0,
+          "stim": 1
+        },
+        "D06": {
+          "ctrl": 1,
+          "stim": 3
+        },
+        "D07": {
+          "ctrl": 2,
+          "stim": 4
+        },
+        "D08": {
+          "ctrl": 4,
+          "stim": 0
+        }
+      },
+      "complete_donors": [
+        "D04"
+      ]
+    },
+    "CD14+ Monocytes": {
+      "cells": {
+        "D01": {
+          "ctrl": 207,
+          "stim": 269
+        },
+        "D02": {
+          "ctrl": 859,
+          "stim": 718
+        },
+        "D03": {
+          "ctrl": 393,
+          "stim": 355
+        },
+        "D04": {
+          "ctrl": 126,
+          "stim": 164
+        },
+        "D05": {
+          "ctrl": 210,
+          "stim": 179
+        },
+        "D06": {
+          "ctrl": 418,
+          "stim": 300
+        },
+        "D07": {
+          "ctrl": 402,
+          "stim": 387
+        },
+        "D08": {
+          "ctrl": 317,
+          "stim": 393
+        }
+      },
+      "complete_donors": [
+        "D01",
+        "D02",
+        "D03",
+        "D04",
+        "D05",
+        "D06",
+        "D07",
+        "D08"
+      ]
+    }
+  },
+  "original_capture_adjusted_design": {
+    "status": "held",
+    "columns": 10,
+    "rank": 9,
+    "residual_df": 7,
+    "estimable": false,
+    "refusal_codes": [
+      "contrast_not_estimable",
+      "rank_deficient_design"
+    ]
+  },
+  "plan_v1_sha256": "81e83d0e00aa137ca9bdbe56b6b647529936e5293e11ef5879e7aa7c2edfc7aa",
+  "diagnostics_sha256": "f1c87175afb47c853209315c43192b485a8dff30f45ff3ede3bf2d0bb3cce871",
+  "revision": {
+    "parent_plan_sha256": "81e83d0e00aa137ca9bdbe56b6b647529936e5293e11ef5879e7aa7c2edfc7aa",
+    "reason_evidence_sha256": "f1c87175afb47c853209315c43192b485a8dff30f45ff3ede3bf2d0bb3cce871",
+    "withheld_populations": [
+      "Megakaryocytes"
+    ],
+    "population": "CD14+ Monocytes",
+    "complete_donors": [
+      "D01",
+      "D02",
+      "D03",
+      "D04",
+      "D05",
+      "D06",
+      "D07",
+      "D08"
+    ],
+    "design": "~ donor + condition",
+    "compiled_design": {
+      "status": "ready",
+      "columns": 9,
+      "rank": 9,
+      "residual_df": 7,
+      "estimable": true,
+      "refusal_codes": []
+    },
+    "claim": "Exploratory within-donor association across these preparations"
+  },
+  "plan_v2_sha256": "39ab9cfa6159d0c4616b9a68bba66668f66aa4a87d5ff2d8e0f9a01b21695d08",
+  "mcp_pseudobulk_inspection": {
+    "status": "inspected",
+    "sha256": "73e308cbf2a2f4947298ebb2dc931c65105e114e880407793e51bafda9b2772d",
+    "inspection_receipt_sha256": "c642246d94161a172c26d33e382130a283d6d3d19ff39204a36d6fbb789116f7"
+  },
+  "fit": {
+    "solver": "PyDESeq2 0.5.4",
+    "libraries": 16,
+    "measured_features": 15706,
+    "prefiltered_family_size": 4328,
+    "estimated_genes": 4323,
+    "unavailable_genes_in_family": 5,
+    "genes_q_at_most_0_05": 2654,
+    "top_genes": [
+      {
+        "gene": "IL1RN",
+        "baseMean": 915.5000437547658,
+        "log2FoldChange": 6.698050222271859,
+        "lfcSE": 0.26878365750381605,
+        "pvalue": 4.533386143047674e-137,
+        "padj": 1.9620495227110333e-133,
+        "status": "estimated"
+      },
+      {
+        "gene": "H3F3B",
+        "baseMean": 4810.550647700723,
+        "log2FoldChange": 1.1209048791861689,
+        "lfcSE": 0.045524698866901886,
+        "pvalue": 7.360970643619224e-134,
+        "padj": 1.5929140472792002e-130,
+        "status": "estimated"
+      },
+      {
+        "gene": "DYNLT1",
+        "baseMean": 957.525252604808,
+        "log2FoldChange": 2.7019633351890464,
+        "lfcSE": 0.11137674669279825,
+        "pvalue": 5.227443480425907e-130,
+        "padj": 7.541458461094443e-127,
+        "status": "estimated"
+      },
+      {
+        "gene": "CCL8",
+        "baseMean": 7388.957947315378,
+        "log2FoldChange": 9.836610272502975,
+        "lfcSE": 0.4093548163229016,
+        "pvalue": 1.3661181732414687e-127,
+        "padj": 1.478139863447269e-124,
+        "status": "estimated"
+      },
+      {
+        "gene": "TMSB10",
+        "baseMean": 2672.227384268702,
+        "log2FoldChange": 2.2164778777525216,
+        "lfcSE": 0.09303534199422664,
+        "pvalue": 1.8821443357006796e-125,
+        "padj": 1.6291841369825084e-122,
+        "status": "estimated"
+      }
+    ],
+    "warnings": [],
+    "differential_expression_sha256": "83e05b93391029b4baf84226852b48a3acf478fb3ebbf81ea723c2c0eef94991",
+    "figure_sha256": "702edc58cb1e5b43031c0ed1597b4d1be8b3290ee1a96f7818929565c97acc4b"
+  }
+}

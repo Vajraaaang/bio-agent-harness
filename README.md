@@ -6,7 +6,7 @@
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13%2B-3776AB)](pyproject.toml)
 [![MIT license](https://img.shields.io/badge/License-MIT-216F57)](LICENSE)
 
-[Quickstart](#quickstart) · [Workflows](docs/capabilities.md) · [MCP reference](docs/mcp-tools.md) · [Evaluation](docs/evaluation.md) · [Interactive Studio demo](https://vajraaaang.github.io/bio-agent-harness/)
+[Quickstart](#quickstart) · [Public PBMC case study](examples/single-cell-rnaseq/README.md) · [Workflows](docs/capabilities.md) · [MCP reference](docs/mcp-tools.md) · [Evaluation](docs/evaluation.md) · [Interactive Studio demo](https://vajraaaang.github.io/bio-agent-harness/)
 
 ![Reviewed RNA-seq workflow from input inspection to reviewing findings, with a branch for missing evidence and a loop to revise the plan.](docs/assets/workflow-map.gif)
 
@@ -44,8 +44,6 @@ Claude Code, Cursor, and generic STDIO clients can use the same server command.
 > Use DevHarness to inspect these files. The synthetic study has distinct donors identified by `donor_id`. Check whether treated versus control is estimable with `~ condition + batch`. If the contrast is blocked, explain why and run a descriptive audit of the original counts.
 
 The [bulk walkthrough](examples/bulk-rnaseq/README.md) shows the design refusal and matrix-audit receipt.
-The [single-cell example](examples/single-cell-rnaseq/README.md) shows how accepted
-QC and donor identity govern pseudobulk and relative composition workflows.
 
 ## What the server does
 

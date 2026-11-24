@@ -27,10 +27,14 @@ jobs:
           node-version: '24'
       - name: Install locked environment
         run: uv sync --locked --extra dev --python 3.13
-      - name: Lint runnable RNA walkthrough
+      - name: Lint runnable RNA walkthroughs
         run: |
-          "$GITHUB_WORKSPACE/.venv/bin/python" -m ruff check "$GITHUB_WORKSPACE/examples/run_rna_demo.py"
-          "$GITHUB_WORKSPACE/.venv/bin/python" -m ruff format --check "$GITHUB_WORKSPACE/examples/run_rna_demo.py"
+          "$GITHUB_WORKSPACE/.venv/bin/python" -m ruff check \
+            "$GITHUB_WORKSPACE/examples/run_rna_demo.py" \
+            "$GITHUB_WORKSPACE/examples/single-cell-rnaseq/run_kang_walkthrough.py"
+          "$GITHUB_WORKSPACE/.venv/bin/python" -m ruff format --check \
+            "$GITHUB_WORKSPACE/examples/run_rna_demo.py" \
+            "$GITHUB_WORKSPACE/examples/single-cell-rnaseq/run_kang_walkthrough.py"
       - name: Verify expected architecture
         run: .venv/bin/python -c 'import platform; assert platform.machine() == ("arm64" if platform.system() == "Darwin" else "x86_64")'
       - name: Verify portable Workbench and source contracts

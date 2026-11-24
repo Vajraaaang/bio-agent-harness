@@ -1,50 +1,91 @@
-# Single-cell pseudobulk and composition
+# How real single-cell data changed the analysis plan
 
-The synthetic H5AD has 72 cells from six donors, three per condition. Two donors
-contribute two captures each, for eight captures in total. The raw count
-layer and illustrative cell-type annotations are generated locally. The number
-of donors governs replication in both branches.
+## Data
 
-> Can I compare within-type expression and the relative abundance of the target cell type across conditions? Account for repeat captures and tell me which evidence I need before fitting.
+The public Kang PBMC dataset contains paired control and IFN-β-stimulated
+aliquots from eight donors. The cached scverse H5AD contains 24,673 cells and
+15,706 features. This walkthrough uses the published donor and population
+labels. The integer counts in `X` sum to the recorded RNA count for every
+retained cell. [Study](https://doi.org/10.1038/nbt.4042) · [GEO GSE96583](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE96583) · [Pertpy data loader](https://pertpy.scverse.org/en/stable/_modules/pertpy/data/_datasets.html#kang_2018)
 
-| Question | Method | Required evidence |
+The original sample records identify one pooled capture per condition.
+[Control capture](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM2560248) · [Stimulated capture](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM2560249)
+
+## Initial question and plan
+
+> Can we estimate a stimulation-associated change in expression separately from capture in megakaryocytes and CD14+ monocytes?
+
+The analysis unit is the donor. The plan uses donor-by-condition pseudobulk
+because repeated cells from the same donor share that unit. It requires at
+least 20 cells in each arm for at least six complete donor pairs before fitting
+a population. This is a walkthrough rule. The planned design was
+`~ donor + capture + condition`. The rule and revision criteria were committed
+before reading the matrix. [Frozen plan](kang-plan.json) · [Pseudobulk methods](https://doi.org/10.1038/s41467-020-19894-4)
+
+## What the data changed
+
+| Check | Observed result | Decision |
 | --- | --- | --- |
-| Does expression differ within a population? | Donor-by-population pseudobulk | Accepted QC, original counts, qualified labels, an approved aim, and an estimable donor-level contrast |
-| Does the population’s relative abundance change? | scCODA | Accepted QC, independent donors, condition and type labels, and a declared reference type |
+| Megakaryocyte support | 63 control cells, 69 stimulated cells, **1 of 8 eligible donor pairs** | Withhold this population from fitting. |
+| CD14+ monocyte support | 2,932 control cells, 2,765 stimulated cells, **8 of 8 eligible donor pairs** | Keep 16 donor-by-condition libraries for the revised fit. |
+| Capture-adjusted design | On the supported libraries, the local DevHarness design compiler reported rank **9 of 10** and a non-estimable condition contrast | Hold the capture-adjusted question. Revise the estimand to an exploratory association across the observed preparations. |
 
-## Run the MCP walkthrough
+MCP inspection of the original H5AD returned `local_workflow_unavailable`.
+The runner preserves the refusal, reads the original H5AD locally with
+AnnData, and obtains a DevHarness inspection receipt for the derived pseudobulk counts.
+The decision record binds the revision to the first plan and diagnostics.
+[Observed evidence](kang-evidence.json)
 
-Use the locked environment, patched SQLite runtime, and a new output
-directory. Run from the checkout root.
-[Installation](../../docs/installation.md)
+## Revised fit
+
+The revised `~ donor + condition` design had rank **9 of 9** and seven residual
+degrees of freedom. The local PyDESeq2 fit used median-ratio RLE, a mean
+dispersion trend, and a two-sided Wald contrast for stimulated versus
+control. A gene entered the family if it had at least 10 counts in at
+least six of the 16 libraries, regardless of condition. [PyDESeq2 workflow](https://pydeseq2.readthedocs.io/en/stable/auto_examples/plot_step_by_step.html)
+
+Of 4,328 genes in this family, 4,323 had estimates and five were withheld.
+There were 2,654 BH-adjusted p-values at or below 0.05. For example, the
+fitted IL1RN log₂ fold change was +6.70. These estimates and adjusted p-values
+are conditional on the fitted model and the two observed pooled preparations. Donor pairing
+controls donor differences, while capture remains inseparable from condition.
+A capture-adjusted comparison would need condition overlap across
+independent captures.
+
+![Donor support heatmap and observed-expression MA plot for the revised CD14+ monocyte fit](kang-results.png)
+
+Each heatmap entry is the smaller cell count across the two conditions for
+that donor. Teal entries meet the 20-cell floor. The MA plot shows the
+estimated gene contrasts from the revised fit.
+
+## Reproduce the walkthrough
+
+Install the locked environment and check the patched SQLite runtime.
+Run from the repository root. The download is a 38 MB processed count file.
+The runner verifies its SHA-256 before opening it. [Installation](../../docs/installation.md)
 
 ```sh
 repo="$(pwd -P)"
-"$repo/.venv/bin/python" "$repo/examples/run_rna_demo.py" single-cell \
-  --output "$repo/results/single-cell-mcp-demo"
+inputs="$repo/results/kang-input"
+input="$inputs/kang_2018.h5ad"
+mkdir -p "$inputs"
+if test ! -e "$input"; then
+  curl --fail --location --proto '=https' --max-filesize 50000000 \
+    'https://exampledata.scverse.org/pertpy/kang_2018.h5ad' \
+    -o "$input.part" && mv "$input.part" "$input"
+fi
+
+"$repo/.venv/bin/python" \
+  "$repo/examples/single-cell-rnaseq/run_kang_walkthrough.py" \
+  --input "$input" \
+  --output "$repo/results/kang-walkthrough"
 ```
 
-The script runs `inspect_rna_inputs` on the H5AD and
-`check_answerability` for the two questions. It writes `trace.json` and prints
-the fixture’s cells, captures, and independent donor counts. The raw fixture
-has no accepted QC record or approved expression aim, so the walkthrough ends
-at the evidence gate.
+Use a new output directory each time. It contains both plans, the donor
+support and design diagnostics, both MCP inspection responses, the full
+differential-expression TSV and the figure. The archived example retains the
+compact evidence summary and figure. The count matrix stays with its
+[public source](https://exampledata.scverse.org/pertpy/kang_2018.h5ad).
 
-| Tool result | Observed outcome |
-| --- | --- |
-| `inspect_rna_inputs` | AnnData with an original integer count layer and donor, capture, condition, and cell-type fields |
-| `check_answerability` for pseudobulk | `awaiting_information` |
-| `check_answerability` for relative composition | `awaiting_information` |
-
-Both checks return `current_qc_and_confirmed_biological_units_required`. The
-fixture contains nine target cells in controls and 15 in treated donors.
-Those descriptive totals precede QC and model fitting.
-
-## Follow the branches
-
-The [interactive Studio demo](https://vajraaaang.github.io/bio-agent-harness/)
-walks through a larger synthetic study, including donor-level QC, composition
-sensitivity, and pseudobulk review. It computes donor summaries in the browser
-and labels the example model outputs as staged. To prepare a fit on an eligible
-local dataset, use the current QC receipt, workspace session, and matching
-method input. [scCODA request](../../integrations/codex/devharness/skills/rna-workbench/references/mcp-payload-contracts.md#sccoda-after-accepted-qc) · [Pseudobulk request](../../integrations/codex/devharness/skills/rna-workbench/references/mcp-payload-contracts.md#donor-pseudobulk-staging)
+The [synthetic inspection script](../run_rna_demo.py) also accepts the
+`single-cell` scenario for an offline admission check.
