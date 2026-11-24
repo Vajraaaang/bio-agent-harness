@@ -1,0 +1,37 @@
+{
+  "format": "devharness.public-single-cell-walkthrough/1",
+  "source": {
+    "study": "GSE96583",
+    "file": "https://exampledata.scverse.org/pertpy/kang_2018.h5ad",
+    "input_limit_bytes": 50000000,
+    "control_capture": "GSM2560248",
+    "stimulated_capture": "GSM2560249",
+    "donor_field": "replicate",
+    "condition_field": "label",
+    "population_field": "cell_type"
+  },
+  "initial_question": "Can we estimate a stimulation-associated change in expression separately from capture for each of the two candidate populations?",
+  "experimental_unit": "donor",
+  "populations": [
+    "Megakaryocytes",
+    "CD14+ Monocytes"
+  ],
+  "contrast": {
+    "numerator": "stim",
+    "denominator": "ctrl"
+  },
+  "minimum_cells_per_donor_condition": 20,
+  "minimum_complete_donor_pairs": 6,
+  "original_design": "~ donor + capture + condition",
+  "revision_rule": "Withhold a population that misses the complete-pair floor. If capture and condition are inseparable, withhold the capture-adjusted contrast and fit only an exploratory observed-preparation association in the supported population. Apply the rule before looking at gene-level estimates.",
+  "revised_design_if_capture_is_confounded": "~ donor + condition",
+  "fit": {
+    "method": "donor-paired pseudobulk PyDESeq2 Wald",
+    "size_factors": "median-ratio RLE",
+    "dispersion_trend": "mean",
+    "prefilter_minimum_counts": 10,
+    "prefilter_minimum_libraries": 6,
+    "false_discovery_rate": 0.05
+  },
+  "requirements_source": "The paired donor design and source captures come from the study. The two populations, support floor, count filter, and reporting rule were fixed by the walkthrough author before fitting."
+}
