@@ -167,11 +167,18 @@ def _run_through_studio(response):
     connection = http.client.HTTPConnection(url.hostname, url.port, timeout=6)
     api = "/api/scientific/adaptive/" + response["session_id"]
 
-    def get_view():
+    def get_view(*, allow_revision_change=False):
         connection.request("GET", api)
         reply = connection.getresponse()
-        assert reply.status == 200
-        return json.loads(reply.read())["shared_motor_umap"]
+        payload = json.loads(reply.read())
+        if (
+            allow_revision_change
+            and reply.status == 409
+            and payload.get("message") == "adaptive_view_revision_changed"
+        ):
+            return None
+        assert reply.status == 200, payload
+        return payload["shared_motor_umap"]
 
     def post(allow, sha):
         connection.request(
@@ -196,11 +203,15 @@ def _run_through_studio(response):
         status, _ = post(True, response["plan_sha256"])
         assert status == 202
         deadline = time.monotonic() + 150
-        view = get_view()
-        while view["status"] in {"queued", "running"} and time.monotonic() < deadline:
+        view = None
+        while time.monotonic() < deadline:
+            current = get_view(allow_revision_change=True)
+            if current is not None:
+                view = current
+                if view["status"] not in {"queued", "running"}:
+                    break
             time.sleep(0.25)
-            view = get_view()
-        assert view["status"] == "completed", view
+        assert view is not None and view["status"] == "completed", view
         assert view["cells"] == 126
         assert [stage["neuron"] for stage in view["stages"]] == [0, 5, 10]
         for kind in ("umap", "markers", "coordinates", "composition", "parameters"):

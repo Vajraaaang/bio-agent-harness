@@ -1327,11 +1327,15 @@ def adaptive_view(app, session_id, *, cursor=None):
         try:
             return _adaptive_view_once(app, session_id, cursor=cursor)
         except _StudioReadbackChanged as error:
-            if not can_retry:
+            if cursor is not None:
                 raise OperationConflict(str(error)) from error
-        except OperationBlocked as error:
-            if not can_retry or error.state != "adaptive_projection_changed_before_delivery":
+            if not can_retry:
                 raise
+        except OperationBlocked as error:
+            if cursor is not None or error.state != "adaptive_projection_changed_before_delivery":
+                raise
+            if not can_retry:
+                raise _StudioReadbackChanged(str(error)) from error
 
 
 def _adaptive_view_once(app, session_id, *, cursor):

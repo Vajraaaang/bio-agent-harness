@@ -792,14 +792,17 @@
       const plans = view?.private_workflow?.plans;
       return Array.isArray(plans) ? plans : [];
     }
+    function pluginWorkflowActive() {
+      return [view?.shared_motor_umap, ...offlinePlans()].some(plan =>
+        ['queued', 'running'].includes(plan?.status));
+    }
     function pollPluginWorkflows() {
       root.clearTimeout(pluginTimer);
       pluginTimer = null;
-      if ([view?.shared_motor_umap, ...offlinePlans()].some(plan =>
-          ['queued', 'running'].includes(plan?.status)))
+      if (pluginWorkflowActive())
         pluginTimer = root.setTimeout(() => load(), 1800);
     }
-    async function load(cursor = null) {
+    async function load(cursor = null, retryRevision = true) {
       if (session === null) return;
       const mark = ++generation;
       try {
@@ -813,13 +816,23 @@
         if (changed && onModeChange) onModeChange(page.mode);
       } catch (error) {
         if (generation !== mark) return;
+        const revisionConflict = !cursor && error.status === 409 &&
+          error.message === 'adaptive_view_revision_changed';
+        if (revisionConflict) {
+          if (pluginWorkflowActive()) {
+            status('Workflow changed during refresh. Trying again…');
+            return;
+          }
+          if (retryRevision) return load(null, false);
+        }
         if ([403, 404, 409].includes(error.status)) {
           view = {session_id: session, mode: 'adaptive/1', status: 'unavailable'};
           research?.select(null);
           render();
           onView?.(view);
         }
-        status(error.message || 'The current workflow view is unavailable.');
+        status(revisionConflict ? 'Workflow changed during refresh. Refresh to see its current state.' :
+          error.message || 'The current workflow view is unavailable.');
       } finally {
         if (!cursor && generation === mark) pollPluginWorkflows();
       }

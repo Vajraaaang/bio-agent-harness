@@ -328,3 +328,43 @@ def test_adaptive_poll_retries_revision_change_before_disclosure(monkeypatch):
     with pytest.raises(OperationBlocked, match="adaptive_projection_changed"):
         studio.adaptive_view(object(), _SID, cursor="bound-cursor")
     assert attempts == ["bound-cursor"]
+
+
+@pytest.mark.parametrize("before_delivery", [False, True])
+def test_fresh_adaptive_poll_distinguishes_graph_revision_conflict(
+    workspace_tmp_path, monkeypatch, before_delivery
+):
+    from devbench.platform import workbench_adaptive as studio
+
+    app, *_ = setup_workspace(workspace_tmp_path)
+    route = f"/api/scientific/adaptive/{_SID}"
+    race = (
+        OperationBlocked("adaptive_projection_changed_before_delivery")
+        if before_delivery
+        else studio._StudioReadbackChanged("A worker committed during readback")
+    )
+    outcomes = iter([race, race, race, None, race, OperationConflict("Other conflict")])
+    cursors = []
+
+    def project(owner, session_id, *, cursor):
+        assert owner is app and session_id == _SID
+        cursors.append(cursor)
+        failure = next(outcomes)
+        if failure is not None:
+            raise failure
+        return {"session_id": _SID}
+
+    monkeypatch.setattr(studio, "_adaptive_view_once", project)
+    try:
+        with running(app) as port:
+            status, body, _ = call(port, route)
+            assert status == 409
+            assert json.loads(body)["message"] == "adaptive_view_revision_changed"
+            assert call(port, route)[0] == 200
+            for path in (route + "?cursor=bound-cursor", route):
+                status, body, _ = call(port, path)
+                assert status == 409
+                assert json.loads(body)["message"] == "operation_unavailable"
+        assert cursors == [None, None, None, None, "bound-cursor", None]
+    finally:
+        app.close()

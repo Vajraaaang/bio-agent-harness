@@ -1038,6 +1038,7 @@ class _WorkbenchHandler:
         )
         if adaptive_route:
             from .workbench_adaptive import (
+                _StudioReadbackChanged,
                 adaptive_action,
                 adaptive_view,
                 verify_adaptive_replay,
@@ -1058,12 +1059,17 @@ class _WorkbenchHandler:
                     len(values) != 1 for values in query.values()
                 ):
                     raise ValueError("Use a single exact adaptive page cursor")
-                return self._adaptive_json(
-                    app,
-                    adaptive_view(
+                try:
+                    view = adaptive_view(
                         app, session_id, cursor=query.get("cursor", [None])[0]
-                    ),
-                )
+                    )
+                except _StudioReadbackChanged:
+                    return self._json(
+                        {"error": "OperationConflict", "message": "adaptive_view_revision_changed"},
+                        409,
+                        admitted=True,
+                    )
+                return self._adaptive_json(app, view)
             raise KeyError("Unknown adaptive workflow action")
         if not mutation and not target.query:
             if target.path == "/api/scientific/diagnostic-policies":

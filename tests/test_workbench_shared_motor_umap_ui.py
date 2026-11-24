@@ -295,17 +295,24 @@ const plan = {status:'awaiting_review',can_run:true,plan_id:'b'.repeat(32),
   plan_sha256:'c'.repeat(64),inputs:[{name:'e09.h5ad',cells:130}],
   parameters:{stage_column:'age',label_column:'celltypes',counts_layer:'counts'}};
 const view = {session_id:sessionId, mode:'adaptive/1',status:'available',
-  shared_motor_umap:plan};
+  shared_motor_umap:{...plan}};
 const path = '/api/scientific/adaptive/'+sessionId;
 const calls = [], reached = [];
+let conflict;
+let conflictOnce = false;
 const controller = WorkbenchInvestigations.mountAdaptivePanel({
   host:container,
   request:async(route,body)=>{
     calls.push([route,body]);
     if (route === path+'/motor-umap') plan.status = 'queued';
+    else if (conflict) {
+      const error = Object.assign(new Error(conflict), {status:409});
+      if (conflictOnce) conflict = undefined;
+      throw error;
+    }
     return {...view,shared_motor_umap:{...plan}};
   },
-  onView:result=>reached.push(result.shared_motor_umap.status),
+  onView:result=>reached.push(result.shared_motor_umap?.status ?? result.status),
 });
 await controller.select(sessionId,{initialView:view,readOnly:true});
 assert.ok(!findButton(container,'Approve and run shared UMAP'));
@@ -319,14 +326,35 @@ await approve.onclick();
 assert.equal(calls.length,0);
 consent.checked = true;
 consent.onchange();
+conflict = 'adaptive_view_revision_changed';
+conflictOnce = true;
 await approve.onclick();
+conflictOnce = false;
 assert.deepEqual(calls,[[path+'/motor-umap',{
   plan_id:plan.plan_id,plan_sha256:plan.plan_sha256,allow_data_execution:true,
-}],[path,undefined]]);
+}],[path,undefined],[path,undefined]]);
 assert.deepEqual(reached,['queued']);
 assert.equal(pending.size,1);
+conflict = 'adaptive_view_revision_changed';
+await pending.get(tick)();
+assert.deepEqual(reached,['queued']);
+assert.equal(pending.size,1);
+conflict = undefined;
 plan.status = 'completed';
 await pending.get(tick)();
 assert.deepEqual(reached,['queued','completed']);
+assert.equal(pending.size,0);
+plan.status = 'queued';
+await controller.refresh();
+conflict = 'operation_unavailable';
+await pending.get(tick)();
+assert.deepEqual(reached,['queued','completed','queued','unavailable']);
+assert.equal(pending.size,0);
+await controller.select(null);
+const beforeColdLoad = calls.length;
+conflict = 'adaptive_view_revision_changed';
+await controller.select(sessionId);
+assert.equal(calls.length,beforeColdLoad+2);
+assert.equal(reached.at(-1),'unavailable');
 assert.equal(pending.size,0);
 """)
