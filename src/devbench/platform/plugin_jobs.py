@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import hmac
 import json
@@ -29,6 +30,7 @@ from devbench.study.permissions import require_protected_storage
 ACTIVE = {"queued", "running"}
 MAX_SECONDS = 3600
 MAX_DOCUMENT_BYTES = 256 * 1024
+_STUDIO_START_TIMEOUT = 15
 
 
 def canonical(value: Any) -> bytes:
@@ -60,6 +62,7 @@ def studio_handoff(
     view: str,
     *,
     mounted_image_id: str | None = None,
+    allow_data_execution: bool = False,
 ) -> dict[str, Any]:
     import shlex
 
@@ -73,15 +76,23 @@ def studio_handoff(
         str(input_root),
         "--enable-scientific",
     ]
+    if allow_data_execution or mounted_image_id is not None:
+        launch.append("--allow-data-execution")
     if mounted_image_id is not None:
-        launch += ["--allow-data-execution", "--mounted-image-id", mounted_image_id]
-    url = None
+        launch += ["--mounted-image-id", mounted_image_id]
+    origin = _studio_origin(workspace)
+    url = origin + "?" + urlencode({"session_id": sid, "view": view}) if origin else None
+    return {"studio_url": url, "launch_hint": shlex.join(launch)}
+
+
+def _studio_origin(workspace: Path, *, offline_only: bool = False) -> str | None:
     try:
         state = json.loads(read_bounded_file(workspace / "studio-server.json", 4096))
         target = urlsplit(state["url"])
         pid = state["pid"]
         if (
             state["workspace"] == str(workspace)
+            and (not offline_only or state.get("offline_only") is True)
             and type(pid) is int
             and pid > 0
             and psutil.pid_exists(pid)
@@ -93,12 +104,71 @@ def studio_handoff(
             and not target.query
             and not target.fragment
         ):
-            url = f"http://{target.netloc}/?" + urlencode(
-                {"session_id": sid, "view": view}
-            )
+            return f"http://{target.netloc}/"
     except (OSError, ValueError, TypeError, KeyError):
         pass
-    return {"studio_url": url, "launch_hint": shlex.join(launch)}
+    return None
+
+
+def ensure_offline_studio(
+    workspace: Path, input_root: Path, mounted_image_id: str | None
+) -> str | None:
+    """Start one local Studio per plugin workspace and wait for its bound URL."""
+    origin = _studio_origin(workspace, offline_only=True)
+    if origin:
+        return origin
+    deadline = time.monotonic() + _STUDIO_START_TIMEOUT
+    flags = os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+    with os.fdopen(os.open(workspace / ".plugin-studio.lock", flags, 0o600), "rb") as lock:
+        if not stat.S_ISREG(os.fstat(lock.fileno()).st_mode):
+            raise ValueError("Studio launch lock must be a regular file")
+        while time.monotonic() < deadline:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                time.sleep(0.05)
+        else:
+            return None
+        origin = _studio_origin(workspace, offline_only=True)
+        if origin:
+            return origin
+
+        source = Path(__file__).resolve().parents[2]
+        roots = [str(source)]
+        if source.name == "src" and (source.parent / "pyproject.toml").is_file():
+            roots.append(str(source.parent))
+        entrypoint = (
+            f"import sys; sys.path[:0] = {roots!r}; "
+            "from devbench.platform.cli import main; raise SystemExit(main())"
+        )
+        command = [
+            sys.executable, "-I", "-B", "-c", entrypoint,
+            "workbench", "--offline-only", "--workspace", str(workspace),
+            "--input-root", str(input_root), "--port", "0",
+            "--enable-scientific", "--allow-data-execution",
+        ]
+        if mounted_image_id is not None:
+            command.extend(["--mounted-image-id", mounted_image_id])
+        process = subprocess.Popen(
+            command, cwd=workspace, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True,
+        )
+        while time.monotonic() < deadline:
+            origin = _studio_origin(workspace, offline_only=True)
+            if origin:
+                threading.Thread(target=process.wait, name="plugin-studio-reaper", daemon=True).start()
+                return origin
+            if process.poll() is not None:
+                return None
+            time.sleep(0.05)
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        return None
 
 
 class JobStore:

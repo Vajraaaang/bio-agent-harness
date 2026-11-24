@@ -89,6 +89,39 @@ def test_empty_studio_catalog_does_not_create_plugin_storage(tmp_path):
         app.close()
 
 
+@pytest.mark.wal
+def test_retained_comparison_figure_uses_the_scoped_studio_route(tmp_path, monkeypatch):
+    import hashlib
+    import sys
+    from types import SimpleNamespace
+
+    app, *_ = setup_workspace(tmp_path)
+    app.offline_only = True
+    session_id = "a" * 32
+    figure = b"verified figure bytes"
+    checksum = hashlib.sha256(figure).hexdigest()
+    calls = []
+
+    def read(owner, sid, sha256):
+        calls.append((owner, sid, sha256))
+        return figure
+
+    monkeypatch.setitem(sys.modules, "devbench.platform.workbench_retained_comparison",
+                        SimpleNamespace(local_comparison_figure=read))
+    route = f"/api/scientific/adaptive/{session_id}/comparison/{checksum}.png"
+    try:
+        with running(app) as port:
+            assert call(port, route, origin="https://example.invalid")[0] == 403
+            assert call(port, route + "?other=1")[0] == 404
+            assert not calls
+            status, content, media = call(port, route)
+            assert status == 200
+            assert (content, media) == (figure, "image/png")
+            assert calls == [(app, session_id, checksum)]
+    finally:
+        app.close()
+
+
 def _fixture_adaptive_controller(
     planner, ledger, lineage, broker, *,
     step_id="bounded-qc", thesis_lifecycle=None,

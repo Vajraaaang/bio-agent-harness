@@ -35,8 +35,14 @@ def test_zero_mito_matches_cannot_be_reported_as_zero_percent():
     from devbench.analysis.singlecell import quality_control
     data = counts_fixture()
     data.var["gene_symbols"] = [f"Other{i}" for i in range(60)]
-    with pytest.raises(ValueError, match="mitochondrial_annotation_unavailable"):
-        quality_control(data, min_genes=3)
+    result, report = quality_control(data, min_genes=3, mad_limit=None)
+    assert report["mitochondrial_features"] == 0
+    assert "mitochondrial_annotation_unavailable" in report["warnings"]
+    for metric in ("total_counts_mt", "log1p_total_counts_mt", "pct_counts_mt"):
+        assert result.obs[metric].isna().all()
+    np.testing.assert_array_equal(
+        result.obs["total_counts"], np.asarray(data.X.sum(axis=1)).ravel()
+    )
 
 
 def test_normalized_noninteger_input_is_refused_as_counts():

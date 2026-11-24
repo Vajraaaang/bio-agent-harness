@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -19,6 +20,83 @@ from tests.test_phenotype_prediction import _locked_eval
 from tests.test_scrna_ccc import _fixture as ccc_inputs
 from tests.test_scrna_neighborhood_da import _inputs as neighborhood_inputs
 from tests.test_spatial_analysis import _spatial_inputs
+
+
+@pytest.mark.parametrize(
+    ("entry_point", "expected"),
+    [
+        ("transcript_quantification", {"estimated_gene_counts", "effective_lengths"}),
+        ("normalized_expression", {"normalized_expression"}),
+    ],
+)
+def test_bulk_mcp_answerability_admits_prepared_noninteger_expression(
+    workspace_tmp_path, entry_point, expected
+):
+    from devbench.platform import plugin_mcp
+    from devharness_controlled.native_contracts import limma_voom_kernel_images
+
+    root = workspace_tmp_path
+    inputs = root / "inputs"
+    inputs.mkdir(mode=0o700)
+    work = root / "scratch"
+    work.mkdir(mode=0o700)
+    samples = [f"s{i}" for i in range(6)]
+    header = "gene_id," + ",".join(samples) + "\n"
+    expression = inputs / "expression.csv"
+    expression.write_text(
+        header + "g1,0.4,1.2,1.1,3.9,4.5,4.4\ng2,1.5,2.2,1.8,3.2,3.1,3.6\n"
+    )
+    lengths = inputs / "lengths.csv"
+    lengths.write_text(
+        header + "g1,150.1,150,151,150,152,151\ng2,330,330,329,329,330,331\n"
+    )
+    metadata = inputs / "metadata.csv"
+    metadata.write_text(
+        "sample_id,donor_id,condition\n"
+        + "\n".join(
+            f"{s},d{i},{'control' if i < 3 else 'treated'}"
+            for i, s in enumerate(samples)
+        )
+        + "\n"
+    )
+
+    def item(path, role):
+        return {"path": str(path), "role": role, "data_classification": "synthetic"}
+
+    image = sorted(limma_voom_kernel_images())[0]
+    plugin = plugin_mcp.Plugin(work, inputs, mounted_image_id=image)
+    payload = plugin_mcp.Answerability.model_validate(
+        {
+            "request": {
+                "family_id": 1,
+                "question": "differential_expression",
+                "assay": "bulk_rna_seq",
+                "entry_point": entry_point,
+            },
+            "inputs": [item(expression, "expression")]
+            + ([item(lengths, "reference")] if "effective_lengths" in expected else []),
+            "local_design": {
+                "metadata": item(metadata, "metadata"),
+                "formula": "~ condition",
+                "biological_unit": "donor_id",
+                "contrast": {
+                    "factor": "condition",
+                    "numerator": "treated",
+                    "denominator": "control",
+                },
+            },
+        }
+    )
+    answer = plugin.answer(payload)
+    assert answer["status"] == "ready", answer
+    assert {
+        measurement["kind"] for measurement in answer["attested_measurements"]
+    } == expected
+    if "effective_lengths" in expected:
+        lengths.write_text(lengths.read_text().replace("150.1", "0"))
+        assert plugin.answer(payload)["missing_measurements"] == (
+            ("effective_lengths",),
+        )
 
 
 def _payload(root, operation):
@@ -91,6 +169,7 @@ def test_local_solvers_round_trip(workspace_tmp_path):
             "-m",
             "devbench.platform.cli",
             "plugin-mcp",
+            "--no-auto-studio",
             "--input-root",
             str(inputs),
             "--workspace",

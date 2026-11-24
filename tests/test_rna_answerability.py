@@ -42,12 +42,19 @@ def _measurement(kind, *, value=_COUNTS, **kwargs):
     )
 
 
-def _request(family, question, *, entry_point="annotated_object", **kwargs):
+def _request(
+    family,
+    question,
+    *,
+    entry_point="annotated_object",
+    assay="single_nucleus_rna_seq",
+    **kwargs,
+):
     return AnswerabilityRequest(
         family_id=family,
         question=question,
         entry_point=entry_point,
-        assay="single_nucleus_rna_seq",
+        assay=assay,
         **kwargs,
     )
 
@@ -168,7 +175,7 @@ def test_tier_b_velocity_is_exploratory_even_with_complete_measurements():
         (
             "pathway_enrichment",
             ("ranked_gene_statistics", "gene_sets"),
-            ("rna_pathway_tested", "rna_pathway_camera"),
+            ("rna_pathway_tested",),
             "rna_pathway_marker_ora",
         ),
         (
@@ -331,6 +338,7 @@ def test_reference_binding_and_access_are_retained():
         (None, "design_evidence_required"),
         (_design(estimability="confounded"), "design_confounded"),
         (_design(independent_units_per_group=(1, 1000)), "insufficient_replication"),
+        (_design(independent_units_per_group=(2, 2)), "insufficient_replication"),
         (_design(observation_axis_sha256="a" * 64), "design_axis_incompatible"),
     ],
 )
@@ -467,7 +475,9 @@ def test_raw_read_archive_download_is_refused_even_with_local_metadata():
 
 
 def test_local_reads_do_not_count_as_ready_expression():
-    request = _request(1, "differential_expression", entry_point="reads")
+    request = _request(
+        1, "differential_expression", entry_point="reads", assay="bulk_rna_seq"
+    )
     result = assess_answerability(
         request, measurements=(_measurement("sequencing_reads"),)
     )
@@ -488,7 +498,9 @@ def test_declared_entry_point_requires_its_own_evidence():
 
 
 def test_estimated_gene_counts_require_matched_effective_lengths():
-    request = _request(1, "differential_expression", entry_point="count_matrix")
+    request = _request(
+        1, "differential_expression", entry_point="count_matrix", assay="bulk_rna_seq"
+    )
     measured_counts = _measurement("estimated_gene_counts")
     assert assess_answerability(
         request,
@@ -513,7 +525,10 @@ def test_estimated_gene_counts_require_matched_effective_lengths():
 
 def test_mixed_expression_inputs_require_selection_before_effective_lengths():
     decision = assess_answerability(
-        _request(1, "differential_expression", entry_point="count_matrix"),
+        _request(
+            1, "differential_expression", entry_point="count_matrix",
+            assay="bulk_rna_seq",
+        ),
         measurements=(
             _measurement("gene_counts"),
             _measurement("estimated_gene_counts", value="6" * 64),
@@ -523,6 +538,35 @@ def test_mixed_expression_inputs_require_selection_before_effective_lengths():
     assert decision.status == "awaiting_information"
     assert decision.reason == "ambiguous_measurement_selection"
     assert decision.missing_measurements == ()
+
+
+def test_single_cell_de_requires_donor_pseudobulk_and_three_units_per_arm():
+    request = _request(1, "differential_expression", assay="single_cell_rna_seq")
+    runtime = RuntimeEvidence(
+        question=request.question,
+        tier="tier_a",
+        operation_id="bulk_condition_contrast",
+        runtime_sha256=_RUNTIME,
+    )
+    raw = _measurement("gene_counts")
+    pseudobulk = _measurement("donor_pseudobulk_counts", value="a" * 64)
+    assert assess_answerability(
+        request, measurements=(raw,), design=_design(), runtime=runtime
+    ).missing_measurements == (("donor_pseudobulk_counts",),)
+    for question in ("differential_expression", "differential_cell_state"):
+        checked = assess_answerability(
+            request.model_copy(update={"question": question}),
+            measurements=(raw, pseudobulk),
+            design=_design(independent_units_per_group=(2, 3)),
+            runtime=runtime.model_copy(update={"question": question}),
+        )
+        assert checked.reason == "insufficient_replication"
+    assert (
+        assess_answerability(
+            request, measurements=(raw, pseudobulk), design=_design(), runtime=runtime
+        ).status
+        == "ready"
+    )
 
 
 def test_late_measurements_are_considered():

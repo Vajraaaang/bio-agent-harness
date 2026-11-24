@@ -18,6 +18,14 @@ class BulkSolverChoice:
     adjustment: Literal["BH"] = "BH"
 
 
+def require_dream_coefficient(measurement: Measurement, comparison: Comparison) -> None:
+    """Validate the hypothesis implemented by the mounted dream driver."""
+    if comparison != "coefficient":
+        raise ValueError("Mounted dream requires a directed condition coefficient")
+    if measurement not in ("raw_counts", "continuous"):
+        raise ValueError("Mounted dream requires raw counts or continuous expression")
+
+
 def freeze_bulk_solver(
     *,
     measurement: Measurement,
@@ -46,11 +54,8 @@ def freeze_bulk_solver(
     if not primary:
         return _sensitivity(measurement, runtime, comparison, units)
     if units == "mixed":
-        if (
-            runtime != "bioconductor"
-            or comparison in ("nested", "lrt")
-            or measurement == "tximport_estimated_counts"
-        ):
+        require_dream_coefficient(measurement, comparison)
+        if runtime != "bioconductor":
             raise ValueError("This mixed-model comparison is unavailable")
         return BulkSolverChoice("dream", "satterthwaite")
     if measurement == "continuous":

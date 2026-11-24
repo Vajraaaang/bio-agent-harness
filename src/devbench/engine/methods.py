@@ -36,6 +36,7 @@ _INVESTIGATION_ARTIFACT_LIMITS = {
     "rna_investigation_capture": 64_000,
     "rna_investigation_usage": 24_000,
     "rna_investigation_reconciliation": 48_000,
+    "rna_local_input_reference": 4_096,
     "rna_mediated_capture": 1_000_000,
 }
 _SCRNA_POPULATION_TOOLS = frozenset(

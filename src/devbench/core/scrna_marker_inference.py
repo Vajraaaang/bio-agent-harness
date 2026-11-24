@@ -268,22 +268,32 @@ def require_confirmatory_marker_ora(
     foreground: Sequence[str],
     tested_background: Sequence[str],
     verify_custody: MarkerCustodyVerifier | None = None,
+    direction: Literal["all", "up_only", "down_only"] = "all",
 ) -> None:
     """Revalidate custody and exact tested universe at the ORA dispatch boundary."""
+    from devbench.core.rna_pathway_analysis import matches_foreground_direction
+
     if type(result) is not MarkerResult or result.marker_scope != _CONFIRMATORY:
         raise PermissionError(
             "exploratory_marker_ranking cannot supply confirmatory ORA"
         )
     checked = project_post_clustering_markers(
-        result.gene_statistics, context=result.context, method=result.method,
-        proof=result.proof, verify_custody=verify_custody,
+        result.gene_statistics,
+        context=result.context,
+        method=result.method,
+        proof=result.proof,
+        verify_custody=verify_custody,
     )
     if checked.marker_scope != _CONFIRMATORY:
         raise PermissionError(checked.reason)
     tested = {
         row.gene_id for row in checked.gene_statistics if row.test_status == "tested"
     }
-    selected = {row.gene_id for row in checked.gene_statistics if row.selected}
+    selected = {
+        row.gene_id
+        for row in checked.gene_statistics
+        if row.selected and matches_foreground_direction(row.score, direction)
+    }
     background = set(tested_background)
     if isinstance(tested_background, str) or (
         background != tested or len(background) != len(tested_background)

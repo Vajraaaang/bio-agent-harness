@@ -7,7 +7,7 @@ from hashlib import sha256
 from math import isfinite
 from typing import TYPE_CHECKING, Annotated, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_serializer, model_validator
 from scipy.stats import hypergeom
 
 from devbench.core._hashing import contract_json_bytes
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from devbench.core.scrna_marker_inference import MarkerCustodyVerifier, MarkerResult
 
 PathwayMethod = Literal["camera", "fgsea", "ora", "decoupleR"]
+ForegroundDirection = Literal["all", "up_only", "down_only"]
 _GENE_LIMIT = 100_000
 _SET_LIMIT = 4_096
 Identifier = Annotated[
@@ -74,6 +75,7 @@ class GeneSet(FrozenContract):
 
 class PathwayPlan(FrozenContract):
     method: PathwayMethod | Literal["auto"] = "auto"
+    foreground_direction: ForegroundDirection = "all"
     collection_id: Identifier
     collection_version: Identifier
     gene_sets: tuple[GeneSet, ...] = Field(min_length=1, max_length=_SET_LIMIT)
@@ -81,8 +83,17 @@ class PathwayPlan(FrozenContract):
     max_set_size: int = Field(default=500, ge=2, le=_GENE_LIMIT)
     seed: int = Field(default=0, ge=0, lt=2**31)
 
+    @model_serializer(mode="wrap")
+    def _preserve_undirected_plan(self, serialize):
+        fields = serialize(self)
+        if self.foreground_direction == "all":
+            fields.pop("foreground_direction", None)
+        return fields
+
     @model_validator(mode="after")
     def _check_collection(self) -> PathwayPlan:
+        if self.foreground_direction != "all" and self.method != "ora":
+            raise ValueError("Foreground direction requires ORA")
         _distinct([item.set_id for item in self.gene_sets], "Gene-set collection")
         if self.min_set_size > self.max_set_size:
             raise ValueError("Gene-set size limits must be ordered")
@@ -184,7 +195,9 @@ class PathwayRequest(FrozenContract):
         if self.method == "ora":
             if self.ranked_scores:
                 raise ValueError("Unexpected ranking input for ORA")
-            _check_foreground(self.universe, self.foreground)
+            _check_foreground(
+                self.universe, self.foreground, self.plan.foreground_direction
+            )
             self._check_marker_field(self.universe)
         elif self.foreground or self.marker_rows_sha256 is not None:
             raise ValueError("Unexpected selected foreground for the mounted method")
@@ -318,16 +331,30 @@ def _check_universe_scope(universe: TestedGeneUniverse) -> None:
 def _check_foreground(
     universe: TestedGeneUniverse,
     foreground: tuple[str, ...],
+    direction: ForegroundDirection,
 ) -> None:
+    genes = set(foreground)
+    selected = set(universe.selected)
     if (
-        not foreground
-        or len(set(foreground)) != len(foreground)
-        or (
-            set(foreground) != set(universe.selected)
-            or not set(foreground) <= set(universe.genes)
-        )
+        not genes
+        or len(genes) != len(foreground)
+        or not genes <= selected
+        or not genes <= set(universe.genes)
+        or (direction == "all" and genes != selected)
     ):
         raise PermissionError("ORA requires the exact nonempty frozen foreground")
+
+
+def matches_foreground_direction(
+    effect: float | None, direction: ForegroundDirection
+) -> bool:
+    if direction == "all":
+        return True
+    return (
+        effect is not None
+        and isfinite(effect)
+        and (effect > 0 if direction == "up_only" else effect < 0)
+    )
 
 
 def _check_ranks(universe: TestedGeneUniverse, scores: tuple[float, ...]) -> None:
@@ -351,6 +378,7 @@ def _verified_markers(
     foreground: tuple[str, ...],
     marker_result: MarkerResult | None,
     verify_marker: MarkerCustodyVerifier | None,
+    direction: ForegroundDirection,
 ) -> str | None:
     if marker_result is None:
         if universe.selection_origin == "post_clustering_markers":
@@ -366,6 +394,7 @@ def _verified_markers(
         foreground=foreground,
         tested_background=universe.genes,
         verify_custody=verify_marker,
+        direction=direction,
     )
     assert marker_result.proof is not None
     digest = marker_rows_sha256(marker_result.gene_statistics)
@@ -419,9 +448,13 @@ def admit_pathway_request(
         raise ValueError("Gene-list analysis requires its exact tested universe")
     _require_universe(universe, verify_universe)
     if method == "ora":
+        if isinstance(foreground, str):
+            raise PermissionError("ORA requires the exact nonempty frozen foreground")
         chosen = tuple(foreground)
-        _check_foreground(universe, chosen)
-        proof = _verified_markers(universe, chosen, marker_result, verify_marker)
+        _check_foreground(universe, chosen, plan.foreground_direction)
+        proof = _verified_markers(
+            universe, chosen, marker_result, verify_marker, plan.foreground_direction
+        )
         return PathwayRequest(
             plan=plan,
             method=method,

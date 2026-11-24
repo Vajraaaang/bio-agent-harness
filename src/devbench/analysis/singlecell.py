@@ -12,6 +12,10 @@ from scipy import sparse
 
 from .scrna_qc import MAD_SCALES, MadDefinition, declared_groups
 
+_ZERO_MAD_MITO_MARGIN = 5.0  # Absolute percentage points above the local median.
+_ZERO_MAD_MITO_CAP = 50.0
+_LIBRARY_QC_METRICS = ("log1p_total_counts", "log1p_n_genes_by_counts")
+
 
 def validate_counts(matrix):
     values = matrix.data if sparse.issparse(matrix) else np.asarray(matrix)
@@ -47,6 +51,30 @@ def gene_symbols(data, column=None):
     return symbols, source
 
 
+def qc_feature_masks(symbols):
+    """Identify symbol-based QC features shared by both count readers."""
+    upper = symbols.str.upper()
+    masks = {
+        "mt": np.asarray(upper.str.startswith("MT-"), dtype=bool),
+        "ribo": np.asarray(upper.str.startswith(("RPS", "RPL")), dtype=bool),
+        "malat1": np.asarray(upper == "MALAT1", dtype=bool),
+    }
+    return {name: mask for name, mask in masks.items() if name == "mt" or mask.any()}
+
+
+def calculate_cell_qc(data, masks, *, percent_top=None):
+    import scanpy as sc
+
+    for name, mask in masks.items():
+        data.var[name] = mask
+    sc.pp.calculate_qc_metrics(
+        data, qc_vars=list(masks), percent_top=percent_top, log1p=True, inplace=True
+    )
+    if not masks["mt"].any():
+        # Missing mitochondrial annotation is distinct from measured zero counts.
+        data.obs[["total_counts_mt", "log1p_total_counts_mt", "pct_counts_mt"]] = np.nan
+
+
 def quality_control(
     data,
     *,
@@ -56,8 +84,6 @@ def quality_control(
     mad_limit=5.0,
     max_mito_percent=None,
 ):
-    import scanpy as sc
-
     validate_counts(data.X)
     if type(min_genes) is not int or min_genes < 1:
         raise ValueError("min_genes must be a positive integer")
@@ -70,34 +96,27 @@ def quality_control(
     ):
         raise ValueError("QC batch identities are unavailable or missing")
     symbols, source = gene_symbols(data, symbol_column)
-    mito = np.asarray(symbols.str.upper().str.startswith("MT-"), dtype=bool)
-    if not mito.any():
-        raise ValueError(
-            'mitochondrial_annotation_unavailable: zero symbol matches; provide a '
-            'gene-symbol mapping'
-        )
+    masks = qc_feature_masks(symbols)
     result = data.copy()
-    result.var["mt"] = mito
     result.var["gene_symbols"] = symbols.to_numpy()
-    sc.pp.calculate_qc_metrics(
-        result, qc_vars=["mt"], percent_top=None, log1p=True, inplace=True
-    )
+    calculate_cell_qc(result, masks)
     keep, report = filter_qc_metrics(
         result.obs,
         batch_key=batch_key,
         min_genes=min_genes,
         mad_limit=mad_limit,
         max_mito_percent=max_mito_percent,
-        mitochondrial_features=int(mito.sum()),
+        mitochondrial_features=int(masks["mt"].sum()),
         symbol_source=source,
     )
     result.obs["qc_pass"] = keep
     return result[keep].copy(), report
 
 
-def _mad_rejections(metrics, groups, multiplier, reject, *, governed):
+def _mad_rejections(
+    metrics, groups, multiplier, reject, *, governed, metric_names, use_mito_fallback
+):
     warnings, thresholds = [], []
-    metric_names = ("log1p_total_counts", "log1p_n_genes_by_counts", "pct_counts_mt")
     positions = pd.Series(groups).groupby(groups, sort=True).indices
     for group, group_indices in positions.items():
         for metric in metric_names:
@@ -117,12 +136,16 @@ def _mad_rejections(metrics, groups, multiplier, reject, *, governed):
                 reject[indices] = True
                 warnings.append(f"nonfinite_qc_metrics:{group}:{metric}")
                 continue
-            if mad == 0:
-                warnings.append(f"zero_MAD_no_adaptive_cutoff:{group}:{metric}")
-                continue
+            is_mito = metric == "pct_counts_mt"
             low, high = median - multiplier * mad, median + multiplier * mad
+            if mad == 0:
+                if not (is_mito and use_mito_fallback):
+                    warnings.append(f"zero_MAD_no_adaptive_cutoff:{group}:{metric}")
+                    continue
+                high = min(median + _ZERO_MAD_MITO_MARGIN, _ZERO_MAD_MITO_CAP)
+                warnings.append(f"zero_MAD_mitochondrial_fallback:{group}")
             rejected = values > high
-            if metric != "pct_counts_mt":
+            if not is_mito:
                 rejected |= values < low
             reject[indices[rejected]] = True
             thresholds.append(
@@ -131,7 +154,7 @@ def _mad_rejections(metrics, groups, multiplier, reject, *, governed):
                     "metric": metric,
                     "median": median,
                     "MAD": mad,
-                    "lower": low if metric != "pct_counts_mt" else None,
+                    "lower": None if is_mito else low,
                     "upper": high,
                 }
             )
@@ -165,7 +188,7 @@ def filter_qc_metrics(
     min_genes=200,
     mad_limit=5.0,
     max_mito_percent=None,
-    mitochondrial_features=0,
+    mitochondrial_features=None,
     symbol_source=None,
     qc_group_key: str | None = None,
     retention_group_key: str | None = None,
@@ -196,19 +219,28 @@ def filter_qc_metrics(
     reject = (metrics["total_counts"].to_numpy() <= 0) | (
         metrics["n_genes_by_counts"].to_numpy() < min_genes
     )
+    check_mito = mitochondrial_features != 0
+    metric_names = (
+        (*_LIBRARY_QC_METRICS, "pct_counts_mt") if check_mito else _LIBRARY_QC_METRICS
+    )
     warnings, thresholds = (
-        _mad_rejections(metrics, groups, mad_limit * scale, reject, governed=governed)
+        _mad_rejections(
+            metrics, groups, mad_limit * scale, reject, governed=governed,
+            metric_names=metric_names, use_mito_fallback=max_mito_percent is None,
+        )
         if mad_limit is not None
         else ([], [])
     )
-    if max_mito_percent is not None:
+    if not check_mito:
+        warnings.append("mitochondrial_annotation_unavailable")
+    elif max_mito_percent is not None:
         reject |= metrics["pct_counts_mt"].to_numpy() > max_mito_percent
     report = {
         "method": "scanpy_QC_log1p_MAD/1",
         "cells_input": len(metrics),
         "cells_retained": int((~reject).sum()),
         "cells_excluded": int(reject.sum()),
-        "mitochondrial_features": mitochondrial_features,
+        "mitochondrial_features": mitochondrial_features or 0,
         "gene_symbol_source": symbol_source,
         "min_genes": min_genes,
         "mad_limit": mad_limit,
@@ -217,6 +249,14 @@ def filter_qc_metrics(
         "warnings": warnings,
         "excluded_cell_ids": metrics.index[reject].tolist(),
     }
+    if any(
+        warning.startswith("zero_MAD_mitochondrial_fallback:") for warning in warnings
+    ):
+        report["zero_mad_mitochondrial_policy"] = {
+            "rule": "minimum_of_batch_median_plus_margin_and_absolute_cap",
+            "margin_percentage_points": _ZERO_MAD_MITO_MARGIN,
+            "absolute_cap_percent": _ZERO_MAD_MITO_CAP,
+        }
     if governed:
         report.update(
             {

@@ -54,6 +54,11 @@ Method qualification needs independent calibration and comparator evidence on
 the claimed data and design scope. A hash-verified receipt records execution
 evidence and supports later inspection.
 
+The [RNA capability audit](audits/2026-11-23-rna-capabilities/README.md)
+records numerical findings at the audited revision. The
+[execution release gate](audits/2026-11-23-rna-capabilities/execution-release-gate.md)
+records the separate installed-plugin coverage and its remaining gaps.
+
 The detailed protocol defines phase and evidence requirements. The earlier
 documentation snapshot preserves experimental reports and calibration findings.
 [Evaluation protocol](agentic-rna-v24-evaluation-protocol.md) · [Documentation archive](https://github.com/Vajraaaang/bio-agent-harness/tree/ad1d74724e1e4d12a3c0fe6840e6521bd34a445b/docs)

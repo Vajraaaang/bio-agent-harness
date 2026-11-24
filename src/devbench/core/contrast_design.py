@@ -22,10 +22,14 @@ from pydantic import (
     model_validator,
 )
 
-from rna_kernels.bulk_solver_policy import SensitivityMethod
+from rna_kernels.bulk_solver_policy import (
+    SensitivityMethod,
+    freeze_bulk_solver,
+    require_dream_coefficient,
+)
 
 from .count_profiles import CountProfile, CountProfiles, _label
-from .design import DESIGN_CONDITION_NUMBER_LIMIT
+from .design import DESIGN_CONDITION_NUMBER_LIMIT, design_matrix_diagnostics
 from .population_contract import content_sha256
 from .publication_families import FamilySpec
 
@@ -339,8 +343,8 @@ class PipelineSpec(BaseModel):
             raise ValueError(
                 "Latent diagnostics require an independent raw-count design"
             )
-        if model.units == "mixed" and model.comparison != "coefficient":
-            raise ValueError("Mounted dream requires a directed condition coefficient")
+        if model.units == "mixed":
+            require_dream_coefficient(self.measurement, model.comparison)
         self._validate_mounted_sensitivity(model)
         if model.condition_weights:
             weights = {row.level: row.weight for row in model.condition_weights}
@@ -357,8 +361,6 @@ class PipelineSpec(BaseModel):
             return
         if model.latent_method is not None:
             raise ValueError("limma-voom sensitivity does not use latent diagnostics")
-        from rna_kernels.bulk_solver_policy import freeze_bulk_solver
-
         freeze_bulk_solver(
             measurement=self.measurement, runtime="bioconductor",
             comparison=model.comparison, units=model.units,
@@ -783,14 +785,17 @@ def _contrast_matrix(spec, levels, observed, refusal):
         levels,
     )
     matrix = tuple(zip(*values, strict=False))
-    rank = int(np.linalg.matrix_rank(np.asarray(matrix, dtype=float)))
+    diagnostics = design_matrix_diagnostics(matrix)
+    rank = diagnostics["rank"]
     contrast = (0,) * (len(columns) - 1) + (1 if spec.numerator == levels[1] else -1,)
     estimable = rank > nuisance_rank
     residual_df = len(observed) - rank
     if not estimable:
         refusal.append("contrast_not_estimable")
-    if rank < len(columns):
-        refusal.append("rank_deficient_design")
+    if not diagnostics["condition_number_validated"]:
+        refusal.append(
+            "rank_deficient_design" if rank < len(columns) else "ill_conditioned_design"
+        )
     if residual_df <= 0:
         refusal.append("no_structural_residual_information")
     return tuple(columns), matrix, contrast, rank, residual_df, estimable, tuple(proofs)

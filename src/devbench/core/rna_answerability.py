@@ -19,6 +19,7 @@ from pydantic import (
     Field,
     StringConstraints,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
@@ -274,14 +275,14 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
         "differential_expression": QuestionContract(
             1,
             (_EXPRESSION,),
-            min_units_per_group=2,
+            min_units_per_group=3,
             curated_operation="bulk_condition_contrast",
         ),
         "differential_cell_state": QuestionContract(
             1,
             (("donor_pseudobulk_counts",),),
             assays=_CELLS,
-            min_units_per_group=2,
+            min_units_per_group=3,
             curated_operation="bulk_condition_contrast",
         ),
         "cell_identity": QuestionContract(2, (_EXPRESSION,), assays=_CELLS),
@@ -322,7 +323,11 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
             6,
             (("ranked_gene_statistics",), ("gene_sets",)),
             curated_operation="rna_pathway_tested",
-            curated_alternatives=("rna_pathway_camera",),
+        ),
+        "rna_pathway_camera": QuestionContract(
+            6,
+            (("normalized_expression",), ("gene_sets",)),
+            curated_operation="rna_pathway_camera",
         ),
         "overrepresentation": QuestionContract(
             6,
@@ -339,7 +344,8 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
         ),
         "regulon_activity": QuestionContract(
             6,
-            (("normalized_expression",), ("regulon_edges",)),
+            (("ranked_gene_statistics",), ("gene_sets",)),
+            curated_operation="rna_pathway_tested",
         ),
         "observed_time_course": QuestionContract(
             7,
@@ -498,7 +504,7 @@ RNA_QUESTIONS: Mapping[str, QuestionContract] = MappingProxyType(
                 ("independent_evaluation_partition",),
             ),
             align="observations",
-            min_units_per_group=2,
+            min_units_per_group=4,
             curated_operation="phenotype_prediction",
         ),
         "published_reproduction": QuestionContract(
@@ -595,6 +601,17 @@ class DesignEvidence(_Record):
     independent_units_per_group: tuple[
         Annotated[int, Field(ge=0, le=2_000_000)], ...
     ] = Field(max_length=128)
+    complete_donor_pairs: Annotated[int, Field(ge=0, le=2_000_000)] | None = Field(
+        default=None,
+        description="Number of complete donor pairs from a paired-design preflight.",
+    )
+
+    @model_serializer(mode="wrap")
+    def _preserve_unpaired_evidence(self, serialize):
+        fields = serialize(self)
+        if self.complete_donor_pairs is None:
+            fields.pop("complete_donor_pairs", None)
+        return fields
 
 
 class RuntimeEvidence(_Record):
@@ -646,6 +663,31 @@ class AnswerabilityDecision(_Record):
     clinical_release_allowed: Literal[False] = False
 
 
+def _specialize_contract(
+    request: AnswerabilityRequest, contract: QuestionContract,
+    runtime: RuntimeEvidence | None,
+) -> QuestionContract:
+    if request.question == "differential_expression" and request.assay in _CELLS:
+        return RNA_QUESTIONS["differential_cell_state"]
+    if (
+        runtime is None
+        or runtime.question != request.question
+        or runtime.tier != "tier_a"
+    ):
+        return contract
+    if (
+        request.question == "pathway_enrichment"
+        and runtime.operation_id == "rna_pathway_camera"
+    ):
+        return RNA_QUESTIONS["rna_pathway_camera"]
+    if (
+        request.question == "compositional_abundance"
+        and runtime.operation_id == "scrna_neighborhood_da"
+    ):
+        return replace(contract, measurements=(("latent_embedding",),))
+    return contract
+
+
 def assess_answerability(
     request: AnswerabilityRequest,
     *,
@@ -678,14 +720,11 @@ def assess_answerability(
     if contract.assays and request.assay not in contract.assays:
         return result.model_copy(update={"reason": "assay_incompatible"})
     if (
-        request.question == "compositional_abundance"
-        and runtime is not None
-        and runtime.question == request.question
-        and runtime.tier == "tier_a"
-        and runtime.operation_id == "scrna_neighborhood_da"
+        request.question != "cross_species_comparison"
+        and len({pin.organism.casefold() for pin in result.reference_pins}) > 1
     ):
-        # The solver counts donor membership in KNN neighborhoods from this axis.
-        contract = replace(contract, measurements=(("latent_embedding",),))
+        return result.model_copy(update={"reason": "reference_pins_conflict"})
+    contract = _specialize_contract(request, contract, runtime)
     selected, issue = _select_measurements(request, contract, measurements)
     if issue is not None:
         reason, missing = issue
@@ -698,7 +737,7 @@ def assess_answerability(
         )
     scientific = _measurement_issue(contract, selected)
     if scientific is None:
-        scientific = _design_issue(contract, selected, design)
+        scientific = _design_issue(request, contract, selected, design)
     if scientific is not None:
         status, reason = scientific
         return result.model_copy(update={"status": status, "reason": reason})
@@ -712,9 +751,12 @@ def _select_measurements(
 ) -> tuple[tuple[AttestedMeasurement, ...], tuple[str, RequiredMeasurements] | None]:
     requirements = contract.measurements
     # A tximport offset belongs to a selected estimated-count representation.
-    if request.question == "differential_expression" and [
-        item.kind for item in measurements if item.kind in _EXPRESSION
-    ] == ["estimated_gene_counts"]:
+    if (
+        requirements == (_EXPRESSION,)
+        and request.question == "differential_expression"
+        and [item.kind for item in measurements if item.kind in _EXPRESSION]
+        == ["estimated_gene_counts"]
+    ):
         requirements += (("effective_lengths",),)
     candidates = tuple(
         tuple(item for item in measurements if item.kind in alternatives)
@@ -761,7 +803,11 @@ def _measurement_issue(
         for item in selected
     ):
         return "refused", "authorized_local_access_required"
-    align = "both" if selected[0].kind == "estimated_gene_counts" else contract.align
+    align = (
+        "both"
+        if any(item.kind == "effective_lengths" for item in selected)
+        else contract.align
+    )
     axis_problem = _axis_issue(align, selected)
     if axis_problem is not None:
         return axis_problem
@@ -792,6 +838,7 @@ def _axis_issue(
 
 
 def _design_issue(
+    request: AnswerabilityRequest,
     contract: QuestionContract,
     selected: tuple[AttestedMeasurement, ...],
     design: DesignEvidence | None,
@@ -808,6 +855,17 @@ def _design_issue(
         or min(design.independent_units_per_group) < floor
     ):
         return "refused", "insufficient_replication"
+    if (
+        request.question == "donor_trajectory"
+        and design.complete_donor_pairs is not None
+    ):
+        pairs = design.complete_donor_pairs
+        if design.independent_units_per_group != (pairs, pairs):
+            return "refused", "trajectory_requires_complete_donor_pairs"
+        # Two spline knots and an intercept-only paired model need at least
+        # five pairs to retain two denominator degrees of freedom.
+        if pairs < 5:
+            return "refused", "insufficient_replication"
     expression_axis = selected[0].observation_axis_sha256
     if expression_axis is None:
         return "awaiting_information", "measurement_axes_unverified"

@@ -7,6 +7,7 @@
 !src/devharness_server/r/
 !src/rna_kernels/
 !src/devbench/
+!src/devbench/adaptive/
 !src/devbench/analysis/
 !src/devbench/core/
 !src/devbench/engine/
@@ -45,6 +46,7 @@
 !src/rna_kernels/scrna_upstream_contract.py
 !src/rna_kernels/streaming_rle.py
 !src/devbench/__init__.py
+!src/devbench/adaptive/models.py
 !src/devbench/analysis/__init__.py
 !src/devbench/analysis/annotation.py
 !src/devbench/analysis/checkpoints.py
@@ -64,6 +66,8 @@
 !src/devbench/core/scientific_types.py
 !src/devbench/core/scrna_composition.py
 !src/devbench/core/scrna_composition_solver.py
+!src/devbench/core/scrna_qc_selection.py
 !src/devbench/core/tenx.py
 !src/devbench/engine/__init__.py
+!src/devbench/engine/provenance.py
 !src/devbench/engine/runtime_contracts.py

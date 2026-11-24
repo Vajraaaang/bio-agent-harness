@@ -24,11 +24,26 @@ _SRC_PACKAGES = (
     "devharness_server",
     "rna_kernels",
 )
+_PLOTLY_RESOURCE = "devbench/analysis/assets/plotly-strict.min.js.gz"
+_PLOTLY_BYTES = 1_580_394
+_PLOTLY_SHA = "78e8c023ae90be8b83821154143b6a5f77959e6009c7c8dafb6d4b5cd50f400e"
 _RETIRED_NOTEBOOK_MEMBERS = {
     "scripts/build_colab_notebook.py",
     "scripts/build_controlled_notebook.py",
     "scripts/colab_run.py",
 }
+
+
+def _plotly_member(name):
+    return name.removeprefix("src/") == _PLOTLY_RESOURCE
+
+
+def _check_plotly_member(content):
+    if (
+        len(content) != _PLOTLY_BYTES
+        or hashlib.sha256(content).hexdigest() != _PLOTLY_SHA
+    ):
+        raise ValueError("Packaged Plotly bundle differs from its pinned identity")
 
 
 def _listed_bundle_member(name):
@@ -75,6 +90,8 @@ def _listed_bundle_member(name):
         "devbench/analysis/assets/workbench-summary-plots.js",
         "devbench/analysis/assets/workbench-demo.css",
         "devbench/analysis/assets/scientific-figure.js",
+        "devbench/analysis/assets/plotly-strict.min.js.gz",
+        "devbench/analysis/assets/plotly-strict.LICENSE.txt",
         "devbench/analysis/assets/agentic-rna-v24-evaluation-protocol.md",
         "devbench/analysis/assets/2026-11-04-workbench-compute-contracts.schema.json",
         "devbench/analysis/assets/official-client-pins.json",
@@ -278,6 +295,7 @@ def _read_bundle_sources(root, candidates):
     )
     selected = []
     total = 0
+    plotly_size = 0
     for file in sorted(set(candidates)):
         name = file.relative_to(root).as_posix()
         if (
@@ -293,10 +311,15 @@ def _read_bundle_sources(root, candidates):
         if file.stat().st_size > 2_000_000:
             raise ValueError(f"Source bundle file exceeds 2 MB: {name}")
         content = _read_source_file(file, 2_000_000)
+        if _plotly_member(name):
+            if plotly_size:
+                raise ValueError("Duplicate Plotly bundle")
+            _check_plotly_member(content)
+            plotly_size = len(content)
         total += len(content)
         if (
             len(content) > 2_000_000
-            or total > 16_000_000
+            or total - plotly_size > 16_000_000
             or len(selected) >= SOURCE_BUNDLE_MAX_FILES
         ):
             raise ValueError(
@@ -479,7 +502,11 @@ def _validated_source_members(payload, destination):
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         entries = archive.infolist()
         total = sum(entry.file_size for entry in entries)
-        if len(entries) > SOURCE_BUNDLE_MAX_FILES or total > 16_000_000:
+        plotly = [entry for entry in entries if _plotly_member(entry.filename)]
+        if len(plotly) > 1 or any(entry.file_size != _PLOTLY_BYTES for entry in plotly):
+            raise ValueError("Invalid packaged Plotly bundle size or member count")
+        plotly_size = _PLOTLY_BYTES if plotly else 0
+        if len(entries) > SOURCE_BUNDLE_MAX_FILES or total - plotly_size > 16_000_000:
             raise ValueError(
                 "Source archive exceeds file count or uncompressed byte limit"
             )
@@ -504,6 +531,8 @@ def _validated_source_members(payload, destination):
                 content = handle.read(2_000_001)
             if len(content) != entry.file_size or len(content) > 2_000_000:
                 raise ValueError("Source archive member size mismatch")
+            if _plotly_member(entry.filename):
+                _check_plotly_member(content)
             validated.append((target, content))
     return validated
 
@@ -567,6 +596,8 @@ def extract_source_bundle(encoded, destination, expected_sha256, *, verify_only=
 def source_bundle_extractor_source():
     """Return a standalone verifier with the same limits as the local extractor."""
     helpers = (
+        _plotly_member,
+        _check_plotly_member,
         _listed_bundle_member,
         allowed_bundle_path,
         _read_source_file,
@@ -578,6 +609,9 @@ def source_bundle_extractor_source():
         [
             f"SOURCE_BUNDLE_MAX_FILES = {SOURCE_BUNDLE_MAX_FILES}",
             f"_SRC_PACKAGES = {_SRC_PACKAGES!r}",
+            f"_PLOTLY_RESOURCE = {_PLOTLY_RESOURCE!r}",
+            f"_PLOTLY_BYTES = {_PLOTLY_BYTES}",
+            f"_PLOTLY_SHA = {_PLOTLY_SHA!r}",
             *(inspect.getsource(helper) for helper in helpers),
         ]
     )

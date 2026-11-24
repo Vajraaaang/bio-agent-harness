@@ -98,15 +98,12 @@ bulk_edger_count <- function(counts, design, biological_units, replicate_groups,
     normalization <- bulk_edger_normalization(counts, measurement, size_factors, tximport)
 
     eligible <- normalization$abundance >= 1
-    grouped <- rowsum(t(counts), group = replicate_groups, reorder = FALSE)
-    separated <- colSums(grouped == 0) > 0
-    keep <- eligible & !separated
     rows <- data.frame(gene_id = rownames(counts), estimate_status = ifelse(eligible, "failed", "filtered"),
-        missing_reason = ifelse(eligible, "zero_group_marginal", "independent_low_count_filter"),
+        missing_reason = ifelse(eligible, "invalid_or_failed_edger_test", "independent_low_count_filter"),
         effect = NA_real_, p_value = NA_real_, q_value = NA_real_, stringsAsFactors = FALSE)
     df_test <- if (is.matrix(hypothesis)) ncol(hypothesis) else 1L
-    if (any(keep)) {
-        dataset <- normalization$dge[keep, , keep.lib.sizes = TRUE]
+    if (any(eligible)) {
+        dataset <- normalization$dge[eligible, , keep.lib.sizes = TRUE]
         if (test == "qlf") {
             fit <- edgeR::glmQLFit(dataset, design = design, legacy = FALSE, dispersion = NULL,
                                   robust = TRUE, abundance.trend = TRUE)
@@ -116,12 +113,11 @@ bulk_edger_count <- function(counts, design, biological_units, replicate_groups,
             fit <- edgeR::glmFit(dataset, design = design)
             observed <- edgeR::glmLRT(fit, contrast = hypothesis)$table
         }
-        if (!identical(rownames(observed), rownames(counts)[keep])) stop("Unexpected fitted gene inventory")
+        if (!identical(rownames(observed), rownames(counts)[eligible])) stop("Unexpected fitted gene inventory")
         good <- is.finite(observed$PValue) & observed$PValue >= 0 & observed$PValue <= 1
         if (df_test == 1L) good <- good & is.finite(observed$logFC)
-        if (!is.null(fit$failed)) good <- good & !fit$failed
-        selected <- which(keep)[good]
-        rows$missing_reason[keep] <- "invalid_or_failed_edger_test"
+        if (!is.null(fit$failed)) good <- good & (fit$failed %in% FALSE)
+        selected <- which(eligible)[good]
         rows$estimate_status[selected] <- "estimated"
         rows$missing_reason[selected] <- NA_character_
         rows$p_value[selected] <- observed$PValue[good]
@@ -129,7 +125,7 @@ bulk_edger_count <- function(counts, design, biological_units, replicate_groups,
         padded <- rows$p_value[eligible]
         padded[is.na(padded)] <- 1
         adjusted <- p.adjust(padded, method = "BH")
-        rows$q_value[selected] <- adjusted[!is.na(rows$p_value[eligible])]
+        rows$q_value[selected] <- pmax(rows$p_value[selected], adjusted[good])
     }
     list(rows = rows, method = list(
         engine = "edgeR", version = as.character(version), test = test, numerator_df = df_test,

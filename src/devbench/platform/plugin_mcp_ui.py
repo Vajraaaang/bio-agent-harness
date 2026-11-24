@@ -19,17 +19,24 @@ const body = document.querySelector('main');
 const footer = document.querySelector('footer');
 const calls = new Map();
 let nextId = 0;
-let studioUrl = null;
 let run = null;
 let hostOrigin;
+let hostTheme;
+function applyHostTheme(context) {
+  if (context?.theme === "light" || context?.theme === "dark") {
+    hostTheme = context.theme;
+    document.documentElement.style.colorScheme = hostTheme;
+  }
+}
 function send(method, params, reply) {
-  if (window.parent === window) return;
+  if (window.parent === window) return null;
   const request = {jsonrpc: "2.0", method, params};
   if (reply) {
     request.id = ++nextId;
     calls.set(request.id, reply);
   }
   window.parent.postMessage(request, hostOrigin || "*");
+  return request.id ?? null;
 }
 function text(tag, value, at = body) {
   const element = document.createElement(tag);
@@ -63,6 +70,7 @@ function studio(value) {
     const url = new URL(value);
     if (url.protocol === "http:" && url.hostname === "127.0.0.1" && url.port
         && !url.username && !url.password && url.pathname === "/" && !url.hash
+        && url.searchParams.size === 2
         && /^[a-f0-9]{32}$/.test(url.searchParams.get("session_id") || "")
         && /^(overview|findings|workflows|qc|figures|code|evidence)$/.test(
             url.searchParams.get("view") || "")) return url.href;
@@ -80,6 +88,50 @@ function button(label, handler) {
   const node = text("button", label, footer);
   node.type = "button";
   node.addEventListener("click", handler);
+  return node;
+}
+function studioHandoff(url) {
+  const studioAddress = () => hostTheme ? url + "#studio-theme=" + hostTheme : url;
+  const status = document.createElement("p");
+  status.setAttribute("role", "status");
+  const fallback = document.createElement("details");
+  text("summary", "Local Studio address", fallback);
+  const field = document.createElement("input");
+  field.type = "text";
+  field.readOnly = true;
+  field.value = studioAddress();
+  field.setAttribute("aria-label", "Local Studio address");
+  field.addEventListener("focus", () => field.select());
+  fallback.append(field);
+  const showAddress = () => {
+    field.value = studioAddress();
+    fallback.open = true;
+    status.textContent = "Copy the local address and open it in your browser.";
+  };
+  const open = button("Open in Research Studio", () => {
+    if (open.disabled) return;
+    open.disabled = true;
+    status.textContent = "Asking the app to open Companion Studio…";
+    const finish = failed => {
+      open.disabled = false;
+      if (failed) showAddress();
+      else status.textContent = "Opening Companion Studio in your browser.";
+    };
+    let timeout;
+    const id = send("ui/open-link", {url:studioAddress()}, response => {
+      clearTimeout(timeout);
+      finish(Boolean(response.error || !response.result || response.result.isError));
+    });
+    if (id === null) {
+      finish(true);
+      return;
+    }
+    timeout = setTimeout(() => {
+      calls.delete(id);
+      finish(true);
+    }, 2000);
+  });
+  footer.append(status, fallback);
 }
 function renderPlan(data) {
   const runtime = data.runtime || {};
@@ -202,19 +254,29 @@ function renderReceipt(data) {
 function render(data) {
   body.replaceChildren();
   footer.replaceChildren();
-  studioUrl = studio(data.studio_url);
-  if (data.error || data.status === "local_studio_only") {
-    const reason = data.reason || "private_data_local_studio_only";
+  const studioUrl = studio(data.studio_url);
+  const localPlan = data.status === "local_studio_only" && data.plan_id;
+  if (data.error) {
+    const reason = data.reason || "operation_unavailable";
     text("p", "OperationBlocked: " + reason).className = "warning";
+  } else if (localPlan) {
+    if (data.execution_blocker === "private_plan_execution_unavailable") {
+      text("p", "This private plan has no supported execution route. "
+        + "Review its details in offline Companion Studio.").className = "warning";
+    } else if (data.execution_route === "offline_studio") {
+      text("p", "Review and approve the local run in offline Companion Studio.");
+    } else {
+      text("p", "Review the private plan in offline Companion Studio.");
+    }
+    facts([["Plan ID", data.plan_id], ["SHA-256", data.plan_sha256]]);
   } else if (kind === "plan-card") renderPlan(data);
   else if (kind === "run-card") renderRun(data);
   else renderReceipt(data);
-  if (studioUrl) button("Open in Research Studio",
-    () => send("ui/open-link", {url:studioUrl}, () => {}));
+  if (studioUrl) studioHandoff(studioUrl);
   if (data.launch_hint && (!studioUrl || data.status === "awaiting_review")) {
     text("code", data.launch_hint, footer);
   }
-  if (kind === "plan-card") text("p",
+  if (kind === "plan-card" && !localPlan) text("p",
     "Read-only · This view cannot authorize or start execution. Next, the agent calls "
     + "execute_reviewed_plan with this Plan ID and SHA-256; Codex presents one native "
     + "approval.", footer);
@@ -230,6 +292,10 @@ window.addEventListener("message", event => {
     toolResult(message.params);
     return;
   }
+  if (message.method === "ui/notifications/host-context-changed") {
+    applyHostTheme(message.params);
+    return;
+  }
   const reply = calls.get(message.id);
   if (reply) {
     hostOrigin = event.origin === "null" ? undefined : event.origin;
@@ -242,7 +308,10 @@ send("ui/initialize", {
   appInfo: {name:"DevHarness RNA Research", version:"0.2.0"},
   appCapabilities:{}, protocolVersion:"2026-01-26"
 }, response => {
-  if (response.result) send("ui/notifications/initialized", {});
+  if (response.result) {
+    applyHostTheme(response.result.hostContext);
+    send("ui/notifications/initialized", {});
+  }
 });
 """
 
@@ -256,6 +325,7 @@ border:1px solid color-mix(in srgb,CanvasText 22%,Canvas);
 padding:.75rem;margin:.65rem 0;border-radius:.5rem}
 footer p{margin:.45rem 0}button{padding:.4rem .68rem;margin:0 .5rem .3rem 0}
 code{display:block;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse}
+footer input{box-sizing:border-box;width:100%;font:inherit;margin-top:.5rem}
 caption{text-align:left;font-weight:600;padding:.65rem 0 .25rem}
 th,td{padding:.35rem;text-align:left;border-bottom:1px solid GrayText;
 overflow-wrap:anywhere}

@@ -66,6 +66,14 @@ class _MassAudit(TypedDict):
     removed_fraction: float | None
 
 
+class _ResidualDiagnostics(TypedDict):
+    weighted_rmse: float
+    median_absolute_fit_residual: float
+    largest_absolute_fit_residual: float
+    largest_absolute_residual_gene: str
+    huber_downweighted_genes: int
+
+
 class BulkDeconvolutionSample(TypedDict):
     sample_id: str
     status: Literal["estimated", "not_estimable"]
@@ -73,6 +81,7 @@ class BulkDeconvolutionSample(TypedDict):
     rmse: float | None
     pearson_r: float | None
     spearman_r: float | None
+    residual_diagnostics: _ResidualDiagnostics | None
     iterations: int
     missing_reason: str | None
 
@@ -97,7 +106,9 @@ class BulkDeconvolutionReceipt(TypedDict):
     outlier_audit: dict[str, Any]
     zero_cross_donor_variance_genes: int
     variance_floor: float
-    gene_weight_policy: Literal["inverse_floored_cross_donor_variance"]
+    gene_weight_policy: Literal[
+        "inverse_residual_and_donor_variance_with_huber_damping"
+    ]
     reconstruction_scale: str
     limitations: list[str]
     samples: list[BulkDeconvolutionSample]
@@ -333,9 +344,57 @@ def _failure(
         "rmse": None,
         "pearson_r": None,
         "spearman_r": None,
+        "residual_diagnostics": None,
         "iterations": iterations,
         "missing_reason": reason,
     }
+
+
+def _robust_start(signature: _Floats, observed: _Floats, floor: float) -> _Floats:
+    coefficients, _ = nnls(signature, observed)
+    residuals = np.abs(observed - signature @ coefficients)
+    if residuals.max() <= np.sqrt(floor) or len(observed) <= signature.shape[1] + 1:
+        return coefficients
+
+    # A high-leverage gene can pull the initial fit toward itself and mask
+    # its residual. Try a few deletion candidates ranked by approximate
+    # leave-one-out residual, then use every row in the final reweighted fit.
+    basis, _ = np.linalg.qr(signature, mode="reduced")
+    leverage = np.einsum("ij,ij->i", basis, basis)
+    deletion_scores = residuals / np.maximum(np.sqrt(np.finfo(float).eps), 1 - leverage)
+    candidates = np.argsort(-deletion_scores, kind="stable")[:3]
+    largest = residuals.max()
+    best_loss = float(residuals @ residuals - largest**2)
+    for gene in candidates:
+        keep = np.arange(len(observed)) != gene
+        reduced = signature[keep]
+        if np.linalg.cond(reduced) > DESIGN_CONDITION_NUMBER_LIMIT:
+            continue
+        trial, _ = nnls(reduced, observed[keep])
+        absolute = np.abs(observed - signature @ trial)
+        largest = float(absolute.max())
+        if absolute[gene] != largest or largest < 4 * np.median(absolute):
+            continue
+        absolute[gene] = 0
+        loss = float(absolute @ absolute)
+        if loss < best_loss:
+            coefficients, best_loss = trial, loss
+    return coefficients
+
+
+def _gene_weights(
+    observed: _Floats, reference: _Reference, coefficients: _Floats, floor: float
+) -> tuple[_Floats, _Floats, _Floats]:
+    residuals = observed - reference.signature @ coefficients
+    absolute = np.abs(residuals)
+    scaled = coefficients * reference.relative_sizes
+    donor_variance = reference.variance @ scaled**2
+    variance = np.maximum(floor, donor_variance) + residuals**2
+    # A robust residual scale and Huber influence bound damp single-gene leverage.
+    scale = max(np.sqrt(floor), 1.4826 * float(np.median(absolute)))
+    cutoff = 1.345 * scale
+    huber = cutoff / np.maximum(cutoff, absolute)
+    return np.sqrt(huber * floor / variance), residuals, huber
 
 
 def _fit_sample(
@@ -343,20 +402,17 @@ def _fit_sample(
     observed: _Floats,
     reference: _Reference,
     spec: BulkDeconvolutionSpec,
+    genes: list[str],
 ) -> BulkDeconvolutionSample:
     if observed.sum() <= 0:
         return _failure(sample_id, "empty_bulk_profile_on_retained_genes")
     observed = observed / observed.sum()
     iteration = 0
     try:
-        coefficients, _ = nnls(reference.signature, observed)
+        coefficients = _robust_start(reference.signature, observed, spec.variance_floor)
         for iteration in range(1, spec.max_iterations + 1):
-            # Raw NNLS coefficients retain the common bulk scale during reweighting.
-            # The shared numerator confines square-root weights to (0, 1].
-            scaled_coefficients = coefficients * reference.relative_sizes
-            variance = reference.variance @ scaled_coefficients**2
-            weights = np.sqrt(
-                spec.variance_floor / np.maximum(spec.variance_floor, variance)
+            weights, _, _ = _gene_weights(
+                observed, reference, coefficients, spec.variance_floor
             )
             weighted_signature = reference.signature * weights[:, None]
             if np.linalg.cond(weighted_signature) > DESIGN_CONDITION_NUMBER_LIMIT:
@@ -375,15 +431,29 @@ def _fit_sample(
     proportions = coefficients / coefficients.sum()
     reconstructed = reference.signature @ proportions
     reconstructed /= reconstructed.sum()
+    weights, fit_residuals, huber = _gene_weights(
+        observed, reference, coefficients, spec.variance_floor
+    )
+    absolute = np.abs(fit_residuals)
+    reconstruction_error = (observed - reconstructed) ** 2
     return {
         "sample_id": sample_id,
         "status": "estimated",
         "proportions": dict(
             zip(reference.cell_types, proportions.tolist(), strict=True)
         ),
-        "rmse": float(np.sqrt(np.mean((observed - reconstructed) ** 2))),
+        "rmse": float(np.sqrt(reconstruction_error.mean())),
         "pearson_r": _correlation(observed, reconstructed),
         "spearman_r": _correlation(rankdata(observed), rankdata(reconstructed)),
+        "residual_diagnostics": {
+            "weighted_rmse": float(
+                np.sqrt(np.average(reconstruction_error, weights=weights**2))
+            ),
+            "median_absolute_fit_residual": float(np.median(absolute)),
+            "largest_absolute_fit_residual": float(absolute.max()),
+            "largest_absolute_residual_gene": genes[int(absolute.argmax())],
+            "huber_downweighted_genes": int(np.count_nonzero(huber < 1)),
+        },
         "iterations": iteration,
         "missing_reason": None,
     }
@@ -412,7 +482,7 @@ def fit_bulk_deconvolution(
     )
     profiles = _reference_profiles(reference, groups, excluded, shared_reference_rows)
     samples = [
-        _fit_sample(sample, target[:, index], profiles, spec)
+        _fit_sample(sample, target[:, index], profiles, spec, shared_genes)
         for index, sample in enumerate(bulk.observations)
     ]
     estimated = sum(row["status"] == "estimated" for row in samples)
@@ -455,13 +525,18 @@ def fit_bulk_deconvolution(
             np.count_nonzero((profiles.variance == 0).all(axis=1))
         ),
         "variance_floor": spec.variance_floor,
-        "gene_weight_policy": "inverse_floored_cross_donor_variance",
+        "gene_weight_policy": "inverse_residual_and_donor_variance_with_huber_damping",
         "reconstruction_scale": "unit_sum_relative_expression_on_retained_shared_genes",
         "limitations": [
             "Proportions are relative to the supplied reference cell types.",
             "Reference count depth is assumed to preserve relative RNA content.",
             "Gene matching and measurement scales rely on supplied declarations.",
+            "Initialization checks for single high-leverage genes. The final "
+            "reweighted fit includes all retained shared genes.",
             "Reconstruction metrics use the same retained genes as the fit.",
+            "Weighted and unweighted reconstruction RMSE use unit-sum profiles. "
+            "Absolute fit residuals use the bulk-scale NNLS reconstruction "
+            "before unit-sum scaling.",
             "The model yields point estimates conditional on the retained reference.",
         ],
         "samples": samples,

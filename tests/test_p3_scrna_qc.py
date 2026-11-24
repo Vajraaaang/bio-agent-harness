@@ -71,10 +71,11 @@ def test_mad_is_local_and_its_convention_changes_the_cutoff(
     assert groups["max_rate_gap"] == pytest.approx((10 - retained) / 3)
 
 
-def _source(workspace, obs, counts):
+def _source(workspace, obs, counts, genes=None):
     ad = pytest.importorskip("anndata")
     matrix = sparse.csr_matrix(counts)
-    genes = ["MT-gene", *(f"g{i}" for i in range(1, matrix.shape[1]))]
+    if genes is None:
+        genes = ["MT-gene", *(f"g{i}" for i in range(1, matrix.shape[1]))]
     data = ad.AnnData(
         X=matrix.astype(np.float64) * 0.125,
         obs=obs,
@@ -84,6 +85,56 @@ def _source(workspace, obs, counts):
     path = workspace / "source.h5ad"
     data.write_h5ad(path)
     return path
+
+
+@pytest.mark.parametrize("mt_present", [True, False])
+def test_nucleus_qc_agrees_on_zero_mad_fallback_and_optional_metrics(
+    workspace_tmp_path, mt_present,
+):
+    ad = pytest.importorskip("anndata")
+    pytest.importorskip("scanpy")
+    from devbench.analysis.singlecell import quality_control
+    from devbench.analysis.streaming import read_table
+
+    genes = ["mt-Co1" if mt_present else "g0", "Rps12", "Malat1", "g3"]
+    obs = pd.DataFrame(
+        {"capture": ["a"] * 6 + ["b"] * 6},
+        index=[f"nucleus-{i}" for i in range(12)],
+    )
+    counts = np.tile([5, 3, 5, 87], (12, 1))
+    counts[5] = [85, 3, 5, 7]  # Only the mitochondrial percentage changes.
+    counts[6:, [0, 3]] = [20, 72]
+    source = _source(workspace_tmp_path, obs, counts, genes)
+    store = CheckpointStore(
+        workspace_tmp_path / "stages", {"input": "synthetic nuclei"}
+    )
+    destination = stream_qc(
+        source, store, layer="counts", batch_key="capture", qc_group_key="capture",
+        min_genes=2, block_rows=3,
+    )
+    table = read_table(destination / "metrics.csv")
+    raw = ad.read_h5ad(source)
+    raw.X = raw.layers["counts"]
+    kept, in_memory = quality_control(raw, batch_key="capture", min_genes=2)
+    streamed = json.loads((destination / "report.json").read_text())
+    assert kept.obs_names.tolist() == table.index[table["qc_pass"]].tolist()
+    np.testing.assert_allclose(table["pct_counts_ribo"], 3)
+    np.testing.assert_allclose(table["pct_counts_malat1"], 5)
+    np.testing.assert_allclose(table["total_counts_malat1"], 5)
+    if mt_present:
+        assert table["pct_counts_mt"].loc["nucleus-5"] == 85
+        assert not table["qc_pass"].loc["nucleus-5"]
+        for report in (in_memory, streamed):
+            assert report["excluded_cell_ids"] == ["nucleus-5"]
+            assert "zero_MAD_mitochondrial_fallback:a" in report["warnings"]
+            assert [row["upper"] for row in report["thresholds"]
+                    if row["metric"] == "pct_counts_mt"] == [10, 25]
+    else:
+        assert table["qc_pass"].all()
+        assert table["pct_counts_mt"].isna().all()
+        for report in (in_memory, streamed):
+            assert report["mitochondrial_features"] == 0
+            assert "mitochondrial_annotation_unavailable" in report["warnings"]
 
 
 def test_streamed_qc_reads_original_layer_and_records_group_retention(

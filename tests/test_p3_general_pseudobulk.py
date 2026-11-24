@@ -237,6 +237,43 @@ def test_paired_keeps_distinct_specimens_and_donor_blocks(workspace_tmp_path):
     assert profiles.groupby("donor")["condition"].nunique().tolist() == [2] * 4
 
 
+@pytest.mark.parametrize("nested_specimen", [False, True])
+def test_mixed_staging_keeps_repeated_specimens_and_unbalanced_donors(
+    workspace_tmp_path, nested_specimen,
+):
+    source, obs, var, data, groups = _source(
+        workspace_tmp_path, paired=True, missing=True,
+    )
+    original = obs["specimen"].eq("specimen-case-1")
+    specimen = "specimen-reference-1" if nested_specimen else "case-replicate"
+    extra = obs.loc[original].assign(specimen=specimen)
+    extra.index = [f"extra-{index}" for index in range(len(extra))]
+    obs = pd.concat([obs, extra])
+    counts = sparse.csr_matrix(np.vstack([data, data[original]]))
+    matrix = AnnData(counts, obs=obs, var=var)
+    matrix.layers["counts"] = counts
+    matrix.write_h5ad(source)
+
+    spec = _spec(source, groups, regime="S-P", comparison="coefficient").model_copy(
+        update={"model": MountedModelSpec(comparison="coefficient", units="mixed")},
+    )
+    staged = stage_general_pseudobulk(source, spec, workspace_tmp_path / "mixed")
+    if nested_specimen:
+        assert staged.pipeline is None
+        assert staged.summary["refusals"] == [
+            "Nested repeat profiles require a specimen effect within donor"
+        ]
+        return
+    assert staged.pipeline is not None
+    assert staged.pipeline.mounted_model is not None
+    assert staged.pipeline.mounted_model.units == "mixed"
+    assert staged.summary["missing_profile_count"] == 1
+    assert staged.summary["design"]["declared_donors"] == 4
+    assert _profiles(staged).groupby("donor").size().to_dict() == {
+        "donor0": 1, "donor1": 3, "donor2": 2, "donor3": 2,
+    }
+
+
 def test_weighted_contrast_keeps_verified_numeric_and_categorical_factors(
     workspace_tmp_path,
 ):
@@ -463,8 +500,10 @@ def _tier_a_envelope(flow, executor, parameters, inputs, regime, *, primary=True
 
 
 @pytest.mark.wal
-@pytest.mark.parametrize("paired", [False, True])
-def test_pseudobulk_plan_registers_and_runs_the_mounted_lrt(workspace_tmp_path, paired):
+@pytest.mark.parametrize("units", ["independent", "paired_fixed", "mixed"])
+def test_pseudobulk_plan_registers_and_runs_the_mounted_model(
+    workspace_tmp_path, units,
+):
     import pyarrow.parquet as pq
 
     from devbench.engine.tier_a_executor import TierAExecutor
@@ -474,11 +513,16 @@ def test_pseudobulk_plan_registers_and_runs_the_mounted_lrt(workspace_tmp_path, 
     image = os.environ.get("DEVBENCH_RNA_KERNEL_TEST_IMAGE")
     if not image:
         pytest.skip("Set the exact local RNA kernel image ID")
-    source, _, _, _, groups = _source(workspace_tmp_path, paired=paired)
+    paired = units != "independent"
+    mixed = units == "mixed"
+    source, _, _, _, groups = _source(workspace_tmp_path, paired=paired, missing=mixed)
+    spec = _spec(source, groups, regime="S-P" if paired else "S-I")
+    if mixed:
+        spec = spec.model_copy(
+            update={"model": MountedModelSpec(comparison="coefficient", units="mixed")},
+        )
     staged = stage_general_pseudobulk(
-        source,
-        _spec(source, groups, regime="S-P" if paired else "S-I"),
-        workspace_tmp_path / "capsule",
+        source, spec, workspace_tmp_path / "capsule",
     )
     flow = make(workspace_tmp_path)
     executor = TierAExecutor(
@@ -487,7 +531,8 @@ def test_pseudobulk_plan_registers_and_runs_the_mounted_lrt(workspace_tmp_path, 
     parameters_sha256, inputs = register_general_pseudobulk(executor, staged)
     evidence = executor.mounted_design_preflight(parameters_sha256)
     assert evidence["metrics"]["declared_unit_count"] == (4 if paired else 12)
-    assert evidence["metrics"]["columns"] == (6 if paired else 4)
+    expected_columns = {"independent": 4, "paired_fixed": 6, "mixed": 3}
+    assert evidence["metrics"]["columns"] == expected_columns[units]
     assert evidence["scientific_validity_established"] is False
     envelope = _tier_a_envelope(
         flow, executor, parameters_sha256, inputs, "B-P" if paired else "B-I"
@@ -497,13 +542,21 @@ def test_pseudobulk_plan_registers_and_runs_the_mounted_lrt(workspace_tmp_path, 
     assert executor.load_receipt(envelope, attempt_id=token["attempt_id"]) == receipt
     io_record = executor.runs / token["attempt_id"] / "io.json"
     method = json.loads(io_record.read_bytes())["tool"]["method"]
-    assert method["solver"] == "edger_v4" and method["test"] == "lrt"
+    assert (method["solver"], method["test"]) == (
+        ("dream", "satterthwaite") if mixed else ("edger_v4", "lrt")
+    )
     assert method["test_df"] == (1 if paired else 2)
     with executor.open_output(receipt.outputs["result"]) as stream:
         table = pq.read_table(stream)
     assert table.num_rows == 48
     probabilities, adjusted = table["p_value"].to_numpy(), table["q_value"].to_numpy()
-    assert np.all((0 <= probabilities) & (probabilities <= adjusted) & (adjusted <= 1))
+    fitted = np.isfinite(probabilities)
+    assert np.any(fitted)
+    if not mixed:
+        assert np.all(fitted)
+    assert np.array_equal(fitted, np.isfinite(adjusted))
+    p, q = probabilities[fitted], adjusted[fitted]
+    assert np.all((0 <= p) & (p <= q) & (q <= 1))
     with executor.training.open(staged.provenance_sha256) as stream:
         manifest = json.load(stream)
     assert manifest["source_sha256"] == _sha(source)
@@ -605,12 +658,19 @@ def test_pseudobulk_voom_retains_checked_sensitivity_receipt(
     assert table.num_rows == 48
     p = table["p_value"].to_numpy()
     q = table["q_value"].to_numpy()
-    assert table["estimate_status"].to_pylist()[-2:] == ["filtered", "failed"]
-    assert np.isnan(p[-2:]).all() and np.isnan(q[-2:]).all()
-    fitted = p[:-2]
-    expected = false_discovery_control(np.append(fitted, 1.0))[:-1]
-    np.testing.assert_allclose(q[:-2], expected, atol=1e-14)
-    assert np.all((0 <= fitted) & (fitted <= q[:-2]) & (q[:-2] <= 1))
+    statuses = np.asarray(table["estimate_status"].to_pylist())
+    assert np.all(statuses[:-2] == "estimated")
+    assert statuses[-2] == "filtered"
+    # The pinned historical image withheld the zero-arm gene. The checkout
+    # driver estimates it, as covered by the direct R regression.
+    assert statuses[-1] in {"estimated", "failed"}
+    fitted = statuses == "estimated"
+    assert np.array_equal(np.isfinite(p), fitted)
+    assert np.array_equal(np.isfinite(q), fitted)
+    eligible = statuses != "filtered"
+    adjusted = false_discovery_control(np.nan_to_num(p[eligible], nan=1))
+    np.testing.assert_allclose(q[fitted], adjusted[fitted[eligible]], atol=1e-14)
+    assert np.all((0 <= p[fitted]) & (p[fitted] <= q[fitted]) & (q[fitted] <= 1))
     assert np.median(table["effect"].to_numpy()[:8]) > 1
     if not paired:
         monkeypatch.setattr(flow, "_review_basis", lambda *_: envelope["design_review"])

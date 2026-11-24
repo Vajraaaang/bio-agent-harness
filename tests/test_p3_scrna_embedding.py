@@ -1,6 +1,5 @@
 import json
 from hashlib import sha256
-from importlib.util import find_spec
 
 import numpy as np
 import pytest
@@ -24,7 +23,8 @@ def _geometry():
     [
         ("nan", "nonfinite_embedding"),
         ("collapse", "collapsed_embedding"),
-        ("fragmentation", "fragmented_graph"),
+        ("no_edges", "graph_no_edges"),
+        ("isolates", "graph_excessive_isolates"),
         ("misordered", "graph_cell_alignment"),
     ],
 )
@@ -38,8 +38,10 @@ def test_governed_embedding_refuses_invalid_geometry_and_graph(error, code):
         candidate[-1, 0] = np.nan
     elif error == "collapse":
         candidate[:] = 12
-    elif error == "fragmentation":
-        graph = sparse.block_diag([graph[:18, :18], graph[18:, 18:]], format="csr")
+    elif error == "no_edges":
+        graph = sparse.eye(len(cell_ids), format="csr")
+    elif error == "isolates":
+        graph = sparse.block_diag([graph[:18, :18], graph[18:, 18:] * 0], format="csr")
     elif error == "misordered":
         graph_cell_ids.reverse()
 
@@ -55,6 +57,71 @@ def test_governed_embedding_refuses_invalid_geometry_and_graph(error, code):
     assert report["embedding_valid"] is False
     assert code in report["diagnostics"]
     assert report["biological_conservation"]["status"] == "unavailable"
+
+
+@pytest.mark.parametrize("n_batches", [2, 4])
+def test_perfect_batch_alignment_preserves_within_batch_geometry(n_batches):
+    from sklearn.neighbors import kneighbors_graph
+
+    from devbench.analysis.integration_metrics import assess_integration
+    from rna_kernels.embedding_qc import neighborhood_metrics
+
+    rng = np.random.default_rng(862)
+    shared = rng.normal(size=(36, 4))
+    candidate = np.tile(shared, (n_batches, 1))
+    batch_codes = np.repeat(np.arange(n_batches), len(shared))
+    reference = candidate + 100 * batch_codes[:, None]
+    global_geometry = neighborhood_metrics(reference, candidate, 10)
+    assert global_geometry["neighborhood_retention"] < 0.6
+    graph = kneighbors_graph(candidate, 10, include_self=False)
+    cell_ids = [f"cell-{i}" for i in range(len(candidate))]
+    report = assess_integration(
+        reference, candidate, graph.maximum(graph.T),
+        cell_ids=cell_ids, graph_cell_ids=cell_ids,
+        batches=[f"run-{code}" for code in batch_codes],
+    )
+    assert report["status"] == "pass"
+    assert report["geometry"]["neighborhood_retention"] == 1
+    assert report["geometry"]["trustworthiness"] == 1
+    assert report["batch_mixing"]["cross_batch_edge_fraction"] > 0.5
+
+
+def test_within_batch_geometry_weights_eligible_batches_by_cell_count():
+    from devbench.analysis.integration_metrics import assess_integration
+    from rna_kernels.embedding_qc import neighborhood_metrics
+
+    reference, cell_ids, _, graph = _geometry()
+    batches = ["big"] * 24 + ["small"] * 9 + ["too-small"] * 3
+    candidate = reference.copy()
+    candidate[24:33] = candidate[24:33][::-1]
+    small = neighborhood_metrics(reference[24:33], candidate[24:33], 10)
+    report = assess_integration(
+        reference, candidate, graph,
+        cell_ids=cell_ids, graph_cell_ids=cell_ids, batches=batches,
+    )
+    assert report["geometry"]["batches_compared"] == 2
+    assert report["geometry"]["cells_compared"] == 33
+    assert "within_batch_geometry_incomplete" in report["warnings"]
+    for metric in ("neighborhood_retention", "trustworthiness"):
+        expected = (24 + 9 * small[metric]) / 33
+        assert report["geometry"][metric] == pytest.approx(expected)
+
+
+def test_two_lineages_with_disjoint_graph_are_accepted():
+    from devbench.analysis.integration_metrics import assess_integration
+
+    values, cell_ids, batches, graph = _geometry()
+    values[18:] += 20
+    graph = sparse.block_diag([graph[:18, :18], graph[18:, 18:]], format="csr")
+    report = assess_integration(
+        values, values, graph,
+        cell_ids=cell_ids, graph_cell_ids=cell_ids, batches=batches,
+    )
+    assert report["status"] == "pass"
+    assert report["graph"]["connected_components"] == 2
+    assert report["graph"]["largest_component_fraction"] == 0.5
+    assert report["graph"]["isolated_observations"] == 0
+    assert "graph_disconnected_components" in report["warnings"]
 
 
 def test_governed_embedding_keeps_mixing_and_unqualified_label_metrics_distinct():
@@ -132,12 +199,19 @@ def test_external_label_receipt_binds_bytes_cohort_and_independent_provenance(
     )
     conservation = report["biological_conservation"]
     assert conservation["provenance"] == provenance
-    if find_spec("scib_metrics") is None:
-        assert conservation["status"] == "unavailable"
-        assert conservation["reason"] == "scib_metrics_not_in_runtime"
-    else:
-        assert conservation["status"] == "measured"
-        assert 0 <= conservation["silhouette_label"] <= 1
+    assert conservation["status"] == "measured"
+    assert -1 <= conservation["cell_type_ASW"] <= 1
+    assert conservation["silhouette_label"] == pytest.approx(
+        (1 + conservation["cell_type_ASW"]) / 2
+    )
+    assert report["batch_mixing"]["batch_ASW"] is None  # Batch and label coincide.
+    crossed = assess_integration(
+        values, values, graph,
+        cell_ids=cell_ids, graph_cell_ids=cell_ids,
+        batches=["run-a", "run-a", "run-b", "run-b"] * 9,
+        selected_sha256=selected_sha256, verified_labels=evidence,
+    )
+    assert 0 <= crossed["batch_mixing"]["batch_ASW"] <= 1
     with pytest.raises(ValueError, match="integration_label_cohort_mismatch"):
         verify_external_labels(
             evidence, cell_ids=cell_ids[::-1], selected_sha256=selected_sha256
@@ -154,6 +228,80 @@ def test_external_label_receipt_binds_bytes_cohort_and_independent_provenance(
         verify_external_labels(
             bind(), cell_ids=cell_ids, selected_sha256=selected_sha256
         )
+
+
+@pytest.mark.parametrize("correction", ["none", "harmony"])
+def test_nb_fold_clustering_accepts_two_disjoint_lineages(
+    workspace_tmp_path, correction,
+):
+    pytest.importorskip("scanpy")
+    pytest.importorskip("igraph")
+    if correction == "harmony":
+        pytest.importorskip("harmonypy")
+    import h5py
+    import pandas as pd
+
+    from devbench.core.scientific_types import content_sha256
+    from rna_kernels.scrna_nb_clustering import cluster_mounted_fold
+    from rna_kernels.scrna_nb_countsplit import _FoldWriter
+    from rna_kernels.scrna_upstream_contract import (
+        REQUEST_FORMAT,
+        MountedSingleCellRequest,
+    )
+
+    rng = np.random.default_rng(216)
+    matrix = rng.poisson(1, (96, 36)).astype(np.int32)
+    matrix[:48, :12] += 80
+    matrix[48:, 12:24] += 80
+    cells = pd.Index([f"cell-{row:03}" for row in range(len(matrix))])
+    genes = pd.Index([f"gene-{col}" for col in range(matrix.shape[1])])
+    fold = workspace_tmp_path / "clustering.h5ad"
+    with h5py.File(fold, "x") as handle:
+        writer = _FoldWriter(handle, cells, genes, "clustering")
+        writer.append(sparse.csr_matrix(matrix))
+    fold_sha256 = sha256(fold.read_bytes()).hexdigest()
+    split = workspace_tmp_path / "split_report.json"
+    split.write_bytes(canonical_json({
+        "format": "devbench.nb-countsplit/1",
+        "split_distribution": "dirichlet_multinomial",
+        "marker_inference_performed": False,
+        "clustering_counts_sha256": fold_sha256,
+        "cell_ids_sha256": content_sha256(tuple(cells)),
+        "cells": len(cells),
+        "genes": len(genes),
+        "dispersion": {"feature_ids_sha256": content_sha256(tuple(genes))},
+    }))
+    request = MountedSingleCellRequest.model_validate({
+        "format": REQUEST_FORMAT,
+        "operation": "scrna_nb_fold_cluster",
+        "inputs": {"clustering_counts": fold_sha256,
+                   "split_report": sha256(split.read_bytes()).hexdigest()},
+        "parameters": {"seed": 5, "n_top_genes": 36, "n_pcs": 8, "resolution": 0.2},
+    })
+    store = CheckpointStore(workspace_tmp_path / "cluster", {"input": request.inputs})
+    paths = {"clustering_counts": fold, "split_report": split}
+    options = {}
+    if correction == "harmony":
+        batches = pd.Series(["001", "1"] * 48, index=cells)
+        options = {"batch_labels": batches, "correction": correction}
+        with pytest.raises(ValueError, match="ordered clustering fold axis"):
+            cluster_mounted_fold(
+                request, paths, store, request.parameters,
+                batch_labels=batches.iloc[::-1], correction=correction,
+            )
+    outputs = cluster_mounted_fold(request, paths, store, request.parameters, **options)
+    assessment = json.loads(outputs["graph_assessment"].read_bytes())
+    report = json.loads(outputs["clustering_report"].read_bytes())
+    condition = correction if correction != "none" else "uncorrected"
+    result = assessment["conditions"][condition]
+    assert result["status"] == "pass"
+    assert result["graph"]["connected_components"] == 2
+    assert report["clusters"] == 2
+    assert report["assigned_cells"] == 96
+    assert report["graph_sha256"] == result["provenance"]["graph_sha256"]
+    if correction == "harmony":
+        assert report["batch_correction"]["observed_batches"] == 2
+        assert report["batch_correction"]["condition_used"] == "harmony"
 
 
 @pytest.fixture

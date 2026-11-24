@@ -1,14 +1,20 @@
 """Synthetic mounted-kernel contracts, with no external source data."""
 
+import base64
 import hashlib
 import json
+import os
+import subprocess
+from pathlib import Path
 
 import h5py
 import numpy as np
 import pyarrow.parquet as pq
 import pytest
 import zarr
+from scipy.stats import false_discovery_control
 
+from devharness_controlled.native_contracts import kernel_test_platform
 from devharness_core.provenance import hash_artifact
 
 
@@ -185,7 +191,10 @@ def test_mounted_python_only_wald_is_fixed_before_fit(workspace_tmp_path):
     assert np.nanmedian(result["effect"].slice(0, 8).to_numpy()) > 1.3
 
 
-def test_mounted_continuous_covariate_runs_freedman_lane(workspace_tmp_path):
+@pytest.mark.parametrize("generalized", [False, True])
+def test_mounted_continuous_covariate_runs_freedman_lane(
+    workspace_tmp_path, generalized
+):
     from rna_kernels.mounted_bulk import run_mounted_bulk
 
     inputs, outputs = workspace_tmp_path / "inputs", workspace_tmp_path / "outputs"
@@ -199,14 +208,17 @@ def test_mounted_continuous_covariate_runs_freedman_lane(workspace_tmp_path):
     age[128:] += 1.2
     values = 5 * age[None, :] + rng.normal(size=(64, 256))
     values[:10, 128:] += 2
+    values[-2, :] = 1
+    values[-1, :] = 0
     with h5py.File(expression, "a") as handle:
         handle["expression"][:] = values
     metadata = inputs / "metadata.csv"
     header, *rows = metadata.read_text().splitlines()
+    recorded_age = 1_000_000 + 10_000 * age
     metadata.write_text(
         header
         + ",age\n"
-        + "\n".join(f"{row},{age[int(row.split(',')[0][1:])]}" for row in rows)
+        + "\n".join(f"{row},{recorded_age[int(row.split(',')[0][1:])]}" for row in rows)
         + "\n"
     )
     document.update(
@@ -214,16 +226,166 @@ def test_mounted_continuous_covariate_runs_freedman_lane(workspace_tmp_path):
         metadata_sha256=_digest(metadata),
         continuous_covariates=["age"],
     )
+    if generalized:
+        document["model"] = {"comparison": "coefficient", "units": "independent"}
     request.write_text(json.dumps(document))
     summary = run_mounted_bulk(inputs, outputs, _digest(request))
     rank = summary["rank_sensitivity"]
     assert rank["method"] == "freedman_lane"
-    assert rank["tested_count"] == 64 and rank["permutations"] == 999
+    assert rank["tested_count"] == 62 and rank["permutations"] == 999
     assert rank["artifact_sha256"] == _digest(outputs / "sensitivity.parquet")
     table = pq.read_table(outputs / "genes.parquet")
-    assert np.median(table["effect"].slice(10).to_numpy()) == pytest.approx(
+    assert np.nanmedian(table["effect"].slice(10).to_numpy()) == pytest.approx(
         0.0, abs=0.07
     )
+    assert table["estimate_status"].slice(62).to_pylist() == ["failed", "filtered"]
+    p, q = (table[name].to_numpy() for name in ("p_value", "q_value"))
+    np.testing.assert_allclose(q[:62], false_discovery_control(np.r_[p[:62], 1])[:62])
     assert (
         np.median(values[10:, 128:].mean(axis=1) - values[10:, :128].mean(axis=1)) > 3
     )
+
+
+def test_mounted_mixed_model_requires_two_distinct_repeated_donors():
+    from rna_kernels.mounted_model import compile_mounted_model
+
+    request = {
+        "model": {"comparison": "coefficient", "units": "mixed"},
+        "condition_column": "condition",
+        "unit_column": "donor",
+        "denominator": "control",
+        "numerator": "case",
+        "technical_factors": [],
+        "continuous_covariates": [],
+    }
+    donors = ["d0", "d0", "d0", "d1", "d2", "d3", "d4", "d5"]
+    rows = [
+        {"donor": donor, "condition": "control" if i < 5 else "case"}
+        for i, donor in enumerate(donors)
+    ]
+    with pytest.raises(ValueError, match="two repeated"):
+        compile_mounted_model(rows, request)
+    rows[2]["donor"] = "d1"
+    assert compile_mounted_model(rows, request).design.shape == (8, 2)
+
+
+@pytest.mark.parametrize("with_latent", [False, True], ids=["legacy", "latent"])
+def test_mounted_edger_checkout_filters_bh_and_retains_scores(
+    workspace_tmp_path, with_latent
+):
+    image = os.environ.get("DEVBENCH_RNA_KERNEL_TEST_IMAGE", "")
+    if not image:
+        pytest.skip("Set DEVBENCH_RNA_KERNEL_TEST_IMAGE to a locked local image ID")
+    platform = kernel_test_platform(image)
+    assert platform is not None
+    inputs, outputs = workspace_tmp_path / "inputs", workspace_tmp_path / "outputs"
+    inputs.mkdir()
+    outputs.mkdir()
+    request = _build(inputs, "h5", 120)
+    document = json.loads(request.read_bytes())
+    expression = inputs / document["expression"]
+    hidden_batch = np.arange(256) % 4 < 2
+    counts = np.random.default_rng(73).negative_binomial(30, 0.4, (120, 256))
+    counts[0, :128] = 0
+    counts[70:85, hidden_batch] *= 4
+    counts[-2:] = 0
+    counts[-1, 0] = 1
+    with h5py.File(expression, "a") as handle:
+        handle["expression"][:] = counts
+    document.update(expression_sha256=_digest(expression), measurement="raw_counts")
+    if with_latent:
+        document["model"] = {
+            "comparison": "coefficient",
+            "units": "independent",
+            "latent": {
+                "method": "ruvg",
+                "n_factors": 1,
+                "controls": {
+                    "origin": "predeclared_external",
+                    "scope": "independent",
+                    "source": "synthetic batch-sensitive controls",
+                    "gene_ids": [f"g{i:05}" for i in range(70, 85)],
+                },
+            },
+        }
+    request.write_text(json.dumps(document))
+    root = Path(__file__).resolve().parents[1]
+    command = [
+        "docker",
+        "run",
+        "--rm",
+        "--pull=never",
+        "--platform",
+        platform,
+        "--network=none",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--pids-limit=128",
+        "--security-opt=no-new-privileges",
+        "--memory=2g",
+        "--user",
+        f"{os.getuid()}:{os.getgid()}",
+        "--tmpfs=/tmp:rw,nosuid,nodev,size=64m",
+        "--mount",
+        f"type=bind,src={inputs},dst=/inputs,readonly",
+        "--mount",
+        f"type=bind,src={outputs},dst=/outputs",
+    ]
+    for path in (
+        "devharness_server/r/bulk_edger.R",
+        "devharness_server/r/bulk_latent_diagnostics.R",
+        "devharness_server/r/mounted_edger.R",
+        "devharness_server/r/mounted_general.R",
+        "rna_kernels/mounted_bulk.py",
+        "rna_kernels/mounted_model.py",
+        "rna_kernels/rank_sensitivity.py",
+    ):
+        source = root / "src" / path
+        destination = f"/opt/rna/runtime/{path}"
+        command.extend(
+            ["--mount", f"type=bind,src={source},dst={destination},readonly"]
+        )
+    run = subprocess.run(
+        [
+            *command,
+            "--entrypoint",
+            "/usr/local/bin/python3.13",
+            image,
+            "-m",
+            "rna_kernels.mounted_bulk",
+            _digest(request),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert run.returncode == 0, run.stderr[-4_000:]
+    rows = pq.read_table(outputs / "genes.parquet")
+    assert rows["estimate_status"][0].as_py() == "estimated"
+    assert rows["effect"][0].as_py() > 1
+    assert rows["estimate_status"].slice(118).to_pylist() == ["filtered", "filtered"]
+    p, q = (rows[name].to_numpy() for name in ("p_value", "q_value"))
+    fitted = np.isfinite(p)
+    expected = false_discovery_control(np.nan_to_num(p[:118], nan=1))
+    np.testing.assert_allclose(q[fitted], expected[fitted[:118]])
+    assert np.isnan(q[118:]).all()
+    if with_latent:
+        summary = json.loads((outputs / "summary.json").read_bytes())
+        latent = summary["latent_diagnostics"]
+        assert latent["diagnostic_only"] is True
+        scores_info = latent["scores"]
+        assert scores_info["shape"] == [256, 1]
+        assert scores_info["sample_order"] == "expression_columns"
+        with pq.ParquetFile(
+            outputs / "genes.parquet",
+            thrift_string_size_limit=65_536,
+            thrift_container_size_limit=16_384,
+        ) as saved:
+            prefix = scores_info["parquet_metadata_prefix"]
+            payload = b"".join(
+                base64.b64decode(saved.metadata.metadata[f"{prefix}{i}".encode()])
+                for i in range(scores_info["chunks"])
+            )
+        assert hashlib.sha256(payload).hexdigest() == scores_info["payload_sha256"]
+        scores = np.frombuffer(payload, dtype="<f8")
+        assert abs(np.corrcoef(scores, hidden_batch)[0, 1]) > 0.8

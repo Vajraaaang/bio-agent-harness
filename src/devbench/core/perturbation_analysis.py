@@ -11,7 +11,8 @@ from numpy.typing import NDArray
 from pydantic import Field, model_validator
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
-from scipy.stats import t
+from scipy.special import expit
+from scipy.stats import norm, t
 from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 
@@ -30,6 +31,7 @@ from .design import require_design_condition
 from .family_fitting import _calibrate_family_counts, conditional_nb_contrasts
 from .observed_data import ObservedData
 from .scientific_types import FrozenContract, Sha256
+from .scrna_neighborhood_da import _nb_boundary_contrast
 
 _Floats = NDArray[np.float64]
 _Ints = NDArray[np.intp]
@@ -160,25 +162,130 @@ def _local_signatures(
     return signatures, valid, matched
 
 
+def _control_density(controls: _Floats, seed: int) -> GaussianMixture:
+    data = controls[:, None]
+    null = GaussianMixture(n_components=1, random_state=seed).fit(data)
+    if np.unique(controls).size > 1:
+        flexible = GaussianMixture(n_components=2, n_init=2, random_state=seed).fit(
+            data
+        )
+        if flexible.converged_ and flexible.bic(data) < null.bic(data):
+            return flexible
+    return null
+
+
+def _shifted_component(
+    targets: _Floats, controls: _Floats, null: GaussianMixture, cutoff: float
+) -> tuple[float, float, float] | None:
+    upper = targets[targets > cutoff]
+    if not len(upper):
+        return None
+    spread_floor = max(1e-3, float(controls.std()) / 10)
+    mean, spread = float(upper.mean()), max(float(upper.std()), spread_floor)
+    mixing = np.clip(len(upper) / len(targets), 1e-6, 1 - 1e-6)
+    null_log_density = null.score_samples(targets[:, None])
+    for _ in range(100):
+        log_alt = np.log(mixing) + norm.logpdf(targets, mean, spread)
+        log_null = np.log1p(-mixing) + null_log_density
+        responsibilities = expit(log_alt - log_null)
+        if responsibilities.sum() <= 1e-8:
+            return None
+        next_mixing = np.clip(responsibilities.mean(), 1e-6, 1 - 1e-6)
+        next_mean = max(cutoff, np.average(targets, weights=responsibilities))
+        next_spread = max(
+            spread_floor,
+            np.sqrt(np.average((targets - next_mean) ** 2, weights=responsibilities)),
+        )
+        change = max(
+            abs(next_mixing - mixing), abs(next_mean - mean), abs(next_spread - spread)
+        )
+        mixing, mean, spread = next_mixing, next_mean, next_spread
+        if change <= 1e-6:
+            return float(mixing), float(mean), float(spread)
+    return None
+
+
+def _efficacy_splits(
+    treated: _Mask, biological_units: NDArray | None, seed: int
+) -> list[tuple[_Mask, _Mask, _Mask]]:
+    """Separate direction learning, density fitting, and evaluation."""
+    rng = np.random.default_rng(seed)
+    fold = np.empty(len(treated), dtype=int)
+    if biological_units is None:
+        for arm in (~treated, treated):
+            indexes = rng.permutation(np.flatnonzero(arm))
+            fold[indexes] = np.arange(len(indexes)) % 3
+    else:
+        units = rng.permutation(np.unique(biological_units))
+        if len(units) < 3:
+            # With two donors, retain donor-disjoint evaluation and split the
+            # other donor's cells by arm for the direction and density.
+            splits = []
+            for unit in units:
+                evaluate = biological_units == unit
+                direction = np.zeros(len(treated), dtype=bool)
+                for arm in (~treated, treated):
+                    indexes = rng.permutation(np.flatnonzero(~evaluate & arm))
+                    direction[indexes[::2]] = True
+                splits.append((direction, ~evaluate & ~direction, evaluate))
+            return splits if len(units) == 2 else []
+        for i, unit in enumerate(units):
+            fold[biological_units == unit] = i % 3
+    return [(fold == i, fold == (i + 1) % 3, fold == (i + 2) % 3) for i in range(3)]
+
+
 def _mixture(
-    signatures: _Floats, treated: _Mask, seed: int
+    signatures: _Floats,
+    treated: _Mask,
+    seed: int,
+    biological_units: NDArray | None = None,
 ) -> tuple[_Floats | None, float | None]:
-    if min(np.count_nonzero(treated), np.count_nonzero(~treated)) < 2:
+    """Cross-fit a shifted component against a fixed, potentially bimodal NTC null."""
+    splits = _efficacy_splits(treated, biological_units, seed)
+    if not splits:
         return None, None
-    direction = signatures[treated].mean(axis=0) - signatures[~treated].mean(axis=0)
-    norm = np.linalg.norm(direction)
-    if norm <= np.finfo(float).eps:
-        return None, None
-    scores = (signatures @ (direction / norm))[:, None]
-    one = GaussianMixture(n_components=1, random_state=seed).fit(scores)
-    two = GaussianMixture(n_components=2, n_init=5, random_state=seed).fit(scores)
-    gain = float(one.bic(scores) - two.bic(scores))
-    if not two.converged_ or gain <= 0:
-        return None, gain
-    posterior = two.predict_proba(scores)[:, int(two.means_.argmax())]
-    if posterior[treated].mean() <= posterior[~treated].mean():
-        return None, gain
-    return posterior, gain
+    posterior = np.zeros(len(treated))
+    log_likelihood_gain = 0.0
+    for learn, fit, held_out in splits:
+        if (
+            min(
+                (arm & part).sum()
+                for arm in (treated, ~treated)
+                for part in (learn, fit, held_out)
+            )
+            < 4
+        ):
+            return None, None
+        direction = signatures[learn & treated].mean(axis=0) - signatures[
+            learn & ~treated
+        ].mean(axis=0)
+        length = np.linalg.norm(direction)
+        if length <= np.finfo(float).eps:
+            return None, None
+        scores = signatures @ (direction / length)
+        controls, targets = scores[fit & ~treated], scores[fit & treated]
+        cutoff = float(np.quantile(controls, 0.95))
+        null = _control_density(controls, seed)
+        component = _shifted_component(targets, controls, null, cutoff)
+        if component is None:
+            continue
+
+        mixing, mean, spread = component
+        held_scores = scores[held_out]
+        held_null = null.score_samples(held_scores[:, None])
+        log_alt = np.log(mixing) + norm.logpdf(held_scores, mean, spread)
+        log_null = np.log1p(-mixing) + held_null
+        held_targets = treated[held_out]
+        log_likelihood_gain += float(
+            (np.logaddexp(log_alt, log_null) - held_null)[held_targets].sum()
+        )
+        cutoff = max(cutoff, float(np.quantile(held_scores[~held_targets], 0.95)))
+        posterior[held_out] = np.where(
+            held_scores > cutoff, expit(log_alt - log_null), 0
+        )
+
+    gain = 2 * log_likelihood_gain - 3 * math.log(np.count_nonzero(treated))
+    return (posterior if gain > 0 else None), gain
 
 
 def _efficacy(
@@ -186,6 +293,7 @@ def _efficacy(
     treated: _Mask,
     cell_ids: list[str],
     strata: list[_Ints],
+    biological_units: NDArray,
     target: str | None,
     feature: _Floats | None,
     spec: PerturbationSpec,
@@ -193,7 +301,9 @@ def _efficacy(
     signatures, eligible, matched = _local_signatures(
         embedding, treated, strata, spec.n_neighbors
     )
-    posterior, gain = _mixture(signatures[eligible], treated[eligible], spec.seed)
+    posterior, gain = _mixture(
+        signatures[eligible], treated[eligible], spec.seed, biological_units[eligible]
+    )
     probabilities = (
         dict(zip(np.flatnonzero(eligible), posterior, strict=True))
         if (posterior is not None)
@@ -221,7 +331,8 @@ def _efficacy(
         "status": "mixture_supported"
         if posterior is not None
         else "mixture_unresolved",
-        "bic_improvement_over_one_component": gain,
+        "bic_improvement_over_one_component": None,
+        "cross_validated_penalized_log_likelihood_gain": gain,
         "target_gene_check": knockdown,
         "cells": [
             {
@@ -353,6 +464,7 @@ def _fit_de(
         for gene in genes
     ]
     numeric = DenseDesign(design.to_numpy())
+    treated = design["perturbation"].to_numpy() == 1
     contrast = np.zeros((1, len(design.columns)))
     contrast[0, 1] = 1
     eligible_indices, alphas = [], []
@@ -368,14 +480,20 @@ def _fit_de(
             or alpha < 1e-7
         ):
             rows[i]["missing_reason"] = "dispersion_unavailable_or_nonconverged"
-        elif not (
-            counts[i, design["perturbation"] == 1].any()
-            and counts[i, design["perturbation"] == 0].any()
-        ):
-            rows[i]["missing_reason"] = "arm_without_count_support"
-        else:
+        elif counts[i, treated].any() and counts[i, ~treated].any():
             eligible_indices.append(i)
             alphas.append(alpha)
+        else:
+            estimate = _nb_boundary_contrast(counts[i], numeric, offset, alpha)
+            if estimate.reason is not None:
+                rows[i]["missing_reason"] = estimate.reason
+            else:
+                rows[i].update(
+                    log2_fold_change=estimate.effect,
+                    dispersion_alpha=alpha,
+                    p_value=estimate.probability,
+                    inference="nb_boundary_lrt_with_library_scaled_prior_count_effect",
+                )
 
     with warnings.catch_warnings(record=True) as observed:
         warnings.simplefilter("always")
@@ -435,10 +553,35 @@ def _pseudobulk_de(
         },
         "warnings": calibration["calibration_warnings"] + model_warnings,
         "inference": (
-            "Residual-df t inference conditional on fitted dispersion and offsets."
+            "Residual-df t inference for genes detected in both arms, conditional on "
+            "fitted dispersion and offsets. A zero arm uses an NB likelihood-ratio "
+            "test on observed counts and a library-scaled 0.5 prior count for "
+            "the finite effect."
         ),
         "gene_statistics": rows,
     }
+
+
+def _pca_embedding(
+    expression: _Floats, spec: PerturbationSpec
+) -> tuple[_Floats, int, int]:
+    deviations = expression.std(axis=0)
+    variable = np.flatnonzero(deviations > 0)
+    if not len(variable):
+        return np.zeros((len(expression), 1)), 0, 0
+    n_features = min(
+        len(variable),
+        max(1, len(expression) // 2),
+        max(4 * spec.pca_components, min(len(expression) // 4, 50)),
+    )
+    selected = variable[np.argsort(-deviations[variable], kind="stable")[:n_features]]
+    features = expression[:, selected]
+    scaled = (features - features.mean(axis=0)) / deviations[selected]
+    components = min(spec.pca_components, *scaled.shape)
+    embedding = PCA(
+        n_components=components, svd_solver="randomized", random_state=spec.seed
+    ).fit_transform(scaled)
+    return embedding, components, n_features
 
 
 def fit_perturbation_response(
@@ -466,12 +609,7 @@ def fit_perturbation_response(
     if np.any(totals == 0):
         raise ValueError("perturbation_pca_requires_positive_cell_library_sizes")
     expression = log1p_counts_per_10k(counts, totals[:, None])
-    components = min(spec.pca_components, *expression.shape)
-    embedding = PCA(
-        n_components=components,
-        svd_solver="randomized",
-        random_state=spec.seed,
-    ).fit_transform(expression)
+    embedding, components, n_features = _pca_embedding(expression, spec)
     results = []
     target_genes = dict(spec.target_genes)
     for perturbation in sorted(perturbations):
@@ -499,6 +637,7 @@ def fit_perturbation_response(
                     treated,
                     cells.index.tolist(),
                     strata,
+                    cells["donor_id"].to_numpy(),
                     target,
                     feature,
                     spec,
@@ -521,13 +660,16 @@ def fit_perturbation_response(
             "claim_scope": "replicate_aware_perturbation_association",
             "count1_unchanged": True,
             "pca_components_used": components,
+            "pca_variable_genes_used": n_features,
             "energy_test_claim_scope": "conditional_cell_label_exchangeability",
             "perturbations": results,
             "method": (
-                "Energy U-test on log1p library-normalized PCA, conditional on cell "
-                "label exchangeability in mixed donor-batch strata. The unbiased "
-                "estimate can be negative. Exploratory efficacy uses matched local "
-                "control signatures and a projected two-component GMM. "
+                "Energy U-test on PCA of scaled, highly variable log1p normalized "
+                "genes, conditional on exchangeability within donor-batch strata. "
+                "The unbiased estimate can be negative. Efficacy uses local "
+                "control signatures and donor-held-out projection and classification. "
+                "The nonresponse density uses only non-targeting controls and "
+                "can be bimodal. "
                 "DE uses raw donor-by-perturbation sums, RLE offsets, empirical-Bayes "
                 "NB dispersions and conditional NB IRLS. BH spans the perturbations "
                 "for the energy test and the gene family for each DE contrast."

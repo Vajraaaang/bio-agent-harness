@@ -85,6 +85,34 @@ An integration check against original counts covers the planned QC, preparation,
 
 ## plan_rna_workflow
 
+### Shared e09–e11 motor-neuron UMAP
+
+```json
+{
+  "operation": "shared_motor_umap",
+  "objective": "Compare annotated motor-neuron states in shared coordinates across e09, e10 and e11.",
+  "inputs": [
+    {"path": "/data/selected/e09_integrated.h5ad"},
+    {"path": "/data/selected/e10_integrated.h5ad"},
+    {"path": "/data/selected/e11_integrated.h5ad"}
+  ],
+  "parameters": {
+    "stage_column": "age",
+    "label_column": "celltypes",
+    "counts_layer": "counts"
+  }
+}
+```
+
+Supply exactly three annotated H5ADs in stage order. The workflow validates
+the stage labels and uses the stored integer counts and original motor-neuron
+annotations. It fits one count-normalized PCA and UMAP across all three stages.
+Review the exact plan in offline Companion Studio Workflows, then select
+**Run shared UMAP**. The local Plugin worker records the result in the same
+investigation. Findings and Figures show the stage counts, UMAP and marker
+plot. Workspace execution permission is required. MCP returns the Studio
+handoff and keeps the data and results local.
+
 ### Descriptive matrix audit
 
 ```json
@@ -245,7 +273,7 @@ Use an approved aim and the current QC selection. The plan binds the capsule and
 }
 ```
 
-Use the exact profile, contrasts, and unit scope of the registered investigation. If Studio owns the workspace while it is open, use its local research coordinator for binding or release its workspace lock before running the MCP staging plan.
+Use the exact profile, contrasts, and unit scope of the registered investigation. The MCP worker stages the candidate while Studio is open. Review and approve the resulting fit in Studio.
 
 ### Gene-list pathway staging after DE
 
@@ -675,7 +703,8 @@ Use `spec.fields` to bind evidence to answer fields. The default schema covers g
 
 ## Companion Studio handoffs
 
+- Follow the plan’s `execution_route`. `mcp` runs through the standard reviewed MCP call. `mcp_then_offline_studio` stages through MCP and continues to local Studio review. `offline_studio` uses the exact local reviewed plan in Studio. A null route with an `execution_blocker` identifies a retained plan that cannot be executed through the current plugin.
 - Private or clinical inputs stay in loopback Studio under `--offline-only`.
 - Bulk fits, donor pseudobulk fits, and other reviewed nodes continue only when their current review and consent gates are satisfied.
-- Use Studio for interactive QC revisions, publication and blinded review, and artifact staging outside the advertised plan parameters. Use the Python coordinator for governed Tier B, donor trajectory and specialized qualified branches if their required authorization or input artifacts are missing from MCP.
+- Use Studio for interactive QC revisions, publication and blinded review, and artifact staging outside the advertised plan parameters. Keep the original investigation and report any missing reviewed local route, artifacts, or authorization before claiming execution. A direct Python run cannot stand in for a plugin run.
 - Literature grant and claim registration takes place in the local coordinator. MCP literature execution is post-evidence only.

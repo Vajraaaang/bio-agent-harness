@@ -7,6 +7,7 @@ provide a negative-binomial count fit, infer an axis, or test lineage topology.
 import csv
 import hashlib
 import io
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,11 +19,11 @@ from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from scipy.interpolate import BSpline
 from scipy.sparse import csr_array
-from scipy.stats import f
+from scipy.stats import f, t
 
 from ._files import read_bounded_file
 from ._hashing import canonical_sha256
-from .design import require_design_condition
+from .design import DESIGN_CONDITION_NUMBER_LIMIT, require_design_condition
 from .h5ad_gene_blocks import H5adGeneBlocks
 from .population_data import bound_query_file
 from .publication_families import Sha, budgeted_bh
@@ -35,6 +36,9 @@ _MAX_GENES = 20_000
 _MAX_DONORS = 256
 _MIN_DONORS_PER_ARM = 3
 _MIN_INFERENCE_RESIDUAL_DF = 2
+_MIN_BIN_COVERAGE = 0.75
+_MIN_SHARED_SPAN = 0.5
+_EFFECT_GRID_SIZE = 257
 _COORDINATE_COLUMNS = ("cell_id", "donor_id", "condition", "pseudotime")
 _DEGREE = 3
 _Column = Annotated[str, StringConstraints(pattern=r"^[a-zA-Z][a-zA-Z0-9_.-]{0,127}$")]
@@ -105,10 +109,21 @@ class _Bins:
     weights: csr_array
     anchor_columns: NDArray[np.intp]
     spline_projection: _Floats
-    direction: _Floats
+    shape_rotation: _Floats
+    effect_basis: _Floats
+    effect_bounds: tuple[float, float]
     minimum_cells: int
     maximum_cells: int
+    minimum_eligible_bins: int
+    excluded_bins: int
+    excluded_cells: int
     knot_positions: tuple[float, ...]
+
+
+class _ArmError(NamedTuple):
+    donors: slice
+    residual_basis: _Floats
+    contrast_variance_scale: float
 
 
 @dataclass(frozen=True)
@@ -118,6 +133,7 @@ class _DonorModel:
     projection: _Floats
     contrast_index: int
     variance_scale: float
+    arm_errors: tuple[_ArmError, ...]
     diagnostics: dict
 
     def modeled_curves(self, donor_arm_curves: _Floats) -> _Floats:
@@ -130,6 +146,7 @@ class _DonorModel:
 class TrajectoryGeneStatistic(TypedDict):
     gene_id: str
     effect: float | None
+    endpoint_delta: float | None
     p: float | None
     q: float | None
     estimate_status: Literal["estimated", "exploratory", "not_estimable"]
@@ -231,7 +248,10 @@ def _read_coordinates(path: Path, spec: DonorTrajectorySpec) -> dict[str, _Cell]
 def _donor_arms(cells: Sequence[_Cell], spec: DonorTrajectorySpec) -> tuple[_Arm, ...]:
     control = {cell.donor for cell in cells if cell.condition == spec.denominator}
     treated = {cell.donor for cell in cells if cell.condition == spec.numerator}
-    if min(len(control), len(treated)) < _MIN_DONORS_PER_ARM:
+    if (
+        spec.design == "independent"
+        and min(len(control), len(treated)) < _MIN_DONORS_PER_ARM
+    ):
         raise ValueError("trajectory_needs_at_least_three_donors_per_condition")
     if len(control | treated) > _MAX_DONORS:
         raise ValueError("trajectory_donor_budget_exceeded")
@@ -295,24 +315,66 @@ def _donor_model(
         matrix = np.column_stack((np.ones(len(arms)), indicator, nuisance))
         model_terms = ["intercept", "condition", *terms]
         contrast_index = 1
-    diagnostics = require_design_condition(matrix)
     shape_parameters = spec.knot_count + 1
-    denominator_df = diagnostics["residual_df"] - shape_parameters + 1
-    if denominator_df < _MIN_INFERENCE_RESIDUAL_DF:
-        raise ValueError("insufficient_donor_degrees_of_freedom_for_frozen_spline")
+    if paired:
+        required_pairs = (
+            matrix.shape[1] + shape_parameters - 1 + _MIN_INFERENCE_RESIDUAL_DF
+        )
+        if len(matrix) < required_pairs:
+            raise ValueError(
+                "trajectory_needs_more_complete_pairs_for_frozen_spline"
+                f": found={len(matrix)}, required={required_pairs}"
+            )
+    diagnostics = require_design_condition(matrix)
     projection = np.linalg.pinv(matrix)
     weights = projection[contrast_index]
+    arm_errors: list[_ArmError] = []
+    test_diagnostics: dict[str, Any]
+    if paired:
+        denominator_df = diagnostics["residual_df"] - shape_parameters + 1
+        test_diagnostics = {"shape_test_reference": "paired_hotelling_f"}
+    else:
+        control_count = sum(condition == spec.denominator for _, condition in arms)
+        arm_dfs = {}
+        # Separate residuals are orthogonal to the common mean-model design
+        # within each arm, including the technical terms in the contrast.
+        for label, donors in (
+            (spec.denominator, slice(None, control_count)),
+            (spec.numerator, slice(control_count, None)),
+        ):
+            local_design = matrix[donors]
+            left, _, _ = np.linalg.svd(local_design, full_matrices=True)
+            residual_basis = left[:, np.linalg.matrix_rank(local_design):].T
+            residual_df = len(residual_basis)
+            if residual_df < _MIN_INFERENCE_RESIDUAL_DF:
+                raise ValueError(
+                    "insufficient_within_condition_donor_residual_df"
+                    f": condition={label!r}, found={residual_df}, "
+                    f"required={_MIN_INFERENCE_RESIDUAL_DF}"
+                )
+            arm_weights = weights[donors]
+            arm_errors.append(
+                _ArmError(donors, residual_basis, float(arm_weights @ arm_weights))
+            )
+            arm_dfs[label] = residual_df
+        denominator_df = min(arm_dfs.values())
+        test_diagnostics = {
+            "shape_test_reference": "separate_variance_minimum_residual_df_t",
+            "residual_df_per_condition": arm_dfs,
+        }
     return _DonorModel(
         paired,
         matrix,
         projection,
         contrast_index,
         float(weights @ weights),
+        tuple(arm_errors),
         {
             **diagnostics,
             "model_terms": model_terms,
             "within_pair_canceled_technical_terms": canceled,
             "shape_test_df": [shape_parameters, denominator_df],
+            **test_diagnostics,
         },
     )
 
@@ -332,20 +394,41 @@ def _pseudotime_bins(
     rows = arm_ids * spec.bin_count + bins
     group_bins = len(arms) * spec.bin_count
     counts = np.bincount(rows, minlength=group_bins)
-    if np.any(counts < spec.min_cells_per_bin):
-        raise ValueError("insufficient_within_donor_pseudotime_support")
-    grid = np.array([0.5, spec.bin_count - 0.5]) / spec.bin_count
+    eligible = counts >= spec.min_cells_per_bin
+    count_by_arm = counts.reshape(len(arms), spec.bin_count)
+    eligible_by_arm = eligible.reshape(count_by_arm.shape)
+    eligible_per_arm = eligible_by_arm.sum(axis=1)
+    required_bins = max(
+        spec.knot_count + 2, math.ceil(_MIN_BIN_COVERAGE * spec.bin_count)
+    )
+    if eligible_per_arm.min() < required_bins:
+        arm_index = int(np.argmin(eligible_per_arm))
+        raise ValueError(
+            "insufficient_within_donor_pseudotime_support"
+            f": donor_arm={arms[arm_index]!r}, found={eligible_per_arm[arm_index]}, "
+            f"required={required_bins}"
+        )
+    kept_cells = eligible[rows]
+    nominal_start = 0.5 / spec.bin_count
+    nominal_end = 1 - nominal_start
     observed_min = np.full(len(arms), np.inf)
     observed_max = np.full(len(arms), -np.inf)
-    np.minimum.at(observed_min, arm_ids, times)
-    np.maximum.at(observed_max, arm_ids, times)
-    if np.any(observed_min > grid[0]) or np.any(observed_max < grid[1]):
-        raise ValueError("trajectory_contrast_requires_observed_support")
-    cell_indexes = np.arange(len(cells))
+    np.minimum.at(observed_min, arm_ids[kept_cells], times[kept_cells])
+    np.maximum.at(observed_max, arm_ids[kept_cells], times[kept_cells])
+    bounds = (
+        float(max(nominal_start, observed_min.max())),
+        float(min(nominal_end, observed_max.min())),
+    )
+    if bounds[1] - bounds[0] < _MIN_SHARED_SPAN * (nominal_end - nominal_start):
+        raise ValueError(
+            "trajectory_contrast_requires_observed_support: shared_span_too_short"
+        )
+    cell_indexes = np.flatnonzero(kept_cells)
+    retained_rows = rows[kept_cells]
     first_cell = np.full(len(arms), len(cells))
-    np.minimum.at(first_cell, arm_ids, cell_indexes)
+    np.minimum.at(first_cell, arm_ids[kept_cells], cell_indexes)
     weights = csr_array(
-        (1 / counts[rows], (rows, cell_indexes)),
+        (1 / counts[retained_rows], (retained_rows, cell_indexes)),
         shape=(group_bins, len(cells)),
     )
     positions = np.linspace(0, 1, spec.knot_count)
@@ -355,21 +438,75 @@ def _pseudotime_bins(
     # The B-spline basis sums to one. Use a unit intercept and drop that
     # coordinate in the shape comparison to remove donor-level shifts.
     basis[:, :, 0] = 1.0
-    for matrix in basis:
-        require_design_condition(matrix)
-    grid_spline = BSpline.design_matrix(grid, knots, _DEGREE).toarray()
+    projection = np.zeros((len(arms), spec.knot_count + 1, spec.bin_count))
+    for index, keep in enumerate(eligible_by_arm):
+        observed_basis = basis[index, keep]
+        require_design_condition(observed_basis)
+        bin_counts = count_by_arm[index, keep]
+        # Inverse sampling variance of a bin mean is proportional to its
+        # cell count. The second-stage contrast still counts each donor once.
+        relative_precision = np.sqrt(bin_counts / bin_counts.max())
+        weighted_basis = relative_precision[:, None] * observed_basis
+        if np.linalg.cond(weighted_basis) > DESIGN_CONDITION_NUMBER_LIMIT:
+            raise ValueError(
+                f"ill_conditioned_weighted_donor_spline: donor_arm={arms[index]!r}"
+            )
+        projection[index][:, keep] = (
+            np.linalg.pinv(weighted_basis)[1:] * relative_precision
+        )
+    reference = np.linspace(*bounds, spec.bin_count)
+    shape_basis = BSpline.design_matrix(reference, knots, _DEGREE).toarray()[:, 1:]
+    shape_basis -= shape_basis.mean(axis=0)
+    if np.linalg.matrix_rank(shape_basis) < shape_basis.shape[1]:
+        raise ValueError("trajectory_shape_basis_rank_deficient_on_shared_support")
+    _, rotation = np.linalg.qr(shape_basis)
+    grid = np.linspace(*bounds, _EFFECT_GRID_SIZE)
+    effect_basis = BSpline.design_matrix(grid, knots, _DEGREE).toarray()[:, 1:]
+    effect_basis -= effect_basis[0].copy()
     return _Bins(
         weights,
         first_cell[arm_ids],
-        np.linalg.pinv(basis)[:, 1:, :],
-        grid_spline[1, 1:] - grid_spline[0, 1:],
-        int(counts.min()),
-        int(counts.max()),
+        projection,
+        rotation.T,
+        effect_basis,
+        bounds,
+        int(counts[eligible].min()),
+        int(counts[eligible].max()),
+        int(eligible_per_arm.min()),
+        int((~eligible).sum()),
+        int((~kept_cells).sum()),
         tuple(float(value) for value in positions),
     )
 
 
-def _shape_probability(
+def _independent_shape_probability(
+    model: _DonorModel,
+    curves: _Floats,
+    contrast: _Floats,
+    rotation: _Floats,
+) -> float | None:
+    coordinates = curves @ rotation
+    effect = contrast @ rotation
+    shape_df, denominator_df = model.diagnostics["shape_test_df"]
+    variance = np.zeros(shape_df)
+    for arm in model.arm_errors:
+        residual = arm.residual_basis @ coordinates[arm.donors]
+        variance += arm.contrast_variance_scale * np.square(residual).mean(axis=0)
+    positive = variance > 0
+    if (
+        not positive.any()
+        or not np.isfinite(variance).all()
+        or np.any(effect[~positive] != 0)
+    ):
+        return None
+    statistic = np.abs(effect[positive]) / np.sqrt(variance[positive])
+    # Hsu's conservative Welch reference uses the smaller arm residual df.
+    # It avoids estimating a tail df from two residuals in a three-donor arm.
+    # Bonferroni combines the fixed directions without a covariance inverse.
+    return float(min(1.0, shape_df * np.min(2 * t.sf(statistic, denominator_df))))
+
+
+def _paired_shape_probability(
     model: _DonorModel,
     curves: _Floats,
     parameters: _Floats,
@@ -404,12 +541,24 @@ def _estimate_gene(
 ) -> TrajectoryGeneStatistic:
     curves = model.modeled_curves(donor_arm_curves)
     parameters = model.projection @ curves
-    probability = _shape_probability(model, curves, parameters) if inferential else None
-    effect = float(parameters[model.contrast_index] @ bins.direction)
-    if not np.isfinite(effect) or inferential and probability is None:
+    contrast = parameters[model.contrast_index]
+    probability = None
+    if inferential:
+        probability = (
+            _paired_shape_probability(model, curves, parameters)
+            if model.paired
+            else _independent_shape_probability(
+                model, curves, contrast, bins.shape_rotation
+            )
+        )
+    deviations = bins.effect_basis @ contrast
+    effect = float(deviations[np.argmax(np.abs(deviations))])
+    endpoint_delta = float(deviations[-1])
+    if not np.isfinite(deviations).all() or (inferential and probability is None):
         return {
             "gene_id": gene,
             "effect": None,
+            "endpoint_delta": None,
             "p": None,
             "q": None,
             "estimate_status": "not_estimable",
@@ -418,6 +567,7 @@ def _estimate_gene(
     return {
         "gene_id": gene,
         "effect": effect,
+        "endpoint_delta": endpoint_delta,
         "p": probability,
         "q": None,
         "estimate_status": "estimated" if inferential else "exploratory",
@@ -563,21 +713,37 @@ def fit_donor_trajectory(
             "bin_count": spec.bin_count,
             "minimum_cells_in_bin": bins.minimum_cells,
             "maximum_cells_in_bin": bins.maximum_cells,
-            "effect_pseudotime_bounds": [
-                0.5 / spec.bin_count,
-                (spec.bin_count - 0.5) / spec.bin_count,
-            ],
-            "exclusions_applied": False,
+            "minimum_eligible_bins_per_donor_arm": bins.minimum_eligible_bins,
+            "excluded_donor_bins": bins.excluded_bins,
+            "excluded_cells": bins.excluded_cells,
+            "effect_pseudotime_bounds": list(bins.effect_bounds),
+            "exclusions_applied": bool(bins.excluded_bins),
         },
         "condition_number_validated": True,
         "design_diagnostics": model.diagnostics,
-        "effect_definition": "condition_difference_in_change_across_end_bin_centers",
-        "test_definition": "joint_donor_shape_contrast_with_intercept_excluded",
+        "effect_definition": (
+            "Signed maximum absolute condition difference in change from the shared "
+            "start on a 257-point grid. Endpoint delta is the corresponding "
+            "change from the shared start to end."
+        ),
+        "test_definition": (
+            "Paired Hotelling F test of donor shape without the intercept."
+            if model.paired
+            else "Bonferroni omnibus of separate-variance t tests on orthogonal "
+            "donor shape contrasts with the smaller arm residual degrees of freedom."
+        ),
         "limitations": [
             "Inference conditions on the frozen spline and shared inferred axis.",
             "Collection age and inferred pseudotime measure different quantities.",
-            "The shape test assumes Gaussian donor errors with a common covariance.",
-            "Unequal cell coverage can give donor curves different precision.",
+            (
+                "Paired inference assumes Gaussian pair differences with common "
+                "covariance."
+                if model.paired
+                else "Independent inference allows different Gaussian donor variances "
+                "between conditions and assumes common variance within each condition."
+            ),
+            "Bin means are weighted by cell counts within donors. Bin eligibility "
+            "and the shared support window are determined from cell coordinates.",
         ],
         "bh_family_size": len(results) if inferential else None,
         "gene_statistics": results,

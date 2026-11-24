@@ -133,6 +133,7 @@ _PROBES = (
         ("cell_type_expression", "ligand_receptor_reference"),
         "ligand_receptor_reference",
         (("ligand_receptor_reference",),),
+        "scrna_ccc",
     ),
     _Probe(
         11,
@@ -264,7 +265,144 @@ def test_answerability_probe_inventory_is_exact():
     assert tuple(probe.family for probe in _PROBES) == tuple(range(1, 21))
 
 
-@pytest.mark.parametrize("probe", _PROBES, ids=lambda case: case.question)
+_ADDITIONAL_ROUTES = (
+    _Probe(
+        3,
+        "bulk_deconvolution",
+        "bulk_rna_seq",
+        "transcript_quantification",
+        ("estimated_gene_counts", "cell_type_reference"),
+        "cell_type_reference",
+        (("cell_type_reference",),),
+        "bulk_deconvolution",
+    ),
+    _Probe(
+        6,
+        "rna_pathway_camera",
+        "bulk_rna_seq",
+        "normalized_expression",
+        ("normalized_expression", "gene_sets", "ranked_gene_statistics"),
+        "normalized_expression",
+        (("normalized_expression",),),
+        "rna_pathway_camera",
+    ),
+    _Probe(
+        6,
+        "regulon_activity",
+        "bulk_rna_seq",
+        "prior_results",
+        ("ranked_gene_statistics", "gene_sets"),
+        "ranked_gene_statistics",
+        (("ranked_gene_statistics",),),
+        "rna_pathway_tested",
+    ),
+    _Probe(
+        7,
+        "donor_trajectory",
+        "single_cell_rna_seq",
+        "annotated_object",
+        ("normalized_expression", "inferred_pseudotime"),
+        "inferred_pseudotime",
+        (("inferred_pseudotime",),),
+        "fit_donor_trajectory",
+    ),
+    _Probe(
+        9,
+        "spatial_pattern",
+        "spatial_transcriptomics",
+        "annotated_object",
+        ("gene_counts", "spatial_coordinates"),
+        "spatial_coordinates",
+        (("spatial_coordinates",),),
+        "spatial_pattern",
+    ),
+)
+
+
+def test_paired_trajectory_requires_complete_pairs_for_spline_inference():
+    request = AnswerabilityRequest(
+        family_id=7,
+        question="donor_trajectory",
+        assay="single_cell_rna_seq",
+        entry_point="annotated_object",
+    )
+    runtime = RuntimeEvidence(
+        question=request.question,
+        operation_id="fit_donor_trajectory",
+        tier="tier_a",
+        runtime_sha256=_digest("runtime"),
+    )
+    measurements = tuple(
+        map(_attestation, ("normalized_expression", "inferred_pseudotime"))
+    )
+    for arms, pairs, reason in (
+        ((5, 6), 5, "trajectory_requires_complete_donor_pairs"),
+        ((4, 4), 4, "insufficient_replication"),
+        ((5, 5), 5, "prerequisites_satisfied"),
+    ):
+        design = DesignEvidence(
+            biological_unit="donor",
+            receipt_sha256=_digest("paired design"),
+            observation_axis_sha256=_digest("fixture observations"),
+            estimability="estimable",
+            independent_units_per_group=arms,
+            complete_donor_pairs=pairs,
+        )
+        assert (
+            assess_answerability(
+                request, measurements=measurements, design=design, runtime=runtime
+            ).reason
+            == reason
+        )
+
+
+def test_organism_mismatch_requires_an_explicit_cross_species_question():
+    human = _attestation("cell_type_expression")
+    mouse = _attestation("ligand_receptor_reference")
+    human = human.model_copy(
+        update={
+            "reference": human.reference.model_copy(update={"organism": "Homo sapiens"})
+        }
+    )
+    mouse = mouse.model_copy(
+        update={
+            "reference": mouse.reference.model_copy(update={"organism": "Mus musculus"})
+        }
+    )
+    request = AnswerabilityRequest(
+        family_id=10,
+        question="cell_communication",
+        assay="single_cell_rna_seq",
+        entry_point="normalized_expression",
+    )
+    assert (
+        assess_answerability(request, measurements=(human, mouse)).reason
+        == "reference_pins_conflict"
+    )
+    request = request.model_copy(
+        update={"family_id": 8, "question": "cross_species_comparison"}
+    )
+    expert = RuntimeEvidence(
+        question=request.question,
+        operation_id="ortholog_mapping",
+        tier="tier_b",
+        runtime_sha256=_digest("runtime"),
+        method_contract_sha256=_digest("method"),
+    )
+    result = assess_answerability(
+        request,
+        measurements=(
+            human.model_copy(update={"kind": "normalized_expression"}),
+            mouse.model_copy(update={"kind": "ortholog_map"}),
+        ),
+        runtime=expert,
+    )
+    assert result.status == "ready"
+
+
+@pytest.mark.parametrize(
+    "probe", (*_PROBES, *_ADDITIONAL_ROUTES), ids=lambda case: case.question
+)
 def test_family_probe_enforces_decisive_measurements(probe):
     request = AnswerabilityRequest(
         family_id=probe.family,
@@ -289,7 +427,14 @@ def test_family_probe_enforces_decisive_measurements(probe):
         if tier == "tier_b"
         else None,
     )
-    complete = tuple(map(_attestation, probe.complete))
+    complete = tuple(
+        _attestation(kind).model_copy(
+            update={"observation_axis_sha256": _digest("reference donors")}
+        )
+        if kind == "cell_type_reference"
+        else _attestation(kind)
+        for kind in probe.complete
+    )
     ready = assess_answerability(
         request, measurements=complete, design=design, runtime=runtime
     )

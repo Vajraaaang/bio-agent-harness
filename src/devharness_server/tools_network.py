@@ -102,10 +102,30 @@ def _replicate_pairs(expression, metadata, replicate_col, times, stages, lag):
     }
 
 
+def _history_adjusted_fit_inputs(x, y, histories, target, terms, variable, weights):
+    from sklearn.preprocessing import StandardScaler
+
+    columns = [np.ones(len(x)), x]
+    if histories is not None:
+        scaler = StandardScaler().fit(histories, sample_weight=weights)
+        history = scaler.transform(histories)[:, 0]
+        columns.append(history)
+        terms.append(f"previous target expression ({target})")
+        # Partial out the unpenalized baseline before penalizing the TF terms.
+        weighted = history if weights is None else history * weights
+        history_ss = history @ weighted
+        if scaler.var_[0] > 1e-24 and history_ss > 0:
+            x = x - np.outer(history, (weighted @ x) / history_ss)
+            y -= history * ((weighted @ y) / history_ss)
+            variable &= np.average(x**2, axis=0, weights=weights) > 1e-24
+    return x, y, np.column_stack(columns)
+
+
 def _network_worker(counts_path: str, metadata_path: str, candidate_tfs: List[str],
                     target_genes: List[str], time_col: str, lag: int, alpha: float,
                     max_cells: int, max_edges: int, data_type: str = "auto",
-                    aggregation: str = "time_mean", replicate_col: Optional[str] = None) -> dict:
+                    aggregation: str = "time_mean", replicate_col: str | None = None,
+                    control_target_history: bool = False) -> dict:
     from sklearn.linear_model import Ridge
     from sklearn.preprocessing import StandardScaler
 
@@ -170,11 +190,15 @@ def _network_worker(counts_path: str, metadata_path: str, candidate_tfs: List[st
         variable = scaler_x.var_ > 1e-24
         constant_tfs.extend(tf for tf, varies in zip(tfs, variable) if not varies)
         coefficients = np.zeros(len(tfs))
-        standardized_x = scaler_x.transform(x)
-        design = np.column_stack([np.ones(len(x)), standardized_x])
+        terms = ["Intercept", *tfs]
+        standardized_x, standardized_y, design = _history_adjusted_fit_inputs(
+            scaler_x.transform(x), scaler_y.transform(y)[:, 0],
+            past[:, gene_index[target], None] if control_target_history else None,
+            target, terms, variable, weights,
+        )
         if weights is not None:
             design *= np.sqrt(weights)[:, None]
-        diagnostic = _diagnostics(design, ["Intercept"] + tfs)
+        diagnostic = _diagnostics(design, terms)
         if diagnostic["condition_number"] is not None and not math.isfinite(diagnostic["condition_number"]):
             diagnostic["condition_number"] = None
         diagnostic["regularized"] = True
@@ -182,7 +206,6 @@ def _network_worker(counts_path: str, metadata_path: str, candidate_tfs: List[st
         if scaler_y.var_[0] <= 1e-24:
             constant_targets.append(target)
         elif variable.any():
-            standardized_y = scaler_y.transform(y)[:, 0]
             coefficients[variable] = Ridge(alpha=alpha, fit_intercept=True, solver="svd").fit(
                 standardized_x[:, variable], standardized_y, sample_weight=weights).coef_
         if not np.isfinite(coefficients).all():
@@ -206,6 +229,11 @@ def _network_worker(counts_path: str, metadata_path: str, candidate_tfs: List[st
         "provenance": {"algorithm": algorithm,
             "aggregation": aggregation, **replicate_provenance,
             "interpretation": "associative temporal prediction; no direct or causal regulatory claim",
+            "control_target_history": control_target_history,
+            "autoregressive_baseline": (
+                "unpenalized target expression at the start of each lag pair"
+                if control_target_history else None
+            ),
             "counts_path": counts_path, "metadata_path": metadata_path, "time_col": time_col,
             "metadata_sha256": metadata.attrs["source_sha256"], "selected_expression_sha256": selected_hash,
             "hash_scope": "requested numeric expression and ordered gene/sample IDs; complete metadata file",
@@ -241,11 +269,16 @@ def infer_regulatory_network(counts_path: str, metadata_path: str, candidate_tfs
                               max_edges: int = 1000,
                               data_type: Literal["counts", "continuous", "auto"] = "auto",
                               aggregation: Literal["time_mean", "sample", "replicate"] = "time_mean",
-                              replicate_col: Optional[str] = None) -> dict:
+                              replicate_col: str | None = None,
+                              control_target_history: bool = False) -> dict:
     """Rank measured TF-target pairs by regularized lagged temporal association.
 
     TFs and targets must be explicit. Fits run in a supervised spawned worker;
     the finite scores are exploratory. The default uses observed stage means.
+    Set control_target_history to true for a Granger-style comparison against
+    an unpenalized autoregressive baseline using target expression at the start
+    of each lag pair. This estimates incremental temporal association. The
+    default retains the TF-only lag model.
     Sample aggregation requires unique time or pseudotime coordinates.
     Replicate aggregation requires a declared biological identity column and
     fits within-identity lagged associations on aligned observed coordinates.
@@ -270,13 +303,16 @@ def infer_regulatory_network(counts_path: str, metadata_path: str, candidate_tfs
         raise ValueError("data_type must be counts, continuous or auto")
     if not isinstance(aggregation, str) or aggregation not in {"time_mean", "sample", "replicate"}:
         raise ValueError("aggregation must be time_mean, sample or replicate")
+    if not isinstance(control_target_history, bool):
+        raise ValueError("control_target_history must be Boolean")
     if aggregation == "replicate":
         _require_replicate_identity_column(replicate_col)
     elif replicate_col is not None:
         raise ValueError("replicate_col requires replicate aggregation")
     return run_sandboxed(_network_worker, (str(Path(counts_path).expanduser().resolve()),
         str(Path(metadata_path).expanduser().resolve()), candidate_tfs, target_genes, time_col,
-        lag, float(alpha), max_cells, max_edges, data_type, aggregation, replicate_col),
+        lag, float(alpha), max_cells, max_edges, data_type, aggregation, replicate_col,
+        control_target_history),
         max_mem_mb=2000, timeout_sec=120)
 
 
@@ -306,16 +342,31 @@ def _table_rows(path: str, required: set):
             yield {key: value.strip() if isinstance(value, str) else value for key, value in row.items()}
 
 
-def _enrichment_rows(selected: set, background: set, gene_sets: dict, field: str) -> List[dict]:
+def _enrichment_rows(
+    selected: set, background: set, gene_sets: dict, field: str,
+    *, untestable: list[dict] | None = None,
+) -> list[dict]:
     from scipy.stats import hypergeom
     rows = []
     for label, genes in sorted(gene_sets.items()):
         eligible = genes & background
+        if not eligible:
+            if untestable is not None:
+                untestable.append({
+                    field: label,
+                    "status": "untestable",
+                    "reason": "no_eligible_reference_genes",
+                })
+            continue
         overlap = len(eligible & selected)
-        p_value = float(hypergeom.sf(overlap - 1, len(background), len(eligible), len(selected)))
+        p_value = float(hypergeom.sf(
+            overlap - 1, len(background), len(eligible), len(selected)
+        ))
         rows.append({field: label, "overlap": overlap, "reference_size": len(eligible),
             "selected_size": len(selected), "background_size": len(background),
-            "fold_enrichment": overlap * len(background) / (len(selected) * len(eligible)) if eligible else None,
+            "fold_enrichment": (
+                overlap * len(background) / (len(selected) * len(eligible))
+            ),
             "p_value": p_value})
     for row, q_value in zip(rows, bh_adjust([row["p_value"] for row in rows])):
         row["q_value"] = q_value
@@ -356,13 +407,18 @@ def _enrichment_worker(selected_genes: List[str], background_genes: List[str], p
         raise ValueError("Reference contains no testable sets")
     if kind == "motif" and any(not background.issubset(seen[label]) for label in sets):
         raise ValueError("Every background gene must have an explicit scanned hit/no-hit status for every tested motif")
-    rows = _enrichment_rows(selected, background, sets, "tf" if kind == "regulon" else "motif")
-    return {"results": rows[:max_results], "provenance": {
+    field = "tf" if kind == "regulon" else "motif"
+    untestable: list[dict] = []
+    rows = _enrichment_rows(selected, background, sets, field, untestable=untestable)
+    return {"results": rows[:max_results],
+        "untestable": untestable[:max_results], "provenance": {
         "reference_path": path, "reference_sha256": _file_sha256(path),
         "reference_validation": "local table schema and content checked; source authenticity is caller-supplied",
         "evidence_type": "supplied curated TF-target overlap" if kind == "regulon" else "supplied sequence motif-hit calls",
         "test": "one-sided hypergeometric overrepresentation", "fdr_method": "Benjamini-Hochberg",
-        "fdr_scope": "all supplied tested sets before output truncation", "tested_sets": len(rows),
+        "fdr_scope": "all supplied tested sets before output truncation",
+        "testability_rule": "at least one reference member in the measured background",
+        "tested_sets": len(rows), "untestable_sets": len(untestable),
         "returned_sets": min(max_results, len(rows)), "truncated": len(rows) > max_results,
         "excluded_reference_genes": len(outside), "background_size": len(background),
         "selected_size": len(selected), "background_source": "explicit caller-supplied measured genes"},

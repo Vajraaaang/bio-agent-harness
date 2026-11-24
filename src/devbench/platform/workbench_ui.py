@@ -2321,6 +2321,16 @@ def main(argv=None, *, pin_execution=False, interactive_adaptive=False):
         help="Disable model and discovery access for this startup only",
     )
     parser.add_argument(
+        "--attach-retained-comparison",
+        type=Path,
+        help="Persist an exact local comparison manifest in this offline Studio workspace",
+    )
+    parser.add_argument(
+        "--attach-local-analysis",
+        type=Path,
+        help="Retain a local analysis with a completed private Studio run",
+    )
+    parser.add_argument(
         "--restore-view-state-backup",
         action="store_true",
         help="Explicitly recover missing/invalid local view metadata from its "
@@ -2546,6 +2556,26 @@ def _validate_cli_args(
         parser.error("--mounted-image-id requires an exact sha256 image ID")
     if args.projects_root is not None:
         _validate_projects_root(parser, args)
+    if args.attach_retained_comparison is not None and (
+        not args.offline_only
+        or not args.enable_scientific
+        or args.projects_root is not None
+        or not args.attach_retained_comparison.is_absolute()
+    ):
+        parser.error(
+            "--attach-retained-comparison requires --offline-only, --enable-scientific, "
+            "an absolute manifest path and a dedicated workspace"
+        )
+    if args.attach_local_analysis is not None and (
+        not args.offline_only
+        or not args.enable_scientific
+        or args.projects_root is not None
+        or not args.attach_local_analysis.is_absolute()
+    ):
+        parser.error(
+            "--attach-local-analysis requires --offline-only, --enable-scientific, "
+            "an absolute manifest path and a dedicated workspace"
+        )
     if args.adaptive_workflow is not None and (
         not args.enable_scientific
         or not args.adaptive_workflow.is_absolute()
@@ -2623,6 +2653,21 @@ def _attach_startup_workflow(app, args, parser):
             parser.error(
                 "Adaptive workflow startup refused: " + safe_diagnostic(error)
             )
+    if args.attach_retained_comparison is not None:
+        from .workbench_retained_comparison import retain_local_comparison
+
+        try:
+            retain_local_comparison(app, args.attach_retained_comparison)
+        except (OSError, ValueError, RuntimeError, KeyError) as error:
+            parser.error("Retained comparison startup refused: " + safe_diagnostic(error))
+
+    if args.attach_local_analysis is not None:
+        from .workbench_local_analysis import retain_local_analysis
+
+        try:
+            retain_local_analysis(app, args.attach_local_analysis)
+        except (OSError, ValueError, RuntimeError, KeyError) as error:
+            parser.error("Local analysis startup refused: " + safe_diagnostic(error))
 
 
 def _handle_studio_shutdown(_signum, _frame):

@@ -4,6 +4,7 @@ from importlib.metadata import version
 
 import numpy as np
 import pandas as pd
+from scipy.stats import false_discovery_control
 
 from .streaming_rle import streaming_median_ratio_factors
 
@@ -42,7 +43,7 @@ def _frozen_design(conditions, units, samples, numerator, denominator, design):
             "Python-only Wald design must be the intercept and directed "
             "condition coefficient"
         )
-    return units, target, compiled
+    return units, compiled
 
 
 def _validate_counts(counts):
@@ -128,12 +129,12 @@ def _fit_wald(counts, genes, units, design, factors):
 
 
 def _family_bh(probabilities, eligible):
-    padded = np.where(eligible, probabilities, 1.0)
-    order = np.argsort(padded, kind="stable")
-    ranked = padded[order] * len(padded) / np.arange(1, len(padded) + 1)
+    family = probabilities[eligible]
+    tested = np.isfinite(family)
+    padded = np.where(tested, family, 1.0)
     adjusted = np.full_like(probabilities, np.nan)
-    adjusted[order] = np.minimum(1, np.minimum.accumulate(ranked[::-1])[::-1])
-    return np.where(eligible, np.maximum(probabilities, adjusted), np.nan)
+    adjusted[eligible] = np.maximum(family, false_discovery_control(padded))
+    return adjusted
 
 
 def fit_pydeseq2_wald(
@@ -152,9 +153,8 @@ def fit_pydeseq2_wald(
     """Fit one coefficient and return effects, p-values, BH q-values and evidence.
 
     The original measured feature order is preserved. Codes are 0 (tested),
-    1 (label-blind low count), 2 (zero marginal in a condition), and 3
-    (fit/statistic unavailable). Untested rows have NaN internally and should
-    be serialized as null. Non-tested rows occupy conservative BH positions.
+    1 (label-blind low count), and 3 (fit/statistic unavailable). Untested rows
+    have NaN internally. Only failed eligible tests occupy conservative BH positions.
     """
     if test != "wald" or measurement not in {
         "raw_counts",
@@ -169,7 +169,7 @@ def fit_pydeseq2_wald(
     genes = _axis(gene_ids, counts.shape[0], "feature")
     if len(set(genes)) != len(genes):
         raise ValueError("Require unique measured feature labels")
-    units, target, compiled = _frozen_design(
+    units, compiled = _frozen_design(
         conditions,
         unit_ids,
         counts.shape[1],
@@ -182,14 +182,12 @@ def fit_pydeseq2_wald(
         counts.shape[1],
         scratch_dir=scratch_dir,
     )
-    separated = ~np.any(counts[:, target], axis=1) | ~np.any(counts[:, ~target], axis=1)
-    high_count = np.mean(counts / factors, axis=1) >= _MIN_MEAN
-    keep = ~separated & high_count
-    codes = np.where(separated, 2, np.where(keep, 3, 1)).astype(np.int8)
+    eligible = np.mean(counts / factors, axis=1) >= _MIN_MEAN
+    codes = np.where(eligible, 3, 1).astype(np.int8)
     effects = np.full(len(genes), np.nan)
     probabilities = np.full(len(genes), np.nan)
-    if keep.any():
-        selected = np.flatnonzero(keep)
+    if eligible.any():
+        selected = np.flatnonzero(eligible)
         fitted, p_values, valid = _fit_wald(
             counts[selected],
             [genes[index] for index in selected],
@@ -200,7 +198,7 @@ def fit_pydeseq2_wald(
         codes[selected[valid]] = 0
         effects[selected[valid]] = fitted[valid]
         probabilities[selected[valid]] = p_values[valid]
-    adjusted = _family_bh(probabilities, codes == 0)
+    adjusted = _family_bh(probabilities, eligible)
     return (
         effects,
         probabilities,
@@ -216,6 +214,6 @@ def fit_pydeseq2_wald(
             "normalization": {**normalization, "size_factors": factors.tolist()},
             "low_count_filter": "mean_RLE_normalized_counts_at_least_one",
             "cooks_outlier_policy": "withhold_without_count_replacement",
-            "multiplicity": "BH_complete_family_internal_p_one_for_untested",
+            "multiplicity": "BH_failed_eligible_tests_padded_with_one",
         },
     )

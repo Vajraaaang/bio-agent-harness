@@ -4,6 +4,7 @@ import json
 import math
 import re
 import subprocess
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,7 +13,7 @@ import numpy as np
 
 from devharness_core.storage import ChunkedExpressionStore
 
-from .bulk_solver_policy import freeze_bulk_solver
+from .bulk_solver_policy import freeze_bulk_solver, require_dream_coefficient
 from .streaming_rle import streaming_median_ratio_factors
 
 _DRIVER = (
@@ -20,6 +21,7 @@ _DRIVER = (
 )
 _MATRIX_BYTES = 512 * 1024**2
 _OMNIBUS = {"nested", "lrt"}
+_LATENT_SCORES = "latent_scores.bin"
 
 
 @dataclass(frozen=True)
@@ -97,10 +99,8 @@ def validate_mounted_model(model, measurement):
         )
     if "reduced_terms" in model and comparison not in _OMNIBUS:
         raise ValueError("A reduced model requires a nested comparison")
-    if model["units"] == "mixed" and comparison != "coefficient":
-        raise ValueError(
-            "Mounted dream currently requires a directed condition coefficient"
-        )
+    if model["units"] == "mixed":
+        require_dream_coefficient(measurement, comparison)
     lengths = model.get("lengths_sha256")
     if measurement == "tximport_estimated_counts":
         if type(lengths) is not str or not re.fullmatch(r"[a-f0-9]{64}", lengths):
@@ -174,8 +174,19 @@ def _check_units(labels, units, mode):
         or len(memberships) != 2 * len(set(units))
     ):
         raise ValueError("Fixed pairing requires one complete pair per biological unit")
-    if mode == "mixed" and len(units) - len(set(units)) < 2:
-        raise ValueError("Mixed models require replicated biological units")
+    if mode == "mixed" and sum(count > 1 for count in Counter(units).values()) < 2:
+        raise ValueError("Mixed models require at least two repeated biological units")
+
+
+def _scaled_covariates(covariates):
+    if not np.isfinite(covariates).all():
+        raise ValueError("Declared mounted covariates must be finite")
+    # Rescale first to avoid overflow when taking moments in the input units.
+    magnitude = np.max(np.abs(covariates), axis=0)
+    scaled = covariates / np.where(magnitude > 0, magnitude, 1.0)
+    centered = scaled - scaled.mean(axis=0)
+    deviation = centered.std(axis=0)
+    return centered / np.where(deviation > 0, deviation, 1.0)
 
 
 def _design_terms(rows, request, model, labels, units, levels):
@@ -193,13 +204,13 @@ def _design_terms(rows, request, model, labels, units, levels):
             )
     numeric = request["continuous_covariates"]
     covariates = (
-        np.asarray([[float(row[name]) for name in numeric] for row in rows])
+        _scaled_covariates(
+            np.asarray([[float(row[name]) for name in numeric] for row in rows])
+        )
         if numeric
         else None
     )
     if covariates is not None:
-        if not np.isfinite(covariates).all():
-            raise ValueError("Declared mounted covariates must be finite")
         terms.update(
             {name: [column] for name, column in zip(numeric, covariates.T, strict=True)}
         )
@@ -236,6 +247,10 @@ def compile_mounted_model(rows, request):
     levels, weights = _condition_columns(labels, request, model)
     terms, covariates = _design_terms(rows, request, model, labels, units, levels)
     design, condition = _matrix(terms.values(), len(rows))
+    if model["units"] == "mixed" and design.shape[0] - design.shape[1] <= 1:
+        raise ValueError(
+            "Mounted dream requires at least two residual degrees of freedom"
+        )
     strata = (
         [json.dumps([row[name] for name in factors]) for row in rows]
         if factors
@@ -417,6 +432,21 @@ def fit_mounted_model(source, cohort, request, primary, runtime, outputs, length
             source.shape[0],
             model["comparison"] in _OMNIBUS,
         )
+        if latent := evidence.get("latent_diagnostics"):
+            samples = source.shape[1]
+            factors = latent["n_factors"]
+            if type(factors) is not int or not 0 <= factors < samples:
+                raise ValueError("Invalid latent factor count")
+            if factors:
+                expected_bytes = samples * factors * 8
+                with (directory / _LATENT_SCORES).open("rb") as stream:
+                    scores = stream.read(expected_bytes + 1)
+                if (
+                    len(scores) != expected_bytes
+                    or not np.isfinite(np.frombuffer(scores, dtype="<f8")).all()
+                ):
+                    raise ValueError("Invalid latent score matrix")
+                evidence["_latent_score_bytes"] = scores
     return (
         effects,
         pvalues,

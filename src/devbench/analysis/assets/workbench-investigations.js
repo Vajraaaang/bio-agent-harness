@@ -747,10 +747,12 @@
     return api;
   }
   function mountAdaptivePanel({host, request, document = root.document, onModeChange,
-    requestFigure, download, taskCentered = false, onActivity, onSettled, onView, onResearch}) {
+    requestFigure, download, taskCentered = false, onActivity, onSettled, onView, onResearch,
+    onMotorFigures}) {
     let session = null, generation = 0, view = null, readOnly = false, submitting = false, scope = null;
+    let allowOfflineApproval = false;
     let cancelling = false, cancelNotice = null, liveStatus = null, imageURL = null;
-    let ledgerOpen = false, activityNotice = null, aimId = null;
+    let ledgerOpen = false, activityNotice = null, aimId = null, pluginTimer = null;
     const lineageState = {};
     const make = (tag, value, className) => {
       const node = document.createElement(tag);
@@ -786,7 +788,21 @@
     function status(message) {
       if (liveStatus) liveStatus.textContent = message;
     }
-    async function load(cursor = null) {
+    function offlinePlans() {
+      const plans = view?.private_workflow?.plans;
+      return Array.isArray(plans) ? plans : [];
+    }
+    function pluginWorkflowActive() {
+      return [view?.shared_motor_umap, ...offlinePlans()].some(plan =>
+        ['queued', 'running'].includes(plan?.status));
+    }
+    function pollPluginWorkflows() {
+      root.clearTimeout(pluginTimer);
+      pluginTimer = null;
+      if (pluginWorkflowActive())
+        pluginTimer = root.setTimeout(() => load(), 1800);
+    }
+    async function load(cursor = null, retryRevision = true) {
       if (session === null) return;
       const mark = ++generation;
       try {
@@ -800,14 +816,52 @@
         if (changed && onModeChange) onModeChange(page.mode);
       } catch (error) {
         if (generation !== mark) return;
+        const revisionConflict = !cursor && error.status === 409 &&
+          error.message === 'adaptive_view_revision_changed';
+        if (revisionConflict) {
+          if (pluginWorkflowActive()) {
+            status('Workflow changed during refresh. Trying again…');
+            return;
+          }
+          if (retryRevision) return load(null, false);
+        }
         if ([403, 404, 409].includes(error.status)) {
           view = {session_id: session, mode: 'adaptive/1', status: 'unavailable'};
           research?.select(null);
           render();
           onView?.(view);
         }
-        status(error.message || 'The current workflow view is unavailable.');
+        status(revisionConflict ? 'Workflow changed during refresh. Refresh to see its current state.' :
+          error.message || 'The current workflow view is unavailable.');
+      } finally {
+        if (!cursor && generation === mark) pollPluginWorkflows();
       }
+    }
+    async function launchReviewedPlan(path, plan) {
+      const expected = session, requestScope = scope;
+      submitting = true;
+      try {
+        await request(endpoint() + path, {
+          plan_id: plan.plan_id, plan_sha256: plan.plan_sha256, allow_data_execution: true,
+        });
+        if (session === expected && scope === requestScope) await load();
+      } finally {
+        if (session === expected && scope === requestScope) submitting = false;
+      }
+    }
+    async function launchMotorUmap() {
+      const plan = view?.shared_motor_umap;
+      if (readOnly || submitting || plan?.status !== 'awaiting_review' || plan.can_run !== true)
+        throw new Error('Refresh Workflows to review the current plan.');
+      return launchReviewedPlan('/motor-umap', plan);
+    }
+    async function launchPrivatePlan(reviewed, displayedView) {
+      const plan = offlinePlans().find(item => item?.plan_id === reviewed.plan_id &&
+        item.plan_sha256 === reviewed.plan_sha256);
+      if (view !== displayedView || (readOnly && !allowOfflineApproval) || submitting ||
+          plan?.status !== 'awaiting_review' || plan.can_run !== true)
+        throw new Error('Refresh Workflows to review the current plan.');
+      return launchReviewedPlan('/plugin-execute', plan);
     }
     async function act(name, data, model, openModel = false, operator = null) {
       const checked = name === 'run_checked_step' ? view?.actions?.run_checked_step : operator;
@@ -975,6 +1029,25 @@
       liveStatus = null;
       host.hidden = session === null || view?.mode === 'serial';
       if (host.hidden) return;
+      const displayedView = view;
+      const localWorkflow = root.WorkbenchStudio?.privateWorkflow?.(host, displayedView, {
+        readOnly: readOnly && !allowOfflineApproval,
+        launch: plan => launchPrivatePlan(plan, displayedView),
+      });
+      if (localWorkflow) {
+        liveStatus = make('p', '', 'message');
+        liveStatus.setAttribute('role', 'status');
+        host.append(liveStatus);
+      }
+      if (view?.shared_motor_umap && root.WorkbenchStudio?.motorWorkflow) {
+        root.WorkbenchStudio.motorWorkflow(host, view, {
+          readOnly, launch: launchMotorUmap,
+          navigate: onMotorFigures,
+        });
+        return;
+      }
+      if (localWorkflow) return;
+      if (readOnly && taskCentered && root.WorkbenchStudio?.pluginWorkflow?.(host, view)) return;
       const details = make(taskCentered ? 'section' : 'details', undefined,
         taskCentered ? 'wc-research-controls' : 'scientific-section');
       if (!taskCentered) {
@@ -1178,9 +1251,12 @@
     }
     async function select(identity, options = {}) {
       const next = /^[0-9a-f]{32}$/.test(text(identity)) ? identity : null;
-      if (session === next && readOnly === (options.readOnly === true) && scope === (options.scope || null) && aimId === (options.aimId || null)) return;
+      if (session === next && readOnly === (options.readOnly === true) &&
+          allowOfflineApproval === (options.allowOfflineApproval === true) &&
+          scope === (options.scope || null) && aimId === (options.aimId || null)) return;
       session = next;
       readOnly = options.readOnly === true;
+      allowOfflineApproval = options.allowOfflineApproval === true;
       scope = options.scope || null;
       aimId = options.aimId || null;
       research?.select(null, {scope, readOnly, revision: null});
@@ -1194,6 +1270,7 @@
       lineageState.selected = null;
       render();
       if (session !== null && !view) await load();
+      else pollPluginWorkflows();
     }
     return {select, refresh: () => load(), mode: () => view?.mode};
   }

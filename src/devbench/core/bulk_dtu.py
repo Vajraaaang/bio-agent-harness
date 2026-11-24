@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 from pydantic import Field
+from scipy.optimize import brentq
+from scipy.stats import t
 from statsmodels.genmod.families import Binomial
 from statsmodels.genmod.generalized_linear_model import GLM
 from statsmodels.tools.sm_exceptions import (
@@ -48,15 +50,29 @@ class BulkDTUSpec(FrozenContract):
     target_ofdr: Probability = Field(default=0.05, gt=0, lt=1)
 
 
-class _GroupedBinomialGLM(GLM):
-    """Include trial sizes in the Pearson scale for two-column binomial endog."""
-
-    def _estimate_x2_scale(self, mu: _Floats) -> float:
-        # statsmodels 0.14 includes n_trials in pearson_chi2, but omits
-        # it from its generic scale="X2" for the two-column response.
-        squared_error = np.square(self.endog - mu)
-        pearson = squared_error * self.iweights * self.n_trials
-        return float(np.sum(pearson / self.family.variance(mu)) / self.df_resid)
+def _usage_wald_df(
+    matrix: _Floats,
+    mu: _Floats,
+    inverse_information: _Floats,
+    variance_factor: _Floats,
+    rho_derivative: _Floats,
+    residual_df: int,
+) -> float:
+    """Moment-match contrast variance uncertainty to a scaled chi-squared."""
+    weighted_design = matrix * np.sqrt(mu * (1 - mu) / variance_factor)[:, None]
+    inverse_projection = weighted_design @ inverse_information
+    leverage = np.sum(weighted_design * inverse_projection, axis=1)
+    # The residual Pearson moment has variance 2 * residual_df in the
+    # working GLM. Its slope in rho is the residual-leverage weighted
+    # relative variance derivative. The contrast need not share that slope.
+    relative_derivative = rho_derivative / variance_factor
+    pearson_slope = (1 - leverage) @ relative_derivative
+    contrast_weights = np.square(inverse_projection[:, 1]) / inverse_information[1, 1]
+    contrast_slope = contrast_weights @ relative_derivative
+    if contrast_slope <= 0:
+        return float(residual_df)
+    moment_df = (pearson_slope / contrast_slope) ** 2 / residual_df
+    return float(min(residual_df, moment_df))
 
 
 def _usage_test(successes: _Floats, totals: _Floats, matrix: _Floats) -> dict[str, Any]:
@@ -66,20 +82,66 @@ def _usage_test(successes: _Floats, totals: _Floats, matrix: _Floats) -> dict[st
         "p_within_shaffer": None,
         "log_odds_ratio": None,
         "pearson_dispersion": None,
+        "donor_intraclass_correlation": None,
+        "wald_df": None,
         "status": "unestimable",
     }
     if not successes.any() or not (totals > successes).any():
         return {**row, "missing_reason": "feature_or_complement_absent"}
+    usage = successes / totals
+    # A positive fractional scaledTPM total below one is one effective trial.
+    inverse_depth = 1 / np.maximum(totals, 1.0)
+    rho_derivative = 1 - inverse_depth
+    has_donor_variance_information = bool(rho_derivative.any())
+    df = matrix.shape[0] - matrix.shape[1]
+    if df <= 0:
+        return {**row, "missing_reason": "insufficient_gene_residual_df"}
+
+    def fit_at(rho: float):
+        # Beta-binomial variance for a donor proportion:
+        # mu * (1 - mu) * (rho + (1 - rho) / n).
+        # Quasi-scores also admit the fractional counts from length adjustment.
+        weights = 1 / (inverse_depth + rho * rho_derivative)
+        fit = GLM(usage, matrix, family=Binomial(), var_weights=weights).fit(scale=1.0)
+        if (
+            not fit.converged
+            or not np.isfinite(fit.mu).all()
+            or np.any((fit.mu <= 0) | (fit.mu >= 1))
+        ):
+            raise ValueError("invalid_beta_binomial_quasi_likelihood_fit")
+        return fit
+
     try:
         with warnings.catch_warnings():
-            warnings.filterwarnings("error", category=PerfectSeparationWarning)
+            # IRLS also emits this warning for exactly fitted interior fractions.
+            boundary = np.any((usage == 0) | (usage == 1))
+            warnings.filterwarnings(
+                "error" if boundary else "ignore", category=PerfectSeparationWarning
+            )
             warnings.filterwarnings("error", category=RuntimeWarning)
-            fit = _GroupedBinomialGLM(
-                np.column_stack((successes, totals - successes)),
-                matrix,
-                family=Binomial(),
-            ).fit(scale="X2", use_t=True)
-        p_value, effect, scale = map(float, (fit.pvalues[1], fit.params[1], fit.scale))
+            rho = 0.0
+            fit = fit_at(rho)
+            if has_donor_variance_information and fit.pearson_chi2 > df:
+                upper_fit = fit_at(1.0)
+                if upper_fit.pearson_chi2 >= df:
+                    rho, fit = 1.0, upper_fit
+                else:
+                    rho = brentq(
+                        lambda value: fit_at(value).pearson_chi2 - df,
+                        0.0, 1.0, xtol=1e-12,
+                    )
+                    fit = fit_at(rho)
+            # At the binomial boundary, underdispersion must not sharpen the test.
+            scale = max(1.0, float(fit.pearson_chi2 / df))
+            effect = float(fit.params[1])
+            standard_error = float(fit.bse[1]) * math.sqrt(scale)
+            if not math.isfinite(standard_error) or standard_error <= 0:
+                raise ValueError("invalid_beta_binomial_standard_error")
+            wald_df = _usage_wald_df(
+                matrix, fit.mu, fit.normalized_cov_params,
+                inverse_depth + rho * rho_derivative, rho_derivative, df,
+            )
+            p_value = float(2 * t.sf(abs(effect) / standard_error, wald_df))
     except (
         ValueError,
         ArithmeticError,
@@ -88,20 +150,21 @@ def _usage_test(successes: _Floats, totals: _Floats, matrix: _Floats) -> dict[st
         PerfectSeparationError,
         PerfectSeparationWarning,
     ):
-        return {**row, "missing_reason": "quasi_binomial_fit_failed"}
+        return {**row, "missing_reason": "beta_binomial_quasi_likelihood_fit_failed"}
     if not (
-        fit.converged
-        and 0 <= p_value <= 1
+        0 <= p_value <= 1
         and math.isfinite(effect)
         and math.isfinite(scale)
-        and scale > np.finfo(float).eps
+        and 0 < wald_df <= df
     ):
-        return {**row, "missing_reason": "quasi_binomial_inference_unavailable"}
+        return {**row, "missing_reason": "beta_binomial_inference_unavailable"}
     return {
         **row,
         "tx_p": max(math.ulp(0.0), p_value),
         "log_odds_ratio": effect,
         "pearson_dispersion": scale,
+        "donor_intraclass_correlation": rho if has_donor_variance_information else None,
+        "wald_df": wald_df,
         "status": "not_screened",
     }
 
@@ -127,6 +190,7 @@ def _gene_usage(
         "gene_p": None,
         "gene_q": None,
         "status": "unestimable",
+        "screening_eligible": False,
         "biological_units_per_group": support,
         "zero_total_samples_dropped": samples.index[
             sample_counts.sum(axis=1) == 0
@@ -161,6 +225,7 @@ def _gene_usage(
     return {
         **result,
         "gene_p": gene_p,
+        "screening_eligible": True,
         "transcript_statistics": rows,
         "status": "not_screened" if gene_p is not None else "unestimable",
         "design_diagnostics": diagnostics,
@@ -168,12 +233,18 @@ def _gene_usage(
 
 
 def _stagewise(genes: list[dict[str, Any]], alpha: float) -> tuple[int, int]:
-    tested = [gene for gene in genes if gene["gene_p"] is not None]
+    family = [
+        gene for gene in genes
+        if gene["gene_p"] is not None or gene.get("screening_eligible", False)
+    ]
     for gene, q_value in zip(
-        tested, adjust_probabilities([gene["gene_p"] for gene in tested]), strict=True
+        family, adjust_probabilities([gene["gene_p"] for gene in family]), strict=True
     ):
         gene["gene_q"] = q_value
-    screened = [gene for gene in tested if gene["gene_q"] <= alpha]
+    screened = [
+        gene for gene in family
+        if gene["gene_q"] is not None and gene["gene_q"] <= alpha
+    ]
     for gene in screened:
         gene["status"] = "screened"
         rows = sorted(
@@ -188,14 +259,14 @@ def _stagewise(genes: list[dict[str, Any]], alpha: float) -> tuple[int, int]:
             multiplier = min(len(rows) - 1, len(rows) - rank)
             within = min(1.0, max(within, multiplier * p_value))
             q_value = min(
-                1.0, max(gene["gene_q"], within * len(tested) / len(screened))
+                1.0, max(gene["gene_q"], within * len(family) / len(screened))
             )
             row.update(
                 p_within_shaffer=within,
                 tx_q=q_value,
                 status="confirmed" if q_value <= alpha else "not_confirmed",
             )
-    return len(tested), len(screened)
+    return sum(gene["gene_p"] is not None for gene in family), len(screened)
 
 
 def _lengths(
@@ -322,13 +393,17 @@ def fit_bulk_dtu(
             "claim_scope": "differential_within_gene_feature_usage",
             "target_ofdr": spec.target_ofdr,
             "tested_genes": tested,
+            "bh_family_size": sum(gene["screening_eligible"] for gene in statistics),
             "screened_genes": screened,
             "design_diagnostics": diagnostics,
             "gene_statistics": statistics,
             "warnings": observed_warnings,
             "method": (
-                "Grouped quasi-binomial GLM with Pearson X2 scale and residual-df t "
-                "inference. Gene screening uses Bonferroni min-p followed by BH. "
+                "Donor beta-binomial quasi-likelihood logistic regression with "
+                "Pearson moment intraclass correlation and a Wald t test with "
+                "moment-matched contrast degrees of freedom capped by donor residual "
+                "degrees of freedom. Gene screening uses Bonferroni min-p followed "
+                "by BH with eligible failed genes padded at 1. "
                 "Shaffer confirmation produces alpha-specific tx_q values for "
                 "isoform usage changes distinct from total gene differential "
                 "expression."

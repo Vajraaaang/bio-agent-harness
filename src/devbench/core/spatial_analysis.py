@@ -10,8 +10,7 @@ from numpy.typing import NDArray
 from pydantic import Field, model_validator
 from scipy.sparse import csr_matrix
 from scipy.spatial import cKDTree
-
-from rna_kernels.normalization import log1p_counts_per_10k
+from scipy.special import ndtr
 
 from ._rna_solver_inputs import (
     Label,
@@ -35,6 +34,8 @@ class SpatialPatternSpec(FrozenContract):
     coordinate_frame: Label
     coordinate_units: Label
     k: int = Field(default=6, ge=1, le=128)
+    max_radius: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    svg_test: Literal["analytical", "permutation"] = "analytical"
     n_perm: int = Field(default=999, ge=1, le=10_000)
     seed: int = Field(default=0, ge=0)
 
@@ -58,9 +59,13 @@ def _block_indices(blocks: Sequence[_Block]) -> list[_Ints]:
 
 
 def build_spatial_graph(
-    coordinates: _Floats, blocks: Sequence[_Block], *, k: int
+    coordinates: _Floats,
+    blocks: Sequence[_Block],
+    *,
+    k: int,
+    max_radius: float | None = None,
 ) -> csr_matrix:
-    """Build a symmetric binary union-KNN graph without donor/section edges."""
+    """Build a blockwise union-KNN graph with a physical distance cutoff."""
     if (
         coordinates.ndim != 2
         or coordinates.shape != (len(blocks), 2)
@@ -69,6 +74,8 @@ def build_spatial_graph(
         or not 1 <= k <= 128
     ):
         raise ValueError("invalid_spatial_graph_coordinates_or_k")
+    if max_radius is not None and (not np.isfinite(max_radius) or max_radius <= 0):
+        raise ValueError("spatial_graph_requires_positive_finite_max_radius")
     groups = _block_indices(blocks)
     if sum(len(rows) * min(k, len(rows) - 1) for rows in groups) > 2_000_000:
         raise ValueError("spatial_graph_edge_budget_exceeded")
@@ -84,9 +91,15 @@ def build_spatial_graph(
         # Stable location order makes geometric distance ties independent of file order.
         order = np.lexsort(locations.T[::-1])
         rows, locations = rows[order], locations[order]
-        _, closest = cKDTree(locations).query(locations, k=neighbors + 1)
-        sources.append(np.repeat(rows, neighbors))
-        targets.append(rows[closest[:, 1:].ravel()])
+        distances, closest = cKDTree(locations).query(locations, k=neighbors + 1)
+        radius = (
+            max_radius
+            if max_radius is not None
+            else 2 * np.quantile(distances[:, 1], 0.90)
+        )
+        keep = distances[:, 1:] <= radius
+        sources.append(np.broadcast_to(rows[:, None], keep.shape)[keep])
+        targets.append(rows[closest[:, 1:][keep]])
     size = len(blocks)
     if not sources:
         return csr_matrix((size, size), dtype=float)
@@ -100,6 +113,45 @@ def _permutation(blocks: list[_Ints], rng: np.random.Generator, size: int) -> _I
     for block in blocks:
         indices[block] = rng.permutation(block)
     return indices
+
+
+def _randomization_moments(
+    centered: _Floats, blocks: list[_Ints], degree: _Floats
+) -> tuple[_Floats, _Floats]:
+    """Exact first two moments of undirected edge sums under block permutations."""
+    mean = np.zeros((2, centered.shape[1]))
+    variance = np.zeros_like(mean)
+    for block in blocks:
+        n = len(block)
+        if n < 2:
+            continue
+        edges = degree[block].sum() / 2
+        adjacent = np.sum(degree[block] * (degree[block] - 1))
+        disjoint = edges * (edges - 1) - adjacent
+        squared = np.square(centered[block])
+        s2, s4 = squared.sum(axis=0), np.square(squared).sum(axis=0)
+        # Mixed moments of distinct draws from the centered block.
+        pairs = n * (n - 1)
+        m22 = (s2**2 - s4) / pairs
+        m31 = -s4 / pairs
+        m211 = (2 * s4 - s2**2) / (pairs * (n - 2)) if n > 2 else 0
+        m1111 = -3 * m211 / (n - 3) if n > 3 else 0
+        per_edge = np.array([-s2 / pairs, 2 * s2 / (n - 1)])
+        mean += edges * per_edge
+        second = (
+            edges * np.array([m22, 2 * s4 / n - 8 * m31 + 6 * m22])
+            + adjacent
+            * np.array([np.broadcast_to(m211, s2.shape), s4 / n - 4 * m31 + 3 * m22])
+            + disjoint
+            * np.array(
+                [np.broadcast_to(m1111, s2.shape), 4 * m22 - 8 * m211 + 4 * m1111]
+            )
+        )
+        delta = second - (edges * per_edge) ** 2
+        variance += np.where(
+            delta > 32 * np.finfo(float).eps * np.abs(second), delta, 0
+        )
+    return mean, variance
 
 
 def _autocorrelation(
@@ -129,6 +181,25 @@ def _autocorrelation(
         if not len(variance):
             continue
         observed_i, observed_c = _spatial_indices(z, graph, degree, variance)
+        indices = start + np.flatnonzero(valid)
+        moran[indices], geary[indices] = observed_i, observed_c
+        if spec.svg_test == "analytical":
+            # Normalize before calculating fourth moments and undo the index scales
+            # so that the observed statistics and null moments use the same units.
+            mean, null_var = _randomization_moments(
+                z / np.sqrt(variance), blocks, degree
+            )
+            observed = np.array(
+                [observed_i * weight / (2 * size), observed_c * weight / (size - 1)]
+            )
+            tail = (mean - observed) * np.array([[1], [-1]])
+            keep = null_var > 0
+            scores = np.divide(
+                tail, np.sqrt(null_var), out=np.zeros_like(tail), where=keep
+            )
+            p = np.where(keep, np.maximum(ndtr(scores), np.nextafter(0.0, 1.0)), 1.0)
+            moran_p[indices], geary_p[indices] = p
+            continue
         i_exceed = np.zeros(len(variance), dtype=int)
         c_exceed = i_exceed.copy()
         rng = np.random.default_rng(spec.seed)
@@ -137,8 +208,6 @@ def _autocorrelation(
             perm_i, perm_c = _spatial_indices(shuffled, graph, degree, variance)
             i_exceed += perm_i >= observed_i - 1e-12
             c_exceed += perm_c <= observed_c + 1e-12
-        indices = start + np.flatnonzero(valid)
-        moran[indices], geary[indices] = observed_i, observed_c
         moran_p[indices] = (1 + i_exceed) / (1 + spec.n_perm)
         geary_p[indices] = (1 + c_exceed) / (1 + spec.n_perm)
     return moran, geary, moran_p, geary_p
@@ -237,17 +306,32 @@ def _gene_results(
     }
 
 
+def _depth_residuals(counts: _Floats, totals: _Floats, blocks: list[_Ints]) -> _Floats:
+    residuals = np.zeros_like(counts, dtype=float)
+    for block in blocks:
+        values = counts[block]
+        depth = totals[block, None]
+        rate = values.sum(axis=0) / depth.sum()
+        expected = depth * rate
+        sd = np.sqrt(expected * (1 - rate))
+        residuals[block] = np.divide(
+            values - expected, sd, out=np.zeros_like(expected), where=sd > 0
+        )
+    return residuals
+
+
 def fit_spatial_pattern(
     counts_path: Path, metadata_path: Path, spec: SpatialPatternSpec
 ) -> dict[str, Any]:
-    """Analyze spot-by-gene counts with spot_id, donor_id, section_id, x, y,
-    and cell_type metadata in the explicitly declared physical frame.
-    """
+    """Analyze spot counts in a declared physical frame with optional cell types."""
     spec = SpatialPatternSpec.model_validate(spec.model_dump())
     counts, metadata, genes = read_count_and_metadata(
         counts_path, metadata_path, spec.counts_sha256, spec.metadata_sha256, "spot_id"
     )
-    require_labels(metadata, ("donor_id", "section_id", "cell_type"))
+    require_labels(metadata, ("donor_id", "section_id"))
+    has_types = "cell_type" in metadata
+    if has_types:
+        require_labels(metadata, ("cell_type",))
     if not {"x", "y"}.issubset(metadata.columns):
         raise ValueError("spatial_coordinates_require_physical_x_and_y_columns")
     order = np.argsort(metadata.index.to_numpy())
@@ -261,13 +345,15 @@ def fit_spatial_pattern(
         numeric_matrix(metadata[["x", "y"]]) if len(metadata) else np.empty((0, 2))
     )
     block_labels = list(zip(metadata["donor_id"], metadata["section_id"], strict=True))
-    graph = build_spatial_graph(coordinates, block_labels, k=spec.k)
+    graph = build_spatial_graph(
+        coordinates, block_labels, k=spec.k, max_radius=spec.max_radius
+    )
     active = np.asarray(graph.getnnz(axis=1)) > 0
     blocks = _block_indices([block_labels[i] for i in np.flatnonzero(active)])
     eligible_graph = graph[active][:, active]
     eligible_counts = counts[active]
     totals = eligible_counts.sum(axis=1)
-    expression = log1p_counts_per_10k(eligible_counts, totals[:, None])
+    expression = _depth_residuals(eligible_counts, totals, blocks)
     values = np.column_stack((expression, totals))
     stats = _autocorrelation(values, eligible_graph, blocks, spec)
     gene_results, library_size = _gene_results(genes, stats)
@@ -291,22 +377,26 @@ def fit_spatial_pattern(
                 eligible_graph,
                 blocks,
                 spec,
-            ),
+            )
+            if has_types
+            else [],
             "warnings": [
-                "Spots are spatially autocorrelated and non-i.i.d. "
-                "The tests rely on the tested values being exchangeable within "
-                "donor-section under their spatial null.",
+                "Spatial tests assume exchangeable residuals within donor-section. "
+                "The binomial null conditions on library size and targets relative "
+                "expression. The analytical reference uses a normal approximation "
+                "to the randomization tails.",
                 "Moran's I of total_counts measures spatial library-size structure "
                 "that can confound expression patterns.",
             ],
             "method": (
-                "Symmetric binary KNN within donor and section among positive-library "
-                "spots. Empty libraries and isolates are reported separately. "
-                "Expression uses log1p counts per 10,000 and block-centered values. "
-                "Permutations test high Moran I, low Geary C, and high type-pair "
-                "edge counts. Each gene statistic and the type pairs have separate "
-                "BH families. The library-size diagnostic is a separate "
-                "one-test family."
+                "Symmetric binary KNN with a physical radius within donor-section. "
+                "The adaptive radius is twice the 90th percentile nearest-neighbor "
+                "distance. Gene tests use centered binomial Pearson residuals "
+                "conditional on spot total counts and donor-section gene proportions. "
+                f"High Moran I and low Geary C use the {spec.svg_test} reference. "
+                "Cell-type edge counts use permutations when annotated. There are "
+                "separate BH families for each gene statistic and type-pair "
+                "enrichment, plus a separate library-size diagnostic."
             ),
         },
     )

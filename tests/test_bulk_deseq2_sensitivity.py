@@ -37,6 +37,7 @@ x <- matrix(rnbinom(length(signal), mu = as.vector(signal), size = 18),
             nrow = length(genes), dimnames = list(genes, ids))
 x[1, ] <- 0
 x[2, groups == "A"] <- 0
+x[3, groups == "C"] <- 0
 factors <- setNames(rep(1, length(ids)), ids)
 
 fit <- function(...) bulk_deseq2_sensitivity(x, full, ids, groups, factors, ...)
@@ -45,8 +46,11 @@ check <- function(result, test, shrinkage) {
     stopifnot(identical(rows$gene_id, genes), result$method$test == test,
               identical(result$method$shrinkage, shrinkage),
               rows$estimate_status[1] == "filtered",
-              rows$estimate_status[2] == "failed",
-              rows$missing_reason[2] == "zero_condition_marginal")
+              all(rows$estimate_status[2:3] == "estimated"),
+              result$method$dispersion_fit_requested == "parametric",
+              result$method$dispersion_fit %in% c("parametric", "local", "mean"),
+              (length(result$method$dispersion_fit_fallbacks) > 0) ==
+                  (result$method$dispersion_fit != "parametric"))
     passing <- rows$estimate_status == "estimated"
     family <- rows$estimate_status != "filtered"
     stopifnot(sum(passing) > 90, all(is.na(rows$p_value[!passing])),
@@ -59,7 +63,7 @@ check <- function(result, test, shrinkage) {
 
 wald <- fit(coefficient = "groupsB")
 check(wald, "Wald", "apeglm")
-contrast <- setNames(c(0, 0, 1, -1), colnames(full))
+contrast <- setNames(c(0, 0, 1, 0), colnames(full))
 arbitrary <- fit(contrast = contrast)
 check(arbitrary, "Wald", "ashr")
 for (result in list(wald, arbitrary)) {

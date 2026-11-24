@@ -63,3 +63,9 @@ def test_mixed_and_continuous_go_to_distinct_solvers():
     assert _plan(units="mixed").solver == "dream"
     assert _plan(measurement="continuous").solver == "gaussian_ols"
     assert _plan(measurement="continuous", units="mixed").solver == "dream"
+
+
+@pytest.mark.parametrize("comparison", ["contrast", "nested", "lrt"])
+def test_mixed_solver_refuses_hypotheses_the_mounted_driver_cannot_fit(comparison):
+    with pytest.raises(ValueError, match="directed condition coefficient"):
+        _plan(units="mixed", comparison=comparison)

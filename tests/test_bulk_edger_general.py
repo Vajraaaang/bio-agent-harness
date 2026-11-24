@@ -13,8 +13,9 @@ pytestmark = pytest.mark.skipif(
 )
 _R = r"""
 source("/input/bulk_edger.R")
+source("/input/bulk_voom_sensitivity.R")
 set.seed(344)
-groups <- factor(rep(c("control", "a", "b"), each = 8))
+groups <- factor(rep(c("control", "a", "b"), each = 8), levels = c("control", "a", "b"))
 batch <- factor(rep(c("x", "y"), 12))
 n <- length(groups)
 s <- paste0("s", seq_len(n))
@@ -26,6 +27,9 @@ counts <- matrix(rnbinom(length(g) * n, mu = 40, size = 12), nrow = length(g),
                  dimnames = list(g, s))
 counts[1:25, groups == "b"] <- 3 * counts[1:25, groups == "b"]
 counts[1, groups == "control"] <- 0
+counts[2, groups == "a"] <- 0
+counts[299, ] <- 0
+counts[300, ] <- c(1, rep(0, n - 1L))
 units <- setNames(s, s)
 labels <- setNames(as.character(groups), s)
 factors <- setNames(rep(1, n), s)
@@ -37,20 +41,33 @@ for (x in list(qlf, lrt)) {
     stopifnot(x$method$numerator_df == 2L, identical(x$rows$gene_id, g),
               all(is.na(x$rows$effect)),
               all(x$rows$q_value[valid] >= x$rows$p_value[valid]),
-              identical(x$rows$missing_reason[1], "zero_group_marginal"),
+              all(valid[1:2]), !any(valid[299:300]),
               median(x$rows$p_value[2:25]) < 0.01)
+}
+contrast <- setNames(c(0,0,0,1), colnames(X))
+directed <- bulk_edger_count(counts, X, units, labels, size_factors=factors,
+                             contrast=contrast)
+voom <- bulk_voom_sensitivity(counts, X, units, labels, factors, contrast, paired=FALSE)
+for (fit in list(directed, voom)) {
+    rows <- fit$rows
+    valid <- rows$estimate_status == "estimated"
+    eligible <- rows$estimate_status != "filtered"
+    q <- p.adjust(ifelse(valid[eligible], rows$p_value[eligible], 1), method="BH")
+    stopifnot(all(valid[1:2]), all(rows$effect[1:2] > 0.5),
+              all(rows$p_value[1:2] < 0.05),
+              all(!eligible[299:300]), all(is.na(rows$q_value[299:300])),
+              isTRUE(all.equal(rows$q_value[valid], q[valid[eligible]])))
 }
 effective <- matrix(1000, nrow=nrow(counts), ncol=n, dimnames=dimnames(counts))
 effective[26:70, groups == "b"] <- 1800
 estimated <- counts + 0.5
 estimated[1, groups == "control"] <- 0
 txi <- list(counts=estimated, length=effective, countsFromAbundance="no")
-contrast <- setNames(c(0,0,0,1), colnames(X))
 tx <- bulk_edger_count(estimated, X, units, labels,
                        measurement="tximport_estimated_counts", tximport=txi,
                        contrast=contrast)
 stopifnot(tx$method$normalization == "tximport_effective_length_and_TMM_2D_offset",
-          tx$method$numerator_df == 1L, is.finite(tx$rows$effect[2]))
+          tx$method$numerator_df == 1L, all(is.finite(tx$rows$effect[1:2])))
 error <- tryCatch(bulk_edger_count(counts, X, units, labels, size_factors=factors,
     reduced=cbind(Z, nuisance=seq_len(n))), error=function(e) conditionMessage(e))
 stopifnot(grepl("nested", error, fixed=TRUE))
@@ -60,6 +77,7 @@ stopifnot(grepl("nested", error, fixed=TRUE))
 def test_general_edger_nested_and_tximport_offsets(workspace_tmp_path):
     assert re.fullmatch(r"sha256:[a-f0-9]{64}", _IMAGE), "Use a local image content ID"
     driver = Path(__file__).resolve().parents[1] / "src/devharness_server/r/bulk_edger.R"
+    voom = driver.with_name("bulk_voom_sensitivity.R")
     check = workspace_tmp_path / "check.R"
     check.write_text(_R)
     subprocess.run(
@@ -73,6 +91,8 @@ def test_general_edger_nested_and_tximport_offsets(workspace_tmp_path):
             "--tmpfs=/tmp:rw,nosuid,nodev,noexec,size=64m",
             "--mount",
             f"type=bind,src={driver},dst=/input/bulk_edger.R,readonly",
+            "--mount",
+            f"type=bind,src={voom},dst=/input/bulk_voom_sensitivity.R,readonly",
             "--mount",
             f"type=bind,src={check},dst=/check.R,readonly",
             "--entrypoint",
