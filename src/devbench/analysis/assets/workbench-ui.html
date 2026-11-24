@@ -642,7 +642,7 @@
     for(const [id,home] of operationHomes)if(home&&el(id).parentNode!==home)home.append(el(id));el('conversation-gates').hidden=true;
   }
   let investigationWorkflowSession=null, linkedWorkflowSession=null, displayedInvestigation=null, researchCanvasKey='';
-  let restoreWorkflowAlias=false, workflowAim=null;
+  let restoreWorkflowAlias=false, workflowAim=null, requestedStudioLink=null;
   let studioSessionGraph=null,studioSessions=[],studioReadback={},studioNavigation=0;
   function restoreCanvasPanels(){
     for(const [id,home] of panelHomes){if(home&&el(id).parentNode!==home)home.append(el(id));el(id).hidden=true;}panelHomes.clear();
@@ -1350,7 +1350,9 @@
     for(const view of ['overview','investigation-inputs',...projectCollections])el(view).hidden=view!==(section==='data'?'investigation-inputs':section);
     const project=workspaceRecord?workspaceRecord.project.name:'Current project';
     el('project-dialog-title').textContent=projectCollections.includes(section)?project+' / '+titles[section]:titles[section]||'Project details';
-    el('project-dialog-scope').textContent=projectCollections.includes(section)?'Across chats in this project':section==='data'?'Registered for this project':project;
+    const acrossProject=el('app').dataset.studioLayout==='canvas-first'
+      ?'Across investigations in this project':'Across chats in this project';
+    el('project-dialog-scope').textContent=projectCollections.includes(section)?acrossProject:section==='data'?'Registered for this project':project;
     el('project-dialog-scope').hidden=false;el('investigation-inputs-toggle').setAttribute('aria-expanded',String(section==='data'));dialog.hidden=false;
     if(typeof dialog.showModal==='function'){if(!dialog.open)dialog.showModal();}else dialog.open=true;
     updateProjectNavigation();
@@ -1420,7 +1422,7 @@
     }finally{progress.hidden=true;picker.value='';picker.disabled=false;button.disabled=false;}
   };
 
-  function scientificCanvas(){return config?.scientific?.enabled===true||Boolean(investigationWorkflowSession);}
+  function scientificCanvas(){return config?.scientific?.enabled===true||Boolean(investigationWorkflowSession||requestedStudioLink);}
   function updateStudioMode(){
     const app=el('app'),badge=el('studio-mode'),selection=config?.proposal_selection;
     const canvasFirst=scientificCanvas(),pluginLinked=studioSessionGraph?.plugin_linked===true;
@@ -1431,10 +1433,12 @@
     badge.dataset.mode=pluginLinked?'plugin':'local';
     badge.hidden=false;
     const layout=canvasFirst?'canvas-first':'split';
+    const inspector=el('inspector');
+    inspector.hidden=canvasFirst;
+    inspector.inert=canvasFirst;
     if(app.dataset.studioLayout===layout)return;
     app.dataset.studioLayout=layout;
     globalThis.WorkbenchStudio?.setContext(canvasFirst?null:studioContext);
-    el('inspector').hidden=canvasFirst;
     const stageBar=el('wc-stage-bar'),evidence=el('scientific-inspector'),skip=el('workspace-skip-link');
     if(canvasFirst){
       el('canvas-tabs').before(stageBar);
@@ -1482,7 +1486,7 @@
   }
   function leaveStudioSession(){
     studioNavigation++;linkedWorkflowSession=null;investigationWorkflowSession=null;workflowAim=null;
-    studioSessionGraph=null;studioReadback={};updateStudioMode();
+    requestedStudioLink=null;studioSessionGraph=null;studioReadback={};updateStudioMode();
     persistStudioLink(null);renderStudioRail();globalThis.WorkbenchStudio?.closeReceipt();
   }
   async function downloadStudioPackage(path){
@@ -1570,7 +1574,7 @@
     if(status.startsWith('completed_review_'))return 'results';
     return ['approved','preparing','running','cancel_requested','finalizing','operation_failed','failed','recovery_required','cancelled','interrupted','interrupted_service','infrastructure_failure','execution_failure_unclassified'].includes(status)?'execute':'review';
   }
-  function openInspector(value){inspectorOpen=value;el('inspector').classList.toggle('is-open',value);}
+  function openInspector(value){inspectorOpen=value&&!scientificCanvas();el('inspector').classList.toggle('is-open',inspectorOpen);}
   function showInspectorTab(name,focus=false){
     if(investigationMode){if(name!=='analyst'){showCanvas(name==='code'?'code':name==='display'?'display':'evidence');return;}inspectorTab='analyst';el('panel-analyst').hidden=false;el('analyst-composer').hidden=currentView==='scientific';inspectRecords();return;}
     if(!tabs.includes(name))return;inspectorTab=name;el('analyst-composer').hidden=currentView==='scientific'||name!=='analyst';if(name!=='analyst'&&name!=='display'){el('evidence-tabs').classList.toggle('all-tabs',true);el('evidence-toggle').setAttribute('aria-expanded','true');}
@@ -1833,7 +1837,11 @@
   function objectRow(target,title,description,action){const row=document.createElement('button');row.type='button';row.className='object-row';row.textContent=title+'\n'+description;row.onclick=action;el(target).append(row);return row;}
   function emptyList(target,text){if(el(target).children.length)return;const p=document.createElement('p');p.className='empty';p.textContent=text;el(target).append(p);}
   function sourceChat(job){const source=job.parent_job||job.id;return allInvestigations.find(chat=>chat.job_id===source)||null;}
-  function sourceLabel(job){const chat=sourceChat(job);return chat?'Source chat: '+chat.question:'Source analysis: '+(job.parent_job||job.id).slice(0,8);}
+  function sourceLabel(job){
+    const investigation=sourceChat(job), canvas=el('app').dataset.studioLayout==='canvas-first';
+    return investigation?(canvas?'Source investigation: ':'Source chat: ')+investigation.question:
+      'Source analysis: '+(job.parent_job||job.id).slice(0,8);
+  }
   let exportGeneration=0;
   async function openExportBundle(job){
     const stamp=++exportGeneration,dialog=el('project-dialog');
@@ -1874,7 +1882,8 @@
     const datasets=new Map();
     for(const job of native){if(!job.input||!job.input.path)continue;const key=job.input.sha256||'unverified:'+job.id;if(!datasets.has(key))datasets.set(key,[]);datasets.get(key).push(job);}
     const availableFiles=Array.from(el('investigation-dataset').options||el('investigation-dataset').children||[]).filter(option=>option.value).length;
-    for(const [value,label] of [[investigationController?availableFiles:datasets.size,'available files'],[investigationController?allInvestigations.length:native.length,'chats'],[allJobs.filter(job=>job.status.startsWith('completed_')).length,'saved outputs']]){const card=document.createElement('div'),count=document.createElement('strong'),caption=document.createElement('span');card.className='overview-stat';count.textContent=String(value);caption.textContent=label;card.append(count,caption);el('overview-stats').append(card);}
+    const investigationLabel=el('app').dataset.studioLayout==='canvas-first'?'investigations':'chats';
+    for(const [value,label] of [[investigationController?availableFiles:datasets.size,'available files'],[investigationController?allInvestigations.length:native.length,investigationLabel],[allJobs.filter(job=>job.status.startsWith('completed_')).length,'saved outputs']]){const card=document.createElement('div'),count=document.createElement('strong'),caption=document.createElement('span');card.className='overview-stat';count.textContent=String(value);caption.textContent=label;card.append(count,caption);el('overview-stats').append(card);}
     for(const job of native){
       const description=job.status.replaceAll('_',' ')+(job.review_decision?' · decision: '+job.review_decision:'')+'\n'+sourceLabel(job);
       objectRow('analysis-list',job.question,description,()=>openRecord(job,'review'));
@@ -2384,6 +2393,7 @@
   }
   async function loadWorkspace(){
     if(location.search==='?simulation=1')return;
+    requestedStudioLink=window.WorkbenchStudio?.sessionLink(location.search)||null;
     try{
       config=await read('/api/config');
       el('nav-scientific').hidden=!config.scientific?.enabled;
@@ -2407,7 +2417,7 @@
         if(allInvestigations.length===1)await investigationController.open(allInvestigations[0].id);
       }
       initializeProjects();inspectRecords();updateStudioMode();await refreshLocalAnalyst();
-      const link=window.WorkbenchStudio?.sessionLink(location.search);
+      const link=requestedStudioLink;
       if(link||restoreWorkflowAlias){
         await investigationController?.ready;
         if(link)await openWorkflowSession(link.id,link.view);

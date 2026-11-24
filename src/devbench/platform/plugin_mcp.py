@@ -565,7 +565,7 @@ def _profile(discovery: InputDiscovery, root: Path, item: Input) -> dict[str, An
     else:
         if not path.is_file():
             raise ValueError("Input requires a supported regular file or Zarr group")
-        profile = discovery.inspect(path)
+        profile = discovery.inspect(path, stream_selected_h5ad=declared_private)
     obs = profile["observed"]
     names = (
         name
@@ -2003,7 +2003,31 @@ def _roots(plan: dict[str, Any]) -> tuple[str, ...]:
     )
 
 
-def _admit_session(workspace: Path, plan: dict[str, Any]) -> str:
+def _retain_local_h5ad_reference(
+    methods, discovery: InputDiscovery, profile: dict[str, Any]
+) -> dict[str, Any]:
+    fresh = discovery.inspect(profile["source"], stream_selected_h5ad=True)
+    if any(fresh[key] != profile[key] for key in ("sha256", "size_bytes")):
+        raise OperationBlocked("input_snapshot_changed")
+    methods._check_partition_access(profile["sha256"])
+    reference = {
+        "format": "devbench.local-input-reference/1",
+        "file_type": "h5ad",
+        "sha256": profile["sha256"],
+        "size_bytes": profile["size_bytes"],
+    }
+    with TemporaryDirectory(dir=methods.root) as temporary:
+        path = Path(temporary) / "source-reference.json"
+        path.write_bytes(canonical(reference))
+        return methods.import_artifact(
+            path, artifact_type="rna_local_input_reference", actor=_ACTOR
+        )
+
+
+def _admit_session(
+    workspace: Path, plan: dict[str, Any], discovery: InputDiscovery
+) -> str:
+    from devbench.analysis.method_validation import MAX_DATASET_BYTES
     from devbench.analysis.scientific_objects import ScientificObjectService
     from devbench.engine.methods import MethodService
 
@@ -2025,11 +2049,18 @@ def _admit_session(workspace: Path, plan: dict[str, Any]) -> str:
     members, locations = {}, {}
     for index, item in enumerate(plan["profiles"]):
         name = f"{item['role']}-{index}"
-        artifact = methods.import_artifact(
-            Path(item["source"]), artifact_type="file", actor=_ACTOR
-        )
-        if artifact["sha256"] != item["sha256"]:
-            raise OperationBlocked("input_snapshot_changed")
+        if (
+            plan["data_classification"] == "private"
+            and item["observed"]["file_type"] == "h5ad"
+            and item["size_bytes"] > MAX_DATASET_BYTES
+        ):
+            artifact = _retain_local_h5ad_reference(methods, discovery, item)
+        else:
+            artifact = methods.import_artifact(
+                Path(item["source"]), artifact_type="file", actor=_ACTOR
+            )
+            if artifact["sha256"] != item["sha256"]:
+                raise OperationBlocked("input_snapshot_changed")
         members[name] = {"artifact_id": artifact["artifact_id"]}
         locations[name] = item["source"]
     dataset = store.create_dataset(
@@ -2481,7 +2512,9 @@ class Plugin:
             _, frozen["pathway_binding"] = _pathway_source(self.jobs, frozen)
         if len(canonical(frozen)) > MAX_DOCUMENT_BYTES - 128:
             raise ValueError("Plan exceeds its immutable document budget")
-        sid = args.session_id or _admit_session(self.jobs.workspace, frozen)
+        sid = args.session_id or _admit_session(
+            self.jobs.workspace, frozen, self.discovery
+        )
         frozen["session_id"] = sid
         plan_id, sha = self.jobs.freeze(frozen)
         identity = {"session_id": sid, "plan_id": plan_id, "plan_sha256": sha}

@@ -689,17 +689,22 @@ class InputDiscovery:
                 "is not scientific validity.",
             }
 
-    def inspect(self, source):
+    def inspect(self, source, *, stream_selected_h5ad=False):
+        """Keep discovery bounded and allow explicit H5ADs to be hashed in place."""
         from devharness_core.watchdog import HarnessResourceInterrupt, run_sandboxed
 
         with self._lock:
             path, root, parts, identity = self._source(source)
+            limits = self.limits
             with _open_file(root, parts, identity) as descriptor:
                 signature = _signature(os.fstat(descriptor))
-                if signature[3] > self.limits["max_file_bytes"]:
-                    raise ValueError(
-                        "Input exceeds the configured inspection byte budget"
-                    )
+                if signature[3] > limits["max_file_bytes"]:
+                    if not stream_selected_h5ad or path.suffix.lower() != ".h5ad":
+                        raise ValueError(
+                            "Input exceeds the configured inspection byte budget"
+                        )
+                    # Bound the streaming worker to the observed descriptor size.
+                    limits = {**limits, "max_file_bytes": signature[3]}
             cached = self._profiles.get(path)
             if cached and cached[0] == signature:
                 _unchanged(root, parts, identity, signature)
@@ -708,7 +713,7 @@ class InputDiscovery:
             try:
                 result = run_sandboxed(
                     _inspect_worker,
-                    (str(root), parts, identity, signature, self.limits),
+                    (str(root), parts, identity, signature, limits),
                     max_mem_mb=self.limits["memory_mb"],
                     timeout_sec=self.limits["timeout_seconds"],
                     diagnostics=diagnostics,

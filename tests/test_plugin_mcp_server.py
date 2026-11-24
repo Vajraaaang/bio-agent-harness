@@ -807,6 +807,145 @@ def _studio_readback(workspace, inputs, sid):
         app.close()
 
 
+def test_stdio_large_private_h5ad_retains_reference_without_copy(workspace_tmp_path):
+    import hashlib
+
+    import h5py
+
+    from devbench.analysis.method_validation import MAX_DATASET_BYTES
+    from devbench.engine.methods import MethodService
+    from devbench.platform.plugin_jobs import JobStore
+    from devbench.platform.workbench_ui import WorkbenchService, make_server
+
+    inputs = workspace_tmp_path / "inputs"
+    inputs.mkdir(mode=0o700)
+    matrix = inputs / "counts.h5ad"
+    with h5py.File(matrix, "w") as handle:
+        handle.create_dataset("X", data=[[5]])
+        handle.create_group("obs").create_dataset("_index", data=[b"cell"])
+        handle.create_group("var").create_dataset("_index", data=[b"gene"])
+    size = MAX_DATASET_BYTES + 1
+    with matrix.open("r+b") as handle:
+        handle.truncate(size)
+    with matrix.open("rb") as handle:
+        checksum = hashlib.file_digest(handle, "sha256").hexdigest()
+
+    workspace = workspace_tmp_path / "workspace"
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=[
+            "-m", "devbench.platform.cli", "plugin-mcp", "--input-root", str(inputs),
+            "--workspace", str(workspace),
+        ],
+        env={
+            key: value for key, value in os.environ.items()
+            if key in {"PATH", "PYTHONPATH", "DYLD_LIBRARY_PATH"}
+        },
+    )
+    selected = {"path": str(matrix), "data_classification": "private"}
+
+    async def roundtrip():
+        async with stdio_client(params) as (reader, writer):
+            async with ClientSession(reader, writer) as client:
+                await client.initialize()
+                planned = await client.call_tool("plan_rna_workflow", {
+                    "operation": "matrix_audit", "inputs": [selected],
+                    "objective": "Inspect matrix in offline Studio",
+                })
+                assert not planned.isError, planned.structuredContent
+                handoff = planned.structuredContent
+                assert handoff["status"] == "local_studio_only"
+                assert checksum not in json.dumps(handoff)
+                assert str(matrix) not in json.dumps(handoff)
+                for tool, arguments in [
+                    ("execute_reviewed_plan", {key: handoff[key] for key in (
+                        "session_id", "plan_id", "plan_sha256",
+                    )}),
+                    ("inspect_rna_inputs", {
+                        "inputs": [{**selected, "data_classification": "public"}],
+                    }),
+                ]:
+                    denied = await client.call_tool(tool, arguments)
+                    assert denied.isError
+                    assert (
+                        denied.structuredContent["reason"]
+                        == "private_data_local_studio_only"
+                    )
+                return handoff["session_id"]
+
+    app = WorkbenchService(
+        workspace, [inputs], offline_only=True, enable_scientific=True,
+        interactive_adaptive=True,
+    )
+    server = make_server(app, port=0)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+    try:
+        sid = asyncio.run(roundtrip())
+        plan = JobStore(workspace).plan(sid)
+        profile = plan["profiles"][0]
+        assert (profile["source"], profile["sha256"], profile["size_bytes"]) == (
+            str(matrix), checksum, size,
+        )
+        methods = MethodService(workspace / "methods", readonly=True)
+        assert not (methods.root / "objects" / checksum).exists()
+        (reference,) = methods.list_records("artifact")
+        assert reference["artifact_type"] == "rna_local_input_reference"
+        reference_path = methods.artifact_path(reference["artifact_id"])
+        assert json.loads(reference_path.read_text()) == {
+            "format": "devbench.local-input-reference/1",
+            "file_type": "h5ad", "sha256": checksum, "size_bytes": size,
+        }
+
+        connection.request("GET", "/api/scientific/sessions")
+        response = connection.getresponse()
+        assert response.status == 200
+        (session,) = json.loads(response.read())["sessions"]
+        assert session["session_id"] == sid
+        assert session["data_classification"] == "private"
+        connection.request("GET", f"/api/scientific/adaptive/{sid}")
+        response = connection.getresponse()
+        assert response.status == 200
+        graph = json.loads(response.read())
+        assert graph["status"] == "available"
+        assert "plugin_session" not in graph
+        anchors = app.scientific._plan(sid)["scientific_anchors"]
+        (dataset_ref,) = anchors["dataset_versions"]
+        store = app.scientific.store()
+        dataset = store.get("dataset", dataset_ref["object_id"])
+        assert dataset["locations"] == {"expression-0": str(matrix)}
+        member = store.resolve(dataset_ref)["manifest"]["members"]["expression-0"]
+        assert member["artifact_id"] == reference["artifact_id"]
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=10)
+        app.close()
+
+
+def test_selected_private_h5ad_does_not_inherit_discovery_cap(workspace_tmp_path):
+    import h5py
+
+    from devbench.analysis.workbench_inputs import InputDiscovery
+    from devbench.platform.plugin_mcp import Input, _profile
+
+    root = workspace_tmp_path
+    matrix = root / "cells.h5ad"
+    with h5py.File(matrix, "w") as handle:
+        handle.create_dataset("X", data=[[7]])
+        handle.create_group("obs").create_dataset("_index", data=[b"cell"])
+        handle.create_group("var").create_dataset("_index", data=[b"gene"])
+    discovery = InputDiscovery([root], max_file_bytes=1024)
+    item = Input(path=str(matrix), data_classification="private")
+    assert _profile(discovery, root, item)["observed"]["cells"] == 1
+    with pytest.raises(ValueError, match="inspection byte budget"):
+        discovery.inspect(matrix)
+    with pytest.raises(ValueError, match="inspection byte budget"):
+        _profile(discovery, root, Input(path=str(matrix), data_classification="public"))
+
+
 def test_single_cell_summary_preserves_safe_labels(monkeypatch):
     from devbench.platform import plugin_mcp
 

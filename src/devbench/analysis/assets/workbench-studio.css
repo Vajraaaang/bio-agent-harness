@@ -3,6 +3,7 @@
   color-scheme: light;
   --paper-rgb: 250,250,250;
   --studio-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --studio-card-rest: 0 1px 3px rgba(0,0,0,0.045);
   --studio-card-hover: 0 4px 12px -2px rgba(0,0,0,0.06);
   --studio-scrim: rgba(0,0,0,0.28);
   --trend-1:#126b81; --trend-2:#9b4929; --trend-3:#67569e; --trend-4:#496b37;
@@ -17,6 +18,7 @@
 :root[data-theme=dark] {
   color-scheme: dark;
   --paper-rgb: 15,15,15;
+  --studio-card-rest: 0 1px 3px rgba(0,0,0,0.24);
   --studio-card-hover: 0 4px 12px -2px rgba(0,0,0,0.36);
   --studio-scrim: rgba(0,0,0,0.56);
   --trend-1:#6dc7dd; --trend-2:#e6a07a; --trend-3:#b9a8ee; --trend-4:#9bc782;
@@ -453,6 +455,9 @@ button.lineage-node {
 }
 :is(.studio-science-card,.studio-session-card,.studio-session-entry,#canvas-receipts .wa-artifact-row) {
   transition: transform 0.2s var(--studio-ease), box-shadow 0.2s var(--studio-ease);
+}
+:where(#app[data-studio-layout=canvas-first]) :is(.studio-science-card,.studio-session-card) {
+  box-shadow: var(--studio-card-rest);
 }
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   :is(.studio-science-card,.studio-session-entry,#canvas-receipts .wa-artifact-row):hover,
