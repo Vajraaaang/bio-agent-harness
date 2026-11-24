@@ -13,8 +13,11 @@ if (identical(args, "--probe")) {
     counts <- methods::as(Matrix::readMM(args[[1L]]), "CsparseMatrix")
     sizes <- seq.int(21L, min(101L, ncol(counts) - 1L), by = 5L)
     sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts))
-    fitted <- scran::computeSumFactors(sce, sizes = sizes, min.mean = 0.1,
-                                       positive = FALSE)
+    # A cohort smaller than the default minimum can form one pooling group.
+    set.seed(0L)
+    clusters <- scran::quickCluster(sce, min.size = min(100L, ncol(sce)))
+    fitted <- scran::computeSumFactors(sce, clusters = clusters, positive = TRUE,
+                                       sizes = sizes, min.mean = 0.1)
     factors <- SingleCellExperiment::sizeFactors(fitted)
     stopifnot(length(factors) == ncol(counts), all(is.finite(factors)),
               all(factors > 0))

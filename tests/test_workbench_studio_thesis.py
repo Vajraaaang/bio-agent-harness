@@ -315,6 +315,48 @@ for (const [tab, content] of Object.entries({overview:'Summary',
 """)
 
 
+def test_completed_plugin_report_and_workflow_use_the_matching_run_record():
+    _run(r"""
+const plan = 'b'.repeat(32), other = 'c'.repeat(32);
+const data = {session_id:sessionId,plugin_linked:true,graph:{entries:[]},
+  plugin_session:{dataset_label:'counts.csv', plans:[
+    {plan_id:other,inputs:[{name:'unrelated.csv'}]},
+    {plan_id:plan,plan_sha256:'a'.repeat(64),
+      inputs:[{name:'counts.csv',role:'expression',file_type:'csv'}],
+      design_summary:{measurement:'non_umi_counts',parameters:{threshold:3}}},
+  ],runs:[
+    {plan_id:plan,status:'completed',operation:'matrix_audit',run_id:'e'.repeat(32),
+      metrics:{genes:18},summary_tables:[{caption:'Expression audit',
+      columns:['Metric','Value'],rows:[['Genes',18]]}],
+      tool_receipts:[{step:'Matrix inspection',receipt_sha256:'d'.repeat(64)}],
+      limitations:['Counts were inspected without a statistical fit.']},
+  ]}};
+const actions=[];
+WorkbenchStudio.renderSession(container,'overview',data,{navigate:x=>actions.push(x)});
+assert.ok(textIn(container).includes('Run summary'));
+assert.ok(textIn(container).includes('Expression audit'));
+assert.ok(textIn(container).includes('18'));
+findButton(container,'View workflow').onclick();
+assert.deepEqual(actions,['workflows']);
+container.replaceChildren();
+assert.equal(WorkbenchStudio.pluginWorkflow(container,data),true);
+assert.ok(textIn(container).includes('Workflow record'));
+assert.ok(textIn(container).includes('counts.csv'));
+assert.ok(textIn(container).includes('Matrix inspection'));
+assert.ok(!textIn(container).includes('unrelated.csv'));
+WorkbenchStudio.renderSession(container,'code',data,{});
+assert.ok(textIn(container).includes('Recorded executions'));
+assert.ok(textIn(container).includes('execute_reviewed_plan'));
+assert.ok(findButton(container,'Download run record'));
+const attempt = {plugin_linked:true,graph:{entries:[
+  {entry_kind:'step',step_id:'fit',status:'succeeded'},
+]}};
+WorkbenchStudio.renderSession(container,'overview',attempt,{});
+assert.ok(textIn(container).includes('Run summary'));
+assert.ok(!textIn(container).includes('Expression audit'));
+""")
+
+
 def test_composed_studio_uses_no_html_assignment_or_external_style_urls():
     page = workbench_ui.render_page("studio-verification")
     script, = re.findall(r"<script\b[^>]*>(.*?)</script>", page, re.S)

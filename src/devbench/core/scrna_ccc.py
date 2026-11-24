@@ -44,7 +44,7 @@ class CellCommunicationSpec(FrozenContract):
     contrast: ConditionContrast | None = None
     min_cells_per_donor_type: int = Field(ge=1)
     complex_aggregation: Literal["min", "geometric_mean"] = "min"
-    n_perm: int = Field(default=999, ge=1, le=10_000)
+    n_perm: int = Field(default=999, ge=1, le=20 * (MAX_MATRIX_ENTRIES // 32))
     seed: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
@@ -188,12 +188,13 @@ def _permutation_probabilities(
     receptor: _Ints,
     observed: _Floats,
     spec: CellCommunicationSpec,
+    n_perm: int,
 ) -> _Floats:
     rng = np.random.default_rng(spec.seed)
     exceedances = np.zeros(observed.shape, dtype=np.intp)
     # Cell summation order can cause roundoff on otherwise tied permutations.
     threshold = observed * (1 - 1e-12)
-    for _ in range(spec.n_perm):
+    for _ in range(n_perm):
         permuted = np.zeros_like(observed)
         for donor in donors:
             labels = rng.permutation(donor.labels)
@@ -204,7 +205,7 @@ def _permutation_probabilities(
             )
             permuted += _specificity(means, ligand, receptor)
         exceedances += permuted >= threshold
-    return (1 + exceedances) / (1 + spec.n_perm)
+    return (1 + exceedances) / (1 + n_perm)
 
 
 def _condition_effect(
@@ -274,7 +275,7 @@ def _interaction_statistics(
     reference: dict[str, tuple[_Complex, _Complex]],
     full_design: _Floats | None,
     spec: CellCommunicationSpec,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], int, int]:
     n_types = len(cell_types)
     measured = {
         name: pair
@@ -319,9 +320,19 @@ def _interaction_statistics(
         magnitude[donor_index] = values.T[ligand, :, None] * values.T[receptor, None, :]
         specificity += _specificity(values, ligand, receptor)
 
-    probabilities = (
-        _permutation_probabilities(donors, columns, ligand, receptor, specificity, spec)
+    family_size = int(np.prod(pair_shape))
+    # Reach the first BH threshold at 0.05 within the automatic work
+    # budget. Larger families can explicitly request a finer resolution.
+    n_perm = (
+        max(spec.n_perm, min(10_000, 20 * family_size))
         if measured and spec.contrast is None
+        else 0
+    )
+    probabilities = (
+        _permutation_probabilities(
+            donors, columns, ligand, receptor, specificity, spec, n_perm
+        )
+        if n_perm
         else None
     )
     designs = _pair_designs(support, full_design) if full_design is not None else {}
@@ -371,24 +382,31 @@ def _interaction_statistics(
                     subunits_detected[contributors, ligand[idx]]
                     & subunits_detected[contributors, receptor[idx]]
                 )
-                if detected.any():
+                if not detected.any():
+                    row["missing_reason"] = "no_donor_has_both_complexes_detected"
+                else:
                     row["specificity"] = float(
                         specificity[idx, sender, receiver] / len(contributors)
                     )
-                if not detected.any():
-                    row["missing_reason"] = "no_donor_has_both_complexes_detected"
-                elif probabilities is not None:
-                    row["p_value"] = float(probabilities[idx, sender, receiver])
-                else:
-                    row.update(
-                        _differential_statistics(scores, designs[sender, receiver])
-                    )
+                    if probabilities is not None:
+                        row["p_value"] = float(probabilities[idx, sender, receiver])
+                    else:
+                        row.update(
+                            _differential_statistics(scores, designs[sender, receiver])
+                        )
             rows.append(row)
-    adjusted = adjust_probabilities([row.get("p_value") for row in rows])
-    return [
-        CommunicationStatistic(**row, q_value=q).model_dump(mode="json")
-        for row, q in zip(rows, adjusted, strict=True)
-    ]
+    family = [row for row in rows if row["interaction_id"] in measured]
+    for row, q in zip(
+        family,
+        adjust_probabilities([row.get("p_value") for row in family]),
+        strict=True,
+    ):
+        row["q_value"] = q
+    return (
+        [CommunicationStatistic(**row).model_dump(mode="json") for row in rows],
+        family_size,
+        n_perm,
+    )
 
 
 def fit_cell_communication(
@@ -450,7 +468,7 @@ def fit_cell_communication(
             _Donor(str(name), values, labels[keep], np.where(eligible, sizes, 0))
         )
 
-    rows = _interaction_statistics(
+    rows, family_size, n_perm = _interaction_statistics(
         donors, cell_types, genes, reference, full_design, spec
     )
     specification = spec.model_dump(mode="json")
@@ -478,7 +496,8 @@ def fit_cell_communication(
             for donor in donors
         },
         "design_diagnostics": diagnostics,
-        "bh_family_size": len(rows),
+        "bh_family_size": family_size,
+        "n_permutations_used": n_perm,
         "interaction_statistics": rows,
         "score_definition": (
             "Magnitude is the equal-donor mean of the product of ligand and receptor "
@@ -490,10 +509,13 @@ def fit_cell_communication(
         "test_definition": (
             "Within-donor cell-type label permutations among eligible cells test "
             "within-dataset cell-type specificity. The test assumes exchangeability "
-            "within donors."
+            "within donors. Unmeasured reference pairs are excluded from BH. "
+            "The automatic resolution increase uses at most 10,000 draws. Larger "
+            "permutation counts can be requested for larger measured families."
             if spec.contrast is None
             else "Two-sided donor-level linear-model t test on interaction magnitude, "
-            "assuming independent donor errors with common variance."
+            "assuming independent donor errors with common variance. Unmeasured "
+            "reference pairs are excluded from BH."
         ),
     }
     return {**receipt, "receipt_sha256": canonical_sha256(receipt)}

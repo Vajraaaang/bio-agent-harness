@@ -37,28 +37,54 @@
     group_counts
 }
 
-.bulk_deseq2_fit <- function(counts, design, size_factors, coefficient, contrast, reduced) {
+.bulk_deseq2_dispersions <- function(dds) {
+    dds <- DESeq2::estimateDispersionsGeneEst(dds, quiet = TRUE)
+    fallbacks <- character()
+    for (candidate in c("parametric", "local", "mean")) {
+        fit <- tryCatch({
+            trend <- suppressMessages(DESeq2::estimateDispersionsFit(dds, fitType = candidate, quiet = TRUE))
+            estimates <- S4Vectors::mcols(trend)$dispFit
+            if (length(estimates) != nrow(dds) || any(!is.finite(estimates) | estimates <= 0)) {
+                stop("dispersion trend did not return finite positive estimates")
+            }
+            trend
+        }, error = identity)
+        if (inherits(fit, "error")) {
+            note <- paste0(candidate, " dispersion trend failed: ", substr(conditionMessage(fit), 1L, 300L))
+            message("DESeq2 ", note)
+            fallbacks <- c(fallbacks, note)
+            next
+        }
+        actual <- attr(DESeq2::dispersionFunction(fit), "fitType")
+        if (!identical(actual, candidate)) {
+            if (!identical(candidate, "parametric") || !identical(actual, "local")) {
+                stop("Unexpected DESeq2 dispersion trend")
+            }
+            note <- "parametric trend was inadequate; DESeq2 used local regression"
+            message("DESeq2 ", note)
+            fallbacks <- c(fallbacks, note)
+        } else if (length(fallbacks)) {
+            message("DESeq2 used ", actual, " dispersion trend after fallback")
+        }
+        return(list(dds = DESeq2::estimateDispersionsMAP(fit, quiet = TRUE),
+                    fit_type = actual, fallbacks = as.list(fallbacks)))
+    }
+    stop("DESeq2 was unable to fit a dispersion trend")
+}
+
+.bulk_deseq2_fit <- function(dds, design, coefficient, contrast, reduced) {
     design_names <- colnames(design)
     fitted_names <- make.names(ifelse(design_names == "(Intercept)", "Intercept", design_names))
     if (anyDuplicated(fitted_names)) stop("Full-design coefficient names collide after DESeq2 encoding")
-    dds <- DESeq2::DESeqDataSetFromMatrix(
-        countData = counts, colData = data.frame(row.names = colnames(counts)),
-        design = design
-    )
-    DESeq2::sizeFactors(dds) <- size_factors
-    dds <- DESeq2::estimateDispersions(dds, fitType = "mean", quiet = TRUE)
-    if (!identical(attr(DESeq2::dispersionFunction(dds), "fitType"), "mean")) {
-        stop("Unexpected DESeq2 dispersion trend")
-    }
     if (!is.null(reduced)) {
         dds <- DESeq2::nbinomLRT(dds, full = design, reduced = reduced, quiet = TRUE)
         raw <- DESeq2::results(dds, test = "LRT", independentFiltering = FALSE)
         convergence <- S4Vectors::mcols(dds)
         return(list(
             probability = raw$pvalue,
-            valid_effect = rep(TRUE, nrow(counts)),
+            valid_effect = rep(TRUE, nrow(dds)),
             converged = (convergence$fullBetaConv %in% TRUE) & (convergence$reducedBetaConv %in% TRUE),
-            effect = rep(NA_real_, nrow(counts)), effect_se = rep(NA_real_, nrow(counts))
+            effect = rep(NA_real_, nrow(dds)), effect_se = rep(NA_real_, nrow(dds))
         ))
     }
     dds <- DESeq2::nbinomWaldTest(dds, modelMatrix = design, betaPrior = FALSE, quiet = TRUE)
@@ -126,7 +152,8 @@ bulk_deseq2_sensitivity <- function(counts, design, biological_units, replicate_
         solver = "DESeq2", version = as.character(utils::packageVersion("DESeq2")),
         test = selected_method, test_df = fitted_df, shrinkage = shrinkage,
         shrinkage_version = if (is.null(shrinkage)) NULL else as.character(utils::packageVersion(shrinkage)),
-        coefficient = coefficient, contrast = contrast, dispersion_fit = "mean",
+        coefficient = coefficient, contrast = contrast, dispersion_fit_requested = "parametric",
+        dispersion_fit = NULL, dispersion_fit_fallbacks = list(),
         normalization = "supplied_rle_size_factors", low_count_filter = "mean_RLE_normalized_counts_at_least_one",
         multiplicity = "unweighted_BH_failed_eligible_tests_padded_with_one",
         effect_scale = if (is.null(reduced)) "log2_fold_change" else NULL,
@@ -135,18 +162,20 @@ bulk_deseq2_sensitivity <- function(counts, design, biological_units, replicate_
     normalized_mean <- drop(counts %*% (1 / size_factors)) / ncol(counts)
     if (any(!is.finite(normalized_mean))) stop("Invalid RLE-normalized mean counts")
     eligible <- normalized_mean >= 1
-    separated <- Reduce(`|`, lapply(split(seq_along(samples), replicate_groups), function(columns) {
-        rowSums(counts[, columns, drop = FALSE]) == 0
-    }))
-    fit_rows <- which(eligible & !separated)
+    fit_rows <- which(eligible)
     rows <- data.frame(
         gene_id = genes, estimate_status = ifelse(eligible, "failed", "filtered"),
-        missing_reason = ifelse(!eligible, "independent_low_count_filter",
-                                ifelse(separated, "zero_condition_marginal", "deseq2_fit_unavailable")),
+        missing_reason = ifelse(eligible, "deseq2_fit_unavailable", "independent_low_count_filter"),
         effect = NA_real_, effect_se = NA_real_, p_value = NA_real_, q_value = NA_real_
     )
     if (length(fit_rows)) {
-        fit <- .bulk_deseq2_fit(counts[fit_rows, , drop = FALSE], design, size_factors, coefficient, contrast, reduced)
+        dds <- DESeq2::DESeqDataSetFromMatrix(countData = counts[fit_rows, , drop = FALSE],
+                                            colData = data.frame(row.names = samples), design = design)
+        DESeq2::sizeFactors(dds) <- size_factors
+        dispersion <- .bulk_deseq2_dispersions(dds)
+        method$dispersion_fit <- dispersion$fit_type
+        method$dispersion_fit_fallbacks <- dispersion$fallbacks
+        fit <- .bulk_deseq2_fit(dispersion$dds, design, coefficient, contrast, reduced)
         if (!all(lengths(fit) == length(fit_rows))) stop("DESeq2 returned an incomplete hypothesis inventory")
         probability <- fit$probability
         valid <- fit$converged & fit$valid_effect &
@@ -157,11 +186,9 @@ bulk_deseq2_sensitivity <- function(counts, design, biological_units, replicate_
         rows$effect[passing] <- fit$effect[valid]
         rows$effect_se[passing] <- fit$effect_se[valid]
         rows$p_value[passing] <- probability[valid]
-        padded <- rep(1, nrow(counts))
-        padded[passing] <- rows$p_value[passing]
-        adjusted <- rep(NA_real_, nrow(counts))
-        adjusted[eligible] <- p.adjust(padded[eligible], method = "BH")
-        rows$q_value[passing] <- adjusted[passing]
+        padded <- ifelse(valid, probability, 1)
+        adjusted <- p.adjust(padded, method = "BH")
+        rows$q_value[passing] <- pmax(probability[valid], adjusted[valid])
     }
     list(rows = rows, method = method)
 }

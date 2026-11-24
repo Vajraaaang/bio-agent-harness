@@ -78,9 +78,12 @@ latent_diagnostics <- function() {
         paste0("coef_", seq.int(2L, length(unique(groups)))), drop=FALSE] else reduced
     diag <- bulk_latent_diagnostics(counts, design, latent_reduced, cfg$latent$method,
         sv_method = if (is.null(cfg$latent$sv_method)) "be" else cfg$latent$sv_method,
-        controls = cfg$latent$controls, n_factors = cfg$latent$n_factors)
+        controls = cfg$latent$controls, n_factors = cfg$latent$n_factors, size_factors = factors)
     diag$score_standard_deviations <- unname(as.list(apply(diag$scores, 2L, sd)))
     diag$warnings_count <- length(diag$warnings)
+    if (diag$n_factors > 0L) {
+        writeBin(as.double(diag$scores), file.path(directory, "latent_scores.bin"), endian = "little")
+    }
     diag$scores <- diag$warnings <- diag$controls <- NULL
     diag
 }
@@ -89,9 +92,8 @@ diagnostics <- latent_diagnostics()
 result <- fit_model()
 rows <- result$rows
 if (!identical(as.character(rows$gene_id), cfg$gene_ids)) stop("Generalized result changed the gene axis")
-codes <- ifelse(rows$estimate_status == "estimated", 0L, ifelse(rows$estimate_status == "filtered", 1L,
-    ifelse(rows$missing_reason %in% c("zero_group_marginal", "zero_condition_marginal",
-                                     "zero_marginal_condition_count"), 2L, 3L)))
+filtered <- rows$estimate_status == "filtered" | rows$missing_reason %in% "all_zero_gene"
+codes <- ifelse(rows$estimate_status == "estimated", 0L, ifelse(filtered, 1L, 3L))
 effects <- if (omnibus) rep(NA_real_, nrow(counts)) else rows$effect
 writeBin(c(effects, rows$p_value, rows$q_value, codes), file.path(directory, "result.bin"), endian = "little")
 method <- if (cfg$solver == "dream") result$diagnostics else result$method

@@ -26,8 +26,8 @@ batch <- rep(rep(c(-1, 1), each = 8), 2)
 full <- cbind(intercept = 1, condition = condition)
 rownames(full) <- samples
 reduced <- full[, "intercept", drop = FALSE]
-mu <- exp(4 + outer(c(rep(0, 35), rep(1, 125)), condition) +
-          outer(c(rep(1.1, 125), rep(0, 35)), batch))
+mu <- exp(4 + outer(c(rep(0, 125), rep(1, 35)), condition) +
+          outer(c(rep(1.1, 35), rep(0, 125)), batch))
 counts <- matrix(rpois(length(mu), mu), nrow = length(genes),
                  dimnames = list(genes, samples))
 fails <- function(expression, pattern) {
@@ -125,6 +125,7 @@ fails(bulk_latent_diagnostics(counts, full, reduced, "ruvg",
                               controls = controls, n_factors = 1L),
       "independent")
 controls$scope <- "independent"
+counts[] <- rep(seq_len(nrow(counts)) * 10L + 400L, ncol(counts))
 counts[genes[1:20], ] <- outer(seq_len(20), 10 + condition)
 out <- bulk_latent_diagnostics(counts, full, reduced, "ruvg",
                                controls = controls, n_factors = 1L)
@@ -132,5 +133,26 @@ stopifnot(!out$augmented_design$full$passes, out$augmented_design$full$rank == 2
 fails(bulk_latent_diagnostics(counts, full, reduced, "ruvg",
                               controls = controls, n_factors = 2L),
       "control rank")
+""",
+    )
+
+
+def test_depth_only_counts_do_not_create_latent_factors(workspace_tmp_path):
+    _r(
+        workspace_tmp_path,
+        """
+depth <- rep(c(1, 4, 3, 8, 2, 12, 5, 15), 4)
+depth_only <- outer(50 + seq_along(genes), depth)
+dimnames(depth_only) <- list(genes, samples)
+for (estimator in c("be", "leek")) {
+    out <- bulk_latent_diagnostics(depth_only, full, reduced, "svaseq",
+                                   sv_method = estimator)
+    stopifnot(out$n_factors == 0L, identical(rownames(out$scores), samples),
+              ncol(out$scores) == 0L, out$augmented_design$full$rank == 2L)
+}
+controls <- list(origin = "spike_ins", scope = "independent",
+                 source = "synthetic depth null", gene_ids = genes[1:20])
+fails(bulk_latent_diagnostics(depth_only, full, reduced, "ruvg",
+                              controls = controls, n_factors = 1L), "control rank")
 """,
     )

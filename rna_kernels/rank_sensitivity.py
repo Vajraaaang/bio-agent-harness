@@ -205,7 +205,7 @@ def prepare_rank_sensitivity(
     covariate_count = numeric.shape[1]
     method = "freedman_lane"
     nuisance = contrast = weights = None
-    if strata is None and covariates is None and target.sum() * 2 == size:
+    if strata is None and covariates is None:
         method = "wilcoxon"
     elif (
         strata is not None
@@ -298,8 +298,8 @@ def test_rank_block(plan: RankSensitivityPlan, values: np.ndarray):
     """Return signed effects, nominal p-values and codes in original row order.
 
     The caller owns the expression scale. For declared counts it should supply
-    log1p-RLE values. Missing data or zero residual rank information withhold
-    the entire affected hypothesis (code 3) without changing the cohort.
+    log1p-RLE values. All-zero rows are filtered (code 1). Missing data or zero
+    residual rank information withhold other affected hypotheses (code 3).
     """
     if (
         not isinstance(values, np.ndarray)
@@ -313,9 +313,9 @@ def test_rank_block(plan: RankSensitivityPlan, values: np.ndarray):
         )
     effects = np.full(len(values), np.nan)
     probabilities = np.full(len(values), np.nan)
-    selected = np.isfinite(values).all(axis=1) & (
-        values.max(axis=1) > values.min(axis=1)
-    )
+    maximum, minimum = values.max(axis=1), values.min(axis=1)
+    filtered = (maximum == 0) & (minimum == 0)
+    selected = np.isfinite(values).all(axis=1) & (maximum > minimum)
     if selected.any():
         method = (
             _freedman_lane_test
@@ -323,32 +323,32 @@ def test_rank_block(plan: RankSensitivityPlan, values: np.ndarray):
             else _asymptotic_rank_test
         )
         effects[selected], probabilities[selected] = method(plan, values[selected])
-    codes = np.where(np.isfinite(probabilities), 0, 3).astype(np.int8)
-    return effects, probabilities, codes
+    codes = np.where(np.isfinite(probabilities), 0, np.where(filtered, 1, 3))
+    return effects, probabilities, codes.astype(np.int8)
 
 
 def rank_family_bh(probabilities, codes):
-    """Adjust the complete measured family, padding unavailable rows as internal p=1."""
+    """Adjust the eligible family, padding unavailable tests as internal p=1."""
     p = np.asarray(probabilities, dtype=float)
     flags = np.asarray(codes)
-    if p.ndim != 1 or flags.shape != p.shape or not np.isin(flags, (0, 3)).all():
+    if p.ndim != 1 or flags.shape != p.shape or not np.isin(flags, (0, 1, 3)).all():
         raise ValueError(
             "Rank sensitivity BH requires aligned complete-family probabilities "
             "and codes"
         )
-    eligible = flags == 0
+    tested = flags == 0
     if (
-        not np.isfinite(p[eligible]).all()
-        or (p[eligible] < 0).any()
-        or (p[eligible] > 1).any()
-        or not np.isnan(p[~eligible]).all()
+        not np.isfinite(p[tested]).all()
+        or (p[tested] < 0).any()
+        or (p[tested] > 1).any()
+        or not np.isnan(p[~tested]).all()
     ):
         raise ValueError(
             "Rank sensitivity BH received invalid probability or unavailable row"
         )
-    padded = np.where(eligible, p, 1.0)
-    order = np.argsort(padded, kind="stable")
-    ranks = padded[order] * len(padded) / np.arange(1, len(padded) + 1)
-    result = np.empty_like(p)
-    result[order] = np.minimum(1, np.minimum.accumulate(ranks[::-1])[::-1])
-    return np.where(eligible, np.maximum(p, result), np.nan)
+    eligible = flags != 1
+    family = p[eligible]
+    padded = np.where(tested[eligible], family, 1.0)
+    result = np.full_like(p, np.nan)
+    result[eligible] = np.maximum(family, stats.false_discovery_control(padded))
+    return result

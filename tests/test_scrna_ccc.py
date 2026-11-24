@@ -137,6 +137,37 @@ def test_null_interaction_is_nonspecific(tmp_path):
     assert pair["p_value"] == pair["q_value"] == 1.0
 
 
+def test_sparse_signal_with_49_unmeasured_interactions(tmp_path):
+    paths, spec = _fixture(tmp_path)
+    reference = pd.read_csv(paths[2]).iloc[:1]
+    missing = pd.DataFrame(
+        [(f"unmeasured-{i}", f"unknown-{i}", "R") for i in range(49)],
+        columns=reference.columns,
+    )
+    pd.concat([reference, missing]).to_csv(paths[2], index=False)
+    result = fit_cell_communication(
+        *paths,
+        spec.model_copy(
+            update={
+                "ligand_receptor_sha256": sha256(paths[2].read_bytes()).hexdigest(),
+                "n_perm": 19,
+            }
+        ),
+    )
+    assert 0 < _pair(result)["q_value"] <= 0.05
+    assert result["bh_family_size"] == 4
+    unmeasured = [
+        row
+        for row in result["interaction_statistics"]
+        if row["interaction_id"] != "pair"
+    ]
+    assert len(unmeasured) == 49 * 4
+    assert all(
+        row["missing_reason"] == "reference_subunit_unmeasured" for row in unmeasured
+    )
+    assert all(row["p_value"] is row["q_value"] is None for row in unmeasured)
+
+
 def test_measured_but_undetected_complex_has_no_test(tmp_path):
     paths, spec = _fixture(tmp_path)
     expression, _, _ = paths

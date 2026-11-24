@@ -55,9 +55,6 @@ def _fit(root, **options):
 
 
 def test_recovers_isoform_switch_and_records_exact_two_transcript_adjustment(tmp_path):
-    from statsmodels.genmod.families import Binomial
-    from statsmodels.genmod.generalized_linear_model import GLM
-
     from devbench.core._hashing import canonical_sha256
 
     receipt = _fit(tmp_path)
@@ -67,14 +64,15 @@ def test_recovers_isoform_switch_and_records_exact_two_transcript_adjustment(tmp
     tx1, tx2 = g1["transcript_statistics"]
     assert tx1["log_odds_ratio"] > 1 and tx2["log_odds_ratio"] < -1
     assert tx1["tx_p"] == pytest.approx(tx2["tx_p"])
-    counts = pd.read_csv(tmp_path / "counts.csv")
-    design = np.column_stack((np.ones(12), np.arange(12) >= 6, np.arange(12) % 2))
-    fit = GLM(counts[["tx1", "tx2"]], design, family=Binomial()).fit()
-    expected_scale = fit.pearson_chi2 / fit.df_resid
     for tx in (tx1, tx2):
         assert tx["tx_p"] == pytest.approx(tx["p_within_shaffer"])
-        assert tx["pearson_dispersion"] == pytest.approx(expected_scale)
+        assert 0 <= tx["donor_intraclass_correlation"] < 1
+        assert tx["wald_df"] == pytest.approx(9)
+        assert tx["pearson_dispersion"] == pytest.approx(1)
         assert tx["tx_q"] == max(g1["gene_q"], tx["p_within_shaffer"])
+    assert tx1["donor_intraclass_correlation"] == pytest.approx(
+        tx2["donor_intraclass_correlation"]
+    )
     assert receipt["target_ofdr"] == 0.05
     assert receipt["clinical_release_allowed"] is False
     digest = receipt.pop("receipt_sha256")
@@ -171,3 +169,74 @@ def test_stagewise_partial_screen_with_four_features():
     assert _stagewise(genes, 0.05) == (3, 1)
     assert [row["tx_q"] for row in features] == pytest.approx([0.018, 0.054, 0.12, 1.0])
     assert genes[1]["transcript_statistics"][0]["tx_q"] is None
+
+
+@pytest.mark.parametrize("depth_multiplier", [1, 100])
+def test_dtu_seed_337_null_calibration(depth_multiplier):
+    from devbench.core.bulk_dtu import _usage_test
+
+    rng = np.random.default_rng(337)
+    design = np.column_stack((np.ones(12), np.repeat([0, 1], 6)))
+    depths = np.full(12, 100)
+    depths[[0, 6]] *= depth_multiplier
+    probabilities = []
+    for _ in range(250):
+        usage = rng.beta(25, 25, size=12)
+        counts = rng.binomial(depths, usage)
+        probabilities.append(_usage_test(counts, depths, design)["tx_p"])
+    assert all(p is not None and 0 <= p <= 1 for p in probabilities)
+    rejected = np.count_nonzero(np.asarray(probabilities) < 0.05)
+    assert rejected / 250 <= 0.075, f"{rejected}/250 null rejections"
+
+
+def test_dtu_power_with_unequal_depth():
+    from devbench.core.bulk_dtu import _usage_test
+
+    rng = np.random.default_rng(338)
+    design = np.column_stack((np.ones(12), np.repeat([0, 1], 6)))
+    depths = np.full(12, 100)
+    depths[[0, 6]] *= 100
+    hits = 0
+    for _ in range(100):
+        usage = np.r_[rng.beta(19, 31, size=6), rng.beta(31, 19, size=6)]
+        fit = _usage_test(rng.binomial(depths, usage), depths, design)
+        hits += int(
+            fit["tx_p"] is not None
+            and fit["tx_p"] < 0.05
+            and fit["log_odds_ratio"] > 0
+        )
+    assert hits >= 90
+
+
+def test_eligible_failed_genes_are_in_bh_family(tmp_path):
+    from devbench.core.bulk_dtu import fit_bulk_dtu
+
+    paths, spec = _dtu_inputs(tmp_path)
+    treated = np.arange(12) >= 6
+    counts = pd.read_csv(paths[0]).assign(
+        tx3=np.where(treated, 0, 45), tx4=np.where(treated, 45, 0), tx5=0,
+    )
+    counts.to_csv(paths[0], index=False)
+    mapping = pd.read_csv(paths[2])
+    mapping.loc[len(mapping)] = ("tx4", "g2")
+    mapping.loc[len(mapping)] = ("tx5", "g3")
+    mapping.to_csv(paths[2], index=False)
+    result = fit_bulk_dtu(
+        *paths,
+        spec.model_copy(update={
+            "counts_sha256": hashlib.sha256(paths[0].read_bytes()).hexdigest(),
+            "mapping_sha256": hashlib.sha256(paths[2].read_bytes()).hexdigest(),
+        }),
+    )
+    hit, failed, single = result["gene_statistics"]
+    assert 0 <= hit["gene_p"] <= hit["gene_q"] <= 1
+    assert hit["gene_q"] / hit["gene_p"] == pytest.approx(2)
+    assert failed["status"] == "unestimable"
+    assert failed["gene_p"] is failed["gene_q"] is None
+    assert all(
+        row["missing_reason"] == "beta_binomial_quasi_likelihood_fit_failed"
+        for row in failed["transcript_statistics"]
+    )
+    assert single["status"] == "single_isoform_gene"
+    assert result["tested_genes"] == 1
+    assert result["bh_family_size"] == 2

@@ -39,7 +39,7 @@
   </nav>
   <div class="rail-jobs"><section class="chat-list-section" aria-label="Investigations"><button id="nav-register" class="secondary nav-new investigation-create" type="button"><svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M11.5 3.5h-7v13h13v-7M10 10l1.5-4 4-4 2.5 2.5-4 4z"/></svg><span>New investigation</span></button><details id="chat-section" open><summary id="chat-section-title"><svg class="chat-section-chevron" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m7 5 5 5-5 5"/></svg><span>Investigations</span></summary><div id="investigation-history" class="investigation-history" hidden></div><section id="studio-plugin-sessions" class="studio-plugin-sessions" aria-label="Codex Plugin Sessions" hidden></section></details></section><section id="legacy-history" aria-labelledby="legacy-history-title" hidden><h3 id="legacy-history-title">Analysis history</h3><div id="jobs" class="jobs"></div></section></div>
   <div class="rail-footer">
-<button id="activity-control" type="button" class="secondary activity-control" aria-haspopup="dialog" aria-controls="project-dialog">Project activity</button><span id="planning-mode" class="tag" hidden>Proposal selection</span><p id="model-access" class="muted" hidden>Loading proposal selection…</p><div class="theme-controls"><label for="theme-select">Appearance</label><select id="theme-select"><option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option></select></div></div>
+<button id="activity-control" type="button" class="secondary activity-control" aria-haspopup="dialog" aria-controls="project-dialog">Project activity</button><span id="planning-mode" class="tag" hidden>Proposal selection</span><p id="model-access" class="muted" hidden>Loading proposal selection…</p><div id="studio-theme-controls" class="theme-controls"><label for="theme-select">Appearance</label><select id="theme-select"><option id="studio-codex-theme" value="codex" hidden>Match Codex</option><option value="system" selected>System</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div>
 </aside>
 <div id="rail-divider" class="panel-divider" role="separator" aria-label="Resize navigation" aria-orientation="vertical" aria-controls="workspace-rail" aria-valuemin="156" aria-valuemax="360" aria-valuenow="196" tabindex="0" title="Drag to resize navigation. Arrow keys adjust; double-click resets."></div>
 <aside id="inspector" class="inspector" aria-label="Chat and recorded evidence">
@@ -156,7 +156,7 @@
     <div id="local-analyst-plots" hidden></div>
     <details><summary>Execution evidence and limits</summary><pre id="local-analyst-evidence"></pre></details>
   </section>
-  <header class="workspace-header"><div><div id="workspace-kicker" class="eyebrow">Local analysis</div><h2><span id="workspace-title">Analysis setup</span></h2><div class="studio-session-meta"><p id="workspace-dataset" class="dataset-badge" hidden></p><span id="studio-session-mode" class="studio-mode-pill" hidden></span><span id="studio-session-revision" class="studio-revision muted" hidden></span><span id="studio-session-verified" class="studio-mode-pill" data-mode="verified" hidden>Package verified</span></div></div><div class="studio-session-actions"><button id="studio-refresh" class="secondary" type="button" hidden>Refresh</button><button id="studio-export" type="button" data-primary="true" hidden>Export Package (.zip)</button><button id="canvas-display" type="button" class="secondary canvas-display-settings" hidden aria-label="Style" title="Style">Style<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14M3 10h14M3 15h14"/><circle cx="7" cy="5" r="2"/><circle cx="13" cy="10" r="2"/><circle cx="8" cy="15" r="2"/></svg></button></div></header>
+  <header class="workspace-header"><div><div id="workspace-kicker" class="eyebrow">Local analysis</div><h2 id="workspace-heading" tabindex="-1"><span id="workspace-title">Analysis setup</span></h2><div class="studio-session-meta"><p id="workspace-dataset" class="dataset-badge" hidden></p><span id="studio-session-mode" class="studio-mode-pill" hidden></span><span id="studio-session-revision" class="studio-revision muted" hidden></span><span id="studio-live-status" class="studio-live-pulse" hidden>Running</span></div></div><div class="studio-session-actions" id="studio-header-actions"><button id="studio-pulse-toggle" class="secondary" type="button" aria-label="Pause live status animation" hidden>Pause</button><button id="studio-refresh" class="secondary" type="button" hidden>Refresh</button><button id="studio-export" type="button" data-primary="true" hidden>Export Package (.zip)</button><button id="canvas-display" type="button" class="secondary canvas-display-settings" hidden aria-label="Style" title="Style">Style<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14M3 10h14M3 15h14"/><circle cx="7" cy="5" r="2"/><circle cx="13" cy="10" r="2"/><circle cx="8" cy="15" r="2"/></svg></button></div></header>
   <p id="workspace-message" class="workspace-notice" role="status"></p><nav id="canvas-tabs" class="canvas-tabs" role="tablist" aria-label="Scientific canvas" hidden><button id="canvas-overview" role="tab" aria-controls="investigation-research" tabindex="-1" aria-selected="false" type="button" class="secondary" hidden>Overview</button><button id="canvas-findings" role="tab" aria-controls="results" tabindex="-1" aria-selected="false" type="button" class="secondary" hidden>Findings</button><button id="canvas-workflows" role="tab" tabindex="-1" aria-selected="false" aria-controls="canvas-detail" type="button" class="secondary" hidden>Workflows</button><button id="canvas-figures" role="tab" aria-controls="results" tabindex="0" aria-selected="true" type="button" class="secondary" aria-current="page">Figures<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><circle cx="7" cy="7.5" r="1.25"/><path d="m3 14 4-4 3 3 3-4 4 5"/></svg></button><button id="canvas-code" role="tab" aria-controls="canvas-detail" tabindex="-1" aria-selected="false" type="button" class="secondary">Code<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m7 5-5 5 5 5m6-10 5 5-5 5m-2-12-2 14"/></svg></button><button id="canvas-evidence" role="tab" aria-controls="canvas-detail" tabindex="-1" aria-selected="false" type="button" class="secondary">Evidence<svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 2.5h8l3 3v12H5zM13 2.5v3h3M8 9h5m-5 3h5m-5 3h3"/></svg></button></nav><div id="studio-investigation-stage" hidden></div><section id="studio-session-content" class="studio-session-content" tabindex="0" hidden></section><section id="investigation-research" class="investigation-research" aria-label="Current investigation" hidden></section><section id="canvas-detail" class="panel canvas-detail" hidden><section id="canvas-receipts" class="wa-receipts" hidden></section><div id="canvas-artifacts" hidden></div><details id="canvas-workflow-history" class="wc-disclosure" hidden><summary>Recorded workflow history</summary><div id="canvas-workflow-records"></div></details></section>
   <nav id="selection-nav" class="selection-nav" aria-label="Selected analysis" hidden><button id="nav-review" class="nav-button" type="button">Plan &amp; decision</button><button id="nav-execute" class="nav-button" type="button">Execution</button><button id="nav-results" class="nav-button" type="button">Figures</button></nav>
   <section id="data" class="panel collection-panel" hidden><h2>Inputs</h2><p>Verified content and uninspected registrations. Hashes identify file content; every registered location stays visible. These groups are not logical datasets or dataset versions.</p><div id="data-list" class="object-list"></div></section>
@@ -357,9 +357,10 @@
     function defaults(total){const railWidth=total<=1180?166:196;return {rail:railWidth,investigation:Math.max(minimum.investigation,(total-railWidth-handles)*.82/2.10)};}
     function apply(){
       const canvasFirst=layout.dataset.studioLayout==='canvas-first',canvasHidden=collapsed.canvas&&!canvasFirst;
+      const viewer=layout.dataset.studioViewer==='results';
       layout.dataset.railCollapsed=String(collapsed.rail);layout.dataset.canvasCollapsed=String(canvasHidden);
-      el('workspace-rail').hidden=collapsed.rail;el('workspace-canvas').hidden=canvasHidden;
-      rail.hidden=collapsed.rail;investigation.hidden=canvasHidden||canvasFirst;
+      el('workspace-rail').hidden=viewer||collapsed.rail;el('workspace-canvas').hidden=canvasHidden;
+      rail.hidden=viewer||collapsed.rail;investigation.hidden=canvasHidden||canvasFirst;
       for(const [id,key,name] of [['toggle-navigation','rail','navigation'],['toggle-workbench','canvas','workbench']]){const button=el(id),label=(collapsed[key]?'Show ':'Hide ')+name;button.setAttribute('aria-expanded',String(!collapsed[key]));button.setAttribute('aria-label',label);button.title=label;}
       const total=layout.getBoundingClientRect().width;if(total<=860){if(interactiveFigure)interactiveFigure.redraw();return;}
       if(!widths)widths=defaults(total);
@@ -414,14 +415,39 @@
     el('draft-context').textContent=action.sourceRunId?'Follow-up draft · source run '+action.sourceRunId.slice(0,8)+' · review dataset and scope before preparing a new plan.':'Suggested question · review the dataset and scope before preparing a plan.';
     showInspectorTab('analyst');openInspector(true);el('question').focus();message('composer-message','Question drafted. No plan or analysis has been submitted.');rememberWorkspace();
   }
+  const themeStorage='rna-workbench-theme-v1';
+  const hostLinkTheme=/^#studio-theme=(light|dark)$/.exec(globalThis.location?.hash||'')?.[1];
+  let hostTheme=hostLinkTheme;
+  try{
+    if(hostLinkTheme){
+      window.sessionStorage.setItem('studio-host-theme',hostLinkTheme);
+      window.localStorage.setItem(themeStorage,'codex');
+    }
+    else {
+      const previous=window.sessionStorage.getItem('studio-host-theme');
+      if(previous==='light'||previous==='dark')hostTheme=previous;
+    }
+    const saved=window.localStorage.getItem(themeStorage);
+    if(['system','light','dark'].includes(saved))el('theme-select').value=saved;
+    else if(saved==='codex'&&hostTheme)el('theme-select').value='codex';
+  }catch(_){}
+  el('studio-codex-theme').hidden=!hostTheme;
+  if(hostLinkTheme)el('theme-select').value='codex';
   const systemTheme=typeof matchMedia==='function'?matchMedia('(prefers-color-scheme: dark)'):null;
   function applyStudioTheme(){
     const choice=el('theme-select').value;
-    const dark=choice==='dark'||(choice==='system'&&systemTheme?.matches);
-    if(document.documentElement)document.documentElement.dataset.theme=dark?'dark':'light';
+    const dark=choice==='dark'||(choice==='codex'&&hostTheme==='dark')||(choice==='system'&&systemTheme?.matches);
+    const effective=dark?'dark':'light';
+    if(document.documentElement)document.documentElement.dataset.theme=effective;
+    document.querySelector?.('meta[name="color-scheme"]')?.setAttribute('content',effective);
     if(interactiveFigure)interactiveFigure.redraw();
+    if(currentView==='results'&&canvasView==='figures')renderStudioSession();
   }
-  el('theme-select').onchange=applyStudioTheme;
+  el('theme-select').onchange=()=>{
+    try{window.localStorage.setItem(themeStorage,el('theme-select').value);}catch(_){}
+    applyStudioTheme();
+  };
+  applyStudioTheme();
   systemTheme?.addEventListener?.('change',()=>{if(el('theme-select').value==='system')applyStudioTheme();});
   for(const id of ['projects-dialog','project-dialog','command-palette-dialog']){
     el(id)?.addEventListener?.('close',event=>{event.currentTarget.returnValue='';});
@@ -502,7 +528,7 @@
       filteredCommands=[...commands,...chats,...records];
       selectedIndex=0;renderList();
     }
-    function open(){dialog.hidden=false;filter();if(typeof dialog.showModal==='function'){if(!dialog.open)dialog.showModal();}else dialog.open=true;input.focus();}
+    function open(){if(studioResultsViewer())return;dialog.hidden=false;filter();if(typeof dialog.showModal==='function'){if(!dialog.open)dialog.showModal();}else dialog.open=true;input.focus();}
     function close(){if(typeof dialog.close==='function'&&dialog.open)dialog.close();else dialog.open=false;dialog.hidden=true;}
     input.oninput=()=>{filter();rememberWorkspace();};
     input.onkeydown=e=>{
@@ -598,11 +624,20 @@
   const scientificRequests=new Map();
   let scientificPlotURL=null, scientificPreviewReference='', scientificPreviewGeneration=0;
   function reducedMotion(){return typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;}
-  function withViewTransition(update){
+  function withViewTransition(update,direction=0){
     if(typeof document.startViewTransition!=='function'||reducedMotion())return update();
     if(activeViewTransition&&typeof activeViewTransition.skipTransition==='function')activeViewTransition.skipTransition();
+    const root=document.documentElement;
+    if(direction&&root){
+      root.dataset.studioTransition='canvas';
+      root.style.setProperty('--studio-nav-dir',String(direction));
+    }else if(root)delete root.dataset.studioTransition;
     let result;const transition=document.startViewTransition(()=>{result=update();return result;});activeViewTransition=transition;
-    if(transition.finished)transition.finished.catch(()=>{}).finally(()=>{if(activeViewTransition===transition)activeViewTransition=null;});
+    if(transition.finished)transition.finished.catch(()=>{}).finally(()=>{
+      if(activeViewTransition!==transition)return;
+      activeViewTransition=null;
+      if(root)delete root.dataset.studioTransition;
+    });
     return transition.updateCallbackDone?transition.updateCallbackDone.then(()=>result):result;
   }
   function datasetCaption(){
@@ -622,18 +657,29 @@
     el('workspace-dataset').textContent=caption;el('workspace-dataset').hidden=!caption;
     const graph=currentView==='results'&&studioSessionGraph?.session_id===investigationWorkflowSession?studioSessionGraph:null;
     const source=graph?.plugin_session||graph?.session_summary;
-    const entry=graph&&studioSessions.find(item=>item.session_id===graph.session_id);
     if(graph&&source?.objective)el('workspace-title').textContent=source.objective;
     if(graph&&source?.dataset_label){el('workspace-dataset').textContent=source.dataset_label;el('workspace-dataset').hidden=false;}
     const mode=el('studio-session-mode'),revision=el('studio-session-revision');
     const packagePath=graph&&studioPackagePath(graph);
-    el('studio-session-verified').hidden=!packagePath;
-    mode.hidden=revision.hidden=el('studio-refresh').hidden=!graph;
-    if(graph){
-      mode.dataset.mode=graph.plugin_linked?'plugin':'local';
-      mode.textContent=graph.plugin_linked?'Plugin-Linked Session':config?.model_access?'Codex Connected':'Offline Studio (Local Only)';
-      revision.textContent='Revision '+graph.revision+' · '+(entry?.step_count??graph.graph?.inventory_counts?.steps??graph.plugin_session?.runs?.length??0)+' steps';
+    const motor=graph?.shared_motor_umap;
+    if(motor){
+      el('workspace-title').textContent='Motor-neuron states across e09–e11';
+      el('workspace-dataset').textContent='e09–e11';
+      el('workspace-dataset').hidden=true;
     }
+    el('workspace-kicker').hidden=Boolean(graph);
+    syncStudioViewer();
+    mode.hidden=!graph?.plugin_linked||studioResultsViewer();
+    if(!mode.hidden){mode.dataset.mode='plugin';mode.textContent='DevHarness plugin';}
+    revision.hidden=!graph||canvasView!=='evidence';
+    if(!revision.hidden)revision.textContent='Revision '+graph.revision;
+    el('studio-refresh').hidden=!graph||studioResultsViewer();
+    const nativeRun=graph?.private_workflow?.plans?.find(item=>['queued','running'].includes(item.status));
+    const run=nativeRun?.status||motor?.status||graph?.plugin_session?.runs?.find(item=>['queued','running'].includes(item.status))?.status;
+    const active=run==='queued'||run==='running';
+    const live=el('studio-live-status');
+    live.textContent=run==='queued'?'Queued':'Running';live.hidden=!active;
+    el('studio-pulse-toggle').hidden=!active||reducedMotion();
     el('studio-export').hidden=!packagePath;
   }
   function restoreGateHomes(){
@@ -1322,7 +1368,12 @@
     };
     el('investigation-inputs-toggle').onclick=()=>openInputDrawer();
     el('close-investigation-inputs').onclick=()=>closeProjectDialog();
-    for(const name of ['overview','findings','figures','code','evidence','workflows'])el('canvas-'+name).onclick=()=>showCanvas(name);
+    const studioTabOrder=['overview','findings','workflows','figures','code','evidence'];
+    for(const name of studioTabOrder)el('canvas-'+name).onclick=()=>{
+      const order=studioTabOrder.indexOf(name)-studioTabOrder.indexOf(canvasView);
+      if(order&&scientificCanvas())withViewTransition(()=>showCanvas(name),Math.sign(order));
+      else showCanvas(name);
+    };
     el('canvas-display').onclick=()=>withViewTransition(()=>showCanvas('display'));
     window.WorkbenchStudio?.mountTabIndicator(el('canvas-tabs'));
     el('canvas-tabs').onkeydown=event=>{
@@ -1343,6 +1394,7 @@
     };
   }
   function openProjectDialog(section){
+    if(studioResultsViewer())return;
     renderProjectViews();
     const dialog=el('project-dialog'),titles={overview:'Project details',data:'Project data',analyses:'Project plans',runs:'Project runs',library:'Project results',files:'Project exports','project-aims':'Aims & packages'};
     for(const view of projectCollections)if(el(view).parentNode!==dialog)dialog.append(el(view));
@@ -1423,6 +1475,23 @@
   };
 
   function scientificCanvas(){return config?.scientific?.enabled===true||Boolean(investigationWorkflowSession||requestedStudioLink);}
+  function studioResultsViewer(){
+    return Boolean(requestedStudioLink||
+      (currentView==='results'&&studioSessionGraph?.plugin_linked));
+  }
+  const themeHome=el('studio-theme-controls').parentNode;
+  function syncStudioViewer(){
+    const app=el('app'),viewer=studioResultsViewer();
+    const theme=el('studio-theme-controls');
+    const target=viewer?el('studio-header-actions'):themeHome;
+    if(theme.parentNode!==target)target.append(theme);
+    el('workspace-rail').inert=viewer;
+    const mode=viewer?'results':'workspace';
+    if(app.dataset.studioViewer!==mode){
+      app.dataset.studioViewer=mode;
+      refreshPanelSizes();
+    }
+  }
   function updateStudioMode(){
     const app=el('app'),badge=el('studio-mode'),selection=config?.proposal_selection;
     const canvasFirst=scientificCanvas(),pluginLinked=studioSessionGraph?.plugin_linked===true;
@@ -1431,11 +1500,12 @@
         ' ('+selection.model_data_scope+')'
       : 'Offline Studio (Local Only)';
     badge.dataset.mode=pluginLinked?'plugin':'local';
-    badge.hidden=false;
+    badge.hidden=canvasFirst;
     const layout=canvasFirst?'canvas-first':'split';
     const inspector=el('inspector');
     inspector.hidden=canvasFirst;
     inspector.inert=canvasFirst;
+    syncStudioViewer();
     if(app.dataset.studioLayout===layout)return;
     app.dataset.studioLayout=layout;
     globalThis.WorkbenchStudio?.setContext(canvasFirst?null:studioContext);
@@ -1464,7 +1534,7 @@
   }
   function renderStudioRail(){
     window.WorkbenchStudio?.renderSessionRail(el('studio-plugin-sessions'),studioSessions,investigationWorkflowSession,
-      id=>openWorkflowSession(id,'overview'));
+      id=>openWorkflowSession(id,'overview',null,false,true));
   }
   async function refreshStudioRail(){
     if(!config?.scientific?.enabled)return;
@@ -1482,6 +1552,18 @@
       counts,thesis:readback.thesis,navigate:showCanvas,download:downloadStudioPackage,
       localTables:readback.tables,localReceipts:readback.receipts,
       message:(text,error)=>message('workspace-message',text,error),
+      plotlyFrame:path=>{
+        const query=new URLSearchParams({theme:document.documentElement.dataset.theme==='dark'?'dark':'light'});
+        if(activeProjectId)query.set('project_id',activeProjectId);
+        return path+'?'+query.toString();
+      },
+      artifact:async(path,media,signal)=>{
+        const response=await api(path,undefined,{signal});
+        const type=(response.headers.get('content-type')||'').split(';')[0];
+        if(type!==media){await response.body.cancel();throw Error('The verified artifact has an unexpected type.');}
+        const limit=(media==='text/csv'?32:8)*1024*1024;
+        return new Blob(await scientificArtifactBytes(response,limit),{type});
+      },
     });
   }
   function leaveStudioSession(){
@@ -1498,8 +1580,9 @@
     renderWorkspaceHeader();
   };
   el('studio-export').onclick=()=>downloadStudioPackage(studioPackagePath(studioSessionGraph));
-  async function openWorkflowSession(id, view, aim=null, fromHandoff=false){
+  async function openWorkflowSession(id, view, aim=null, fromHandoff=false, focusCanvas=false){
     const stamp=++studioNavigation;
+    const prior=investigationWorkflowSession;
     try{
       const graph=await read('/api/scientific/adaptive/'+id);
       if(stamp!==studioNavigation)return;
@@ -1522,7 +1605,16 @@
       updateStudioMode();
       renderStudioRail();
       const landing=fromHandoff?window.WorkbenchStudio?.handoffView?.(view,graph)||view:view;
-      showCanvas(landing==='qc'?'workflows':landing);
+      const show=()=>{
+        if(stamp!==studioNavigation)return;
+        showCanvas(landing==='qc'?'workflows':landing);
+        if(focusCanvas)el('workspace-heading').focus({preventScroll:true});
+      };
+      if(focusCanvas&&prior&&prior!==id){
+        const before=studioSessions.findIndex(session=>session.session_id===prior);
+        const after=studioSessions.findIndex(session=>session.session_id===id);
+        await withViewTransition(show,after<before?-1:1);
+      }else show();
       if(view==='qc')requestAnimationFrame(()=>{
         el('investigation-adaptive-panel').querySelector('[data-workflow-band="execution"]')
           ?.scrollIntoView({block:'start'});
@@ -1575,6 +1667,13 @@
     if(status.startsWith('completed_review_'))return 'results';
     return ['approved','preparing','running','cancel_requested','finalizing','operation_failed','failed','recovery_required','cancelled','interrupted','interrupted_service','infrastructure_failure','execution_failure_unclassified'].includes(status)?'execute':'review';
   }
+  const pulseToggle=el('studio-pulse-toggle');
+  pulseToggle.onclick=()=>{
+    const root=el('app'),paused=root.dataset.studioPulse!=='paused';
+    root.dataset.studioPulse=paused?'paused':'playing';
+    pulseToggle.textContent=paused?'Play':'Pause';
+    pulseToggle.setAttribute('aria-label',(paused?'Play':'Pause')+' live status animation');
+  };
   function openInspector(value){inspectorOpen=value&&!scientificCanvas();el('inspector').classList.toggle('is-open',inspectorOpen);}
   function showInspectorTab(name,focus=false){
     if(investigationMode){if(name!=='analyst'){showCanvas(name==='code'?'code':name==='display'?'display':'evidence');return;}inspectorTab='analyst';el('panel-analyst').hidden=false;el('analyst-composer').hidden=currentView==='scientific';inspectRecords();return;}
@@ -2065,6 +2164,7 @@
     const investigation=id==='investigation-adaptive-panel';
     if(!adaptivePanels.has(id))adaptivePanels.set(id,window.WorkbenchInvestigations.mountAdaptivePanel({host:el(id),
       taskCentered:investigation,
+      onMotorFigures:investigation?()=>showCanvas('figures'):null,
       onActivity:investigation?(identity,activity)=>investigationController?.setAdaptiveActivity?.(identity,activity):null,
       onSettled:investigation?identity=>investigationController?.refresh().then(record=>{
         if(record?.adaptive_research?.activity?.last)investigationController?.setAdaptiveActivity?.(identity,null);
@@ -2074,8 +2174,13 @@
         if(view.session_id!==investigationWorkflowSession)return;
         if(studioReadback.session!==view.session_id||studioReadback.revision!==view.revision)studioReadback={};
         if(studioSessionGraph?.revision!==view.revision)globalThis.WorkbenchStudio?.closeReceipt();
+        const workflowStates=graph=>JSON.stringify([
+          graph?.shared_motor_umap?.status,
+          (graph?.private_workflow?.plans||[]).map(plan=>[plan.plan_id,plan.status])]);
+        const workflowChanged=studioSessionGraph&&workflowStates(studioSessionGraph)!==workflowStates(view);
         studioSessionGraph=view.status==='available'?view:null;
         renderWorkspaceHeader();renderStudioSession();
+        if(workflowChanged)refreshStudioRail();
       }:null,
       onResearch:investigation?readStudioResearch:null,
       download:downloadThesisPackage,
@@ -2085,7 +2190,15 @@
         return new Blob(await scientificArtifactBytes(response,8*1024*1024),{type});
       },
       request:async(path,body)=>body===undefined?read(path):(await api(path,body)).json()}));
-    return adaptivePanels.get(id).select(session,{aimId:investigation?workflowAim:null,initialView,readOnly:config.project_catalog?.read_only===true,scope:config.project_catalog?.current_project_id});
+    const localApproval=initialView?.shared_motor_umap?.status==='awaiting_review'&&
+      initialView.shared_motor_umap.can_run===true;
+    const projectReadOnly=config.project_catalog?.read_only===true;
+    const readOnly=projectReadOnly||
+      (investigation&&studioResultsViewer()&&!localApproval);
+    return adaptivePanels.get(id).select(session,{aimId:investigation?workflowAim:null,
+      initialView,readOnly,
+      allowOfflineApproval:investigation&&!projectReadOnly&&config.offline_only===true,
+      scope:config.project_catalog?.current_project_id});
   }
   function readStudioResearch(session,views){
     if(session!==investigationWorkflowSession)return;

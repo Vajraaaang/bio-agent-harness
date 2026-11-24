@@ -26,6 +26,8 @@ _ID = re.compile(r"[a-f0-9]{32}")
 _SHA = re.compile(r"[a-f0-9]{64}")
 _PNG = b"\x89PNG\r\n\x1a\n"
 _PNG_FILENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,119}\.png")
+_PLOTLY_FILENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,119}\.json")
+_FIGURE_FIELDS = {"title", "filename", "sha256"}
 _PROGRAMS = ("Branchio-visceromotor-like", "Somatic-motor-like")
 _FIELDS = {
     "format",
@@ -55,6 +57,35 @@ def _items(value, minimum, maximum):
 
 def _count(value):
     return type(value) is int and 0 <= value <= 2**53 - 1
+
+
+def _figure_members(figures):
+    for figure in figures:
+        yield figure["filename"], figure["sha256"], ".png"
+        if "plotly" in figure:
+            plotly = figure["plotly"]
+            yield plotly["filename"], plotly["sha256"], ".json"
+
+
+def _validate_figure_manifest(figure):
+    if (
+        not isinstance(figure, dict)
+        or figure.keys() not in (_FIGURE_FIELDS, _FIGURE_FIELDS | {"plotly"})
+        or not _text(figure["title"])
+        or not _matching(figure["filename"], _PNG_FILENAME)
+        or not _matching(figure["sha256"], _SHA)
+    ):
+        raise ValueError("Invalid retained comparison figure")
+    if "plotly" not in figure:
+        return
+    companion = figure["plotly"]
+    if (
+        not isinstance(companion, dict)
+        or companion.keys() != {"filename", "sha256"}
+        or not _matching(companion["filename"], _PLOTLY_FILENAME)
+        or not _matching(companion["sha256"], _SHA)
+    ):
+        raise ValueError("Invalid retained comparison Plotly companion")
 
 
 def _manifest(path, *, expected_sha256=None):
@@ -91,17 +122,11 @@ def _manifest(path, *, expected_sha256=None):
         ):
             raise ValueError("Invalid retained comparison state counts")
     for figure in value["figures"]:
-        if (
-            not isinstance(figure, dict)
-            or figure.keys() != {"title", "filename", "sha256"}
-            or not _text(figure["title"])
-            or not _matching(figure["filename"], _PNG_FILENAME)
-            or not _matching(figure["sha256"], _SHA)
-        ):
-            raise ValueError("Invalid retained comparison figure")
+        _validate_figure_manifest(figure)
     if len({state["label"] for state in value["states"]}) != len(value["states"]):
         raise ValueError("Retained comparison states require distinct labels")
-    if len({figure["sha256"] for figure in value["figures"]}) != len(value["figures"]):
+    hashes = [sha for _, sha, _ in _figure_members(value["figures"])]
+    if len(set(hashes)) != len(hashes):
         raise ValueError("Retained comparison figures require distinct content")
     return value
 
@@ -160,7 +185,7 @@ def _verified_investigation(app, manifest):
         )
     identities = {
         manifest["result_ref"],
-        *(item["sha256"] for item in manifest["figures"]),
+        *(sha for _, sha, _ in _figure_members(manifest["figures"])),
     }
     if identities & _publication_hashes(app):
         raise PermissionError("Retained comparison publication is withheld")
@@ -256,6 +281,16 @@ def _project(app, manifest):
         for stage, count in zip(stages, screened, strict=True)
     )
     figure_route = f"/api/scientific/adaptive/{manifest['session_id']}/comparison"
+    figures = []
+    for item in manifest["figures"]:
+        figure = {
+            "title": item["title"],
+            "download_path": f"{figure_route}/{item['sha256']}.png",
+        }
+        if "plotly" in item:
+            plotly_sha = item["plotly"]["sha256"]
+            figure["plotly_path"] = f"{figure_route}/{plotly_sha}/plotly"
+        figures.append(figure)
     return {
         "title": manifest["title"],
         "stages": stages,
@@ -275,13 +310,7 @@ def _project(app, manifest):
                 screened,
             ),
         ],
-        "figures": [
-            {
-                "title": item["title"],
-                "download_path": f"{figure_route}/{item['sha256']}.png",
-            }
-            for item in manifest["figures"]
-        ],
+        "figures": figures,
         "limitations": [
             f"Screened cell-state denominators: {denominators}.",
             *manifest["limitations"],
@@ -300,6 +329,22 @@ def _figure(path, sha256):
         or not 0 < int.from_bytes(raw[20:24], "big") <= 8192
     ):
         raise ValueError("Retained comparison figure must be a bounded PNG")
+    return raw
+
+
+def _plotly(path, sha256):
+    from .workbench_plotly import validated_plotly_figure
+
+    raw = read_bounded_file(path, _FIGURE_BYTES)
+    if hashlib.sha256(raw).hexdigest() != sha256:
+        raise ValueError("Retained comparison Plotly digest differs")
+    return raw, validated_plotly_figure(raw)
+
+
+def _member_bytes(path, sha256, suffix):
+    if suffix == ".png":
+        return _figure(path, sha256)
+    raw, _ = _plotly(path, sha256)
     return raw
 
 
@@ -329,17 +374,15 @@ def retain_local_comparison(app, manifest_path):
             raise ValueError(
                 "A different comparison is already retained for this session"
             )
-        for figure in manifest["figures"]:
-            sha = figure["sha256"]
-            _figure(target / (sha + ".png"), sha)
+        for _, sha, suffix in _figure_members(manifest["figures"]):
+            _member_bytes(target / (sha + suffix), sha, suffix)
         return view
     target.parent.mkdir(mode=0o700, exist_ok=True)
     with TemporaryDirectory(prefix=".pending-", dir=target.parent) as pending:
         staging = Path(pending)
-        for figure in manifest["figures"]:
-            sha = figure["sha256"]
-            raw = _figure(manifest_path.parent / figure["filename"], sha)
-            destination = staging / (sha + ".png")
+        for filename, sha, suffix in _figure_members(manifest["figures"]):
+            raw = _member_bytes(manifest_path.parent / filename, sha, suffix)
+            destination = staging / (sha + suffix)
             with os.fdopen(
                 os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb"
             ) as stream:
@@ -378,8 +421,7 @@ def local_comparison_view(app, session_id):
     return _project(app, manifest)
 
 
-def local_comparison_figure(app, session_id, sha256):
-    """Revalidate the bound result before reading a figure's verified bytes."""
+def _comparison_member(app, session_id, sha256, suffix):
     if app.offline_only is not True:
         raise PermissionError("Retained comparison requires offline Studio")
     if not _matching(sha256, _SHA):
@@ -389,6 +431,20 @@ def local_comparison_figure(app, session_id, sha256):
     except FileNotFoundError:
         raise KeyError("Unknown retained comparison") from None
     _verified_investigation(app, manifest)
-    if not any(figure["sha256"] == sha256 for figure in manifest["figures"]):
+    if not any(
+        (sha, ext) == (sha256, suffix)
+        for _, sha, ext in _figure_members(manifest["figures"])
+    ):
         raise KeyError("Unknown retained comparison figure")
-    return _figure(directory / (sha256 + ".png"), sha256)
+    return directory / (sha256 + suffix)
+
+
+def local_comparison_figure(app, session_id, sha256):
+    """Revalidate the bound result before reading a figure's verified bytes."""
+    return _figure(_comparison_member(app, session_id, sha256, ".png"), sha256)
+
+
+def local_comparison_plotly(app, session_id, sha256):
+    """Return only validated, data-only Plotly configuration in offline Studio."""
+    _, figure = _plotly(_comparison_member(app, session_id, sha256, ".json"), sha256)
+    return figure

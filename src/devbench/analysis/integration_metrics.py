@@ -6,7 +6,6 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from hashlib import sha256
-from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +29,9 @@ from .checkpoints import digest
 _MAX_CELLS = 100_000
 _GEOMETRY_CELLS = 500
 _GEOMETRY_NEIGHBORS = 10
+_MIN_GEOMETRY_BATCH_CELLS = 4
+_MAX_ISOLATED_FRACTION = 0.1
+_COMPARISON_BASIS = "within_batch_uncorrected_pca_on_same_selected_cells"
 _LABEL_QUALIFICATION = "devbench.integration-label-verification/1"
 _INDEPENDENT_LABEL_ORIGINS = {"orthogonal_measurement", "independent_assignment"}
 MAX_LABEL_MAP_BYTES = 16_000_000
@@ -137,11 +139,34 @@ def _validate_coordinates(coordinates: np.ndarray, n_cells: int) -> np.ndarray:
     return values
 
 
+def _geometry_rows(batch_codes):
+    """Reserve a usable sample per eligible batch within the total geometry budget."""
+    sizes = np.bincount(batch_codes)
+    order = np.argsort(batch_codes, kind="stable")
+    stops = sizes.cumsum()
+    starts = stops - sizes
+    eligible = np.flatnonzero(sizes >= _MIN_GEOMETRY_BATCH_CELLS)
+    limit = _GEOMETRY_CELLS // _MIN_GEOMETRY_BATCH_CELLS
+    if len(eligible) > limit:
+        largest_first = np.argsort(-sizes[eligible], kind="stable")
+        eligible = np.sort(eligible[largest_first[:limit]])
+    weights = sizes[eligible]
+    quotas = weights.copy()
+    if weights.sum() > _GEOMETRY_CELLS:
+        extra = (weights - _MIN_GEOMETRY_BATCH_CELLS).cumsum()
+        remaining = _GEOMETRY_CELLS - len(eligible) * _MIN_GEOMETRY_BATCH_CELLS
+        quotas = _MIN_GEOMETRY_BATCH_CELLS + np.diff(
+            extra * remaining // extra[-1], prepend=0
+        )
+    return [
+        (order[starts[i]:stops[i]], quota)
+        for i, quota in zip(eligible, quotas, strict=True)
+    ]
+
+
 def _comparison_geometry(
-    reference: np.ndarray, candidate: np.ndarray, n_cells: int, seed: int
+    reference: np.ndarray, candidate: np.ndarray, batch_codes: np.ndarray, seed: int
 ) -> dict:
-    reference = _validate_coordinates(reference, n_cells)
-    candidate = _validate_coordinates(candidate, n_cells)
     tolerance = EMBEDDING_THRESHOLDS["rank_relative_tolerance"]
     rank = embedding_rank(candidate, tolerance)
     if not rank:
@@ -149,26 +174,38 @@ def _comparison_geometry(
     reference_rank = embedding_rank(reference, tolerance)
     if not reference_rank:
         raise ValueError("embedding_reference_unavailable")
-    sample = np.arange(n_cells)
-    if n_cells > _GEOMETRY_CELLS:
-        sample = np.sort(
-            np.random.default_rng(seed).choice(
-                n_cells,
-                _GEOMETRY_CELLS,
-                replace=False,
+    rng = np.random.default_rng(seed)
+    samples, scores, weights = [], [], []
+    for rows, quota in _geometry_rows(batch_codes):
+        sample = rows
+        if quota < len(rows):
+            sample = np.sort(rng.choice(rows, quota, replace=False))
+        samples.append(sample)
+        weights.append(len(rows))
+        scores.append(
+            neighborhood_metrics(
+                reference[sample], candidate[sample], _GEOMETRY_NEIGHBORS
             )
         )
+    sampled_rows = sorted(np.concatenate(samples).tolist()) if samples else []
+    neighbor_counts = {score["n_neighbors"] for score in scores}
     return {
-        **neighborhood_metrics(
-            reference[sample],
-            candidate[sample],
-            _GEOMETRY_NEIGHBORS,
+        **{
+            key: float(np.average([score[key] for score in scores], weights=weights))
+            if scores else None
+            for key in ("neighborhood_retention", "trustworthiness")
+        },
+        "n_neighbors": (
+            next(iter(neighbor_counts)) if len(neighbor_counts) == 1 else None
         ),
+        "comparison_available": bool(scores),
         "embedding_rank": rank,
         "reference_rank": reference_rank,
-        "cells_compared": len(sample),
-        "observations_subsampled": len(sample) < n_cells,
-        "comparison_rows_sha256": digest(sample.tolist()),
+        "batches_compared": len(scores),
+        "cells_in_compared_batches": sum(weights),
+        "cells_compared": len(sampled_rows),
+        "observations_subsampled": len(sampled_rows) < sum(weights),
+        "comparison_rows_sha256": digest(sampled_rows),
     }
 
 
@@ -189,15 +226,16 @@ def _batch_structure(
 
 
 def _score_label_conservation(
-    candidate: np.ndarray, labels: np.ndarray, provenance: dict[str, str]
-) -> dict:
+    candidate: np.ndarray, batch_codes: np.ndarray, labels: np.ndarray,
+    provenance: dict[str, str],
+) -> tuple[dict, float | None]:
     levels = len(np.unique(labels))
-    if not 1 < levels < len(labels):
+    if levels == len(labels):
         return dict(
             status="unavailable",
             reason="unestimable_label_structure",
             provenance=provenance,
-        )
+        ), None
     # Exact ASW computes quadratic distances. The fixed limit bounds CPU work
     # while the graph and finite-coordinate checks still cover all observations.
     if len(labels) > 10_000:
@@ -205,36 +243,36 @@ def _score_label_conservation(
             status="unavailable",
             reason="scib_label_metrics_size_bound",
             provenance=provenance,
-        )
-    try:
-        from scib_metrics import silhouette_label
-    except ImportError:
+        ), None
+    metrics = full_silhouette_metrics(candidate, batch_codes, labels)
+    score = metrics["cell_type_ASW"]
+    if score is None:
         return dict(
             status="unavailable",
-            reason="scib_metrics_not_in_runtime",
+            reason="unestimable_label_structure",
             provenance=provenance,
-        )
-    score = float(silhouette_label(candidate, labels, chunk_size=256))
-    if not np.isfinite(score) or not 0 <= score <= 1:
-        raise ValueError("invalid_scib_label_score")
+        ), metrics["batch_ASW"]
     return {
         "status": "measured",
-        "scib_metrics_version": version("scib-metrics"),
-        "silhouette_label": score,
-        "cells_evaluated": len(labels),
+        "cell_type_ASW": score,
+        "silhouette_label": (1 + score) / 2,
+        "cells_evaluated": metrics["cells_evaluated"],
         "provenance": provenance,
         "scope": "descriptive_label_preservation_relative_to_qualified_reference",
-    }
+    }, metrics["batch_ASW"]
 
 
 def _conservation(
     candidate: np.ndarray,
+    batch_codes: np.ndarray,
     cell_ids: Sequence[str],
     selected_sha256: str | None,
     verified_labels: ExternalLabelEvidence | None,
-) -> dict:
+) -> tuple[dict, float | None]:
     if verified_labels is None:
-        return {"status": "unavailable", "reason": "verified_external_labels_required"}
+        return {
+            "status": "unavailable", "reason": "verified_external_labels_required",
+        }, None
     if not selected_sha256:
         raise ValueError("integration_label_cohort_mismatch")
     labels, provenance = verify_external_labels(
@@ -242,7 +280,7 @@ def _conservation(
         cell_ids=cell_ids,
         selected_sha256=selected_sha256,
     )
-    return _score_label_conservation(candidate, labels, provenance)
+    return _score_label_conservation(candidate, batch_codes, labels, provenance)
 
 
 def assess_integration(
@@ -257,18 +295,20 @@ def assess_integration(
     selected_sha256: str | None = None,
     verified_labels: ExternalLabelEvidence | None = None,
 ) -> dict:
-    """Fail closed on invalid geometry or a fragmented saved neighbor graph."""
+    """Check within-batch geometry and describe mixing on the complete saved graph."""
     report: dict[str, Any] = {
         "format": "devbench.scrna-embedding-assessment/1",
         "status": "fail",
         "embedding_valid": False,
         "diagnostics": [],
+        "warnings": [],
         "policy": {
             **EMBEDDING_THRESHOLDS,
-            "max_connected_components": 1,
+            "max_isolated_fraction": _MAX_ISOLATED_FRACTION,
             "geometry_max_cells": _GEOMETRY_CELLS,
             "geometry_seed": seed,
-            "comparison_basis": "uncorrected_pca_on_same_selected_cells",
+            "geometry_min_cells_per_batch": _MIN_GEOMETRY_BATCH_CELLS,
+            "comparison_basis": _COMPARISON_BASIS,
         },
         "geometry": None,
         "graph": None,
@@ -281,27 +321,42 @@ def assess_integration(
     try:
         n_batches, batch_codes = _batch_structure(cell_ids, graph_cell_ids, batches)
         report["cell_axis_sha256"] = digest(list(cell_ids))
+        reference = _validate_coordinates(reference, len(cell_ids))
+        candidate = _validate_coordinates(candidate, len(cell_ids))
         report["geometry"] = geometry = _comparison_geometry(
             reference,
             candidate,
-            len(cell_ids),
+            batch_codes,
             seed,
         )
         report["graph"] = graph_report = neighbor_graph_metrics(graph, batch_codes)
     except (ValueError, np.linalg.LinAlgError) as error:
         report["diagnostics"].append(str(error))
         return report
-    if graph_report["connected_components"] != 1:
-        report["diagnostics"].append("fragmented_graph")
+    if graph_report["connected_components"] > 1:
+        report["warnings"].append("graph_disconnected_components")
+    isolates = graph_report["isolated_observations"]
+    if isolates:
+        report["warnings"].append("graph_has_isolated_observations")
+    if not graph_report["undirected_edges"]:
+        report["diagnostics"].append("graph_no_edges")
+    elif isolates / len(cell_ids) > _MAX_ISOLATED_FRACTION:
+        report["diagnostics"].append("graph_excessive_isolates")
+    if geometry["batches_compared"] < n_batches:
+        report["warnings"].append("within_batch_geometry_incomplete")
     if loses_neighbors(geometry, EMBEDDING_THRESHOLDS):
         report["diagnostics"].append("embedding_neighborhood_loss")
     if report["diagnostics"]:
         return report
+    conservation, batch_asw = _conservation(
+        candidate, batch_codes, cell_ids, selected_sha256, verified_labels
+    )
     if 1 < n_batches < len(cell_ids):
         report["batch_mixing"] = {
             "status": "measured",
             "observed_batches": n_batches,
             "cross_batch_edge_fraction": graph_report["cross_batch_edge_fraction"],
+            "batch_ASW": batch_asw,
             "scope": "unweighted_edges_across_declared_technical_batches",
         }
     else:
@@ -309,12 +364,7 @@ def assess_integration(
             "status": "unavailable",
             "reason": "unestimable_batch_structure",
         }
-    report["biological_conservation"] = _conservation(
-        candidate,
-        cell_ids,
-        selected_sha256,
-        verified_labels,
-    )
+    report["biological_conservation"] = conservation
     report.update(status="pass", embedding_valid=True)
     return report
 

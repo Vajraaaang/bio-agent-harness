@@ -90,6 +90,41 @@ def test_null_perturbation(tmp_path):
     )
 
 
+def test_complete_knockout_is_estimated_from_original_counts(tmp_path):
+    from devbench.core.perturbation_analysis import fit_perturbation_response
+
+    paths, spec, _, assignments = _perturbation_inputs(tmp_path, planted=False)
+    frame = pd.read_csv(paths[0])
+    frame.loc[assignments != "NTC", "gene-0"] = 0
+    frame.to_csv(paths[0], index=False)
+    changed = spec.model_copy(
+        update={"counts_sha256": hashlib.sha256(paths[0].read_bytes()).hexdigest()}
+    )
+    (result,) = fit_perturbation_response(*paths, changed)["perturbations"]
+    target = result["pseudobulk_de"]["gene_statistics"][0]
+    assert target["gene_id"] == "gene-0"
+    assert np.isfinite(target["log2_fold_change"]) and target["log2_fold_change"] < -5
+    assert 0 < target["p_value"] <= target["q_value"] < 0.05
+    assert target["dispersion_alpha"] > 0
+
+
+@pytest.mark.parametrize("null", ["bimodal", "high_dimensional"])
+def test_efficacy_does_not_call_baseline_control_structure(null):
+    from devbench.core.perturbation_analysis import _mixture
+
+    discoveries = 0
+    for seed in range(12):
+        rng = np.random.default_rng(seed)
+        dimensions = 3 if null == "bimodal" else 150
+        signatures = rng.normal(size=(120, dimensions))
+        if null == "bimodal":
+            signatures[:, 0] += rng.choice([-5, 5], len(signatures))
+        treated = rng.permutation(np.repeat([False, True], 60))
+        posterior, _ = _mixture(signatures, treated, seed)
+        discoveries += posterior is not None and np.any(posterior[treated] >= 0.5)
+    assert discoveries <= 1
+
+
 def test_chunked_energy_is_unbiased_u_statistic():
     from devbench.core.perturbation_analysis import _energy_test
 

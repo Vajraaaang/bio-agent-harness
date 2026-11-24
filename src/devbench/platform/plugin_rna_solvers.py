@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
+from devbench._layout import PROJECT_ROOT
 from devbench.core import bulk_deconvolution, bulk_dtu, phenotype_prediction, scrna_ccc
 from devbench.core._rna_solver_inputs import (
     MAX_INPUT_BYTES,
@@ -181,7 +182,7 @@ def runtime_info() -> dict[str, Any]:
     except PackageNotFoundError as error:
         raise OperationBlocked("local_python_runtime_unavailable") from error
     # Source checkouts carry uv.lock. Wheel installs attest the installed versions.
-    lock = Path(__file__).resolve().parents[3] / "uv.lock"
+    lock = PROJECT_ROOT / "uv.lock"
     lock_sha = None
     if lock.is_file():
         with lock.open("rb") as source:

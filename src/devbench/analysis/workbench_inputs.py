@@ -498,6 +498,7 @@ class InputDiscovery:
         max_columns=None,
         timeout_seconds=20,
         memory_mb=512,
+        allow_external_files=False,
     ):
         table_columns = _MAX_TABLE_COLUMNS if max_columns is None else max_columns
         values = {
@@ -525,6 +526,7 @@ class InputDiscovery:
             128 if max_columns is None else min(max_columns, 256)
         )
         self._roots = {}
+        self.allow_external_files = allow_external_files is True
         for supplied in input_roots:
             root = Path(supplied)
             if (
@@ -563,10 +565,20 @@ class InputDiscovery:
         roots = [
             root for root in self._roots if path.is_relative_to(root) and path != root
         ]
-        if not roots:
+        if not roots and not self.allow_external_files:
             raise PermissionError("Input is outside configured input roots")
         if _input_suffix(path.name) is None:
             raise ValueError("Input format is unavailable for bounded discovery")
+        if not roots:
+            # Open the explicitly named file relative to its own directory.
+            # Never add this directory to the roots used for file discovery.
+            root = path.parent
+            descriptor = _directory(root)
+            try:
+                metadata = os.fstat(descriptor)
+                return path, root, (path.name,), (metadata.st_dev, metadata.st_ino)
+            finally:
+                os.close(descriptor)
         root = max(roots, key=lambda value: len(value.parts))
         return path, root, path.relative_to(root).parts, self._roots[root]
 
@@ -672,7 +684,9 @@ class InputDiscovery:
                     "path": str(path),
                     "filename": path.name,
                     "size_bytes": signature[3],
-                    "analysis_size_supported": signature[3] <= self.limits["max_file_bytes"],
+                    "analysis_size_supported": (
+                        signature[3] <= self.limits["max_file_bytes"]
+                    ),
                     "sha256": digest,
                     "hash_status": "ready" if digest else "pending_budget",
                 }

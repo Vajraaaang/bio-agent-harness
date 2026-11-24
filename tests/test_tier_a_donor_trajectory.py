@@ -39,8 +39,12 @@ _REFUSALS = [
 ]
 
 
-def _sources(root: Path, changes: dict[str, str]) -> tuple[dict[str, Path], dict]:
-    expression, coordinates, original, _, _ = _cohort(root, paired=True)
+def _sources(
+    root: Path, changes: dict[str, str], *, donor_count: int = 8,
+) -> tuple[dict[str, Path], dict]:
+    expression, coordinates, original, _, _ = _cohort(
+        root, paired=True, donor_count=donor_count,
+    )
     spec = original.model_copy(update={"intent": "exploratory", **changes})
     spec_path = root / "trajectory.json"
     spec_path.write_bytes(canonical_json(spec.model_dump(mode="json")))
@@ -89,6 +93,21 @@ def test_mounted_donor_trajectory_retains_precise_refusal(
     assert summary["reason"] == reason
     assert summary["output_sha256"] == {}
     assert {path.name for path in outputs.iterdir()} == {"summary.json"}
+
+
+def test_mounted_donor_trajectory_reports_insufficient_complete_pairs(
+    workspace_tmp_path,
+):
+    sources, _ = _sources(
+        workspace_tmp_path / "dataset", {"axis_selection": "unknown"}, donor_count=4,
+    )
+    inputs, outputs, request = _mounts(
+        workspace_tmp_path / "mount", _OPERATION, sources,
+    )
+    summary = run_mounted_scrna(inputs, outputs, request)
+    assert summary["status"] == "refused"
+    assert summary["reason"] == "trajectory_needs_more_complete_pairs_for_frozen_spline"
+    assert summary["output_sha256"] == {}
 
 
 def _bind_aim(

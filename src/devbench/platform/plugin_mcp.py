@@ -67,6 +67,7 @@ from .plugin_jobs import (
     canonical,
     digest,
     directory,
+    ensure_offline_studio,
     studio_handoff,
 )
 from .plugin_rna_solvers import (
@@ -174,10 +175,27 @@ class Answerability(_Args):
     non_targeting_control: _TEXT | None = None
 
 
-class _Plan(_Args):
+class _PlanDependency(_Args):
+    plan_id: _ID
+    plan_sha256: _SHA
+
+
+class _ScopedPlan(_Args):
     session_id: _ID | None = None
     inputs: list[Input] = Field(default_factory=list, max_length=16)
     objective: _TEXT
+    depends_on: list[_PlanDependency] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def _validate_dependencies(self):
+        if self.depends_on and self.session_id is None:
+            raise ValueError("graph dependencies require an existing session")
+        if len({item.plan_id for item in self.depends_on}) != len(self.depends_on):
+            raise ValueError("duplicate graph dependency")
+        return self
+
+
+class _Plan(_ScopedPlan):
     measurement: (
         Literal["raw_counts", "normalized_expression", "umi_counts", "non_umi_counts"]
         | None
@@ -196,6 +214,38 @@ class _Plan(_Args):
 class _MatrixPlan(_Plan):
     operation: Literal["matrix_audit"]
     parameters: _Args = Field(default_factory=_Args)
+
+
+class _SharedMotorUMAPParameters(_Args):
+    stage_column: _TEXT = "age"
+    label_column: _TEXT = "celltypes"
+    counts_layer: _TEXT = "counts"
+
+
+class _SharedMotorUMAPPlan(_ScopedPlan):
+    operation: Literal["shared_motor_umap"]
+    objective: _TEXT
+    inputs: list[Input] = Field(
+        min_length=3, max_length=3,
+        description="Three H5AD inputs in e09, e10, e11 order.",
+    )
+    parameters: _SharedMotorUMAPParameters = Field(
+        default_factory=_SharedMotorUMAPParameters
+    )
+
+
+class _MotorProgramComparisonPlan(_ScopedPlan):
+    operation: Literal["motor_program_comparison"]
+    parameters: _Args = Field(default_factory=_Args)
+
+
+class _RegisteredExploratoryPlan(_ScopedPlan):
+    operation: Literal["registered_exploratory"]
+    session_id: _ID
+    method_version_id: _SHA
+    step_name: Annotated[str, Field(min_length=1, max_length=200)]
+    parameters: dict[str, Any] = Field(max_length=64)
+    input_versions: dict[str, str] = Field(min_length=1, max_length=16)
 
 
 _DeclarationOrigin = Literal[
@@ -383,22 +433,17 @@ _LOCAL_PLAN_TYPES = (
 _SOLVER_FIELDS = {"operation", "parameters", "transcript_reference"}
 _SOLVER_ADAPTER: TypeAdapter[SolverChoice] = TypeAdapter(SolverChoice)
 
+_StandardPlan = (
+    _MatrixPlan | _BulkPlan | _CellPlan | _PathwayPlan | _FastqPlan | _CCCPlan
+    | _NeighborhoodPlan | _DeconvolutionPlan | _DTUPlan | _SpatialPlan
+    | _PerturbationPlan | _PredictionPlan
+)
+
 
 class Plan(
     RootModel[
         Annotated[
-            _MatrixPlan
-            | _BulkPlan
-            | _CellPlan
-            | _PathwayPlan
-            | _FastqPlan
-            | _CCCPlan
-            | _NeighborhoodPlan
-            | _DeconvolutionPlan
-            | _DTUPlan
-            | _SpatialPlan
-            | _PerturbationPlan
-            | _PredictionPlan,
+            _StandardPlan | _SharedMotorUMAPPlan | _MotorProgramComparisonPlan | _RegisteredExploratoryPlan,
             Field(discriminator="operation"),
         ]
     ]
@@ -524,15 +569,18 @@ class ResearchAim(
     model_config = ConfigDict(json_schema_extra={"type": "object"})
 
 
-def _canonical_input(root: Path, value: str) -> Path:
+def _canonical_input(root: Path, value: str, *, allow_external_files=False) -> Path:
     path = Path(value)
+    in_root = path.is_relative_to(root)
     if (
         not path.is_absolute()
         or path == root
-        or not path.is_relative_to(root)
+        or (not in_root and not allow_external_files)
         or path.resolve(strict=True) != path
     ):
         raise ValueError("Input must be canonical and inside the configured input root")
+    if not in_root and not path.is_file():
+        raise ValueError("An external input must be an existing regular file")
     return path
 
 
@@ -554,11 +602,14 @@ def _zarr_profile(path: Path) -> dict[str, Any]:
 
 
 def _profile(discovery: InputDiscovery, root: Path, item: Input) -> dict[str, Any]:
-    path = _canonical_input(root, item.path)
+    path = _canonical_input(
+        root, item.path, allow_external_files=discovery.allow_external_files
+    )
+    parts = path.relative_to(root).parts if path.is_relative_to(root) else path.parts
     declared_private = (
         item.clinical_metadata
         or item.data_classification not in {"synthetic", "public"}
-        or any(_clinical_name(name) for name in path.relative_to(root).parts)
+        or any(_clinical_name(name) for name in parts)
     )
     if path.is_dir() and path.suffix == ".zarr":
         profile = _zarr_profile(path)
@@ -615,10 +666,26 @@ def _metadata_header(columns: list[str]) -> bool:
     )
 
 
+def _valid_numeric_table_row(row: list[str], measurement: str) -> bool:
+    try:
+        values = tuple(map(float, row))
+    except ValueError:
+        return False
+    return (
+        all(map(math.isfinite, values))
+        and (measurement != "estimated_gene_counts" or min(values) >= 0)
+        and (measurement != "effective_lengths" or min(values) > 0)
+    )
+
+
 def _table_axes(
     profile: dict[str, Any],
     *,
     verify_counts: bool = False,
+    numeric_measurement: Literal[
+        "normalized_expression", "estimated_gene_counts", "effective_lengths"
+    ]
+    | None = None,
     verified_axes: tuple[tuple[str, ...], tuple[str, ...]] | None = None,
 ) -> dict[str, str]:
     if verified_axes is not None:
@@ -647,6 +714,10 @@ def _table_axes(
             if verify_counts and any(
                 not value.isdecimal() or not 0 <= int(value) < 2**53
                 for value in row[1:]
+            ):
+                return {}
+            if numeric_measurement and not _valid_numeric_table_row(
+                row[1:], numeric_measurement,
             ):
                 return {}
             features.append(row[0])
@@ -1048,7 +1119,13 @@ def _h5ad_measurements(
     profile: dict[str, Any],
 ) -> tuple[dict[str, str], list[tuple[Measurement, str]]]:
     slots: tuple[str, ...]
-    if args.request.question == "rna_velocity":
+    continuous_bulk = (
+        args.request.assay == "bulk_rna_seq"
+        and args.request.entry_point == "normalized_expression"
+    )
+    if continuous_bulk:
+        slots = ()
+    elif args.request.question == "rna_velocity":
         slots = ("spliced", "unspliced")
     else:
         slot = args.counts_layer or (
@@ -1085,9 +1162,13 @@ def _h5ad_measurements(
         profile,
         slots,
         columns,
-        args.normalized_layer
-        if args.normalization and args.request.question == "cell_communication"
-        else None,
+        (args.normalized_layer or "X")
+        if continuous_bulk
+        else (
+            args.normalized_layer
+            if args.normalization and args.request.question == "cell_communication"
+            else None
+        ),
         physical_spatial,
     )
     kinds: dict[str, Measurement] = {
@@ -1102,7 +1183,9 @@ def _h5ad_measurements(
         if (slot if slot == "X" else "layers/" + slot)
         != additional.get("cell_type_expression")
     ]
-    if (
+    if continuous_bulk and "cell_type_expression" in additional:
+        selected.append(("normalized_expression", additional["cell_type_expression"]))
+    elif (
         annotations.get("cell_type")
         and annotations.get("donor_id")
         and "cell_type_expression" in additional
@@ -1110,6 +1193,14 @@ def _h5ad_measurements(
         selected.append(("cell_type_expression", additional["cell_type_expression"]))
     if "spatial_coordinates" in additional:
         selected.append(("spatial_coordinates", additional["spatial_coordinates"]))
+    selected.extend(_h5ad_annotation_measurements(args, annotations))
+    return axes, selected
+
+
+def _h5ad_annotation_measurements(
+    args: Answerability, annotations: dict[str, Any],
+) -> list[tuple[Measurement, str]]:
+    selected: list[tuple[Measurement, str]] = []
     if assignments := annotations.get("perturbation"):
         selected.append(("perturbation_assignments", "obs/perturbation"))
         if args.non_targeting_control in assignments and len(set(assignments)) > 1:
@@ -1131,7 +1222,100 @@ def _h5ad_measurements(
         == len(set(annotations[capture]))
     ):
         selected.append(("batch_membership", "obs/" + capture))
-    return axes, selected
+    return selected
+
+
+def _attested_solver_measurements(
+    args: Answerability, solver_evidence: SolverEvidence, *, offline_private: bool = False,
+) -> tuple[AttestedMeasurement, ...]:
+    attestations = []
+    choice = args.local_solver
+    for measured in solver_evidence.measurements:
+        axes = _table_axes(
+            measured.source,
+            verified_axes=(measured.observations, measured.features),
+        )
+        spatial = (
+            choice.parameters
+            if isinstance(choice, SpatialChoice)
+            and measured.kind == "spatial_coordinates"
+            else None
+        )
+        if offline_private and measured.source["data_classification"] == "private":
+            # Input inspection stays in the sealed private plan.
+            inspection = digest({
+                "format": "devbench.offline-rna-solver-inspection/1",
+                "input_sha256": measured.source["sha256"],
+                "size_bytes": measured.source["size_bytes"],
+                "axes": axes,
+            })
+        else:
+            inspection = _inspect_projection(measured.source, axes=axes)["inspection_receipt_sha256"]
+        attestations.append(
+            AttestedMeasurement(
+                kind=measured.kind,
+                slot=measured.slot,
+                artifact_sha256=measured.source["sha256"],
+                receipt_sha256=digest(
+                    {
+                        "inspection": inspection,
+                        "kind": measured.kind,
+                        "slot": measured.slot,
+                        "solver": choice.model_dump(mode="json")
+                        if choice
+                        else None,
+                    }
+                ),
+                observation_axis_sha256=axes.get("observation_axis_sha256"),
+                feature_axis_sha256=axes.get("feature_axis_sha256"),
+                reference=choice.transcript_reference
+                if isinstance(choice, DTUChoice)
+                else None,
+                coordinate_frame=spatial.coordinate_frame if spatial else None,
+                coordinate_units=spatial.coordinate_units if spatial else None,
+            )
+        )
+    return tuple(attestations)
+
+
+def _profile_expression_measurements(
+    args: Answerability, profile: dict[str, Any], tximport: bool,
+) -> tuple[dict[str, str], list[tuple[Measurement, str]]]:
+    request = args.request
+    role = profile["role"]
+    observed = profile["observed"]
+    numeric_measurement: (
+        Literal[
+            "normalized_expression", "estimated_gene_counts", "effective_lengths"
+        ]
+        | None
+    ) = None
+    if tximport:
+        numeric_measurement = (
+            "effective_lengths" if role == "reference" else "estimated_gene_counts"
+        )
+    elif (
+        request.assay == "bulk_rna_seq"
+        and request.entry_point == "normalized_expression"
+    ):
+        numeric_measurement = "normalized_expression"
+    if numeric_measurement and observed["file_type"] in _TABLE_TYPES:
+        axes = _table_axes(profile, numeric_measurement=numeric_measurement)
+        return axes, [(numeric_measurement, "feature_rows")] if axes else []
+    if tximport:
+        return {}, []
+    if (
+        observed["file_type"] in _TABLE_TYPES
+        and request.entry_point == "count_matrix"
+    ):
+        axes = _table_axes(profile, verify_counts=True)
+        return axes, [("gene_counts", "feature_rows")] if axes else []
+    if observed["file_type"] == "h5ad":
+        return _h5ad_measurements(args, profile)
+    if not numeric_measurement and observed.get("matrix_layout") in _H5_LAYOUTS:
+        axes = _bounded_hdf5_probe(_tenx_evidence, profile, True)
+        return axes, [("gene_counts", "matrix")] if axes else []
+    return {}, []
 
 
 def _attested_measurements(
@@ -1141,66 +1325,22 @@ def _attested_measurements(
     solver_evidence: SolverEvidence | None = None,
 ) -> tuple[AttestedMeasurement, ...]:
     if solver_evidence is not None:
-        attestations = []
-        choice = args.local_solver
-        for measured in solver_evidence.measurements:
-            axes = _table_axes(
-                measured.source,
-                verified_axes=(measured.observations, measured.features),
-            )
-            spatial = (
-                choice.parameters
-                if isinstance(choice, SpatialChoice)
-                and measured.kind == "spatial_coordinates"
-                else None
-            )
-            projection = _inspect_projection(measured.source, axes=axes)
-            attestations.append(
-                AttestedMeasurement(
-                    kind=measured.kind,
-                    slot=measured.slot,
-                    artifact_sha256=measured.source["sha256"],
-                    receipt_sha256=digest(
-                        {
-                            "inspection": projection["inspection_receipt_sha256"],
-                            "kind": measured.kind,
-                            "slot": measured.slot,
-                            "solver": choice.model_dump(mode="json")
-                            if choice
-                            else None,
-                        }
-                    ),
-                    observation_axis_sha256=axes.get("observation_axis_sha256"),
-                    feature_axis_sha256=axes.get("feature_axis_sha256"),
-                    reference=choice.transcript_reference
-                    if isinstance(choice, DTUChoice)
-                    else None,
-                    coordinate_frame=spatial.coordinate_frame if spatial else None,
-                    coordinate_units=spatial.coordinate_units if spatial else None,
-                )
-            )
-        return tuple(attestations)
+        return _attested_solver_measurements(args, solver_evidence)
     request = args.request
     measurements: list[AttestedMeasurement] = []
+    tximport = (
+        request.assay == "bulk_rna_seq"
+        and request.question == "differential_expression"
+        and request.entry_point == "transcript_quantification"
+    )
     for profile in profiles:
-        if profile["role"] != "expression" or not _inside_file_budget(profile):
-            continue
-        observed = profile["observed"]
-        selected: list[tuple[Measurement, str]] = []
+        role = profile["role"]
         if (
-            observed["file_type"] in _TABLE_TYPES
-            and request.entry_point == "count_matrix"
-        ):
-            axes = _table_axes(profile, verify_counts=True)
-            if axes:
-                selected.append(("gene_counts", "feature_rows"))
-        elif observed["file_type"] == "h5ad":
-            axes, selected = _h5ad_measurements(args, profile)
-        elif observed.get("matrix_layout") in _H5_LAYOUTS:
-            axes = _bounded_hdf5_probe(_tenx_evidence, profile, True)
-            if axes:
-                selected.append(("gene_counts", "matrix"))
-        else:
+            role != "expression" and not (tximport and role == "reference")
+        ) or not _inside_file_budget(profile):
+            continue
+        axes, selected = _profile_expression_measurements(args, profile, tximport)
+        if not selected:
             continue
         projection = _inspect_projection(profile, axes=axes)
         measurements.extend(
@@ -1308,7 +1448,9 @@ def _answer_runtime(
     if image_id is None or entry is None or image_id not in entry[1]:
         return None
     if request.question == "differential_expression" and (
-        request.assay != "bulk_rna_seq" or request.entry_point != "count_matrix"
+        request.assay != "bulk_rna_seq"
+        or request.entry_point
+        not in {"count_matrix", "transcript_quantification", "normalized_expression"}
     ):
         return None
     return RuntimeEvidence(
@@ -1671,7 +1813,9 @@ def _pathway_answer(plugin, args, profiles, runtime):
         choice.pathway_plan,
         universe=universe,
         verify_universe=lambda candidate: candidate == universe,
-        foreground=universe.selected,
+        foreground=_pathway_foreground(
+            universe, scores, choice.pathway_plan.foreground_direction
+        ),
         ranked_scores=scores if method != "ora" else None,
     )
     if not any(
@@ -1860,11 +2004,13 @@ def _local_solver_answer(
     args: Answerability,
     profiles: list[dict[str, Any]],
     runtime_info=None,
+    *,
+    offline_private: bool = False,
 ) -> dict[str, Any]:
     choice = args.local_solver
     if choice is None or args.request.requires_read_archive_download:
         raise OperationBlocked("local_solver_requires_staged_inputs")
-    if any(
+    if not offline_private and any(
         profile["data_classification"] not in {"synthetic", "public"}
         for profile in profiles
     ):
@@ -1881,7 +2027,7 @@ def _local_solver_answer(
     except ValueError as error:
         # Report a controlled category rather than arbitrary values from inputs.
         raise OperationBlocked("local_solver_input_or_design_invalid") from error
-    measurements = _attested_measurements(args, profiles, solver_evidence=evidence)
+    measurements = _attested_solver_measurements(args, evidence, offline_private=offline_private)
     design = None
     if evidence.design_units:
         axis = measurements[0].observation_axis_sha256
@@ -2237,7 +2383,7 @@ def _plan_runtime_and_answer(
     classification: str,
     mounted_image_id: str | None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, SolverChoice | None]:
-    if classification == "private":
+    if classification == "private" and not isinstance(args, _LOCAL_PLAN_TYPES):
         return _runtime_info(mounted_image_id), None, None
     if not isinstance(args, _LOCAL_PLAN_TYPES):
         return (
@@ -2265,10 +2411,18 @@ def _plan_runtime_and_answer(
         ),
         profiles,
         runtime,
+        offline_private=classification == "private",
     )
     if answer["status"] != "ready":
         raise OperationBlocked(answer["reason"])
     return runtime, answer, choice
+
+
+def _plan_input_pins(declarations, profiles):
+    return [
+        {"declaration": declaration, "sha256": profile["sha256"], "size_bytes": profile["size_bytes"]}
+        for declaration, profile in zip(declarations, profiles, strict=True)
+    ]
 
 
 def _freeze_route_parameters(
@@ -2286,6 +2440,8 @@ class Plugin:
         input_root: Path,
         mounted_image_id: str | None,
         literature_root: Path | None = None,
+        *,
+        allow_external_files: bool = False,
     ):
         self.input_root = directory(input_root)
         workspace = directory(workspace, exists=False)
@@ -2295,12 +2451,15 @@ class Plugin:
             raise ValueError("Input and output roots must be disjoint")
         _bootstrap_workspace(workspace, self.input_root)
         self.jobs = JobStore(workspace)
-        self.discovery = InputDiscovery([self.input_root])
+        self.discovery = InputDiscovery(
+            [self.input_root], allow_external_files=allow_external_files
+        )
         self.mounted_image_id = mounted_image_id
         self.literature_root = directory(literature_root) if literature_root else None
 
     def _handoff(
-        self, sid: str, view: str, *, mounted_image_id: str | None = None
+        self, sid: str, view: str, *, mounted_image_id: str | None = None,
+        allow_data_execution: bool = False,
     ) -> dict[str, Any]:
         return studio_handoff(
             self.jobs.workspace,
@@ -2308,6 +2467,7 @@ class Plugin:
             sid,
             view,
             mounted_image_id=mounted_image_id,
+            allow_data_execution=allow_data_execution,
         )
 
     def _reject_embargoed(self, identities: Iterable[str | None]) -> None:
@@ -2338,12 +2498,16 @@ class Plugin:
         if ledger._read(protected):
             raise OperationBlocked("adaptive_protected_partition_delivery_denied")
 
-    def _profiles(self, inputs: list[Input]) -> list[dict[str, Any]]:
+    def _profiles(
+        self, inputs: list[Input], *, allow_retained_private: bool = False
+    ) -> list[dict[str, Any]]:
         if len({item.path for item in inputs}) != len(inputs):
             raise ValueError("Each input may be supplied only once")
         profiles = [_profile(self.discovery, self.input_root, item) for item in inputs]
         self._reject_embargoed(item["sha256"] for item in profiles)
-        if self.jobs.has_private_input({item["sha256"] for item in profiles}):
+        if not allow_retained_private and self.jobs.has_private_input(
+            {item["sha256"] for item in profiles}
+        ):
             raise OperationBlocked(_PRIVATE)
         return profiles
 
@@ -2404,36 +2568,143 @@ class Plugin:
 
     def _plan_inputs(
         self,
-        args: _Plan,
+        args: _ScopedPlan,
+        *,
+        private_only: bool = False,
+        allow_offline_native: bool = False,
     ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
         previous = self.jobs.plan(args.session_id) if args.session_id else None
         if previous is not None:
             if previous["data_classification"] == "private":
-                raise OperationBlocked(_PRIVATE)
+                if not (private_only or allow_offline_native):
+                    raise OperationBlocked(_PRIVATE)
+                private_only = True
+            if private_only and previous["data_classification"] != "private":
+                raise OperationBlocked("session_input_scope_mismatch")
             if not args.inputs:
                 args.inputs = [
                     Input.model_validate(row) for row in previous["input_declarations"]
                 ]
         if not args.inputs:
             raise OperationBlocked("plan_input_required")
-        profiles = self._profiles(args.inputs)
+        inspected = (
+            [item.model_copy(update={"data_classification": "private"}) for item in args.inputs]
+            if private_only else args.inputs
+        )
+        declared_for_private_execution = allow_offline_native and any(
+            item.data_classification not in {"public", "synthetic"} or item.clinical_metadata
+            for item in inspected
+        )
+        profiles = self._profiles(
+            inspected, allow_retained_private=private_only or declared_for_private_execution,
+        )
         if any(row["sha256"] is None for row in profiles):
             raise OperationBlocked("input_snapshot_unavailable")
         if previous is not None:
-            if any(row["data_classification"] == "private" for row in profiles):
+            if not private_only and any(row["data_classification"] == "private" for row in profiles):
                 raise OperationBlocked(_PRIVATE)
-            if (
-                previous["input_root"] != str(self.input_root)
-                or [item.model_dump(mode="json") for item in args.inputs]
-                != previous["input_declarations"]
-                or [row["sha256"] for row in profiles]
-                != [row["sha256"] for row in previous["profiles"]]
+            pins = _plan_input_pins([item.model_dump(mode="json") for item in args.inputs], profiles)
+            previous_pins = _plan_input_pins(previous["input_declarations"], previous["profiles"])
+            allowed = previous.get("session_inputs", previous_pins)
+            if previous["input_root"] != str(self.input_root) or (
+                any(pin not in allowed for pin in pins) if args.depends_on else pins != previous_pins
             ):
                 raise OperationBlocked("session_input_scope_mismatch")
         return profiles, previous
 
+    def _retain_plan_scope(self, plan, args, previous):
+        if previous is not None:
+            plan["session_id"] = previous["session_id"]
+            plan["session_intake"] = _lineage(previous["session_id"], previous)["intake"]
+            if not set(_roots(plan)) <= set(_roots(previous)):
+                raise OperationBlocked("session_input_scope_mismatch")
+            plan["session_roots"] = list(_roots(previous))
+            plan["session_inputs"] = previous.get("session_inputs") or _plan_input_pins(
+                previous["input_declarations"], previous["profiles"]
+            )
+        for dependency in args.depends_on:
+            prior = self.jobs.plan(args.session_id, dependency.plan_id)
+            if prior.get("graph_runtime") is None:
+                raise OperationBlocked("graph_dependency_not_registered")
+            if dependency.plan_sha256 != digest(prior):
+                raise OperationBlocked("graph_dependency_plan_identity_mismatch")
+        if args.depends_on:
+            plan["dependencies"] = [item.model_dump() for item in args.depends_on]
+
     def plan(self, request: Plan) -> dict[str, Any]:
         args = request.root
+        if isinstance(args, _SharedMotorUMAPPlan):
+            from .plugin_motor_umap import plan_shared_motor_umap
+
+            return plan_shared_motor_umap(self, args)
+        if isinstance(args, _MotorProgramComparisonPlan):
+            return self._plan_motor_programs(args)
+        if isinstance(args, _RegisteredExploratoryPlan):
+            return self._plan_registered_method(args)
+        return self._plan_standard(args)
+
+    def _plan_registered_method(self, args: _RegisteredExploratoryPlan) -> dict[str, Any]:
+        from .plugin_registered_method import freeze_registered_method
+
+        if args.depends_on:
+            raise OperationBlocked("registered_method_requires_verified_input_versions")
+        profiles, previous = self._plan_inputs(args)
+        if previous is None or previous["data_classification"] not in {"public", "synthetic"}:
+            raise OperationBlocked("registered_method_public_or_synthetic_scope_required")
+        self._allow_external(args.session_id)
+        plan_id = uuid4().hex
+        binding = freeze_registered_method(
+            self.jobs.workspace, args.session_id, plan_id=plan_id,
+            method_version_id=args.method_version_id, step_name=args.step_name,
+            parameters=args.parameters, input_versions=args.input_versions,
+        )
+        frozen = {
+            "format": "devbench.plugin-plan/1", "plan_id": plan_id,
+            "operation": args.operation, "objective": args.objective,
+            "input_root": str(self.input_root),
+            "allow_external_input_files": self.discovery.allow_external_files,
+            "data_classification": previous["data_classification"],
+            "profiles": profiles,
+            "input_declarations": [item.model_dump(mode="json") for item in args.inputs],
+            "design": {"parameters": args.parameters}, "runtime": _runtime_info(None),
+            "mounted_image_id": None, "registered_method": binding,
+        }
+        self._retain_plan_scope(frozen, args, previous)
+        pid, sha = self.jobs.freeze(frozen)
+        return {
+            "status": "planned", "execution_route": "mcp", "session_id": args.session_id,
+            "plan_id": pid, "plan_sha256": sha,
+            **self._handoff(args.session_id, "workflows"),
+        }
+
+    def _plan_motor_programs(self, args: _MotorProgramComparisonPlan) -> dict[str, Any]:
+        from .plugin_graph import registered_plugin_runtime
+        from .plugin_motor_programs import motor_program_runtime, validate_motor_program_profiles
+
+        profiles, previous = self._plan_inputs(args, private_only=True)
+        validate_motor_program_profiles(profiles)
+        frozen = {
+            "format": "devbench.plugin-plan/1", "plan_id": uuid4().hex,
+            "operation": args.operation, "objective": args.objective,
+            "input_root": str(self.input_root),
+            "allow_external_input_files": self.discovery.allow_external_files,
+            "data_classification": "private", "profiles": profiles,
+            "input_declarations": [item.model_dump(mode="json") for item in args.inputs],
+            "design": {"parameters": {}}, "runtime": motor_program_runtime(),
+            "mounted_image_id": None,
+        }
+        self._retain_plan_scope(frozen, args, previous)
+        frozen["graph_runtime"] = registered_plugin_runtime(frozen)
+        sid = args.session_id or _admit_session(self.jobs.workspace, frozen, self.discovery)
+        frozen["session_id"] = sid
+        pid, sha = self.jobs.freeze(frozen)
+        return {
+            "status": "local_studio_only", "execution_route": "offline_studio",
+            "session_id": sid, "plan_id": pid, "plan_sha256": sha,
+            **self._handoff(sid, "workflows", allow_data_execution=True),
+        }
+
+    def _plan_standard(self, args: _StandardPlan) -> dict[str, Any]:
         parameters = args.parameters.model_dump(
             mode="json",
             exclude_unset=True,
@@ -2444,7 +2715,8 @@ class Plugin:
                 exclude_none=True,
             )
             parameters = {"bulk_declarations": declarations}
-        profiles, previous = self._plan_inputs(args)
+        offline_native = isinstance(args, _LOCAL_PLAN_TYPES)
+        profiles, previous = self._plan_inputs(args, allow_offline_native=offline_native)
         classes = {profile["data_classification"] for profile in profiles}
         classification = (
             "private"
@@ -2463,6 +2735,7 @@ class Plugin:
             "operation": args.operation,
             "objective": args.objective,
             "input_root": str(self.input_root),
+            "allow_external_input_files": self.discovery.allow_external_files,
             "data_classification": classification,
             "profiles": profiles,
             "input_declarations": [
@@ -2496,18 +2769,17 @@ class Plugin:
             frozen["fastq"] = _freeze_fastq(self.input_root, profiles, parameters)
             if frozen["fastq"]["private"]:
                 frozen["data_classification"] = classification = "private"
-        if previous is not None:
-            frozen["session_id"] = previous["session_id"]
-            frozen["session_intake"] = _lineage(previous["session_id"], previous)[
-                "intake"
-            ]
-            if classification == "private":
-                raise OperationBlocked(_PRIVATE)
-            if not set(_roots(frozen)) <= set(_roots(previous)):
-                raise OperationBlocked("session_input_scope_mismatch")
-            # The original broker policy must continue to cover the full intake,
-            # even when a later operation does not directly use its FASTQ files.
-            frozen["session_roots"] = previous.get("session_roots") or _roots(previous)
+        if previous is not None and classification == "private" and (
+            not offline_native or previous["data_classification"] != "private"
+        ):
+            raise OperationBlocked(_PRIVATE)
+        self._retain_plan_scope(frozen, args, previous)
+        if offline_native or classification != "private" and args.operation in {"matrix_audit", "qc-salmon"}:
+            from .plugin_graph import registered_plugin_runtime
+
+            frozen["graph_runtime"] = registered_plugin_runtime(frozen)
+        elif args.depends_on:
+            raise OperationBlocked("graph_dependency_executor_unavailable")
         if args.operation == "pathways" and classification != "private":
             _, frozen["pathway_binding"] = _pathway_source(self.jobs, frozen)
         if len(canonical(frozen)) > MAX_DOCUMENT_BYTES - 128:
@@ -2520,9 +2792,25 @@ class Plugin:
         identity = {"session_id": sid, "plan_id": plan_id, "plan_sha256": sha}
         handoff = self._handoff(sid, "workflows")
         if classification == "private":
-            return {"status": "local_studio_only", **identity, **handoff}
+            if offline_native:
+                return {
+                    "status": "local_studio_only", "execution_route": "offline_studio",
+                    **identity, **self._handoff(sid, "workflows", allow_data_execution=True),
+                }
+            return {
+                "status": "local_studio_only",
+                "execution_route": None,
+                "execution_blocker": "private_plan_execution_unavailable",
+                **identity,
+                **handoff,
+            }
+        local_review = isinstance(args, _BulkPlan) or (
+            isinstance(args, _CellPlan)
+            and isinstance(args.parameters, _PseudobulkParameters)
+        )
         return {
             "status": "planned",
+            "execution_route": "mcp_then_offline_studio" if local_review else "mcp",
             **identity,
             "runtime": frozen["runtime"],
             "answerability": frozen["answerability"],
@@ -2535,6 +2823,12 @@ class Plugin:
 
     def execute(self, args: Execute) -> dict[str, Any]:
         plan = self._allow_external(args.session_id, args.plan_id)
+        if plan.get("dependencies"):
+            from .plugin_graph import require_plugin_dependencies
+
+            if digest(plan) != args.plan_sha256:
+                raise OperationBlocked("plan_identity_mismatch")
+            require_plugin_dependencies(self.jobs, plan)
         row = self.jobs.launch(args.session_id, args.plan_id, args.plan_sha256)
         return self._status(row, plan)
 
@@ -2573,7 +2867,9 @@ class Plugin:
             "warnings": [row["error_text"]] if row["error_text"] else [],
             "generation": 1,
             "stale": row["status"] == "interrupted",
-            **self._handoff(row["session_id"], "workflows"),
+            **self._handoff(
+                row["session_id"], "overview" if completed else "workflows"
+            ),
         }
         if recorded_tasks:
             projection["tasks"] = recorded_tasks
@@ -2663,6 +2959,14 @@ class Plugin:
             )
             if plan["operation"] in LOCAL_OPERATIONS:
                 _verify_solver_result(self.jobs.workspace, args.run_id, receipt)
+            if plan["operation"] == "registered_exploratory":
+                from .plugin_registered_method import verify_registered_method_result
+
+                verify_registered_method_result(self.jobs.workspace, args.run_id, plan, receipt)
+            if plan.get("graph_runtime") is not None:
+                from .plugin_graph import verify_registered_plugin_result
+
+                verify_registered_plugin_result(self.jobs.workspace, args.run_id, plan, receipt)
             current = _adaptive_receipt_guard(ledger, plan, receipt)
         else:
             raise OperationBlocked("run_receipt_unavailable")
@@ -2687,7 +2991,7 @@ class Plugin:
             _guard=current,
         )
         return _bounded_receipt(
-            {**released, **self._handoff(args.session_id, "findings")}
+            {**released, **self._handoff(args.session_id, "overview")}
         )
 
     def aims(self, args: ResearchAim) -> dict[str, Any]:
@@ -2827,6 +3131,7 @@ def _studio_receipt(
     source = f"plugin-receipt-{rid}"
     ledger = broker.authority.ledger
     lineage = _lineage(sid, plan)
+    graph_verified = False
     if row["status"] == "awaiting_review" and plan["operation"] == "bulk_de":
         subject = json.loads(row["stage_json"]).get("bulk_step_sha256")
         receipt, current = _bulk_verified_fit(ledger, plan, rid, subject)
@@ -2848,9 +3153,27 @@ def _studio_receipt(
         )
         if plan["operation"] in LOCAL_OPERATIONS:
             _verify_solver_result(workspace, rid, receipt)
+        if plan["operation"] == "registered_exploratory":
+            from .plugin_registered_method import verify_registered_method_result
+
+            verify_registered_method_result(workspace, rid, plan, receipt)
+            graph_verified = True
+        if plan.get("graph_runtime") is not None:
+            from .plugin_graph import verify_registered_plugin_result
+
+            verify_registered_plugin_result(workspace, rid, plan, receipt)
+            graph_verified = True
         current = _adaptive_receipt_guard(ledger, plan, receipt)
     identities = set(studio_evidence_digests(receipt))
-    if not identities.isdisjoint(blocked_hashes):
+    exposure = receipt
+    if graph_verified:
+        # Studio's broker-scoped research projection carries structural receipt
+        # identities, but never publishes the raw graph output artifacts.
+        exposure = {
+            key: value for key, value in receipt.items()
+            if key not in {"result_artifact", "registered_method_outputs", "graph_execution"}
+        }
+    if not blocked_hashes.isdisjoint(studio_evidence_digests(exposure)):
         raise PermissionError("Plugin receipt references protected evidence")
     retained = ledger._read(lambda db: broker._source(db, source))
     if retained["content_sha256"] != digest(receipt) or set(retained["roots"]) != set(
@@ -2875,6 +3198,7 @@ def _studio_receipt(
         "figure_preview",
         "probability_bounds_status",
         "nextflow_trace",
+        "graph_execution",
     }
     projection = _bounded_receipt(
         {key: receipt[key] for key in fields if key in receipt}
@@ -3652,11 +3976,62 @@ def _matrix_preview(workspace: Path, result: dict[str, Any]) -> str | None:
 
 
 def run_frozen_plan(jobs: JobStore, rid: str, plan: dict[str, Any]) -> dict[str, Any]:
+    if plan["operation"] in {
+        "matrix_audit", "qc-salmon", "shared_motor_umap", "motor_program_comparison", *LOCAL_OPERATIONS,
+    } and plan.get("graph_runtime") is None:
+        # A legacy approval never authorized the registered graph implementation.
+        raise OperationBlocked("plugin_graph_replan_required")
+    if plan["operation"] == "shared_motor_umap":
+        from .plugin_motor_umap import _check_scope, run_shared_motor_umap_plan
+        from .plugin_graph import run_registered_plugin_step
+
+        result = run_registered_plugin_step(
+            jobs, rid, plan,
+            execute=lambda: run_shared_motor_umap_plan(jobs, rid, plan),
+            verify_sources=lambda: _check_scope(jobs.workspace, plan),
+        )
+        result.pop("receipt_sha256", None)
+        return {**result, "receipt_sha256": digest(result)}
+    if plan["data_classification"] == "private" and plan["operation"] in {
+        "motor_program_comparison", *LOCAL_OPERATIONS,
+    }:
+        from .plugin_graph import run_registered_plugin_step
+        from .plugin_motor_programs import run_motor_program_comparison
+
+        lineage = _lineage(plan["session_id"], plan)
+        ledger = _ledger(jobs.workspace)
+        broker = EvidenceBroker.open_existing(ledger.scientific)
+
+        def verify_private_scope():
+            broker.check_delivery(
+                lineage["context_id"], lineage["source_id"],
+                lineage_id=plan["session_id"], role="scientist",
+            )
+            ledger._read(lambda db: broker._query_dependencies(db, _roots(plan)))
+
+        def execute_private():
+            if plan["operation"] == "motor_program_comparison":
+                return run_motor_program_comparison(jobs, rid, plan)
+            return _run_local_solver(jobs, rid, plan)
+
+        return run_registered_plugin_step(
+            jobs, rid, plan,
+            execute=execute_private,
+            verify_sources=verify_private_scope,
+        )
+    return _run_external_plan(jobs, rid, plan)
+
+
+def _run_external_plan(
+    jobs: JobStore, rid: str, plan: dict[str, Any]
+) -> dict[str, Any]:
     root = directory(Path(plan["input_root"]))
     sid = plan["session_id"]
     if plan["data_classification"] not in {"synthetic", "public"}:
         raise OperationBlocked(_PRIVATE)
-    discovery = InputDiscovery([root])
+    discovery = InputDiscovery(
+        [root], allow_external_files=plan.get("allow_external_input_files") is True
+    )
 
     def verify():
         profiles = [
@@ -3683,12 +4058,23 @@ def run_frozen_plan(jobs: JobStore, rid: str, plan: dict[str, Any]) -> dict[str,
         lambda db: broker._context_policy(db, lineage["context_id"])[0]["policy_sha256"]
     )
     lineage = _lineage(sid, plan, policy)
-    if operation == "matrix_audit":
-        result = _run_matrix(jobs, rid, plan, ledger, lineage, verify)
-    elif operation == "qc-salmon":
-        result = _run_fastq(jobs, rid, plan)
-    elif operation in LOCAL_OPERATIONS:
-        result = _run_local_solver(jobs, rid, plan)
+    def execute_native():
+        if operation == "matrix_audit":
+            return _run_matrix(jobs, rid, plan, ledger, lineage, verify)
+        if operation == "qc-salmon":
+            return _run_fastq(jobs, rid, plan)
+        return _run_local_solver(jobs, rid, plan)
+
+    if plan.get("graph_runtime") is not None:
+        from .plugin_graph import run_registered_plugin_step
+
+        result = run_registered_plugin_step(
+            jobs, rid, plan, execute=execute_native, verify_sources=verify,
+        )
+    elif operation == "registered_exploratory":
+        from .plugin_registered_method import run_registered_method
+
+        result = run_registered_method(jobs, rid, plan, verify_sources=verify)
     else:
         result = _run_adaptive(jobs, rid, plan, ledger, broker, lineage)
     verify()
@@ -4361,9 +4747,8 @@ def _pseudobulk_records(staged):
 
 def _bind_pseudobulk(jobs, plan, flow, broker, executor, request, staged, profile):
     from .thesis_workflow import ThesisWorkflow
-    from .workbench_adaptive import WorkbenchAdaptiveBinding, _graph_revision
-    from .workbench_thesis import bind_workbench_pseudobulk
-    from .workbench_ui import WorkbenchService
+    from .workbench_adaptive import _graph_revision
+    from .workbench_thesis import _bind_pseudobulk_capsule
 
     sid = flow.lineage_id
     measurement, design = _pseudobulk_records(staged)
@@ -4389,37 +4774,22 @@ def _bind_pseudobulk(jobs, plan, flow, broker, executor, request, staged, profil
         authorize_operator=lambda actor: actor == _ACTOR,
         verify_attestation=lambda _db, record: record in (measurement, design, runtime),
     )
-    binding = WorkbenchAdaptiveBinding(
-        session_id=sid,
-        delivery=broker.delivery(f"plugin-scientist-{sid}", f"plugin-session-{sid}"),
-        tier_a_executor=executor,
-        thesis_lifecycle=lifecycle,
+    broker.check_delivery(
+        f"plugin-scientist-{sid}", f"plugin-session-{sid}",
+        lineage_id=sid, role="scientist",
     )
-    app = WorkbenchService(
-        jobs.workspace,
-        [Path(plan["input_root"])],
-        enable_scientific=True,
-        allow_data_execution=True,
-        mounted_image_id=plan["mounted_image_id"],
-        offline_only=True,
+    return _bind_pseudobulk_capsule(
+        flow, lifecycle, executor, (jobs.workspace, flow.ledger.path.parent),
+        staged=staged,
+        step_id=f"plugin-step-{plan['plan_id']}-pseudobulk",
+        branch_id="plugin-pseudobulk",
+        profile=profile,
+        aim_id=request.aim_id,
+        request=query,
+        measurements=(measurement,),
+        design=design,
+        expected_revision=_graph_revision(flow),
     )
-    try:
-        app.bind_adaptive_workflow(binding)
-        return bind_workbench_pseudobulk(
-            app,
-            sid,
-            staged=staged,
-            step_id=f"plugin-step-{plan['plan_id']}-pseudobulk",
-            branch_id="plugin-pseudobulk",
-            profile=profile,
-            aim_id=request.aim_id,
-            request=query,
-            measurements=(measurement,),
-            design=design,
-            expected_revision=_graph_revision(flow),
-        )
-    finally:
-        app.close()
 
 
 def _run_pseudobulk(jobs, rid, plan, flow, broker, executor, parameters):
@@ -4765,10 +5135,16 @@ def _pathway_universe(executor, source, *, q_max, ranked):
             p, q, label = row["p_value"], row["q_value"], row["gene_id"]
             if p is None or q is None or not 0 <= p <= q <= 1:
                 raise OperationBlocked("retained_probability_bounds_failed")
+            if label in scores:
+                raise OperationBlocked("pathway_tested_family_duplicate_gene")
             effect = row["effect"]
             if ranked and (effect is None or not math.isfinite(effect)):
                 raise OperationBlocked("pathway_requires_finite_ranked_effects")
-            scores[label] = effect
+            scores[label] = (
+                (math.copysign(-math.log10(max(p, 1e-300)), effect) if effect else 0.0)
+                if ranked
+                else effect
+            )
             if not ranked and q <= q_max:
                 foreground.append(label)
     genes = tuple(scores)
@@ -4789,6 +5165,16 @@ def _pathway_universe(executor, source, *, q_max, ranked):
         if ranked
         else None,
     ), scores
+
+
+def _pathway_foreground(universe, effects, direction):
+    from devbench.core.rna_pathway_analysis import matches_foreground_direction
+
+    return tuple(
+        gene
+        for gene in universe.selected
+        if matches_foreground_direction(effects[gene], direction)
+    )
 
 
 def _queue_reviewed_pathway(flow, executor, plan, binding):
@@ -4845,7 +5231,7 @@ def _queue_reviewed_pathway(flow, executor, plan, binding):
         basis=tuple(BasisUse(basis_id=identity) for identity in proofs),
         universe=universe,
         verify_universe=lambda candidate: candidate == universe,
-        foreground=universe.selected,
+        foreground=_pathway_foreground(universe, scores, pathway.foreground_direction),
         ranked_scores=scores if switch != "ora" else None,
     )
     with flow.authority._execution_tx(flow.lineage_id) as db:
@@ -5247,10 +5633,24 @@ def _validation_diagnostics(
     return diagnostics
 
 
-def build_server(plugin: Plugin) -> Server:
+def build_server(plugin: Plugin, *, auto_studio: bool = True) -> Server:
     from .plugin_mcp_ui import CARD_NAMES, MIME, RESOURCE_META, card_html
+    from .workbench_ui import _open_browser_async
 
     server: Server = Server("devharness-rna", version="0.2.0")
+    opened_studio = None
+
+    def show_studio(origin: str | None, result: dict[str, Any]) -> None:
+        nonlocal opened_studio
+        if origin is None or opened_studio == origin:
+            return
+        link = result.get("studio_url")
+        target = link if isinstance(link, str) and link.startswith(origin + "?") else origin
+        try:
+            _open_browser_async(target)
+        except (OSError, RuntimeError):
+            return
+        opened_studio = origin
 
     @server.list_tools()
     async def list_tools():
@@ -5302,11 +5702,21 @@ def build_server(plugin: Plugin) -> Server:
         arguments: dict[str, Any],
     ) -> CallToolResult | tuple[list[TextContent], dict[str, Any]]:
         result: dict[str, Any]
+        origin = None
         try:
             model, handler, _, _, _ = _TOOLS[name]
             if len(canonical(arguments)) > MAX_DOCUMENT_BYTES:
                 raise ValueError("Request exceeds the byte budget")
             args = model.model_validate_json(canonical(arguments), strict=True)
+            if auto_studio:
+                try:
+                    origin = await anyio.to_thread.run_sync(
+                        ensure_offline_studio, plugin.jobs.workspace, plugin.input_root,
+                        plugin.mounted_image_id,
+                    )
+                except (OSError, ValueError):
+                    # The workflow's existing handoff still offers manual startup.
+                    pass
             result = await anyio.to_thread.run_sync(getattr(plugin, handler), args)
         except (
             OperationBlocked,
@@ -5337,12 +5747,14 @@ def build_server(plugin: Plugin) -> Server:
                 and isinstance(sid, str)
                 and re.fullmatch(r"[0-9a-f]{32}", sid)
             ):
-                result.update(plugin._handoff(sid, "findings"))
+                result.update(plugin._handoff(sid, "overview"))
+            show_studio(origin, result)
             return CallToolResult(
                 isError=True,
                 content=[TextContent(type="text", text=canonical(result).decode())],
                 structuredContent=result,
             )
+        show_studio(origin, result)
         return [TextContent(type="text", text=canonical(result).decode())], result
 
     return server
@@ -5352,9 +5764,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="devbench plugin-mcp", description=__doc__)
     parser.add_argument("--input-root", required=True, type=Path)
     parser.add_argument("--workspace", required=True, type=Path)
+    parser.add_argument(
+        "--allow-external-input-files", action="store_true",
+        help="Allow explicitly named files outside the configured input root.",
+    )
     parser.add_argument("--mounted-image-id")
     parser.add_argument("--allow-literature-network", action="store_true")
     parser.add_argument("--literature-plugin-root", type=Path)
+    parser.add_argument(
+        "--no-auto-studio", action="store_true",
+        help="Leave Companion Studio startup and opening to the operator.",
+    )
     args = parser.parse_args(argv)
     if args.allow_literature_network != (args.literature_plugin_root is not None):
         parser.error(
@@ -5366,8 +5786,9 @@ def main(argv: list[str] | None = None) -> int:
             args.input_root,
             args.mounted_image_id,
             args.literature_plugin_root,
+            allow_external_files=args.allow_external_input_files,
         )
-        server = build_server(plugin)
+        server = build_server(plugin, auto_studio=not args.no_auto_studio)
 
         async def serve():
             async with stdio_server() as (reader, writer):

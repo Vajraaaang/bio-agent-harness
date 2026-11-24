@@ -81,7 +81,7 @@ def test_recovers_planted_local_expansion_and_hashes_receipt(tmp_path: Path):
     )
     assert receipt.donors_per_condition == {"control": 8, "treated": 8}
     assert receipt.design_diagnostics["condition_number_validated"]
-    assert len(receipt.neighborhoods) == int(np.ceil(receipt.n_cells * spec.prop))
+    assert 0 < len(receipt.neighborhoods) <= int(np.ceil(receipt.n_cells * spec.prop))
     assert receipt.dispersion_calibration["method"] == "pydeseq2_empirical_bayes"
     significant = [
         row
@@ -119,16 +119,53 @@ def test_null_probabilities_have_roughly_uniform_calibration(tmp_path: Path):
     assert np.mean(p_values > 0.90) > 0.025
 
 
-def test_neighborhood_without_both_arms_has_null_statistics(tmp_path: Path):
+def test_emergent_treated_neighborhoods_are_estimated_and_significant(tmp_path: Path):
     receipt = fit_neighborhood_da(
         *_inputs(tmp_path, expansion=True, exclusive_region=True)
     )
     exclusive = [row for row in receipt.neighborhoods if row.center_coordinates[0] < 1]
     assert exclusive
     for row in exclusive:
-        assert row.missing_reason == "condition_without_count_support"
-        assert row.log2_fold_change is row.log2_standard_error is None
-        assert row.p_value is row.q_value is row.spatial_fdr is None
+        assert row.missing_reason is None
+        assert row.log2_fold_change is not None and row.log2_fold_change > 2
+        assert row.log2_standard_error is not None and row.log2_standard_error > 0
+        p, q, spatial_fdr = row.p_value, row.q_value, row.spatial_fdr
+        assert p is not None and q is not None and spatial_fdr is not None
+        assert 0 < p <= q <= 0.05
+        assert p <= spatial_fdr <= 0.05
+
+
+def test_refined_centers_snap_to_nearest_vertex_and_deduplicate(tmp_path):
+    from devbench.core.scrna_neighborhood_da import _graph
+
+    _, _, spec = _inputs(tmp_path)
+    coordinates = np.array([[0.0], [1.0], [3.0], [20.0]])
+    donors = np.array([0, 1, 0, 1])
+    refined = _graph(
+        coordinates,
+        donors,
+        2,
+        spec.model_copy(update={"k": 3, "prop": 1, "refined": True}),
+    )
+    unrefined = _graph(
+        coordinates,
+        donors,
+        2,
+        spec.model_copy(update={"k": 3, "prop": 1, "refined": False}),
+    )
+    assert refined.centers.tolist() == [1, 2]
+    assert unrefined.centers.tolist() == [0, 1, 2, 3]
+    assert sorted(refined.members[0].tolist()) == [0, 1, 2, 3]
+
+
+def test_tmm_uses_total_cells_as_donor_library_sizes(tmp_path):
+    embedding, metadata, spec = _inputs(tmp_path)
+    result = fit_neighborhood_da(embedding, metadata, spec)
+    expected = pd.read_csv(metadata).groupby("donor_id").size().to_dict()
+    assert result.normalization["method"] == "tmm"
+    assert result.normalization["per_donor_total_cells"] == expected
+    factors = result.normalization["per_donor_tmm_factors"]
+    assert np.exp(np.mean(np.log(list(factors.values())))) == pytest.approx(1.0)
 
 
 @pytest.mark.parametrize(

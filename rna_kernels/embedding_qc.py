@@ -25,8 +25,6 @@ def neighborhood_metrics(
 ) -> dict:
     """Compare Euclidean neighborhoods on caller-bounded aligned coordinates."""
     from scipy.spatial.distance import cdist
-    from sklearn.manifold import trustworthiness
-
     n = len(reference)
     if n < 4:
         return {
@@ -40,15 +38,17 @@ def neighborhood_metrics(
     candidate_distances = cdist(candidate, candidate)
     np.fill_diagonal(reference_distances, np.inf)
     np.fill_diagonal(candidate_distances, np.inf)
-    reference_neighbors = np.argsort(reference_distances, axis=1, kind="stable")[:, :k]
+    reference_order = np.argsort(reference_distances, axis=1, kind="stable")
     candidate_neighbors = np.argsort(candidate_distances, axis=1, kind="stable")[:, :k]
-    matches = [
-        len(set(before) & set(after)) / k
-        for before, after in zip(reference_neighbors, candidate_neighbors, strict=True)
-    ]
+    # Both scores use the same tie order and exclude self-neighbors.
+    ranks = np.empty_like(reference_order)
+    np.put_along_axis(ranks, reference_order, np.arange(1, n + 1)[None, :], axis=1)
+    candidate_ranks = np.take_along_axis(ranks, candidate_neighbors, axis=1)
+    intrusion_penalty = np.maximum(candidate_ranks - k, 0).sum()
+    normalization = n * k * (2 * n - 3 * k - 1)
     return {
-        "trustworthiness": float(trustworthiness(reference, candidate, n_neighbors=k)),
-        "neighborhood_retention": float(np.mean(matches)),
+        "trustworthiness": float(1 - 2 * intrusion_penalty / normalization),
+        "neighborhood_retention": float(np.mean(candidate_ranks <= k)),
         "n_neighbors": k,
         "comparison_available": True,
     }
@@ -78,7 +78,8 @@ def neighbor_graph_metrics(graph, batch_codes: np.ndarray) -> dict:
     if np.any(graph.data < 0):
         raise ValueError("graph_negative_weights")
     # Explicit zeros and diagonal entries do not connect two observations.
-    edges = graph.astype(bool).astype(np.int8)
+    edges = graph.astype(bool)
+    edges.sum_duplicates()
     edges.setdiag(0)
     edges.eliminate_zeros()
     if (edges != edges.T).nnz:

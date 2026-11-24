@@ -77,14 +77,19 @@ def test_backend_version_mismatch_preserves_destination(paths):
     assert not output.exists()
 
 
-def test_configured_plugin_uses_governed_stdio_and_keeps_template(paths):
+@pytest.mark.parametrize("allow_external", [False, True])
+def test_configured_plugin_keeps_template(paths, allow_external):
     inputs, workspace, output = paths
     original = (SOURCE / ".mcp.json").read_bytes()
-    result = api().configure(Path(sys.executable), inputs, workspace, output)
+    result = api().configure(
+        Path(sys.executable), inputs, workspace, output,
+        allow_external_input_files=allow_external,
+    )
     mcp = json.loads((output / ".mcp.json").read_text())
     server = mcp["mcpServers"]["devharness"]
     assert server["command"] == sys.executable
     assert server["cwd"] == str(workspace)
+    assert ("--allow-external-input-files" in server["args"]) is allow_external
     assert server["args"][:8] == [
         "-I",
         "-B",
@@ -192,6 +197,7 @@ def test_configured_server_round_trips_over_real_stdio(paths):
     inputs, workspace, output = paths
     api().configure(Path(sys.executable), inputs, workspace, output)
     server = json.loads((output / ".mcp.json").read_text())["mcpServers"]["devharness"]
+    server["args"].append("--no-auto-studio")
 
     async def exercise():
         async with (

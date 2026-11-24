@@ -10,6 +10,7 @@ import pytest
 from devbench.platform.plugin_jobs import JobStore
 from devbench.platform.workbench_retained_comparison import (
     local_comparison_figure,
+    local_comparison_plotly,
     local_comparison_view,
     retain_local_comparison,
 )
@@ -197,3 +198,109 @@ def test_retained_comparison_rejects_manifest_tampering_and_withheld_source(
     stored.write_text(raw.replace("15,", "16,", 1))
     with pytest.raises(ValueError, match="manifest digest"):
         local_comparison_view(app, sid)
+
+
+def _add_plotly(manifest, path, figure):
+    name = "comparison.figure.json"
+    raw = json.dumps(figure).encode()
+    sha = hashlib.sha256(raw).hexdigest()
+    (path.parent / name).write_bytes(raw)
+    manifest["figures"][0]["plotly"] = {"filename": name, "sha256": sha}
+    path.write_text(json.dumps(manifest))
+    return path.parent / name, sha
+
+
+def test_plotly_companion_is_scoped_and_persists_with_its_png(comparison):
+    app, manifest, path, png, _ = comparison
+    sid = manifest["session_id"]
+    png_sha = manifest["figures"][0]["sha256"]
+    figure = {
+        "data": [{"type": "scatter", "mode": "markers", "x": [1, 2], "y": [3, 4]}]
+    }
+    source, plotly_sha = _add_plotly(manifest, path, figure)
+
+    keep = retain_local_comparison(app, path)
+    route = f"/api/scientific/adaptive/{sid}/comparison"
+    assert keep["figures"] == [
+        {
+            "title": "Shared UMAP",
+            "download_path": f"{route}/{png_sha}.png",
+            "plotly_path": f"{route}/{plotly_sha}/plotly",
+        }
+    ]
+    source.unlink()
+    (path.parent / "comparison.png").unlink()
+    assert retain_local_comparison(app, path) == keep
+    path.unlink()
+    assert local_comparison_view(app, sid) == keep
+    assert local_comparison_figure(app, sid, png_sha) == png
+    assert local_comparison_plotly(app, sid, plotly_sha)["data"][0]["x"] == [1, 2]
+    with pytest.raises(KeyError):
+        local_comparison_plotly(app, sid, png_sha)
+    with pytest.raises(KeyError):
+        local_comparison_plotly(app, "0" * 32, plotly_sha)
+
+    app.offline_only = False
+    with pytest.raises(PermissionError):
+        local_comparison_plotly(app, sid, plotly_sha)
+
+
+def test_plotly_companion_fails_closed_on_invalid_data_or_digest(
+    comparison,
+    monkeypatch,
+):
+    app, manifest, path, png, _ = comparison
+    sid = manifest["session_id"]
+    png_sha = manifest["figures"][0]["sha256"]
+    _, _ = _add_plotly(
+        manifest,
+        path,
+        {
+            "data": [{"type": "scatter", "mode": "markers", "x": [1], "y": [2]}],
+            "layout": {"images": [{"source": "https://example.invalid/image.png"}]},
+        },
+    )
+    with pytest.raises(ValueError):
+        retain_local_comparison(app, path)
+    assert local_comparison_view(app, sid) is None
+
+    source, plotly_sha = _add_plotly(
+        manifest,
+        path,
+        {
+            "data": [{"type": "bar", "x": [1], "y": [2]}],
+        },
+    )
+    raw = source.read_bytes()
+    source.write_bytes(raw + b" ")
+    with pytest.raises(ValueError, match="digest"):
+        retain_local_comparison(app, path)
+    assert local_comparison_view(app, sid) is None
+
+    source.write_bytes(raw)
+    retain_local_comparison(app, path)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "devbench.platform.workbench_retained_comparison._publication_hashes",
+            lambda app: {plotly_sha},
+        )
+        with pytest.raises(PermissionError):
+            local_comparison_plotly(app, sid, plotly_sha)
+
+    stored = app.workspace / "retained-comparisons" / sid / (plotly_sha + ".json")
+    stored.write_bytes(raw + b" ")
+    with pytest.raises(ValueError, match="digest"):
+        local_comparison_plotly(app, sid, plotly_sha)
+    assert local_comparison_figure(app, sid, png_sha) == png
+
+
+def test_plotly_companion_requires_local_json_basename(comparison):
+    app, manifest, path, _, _ = comparison
+    manifest["figures"][0]["plotly"] = {
+        "filename": "../figure.json",
+        "sha256": "9" * 64,
+    }
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="Plotly companion"):
+        retain_local_comparison(app, path)
+    assert local_comparison_view(app, manifest["session_id"]) is None

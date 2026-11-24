@@ -62,6 +62,15 @@ def _plugin_plan_view(plan: dict[str, Any], row: sqlite3.Row) -> dict[str, Any]:
         "operation": plan["operation"],
         "created_at": datetime.fromtimestamp(row["created_at"], UTC).isoformat(),
         "design_summary": design if len(canonical(design)) <= 8192 else {},
+        "runtime": _plan_parameters(plan.get("runtime") or {}),
+        "inputs": [
+            {
+                "name": _basename(profile["path"]),
+                "role": profile["role"],
+                "file_type": profile["observed"].get("file_type"),
+            }
+            for profile in plan.get("profiles", ())
+        ],
         "mounted_image_id": plan["mounted_image_id"],
     }
 
@@ -99,6 +108,7 @@ def _plugin_projection(app, binding: WorkbenchAdaptiveBinding) -> dict[str, Any]
         studio_plan_scope,
         studio_run_projection,
     )
+    from .workbench_receipt_plots import receipt_plot_paths
     from .workbench_ui_projection import _publication_hashes
 
     sid = binding.session_id
@@ -128,11 +138,14 @@ def _plugin_projection(app, binding: WorkbenchAdaptiveBinding) -> dict[str, Any]
                 (sid, row["plan_id"], row["plan_sha256"]),
             ).fetchone()
             if run is not None:
-                runs.append(
-                    studio_run_projection(
-                        app.workspace, binding.delivery.broker, plan, run, blocked,
-                    )
+                projected = studio_run_projection(
+                    app.workspace, binding.delivery.broker, plan, run, blocked,
                 )
+                if app.offline_only:
+                    paths = receipt_plot_paths(sid, projected)
+                    if paths:
+                        projected["plotly_paths"] = paths
+                runs.append(projected)
         return {
             **_plugin_labels(latest),
             "mounted_image_id": latest["mounted_image_id"],
@@ -1302,7 +1315,26 @@ def _publication_paths(app, session_id):
         }
 
 
+class _StudioReadbackChanged(OperationConflict):
+    """A worker committed a new graph revision during readback."""
+
+
 def adaptive_view(app, session_id, *, cursor=None):
+    # A fresh poll can retry if a worker commits between the graph and result
+    # projections. A retained cursor still requires its original revision.
+    for attempt in range(3):
+        can_retry = cursor is None and attempt < 2
+        try:
+            return _adaptive_view_once(app, session_id, cursor=cursor)
+        except _StudioReadbackChanged as error:
+            if not can_retry:
+                raise OperationConflict(str(error)) from error
+        except OperationBlocked as error:
+            if not can_retry or error.state != "adaptive_projection_changed_before_delivery":
+                raise
+
+
+def _adaptive_view_once(app, session_id, *, cursor):
     from devbench.analysis.rna_investigation_projection import project_adaptive_dag
 
     scientific = app.scientific
@@ -1341,7 +1373,7 @@ def adaptive_view(app, session_id, *, cursor=None):
     diagnostic_readback = _diagnostic_readback(flow, graph["entries"])
     publication = _publication_paths(app, session_id)
     if _graph_revision(flow) != revision:
-        raise OperationConflict("Adaptive graph changed while preparing its view")
+        raise _StudioReadbackChanged("Adaptive graph changed while preparing its view")
     model_required = binding.controller is not None or controller["binding"] is not None
     execution_block = graph["execution_block"]
     executable = binding.executor is not None or binding.tier_a_executor is not None
@@ -1431,19 +1463,34 @@ def _studio_readback(app, binding, flow, plan, revision) -> dict[str, Any]:
         app.offline_only and classification == "private"
         and binding.delivery.context_id == "plugin-scientist-" + flow.lineage_id
     ):
-        from .workbench_retained_comparison import local_comparison_view
-
-        try:
-            comparison = local_comparison_view(app, flow.lineage_id)
-        except (OperationBlocked, OSError, ValueError, KeyError, sqlite3.DatabaseError):
-            comparison = None  # Retained results with stale or unavailable evidence fail closed.
-        if comparison is not None:
-            extra["retained_comparison"] = comparison
+        extra.update(_offline_plugin_results(app, flow.lineage_id))
     if _graph_revision(flow) != revision:
-        raise OperationConflict(
+        raise _StudioReadbackChanged(
             "Adaptive graph changed while preparing Studio evidence"
         )
     return extra
+
+
+def _offline_plugin_results(app, session_id):
+    from .plugin_graph_studio import studio_view as private_workflow_view
+    from .plugin_motor_umap import studio_view
+    from .workbench_local_analysis import local_analysis_view
+    from .workbench_retained_comparison import local_comparison_view
+
+    results = {}
+    for key, reader in (
+        ("retained_comparison", local_comparison_view),
+        ("shared_motor_umap", studio_view),
+        ("local_analysis", local_analysis_view),
+        ("private_workflow", private_workflow_view),
+    ):
+        try:
+            value = reader(app, session_id)
+        except (OperationBlocked, OSError, ValueError, KeyError, sqlite3.DatabaseError):
+            continue
+        if value is not None:
+            results[key] = value
+    return results
 
 
 def _require_fresh_execution(app, request):

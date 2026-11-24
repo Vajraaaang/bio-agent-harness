@@ -466,9 +466,11 @@ def _saved_graph_assessment(
         raise ValueError("nonfinite_UMAP")
     graph_path = folder / "neighbors.npz"
     latent_path = store.path(stage) / "latent.npy"
+    reference = _latent(store, "pca")
+    candidate = reference if stage == "pca" else _latent(store, stage)
     report = assess_integration(
-        _latent(store, "pca"),
-        _latent(store, stage),
+        reference,
+        candidate,
         _read_graph(graph_path, len(obs)),
         cell_ids=obs.index.tolist(),
         graph_cell_ids=coordinates.index.tolist(),

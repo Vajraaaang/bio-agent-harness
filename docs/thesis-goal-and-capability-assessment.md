@@ -8,8 +8,8 @@ and deliver a replayable thesis package. Harden the existing bulk path alongside
 the single-cell work. Keep an answerability record for all 20 families and a
 governed extension path for unfamiliar research questions.
 
-The matrices assess the Unified Hybrid implementation on
-the current public implementation against the [answerability registry](../src/devbench/core/rna_answerability.py). Earlier development evaluations exceeded the frozen null-FDR ceiling of `0.075` and cross-architecture probability tolerance of `1e-10`. This assessment describes implementation scope. Independent public review and biological and clinical qualification remain open.
+The matrices assess implementation scope against the [answerability registry](../src/devbench/core/rna_answerability.py).
+Independent public review and biological and clinical qualification remain open.
 
 The [repository runtime rules](../AGENTS.md) apply at every entry point. Work
 from authorized local inputs, download no BAM or FASTQ archives, and scan large
@@ -35,7 +35,7 @@ not establish scientific execution.
 
 | # | Family | Status | Current evidence and boundary |
 |---|---|---|---|
-| 1 | Expression and differential cell states | Implemented | [Mounted bulk](../rna_kernels/mounted_bulk.py) covers gene-level coefficients, general contrasts, LRTs and estimated-count offsets. [General pseudobulk](../src/devbench/platform/scrna_general_pseudobulk.py) stages raw counts per donor and type for multi-factor contrasts and preserves low-cell warnings and absent profiles. The [paired tximport diagnostic](../src/devbench/analysis/paired_tximport_svaseq.py) keeps surrogate-variable evidence separate from the primary fit. Null FDR qualification remains open. |
+| 1 | Expression and differential cell states | Implemented | [Mounted bulk](../rna_kernels/mounted_bulk.py) covers gene-level coefficients, general contrasts, LRTs and estimated-count offsets. [General pseudobulk](../src/devbench/platform/scrna_general_pseudobulk.py) stages raw counts by donor, specimen and cell type, retaining low-cell warnings and absent profiles. Synthetic [mounted tests](../tests/test_p3_general_pseudobulk.py) fitted an unbalanced two-condition design using a donor random intercept in `dream`. The [paired tximport diagnostic](../src/devbench/analysis/paired_tximport_svaseq.py) keeps surrogate-variable evidence separate from the primary fit. Null FDR qualification remains open. |
 | 2 | Cell identity, heterogeneity and rare populations | Partially Supported | [Annotation](../src/devbench/analysis/annotation.py) supports marker and reference-backed labeling. [Marker inference](../src/devbench/core/scrna_marker_inference.py) separates exploratory ranks from independently checked NB count-split evidence. Rare-population stability and external annotation accuracy still need study-specific evidence. |
 | 3 | Abundance, composition and deconvolution | Implemented | [scCODA](../src/devbench/core/scrna_composition_solver.py) models relative composition at donor level. [Neighborhood DA](../src/devbench/core/scrna_neighborhood_da.py) tests relative abundance conditional on the supplied embedding and reports standard and spatial FDR. [Bulk deconvolution](../src/devbench/core/bulk_deconvolution.py) estimates relative proportions conditional on a matched donor reference. External comparisons and uncertainty calibration remain open. |
 | 4 | Alternative splicing and transcript usage | Implemented | [Differential usage](../src/devbench/core/bulk_dtu.py) tests mapped transcripts or disjoint exon bins using replicated contrasts and a stage-wise adjustment. `splice_junction_usage` remains gated. Independent software and data comparisons remain open. |
@@ -54,7 +54,7 @@ not establish scientific execution.
 | 17 | Multimodal, repertoire and clonal analysis | Missing | The [measurement gate](../src/devbench/core/rna_answerability.py) checks the linked axes and required modalities or clonotype assignments. The annotated RNA route does not supply curated linked-modality or clonal inference. |
 | 18 | Prediction, signatures and phenotype | Implemented | [Phenotype prediction](../src/devbench/core/phenotype_prediction.py) fits binary classifiers with donor- or cohort-grouped nested cross-validation and training-fold preprocessing. The MCP route requires a digest-pinned independent partition. External calibration and transportability remain open. |
 | 19 | Reproduction, replication and evidence synthesis | Partially Supported | [Thesis replay](../src/devbench/analysis/thesis_replay.py) reproduces sealed artifacts from authorized inputs, and [literature custody](../src/devbench/analysis/thesis_literature.py) binds assessed corpora. Independent public review and the cross-architecture numerical check remain open. |
-| 20 | Experimental design and method development | Implemented | [Design compilation](../src/devbench/core/contrast_design.py) checks estimability. [Tier B benchmarks](../src/devbench/engine/exploratory_benchmark.py) freeze a comparator and negative control, isolate evaluation units and retain outcomes and cost. Their results remain exploratory. |
+| 20 | Experimental design and method development | Implemented | [Design compilation](../src/devbench/core/contrast_design.py) checks estimability and holds full-rank designs that fail the condition-number policy. A [synthetic regression](../tests/test_erql_designs.py) verifies that an estimable but ill-conditioned contrast is held. [Tier B benchmarks](../src/devbench/engine/exploratory_benchmark.py) freeze a comparator and negative control, isolate evaluation units and retain outcomes and cost. Their results remain exploratory. |
 
 The seven [local Python MCP routes](../integrations/codex/devharness/skills/rna-workbench/references/mcp-payload-contracts.md#local-python-solvers)
 were exercised with synthetic plans, approval, execution, and receipt readback.
@@ -63,12 +63,22 @@ bounded summaries. The evidence covers the exercised execution and custody
 contracts. Scientific validation requires a frozen independent comparison for
 each claimed scope. `clinical_release_allowed = false`.
 
-An independent synthetic DTU check drew donor usage from Beta(25,25) in both
-arms, then drew binomial transcript counts for six donors per arm. Across
-250 draws with seed 337, nominal 5% tests rejected 16 times at equal depth
-(100 counts per donor) and 184 times with one 100-fold deeper donor in each
-arm. This calibration failure remains open. The stage-wise adjustment
-depends on the validity of its input tests.
+The [frozen edgeR calibration](../tests/test_thesis_calibration.py) accounted
+for 2,200 synthetic cohorts on each local candidate image (`arm64` and `amd64`),
+including 200 expected confounding refusals. Null FDR was 9% for B-I, 6.5% for
+B-P, 4.5% for P-P, 10.5% for S-I and 8% for S-P on both architectures. Three
+regimes exceeded the frozen 7.5% ceiling. Across 2,000 byte-matched fitted
+cohorts, absolute differences reached `3.06e-6` for p-values and `4.40e-6`
+for BH q-values, exceeding the `1e-10` probability tolerance. This calibration
+covered the edgeR designs. The `dream` tests exercised synthetic execution.
+
+The [DTU depth regression](../tests/test_bulk_dtu.py) drew donor usage from
+Beta(25,25) in both arms, then drew binomial transcript counts for six donors
+per arm. At a nominal 5% level, the earlier audit observed 16 of 250 null
+rejections at equal depth and 184 of 250 with one 100-fold deeper donor in
+each arm. The donor beta-binomial quasi-likelihood fit rejected 15 of 250
+and 13 of 250, respectively, on the same seed-337 design. Independent DTU
+comparisons remain open.
 
 ## Lifecycle stages
 

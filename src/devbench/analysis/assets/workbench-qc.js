@@ -259,6 +259,7 @@
     host.append(diff, impactPanel);
     const update = () => {
       diff.replaceChildren(node('h6', 'Parameter changes'));
+      impactPanel.removeAttribute?.('data-pending-revision');
       try {
         const next = read();
         const changed = Object.keys(next).filter(key =>
@@ -270,6 +271,7 @@
             parameterValue(original[key]) + ' → ' + parameterValue(next[key])));
         }
         if (changed.length) diff.append(rows);
+        if (changed.length && impact) impactPanel.setAttribute('data-pending-revision', 'true');
       } catch (error) {
         diff.append(node('p', error.message, 'research-hold'));
       }

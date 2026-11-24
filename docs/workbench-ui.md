@@ -118,6 +118,18 @@ The [public verification workflow](../.github/workflows/ci.yml) covers the porta
 
 ## Operating the analysis service
 
+Figures in offline Companion Studio prefer an interactive Plotly view for the
+shared motor-neuron UMAP and retained custom figures with compatible chart
+data. The UMAP uses the verified coordinates from its completed run.
+
+For retained comparisons, keep the existing PNG entry in the figure manifest.
+To add an interactive companion, supply its data-only Plotly figure as a local
+JSON member beside the PNG and add `"plotly": {"filename": "figure.plotly.json",
+"sha256": "<digest>"}` to that figure entry. The current adapter supports
+bounded scatter, ScatterGL, bar, and heatmap traces with a restricted layout.
+Studio verifies the companion before retaining it. Existing PNG-only manifests
+continue to display their images.
+
 The operational page registers an existing H5AD, passes a question and declarations to an explicitly configured proposal selector or records an operator-created plan, collects an operator decision, and runs the existing backed workflow. It exposes verified reports and an evidence archive. Bulk contrasts remain on the existing episode CLI. Model access is disabled by default.
 
 Run from the repository checkout using its analysis environment:

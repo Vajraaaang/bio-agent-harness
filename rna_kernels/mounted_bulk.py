@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import hashlib
 import io
@@ -24,6 +25,7 @@ from devharness_core.storage import ChunkedExpressionStore, _h5_member
 from .bulk_solver_policy import freeze_bulk_solver
 from .mounted_count import _REASONS, _fit_count
 from .mounted_model import (
+    _scaled_covariates,
     compile_mounted_model,
     fit_mounted_model,
     validate_mounted_model,
@@ -230,12 +232,12 @@ def _metadata(raw, sample_ids, request):
             "Mounted contrast requires at least three biological units per condition"
         )
     covariates = (
-        np.asarray([[float(row[name]) for name in numeric] for row in ordered])
+        _scaled_covariates(
+            np.asarray([[float(row[name]) for name in numeric] for row in ordered])
+        )
         if numeric
         else None
     )
-    if covariates is not None and not np.isfinite(covariates).all():
-        raise ValueError("Declared mounted covariates must be finite")
     strata = (
         [json.dumps([row[name] for name in factors]) for row in ordered]
         if factors
@@ -268,14 +270,13 @@ def _condition_design(rows, target, factors, covariates):
     return design, condition_number
 
 
-def _bh(probabilities):
-    eligible = np.isfinite(probabilities)
-    padded = np.where(eligible, probabilities, 1)
-    order = np.argsort(padded, kind="stable")
-    ranked = padded[order] * len(padded) / np.arange(1, len(padded) + 1)
-    result = np.empty_like(probabilities)
-    result[order] = np.minimum(1, np.minimum.accumulate(ranked[::-1])[::-1])
-    return np.where(eligible, np.maximum(probabilities, result), np.nan)
+def _bh(probabilities, codes):
+    eligible = codes != 1
+    family = probabilities[eligible]
+    padded = np.where(codes[eligible] == 0, family, 1.0)
+    adjusted = np.full_like(probabilities, np.nan)
+    adjusted[eligible] = np.maximum(family, stats.false_discovery_control(padded))
+    return adjusted
 
 
 def _gaussian_fit(source, design, *, contrast=None, reduced=None):
@@ -284,6 +285,7 @@ def _gaussian_fit(source, design, *, contrast=None, reduced=None):
     target = inverse[1] if contrast is None else contrast @ inverse
     variance_multiplier = float(target @ target) / df
     effects, errors = np.empty(source.shape[0]), np.empty(source.shape[0])
+    filtered = np.empty(source.shape[0], dtype=bool)
     if reduced is not None:
         reduced_inverse = np.linalg.pinv(reduced)
         test_df = design.shape[1] - reduced.shape[1]
@@ -298,6 +300,7 @@ def _gaussian_fit(source, design, *, contrast=None, reduced=None):
         effects[start:stop] = fitted[:, 1] if contrast is None else data @ target
         sum_squares = np.einsum("ij,ij->i", residuals, residuals)
         scale = np.max(np.abs(data), axis=1)
+        filtered[start:stop] = scale == 0
         residual_resolution = np.finfo(float).eps * scale * len(design)
         errors[start:stop] = np.where(
             sum_squares > residual_resolution**2,
@@ -318,22 +321,38 @@ def _gaussian_fit(source, design, *, contrast=None, reduced=None):
         start = stop
     if start != source.shape[0]:
         raise ValueError("Mounted matrix scan did not cover the family")
-    if reduced is not None:
-        return np.full_like(effects, np.nan), None, probabilities, None
-    valid = np.isfinite(effects) & np.isfinite(errors) & (errors > 0)
-    probabilities = np.full(len(effects), np.nan)
-    probabilities[valid] = 2 * stats.t.sf(np.abs(effects[valid] / errors[valid]), df)
-    return effects, errors, probabilities, float(stats.t.ppf(0.975, df))
+    if reduced is None:
+        valid = np.isfinite(effects) & np.isfinite(errors) & (errors > 0)
+        probabilities = np.full(len(effects), np.nan)
+        probabilities[valid] = 2 * stats.t.sf(
+            np.abs(effects[valid] / errors[valid]), df
+        )
+        confidence = float(stats.t.ppf(0.975, df))
+    else:
+        effects.fill(np.nan)
+        errors = confidence = None
+    codes = np.where(np.isfinite(probabilities), 0, np.where(filtered, 1, 4))
+    return effects, errors, probabilities, confidence, codes
 
 
 def _rows(
-    genes, effects, probabilities, adjusted, codes, *, errors=None, confidence=None
+    genes,
+    effects,
+    probabilities,
+    adjusted,
+    codes,
+    *,
+    measurement=None,
+    errors=None,
+    confidence=None,
 ):
     for index, gene in enumerate(genes):
         effect, p_value, code = effects[index], probabilities[index], codes[index]
         attempted = code == 0
         directed = attempted and np.isfinite(effect)
         status, reason = ("estimated", None) if attempted else _REASONS[code]
+        if code == 1 and measurement == "continuous":
+            reason = "all_zero_gene"
         intervals = []
         if directed and confidence is not None and errors is not None:
             half_width = confidence * errors[index]
@@ -453,7 +472,7 @@ def _fit_python_counts(source, genes, design, unit_ids, request, outputs):
         raise ValueError("Python-only Wald scan did not cover the measured family")
     numerator, denominator = request["numerator"], request["denominator"]
     conditions = np.where(design[:, 1] == 1, numerator, denominator).tolist()
-    effects, probabilities, _, codes, method = fit_pydeseq2_wald(
+    effects, probabilities, adjusted, codes, method = fit_pydeseq2_wald(
         values,
         genes,
         conditions,
@@ -464,13 +483,14 @@ def _fit_python_counts(source, genes, design, unit_ids, request, outputs):
         design=design,
         scratch_dir=outputs,
     )
-    return effects, probabilities, codes, {**method, "solver": "pydeseq2_wald"}
+    return effects, probabilities, codes, method, None, None, adjusted
 
 
 def _fit(source, genes, design, unit_ids, request, outputs, role, runtime):
     if request["measurement"] == "continuous":
-        effects, errors, probabilities, confidence = _gaussian_fit(source, design)
-        codes = np.where(np.isfinite(probabilities), 0, 4)
+        effects, errors, probabilities, confidence, codes = _gaussian_fit(
+            source, design
+        )
         return (
             effects,
             probabilities,
@@ -478,6 +498,7 @@ def _fit(source, genes, design, unit_ids, request, outputs, role, runtime):
             {"solver": "gaussian_ols"},
             errors,
             confidence,
+            None,
         )
     choice = freeze_bulk_solver(
         measurement="raw_counts",
@@ -490,10 +511,9 @@ def _fit(source, genes, design, unit_ids, request, outputs, role, runtime):
         ),
     )
     if choice.solver == "pydeseq2":
-        result = _fit_python_counts(source, genes, design, unit_ids, request, outputs)
-    else:
-        result = _fit_count(source, design, outputs, solver=choice.solver)
-    return (*result, None, None)
+        return _fit_python_counts(source, genes, design, unit_ids, request, outputs)
+    result = _fit_count(source, design, outputs, solver=choice.solver)
+    return (*result, None, None, None)
 
 
 def _fit_general(source, model, request, outputs, primary, runtime, lengths):
@@ -509,7 +529,7 @@ def _fit_general(source, model, request, outputs, primary, runtime, lengths):
                 request["technical_factors"] or request["continuous_covariates"]
             ),
         )
-        effects, errors, probabilities, confidence = _gaussian_fit(
+        effects, errors, probabilities, confidence, codes = _gaussian_fit(
             source,
             model.design,
             contrast=model.contrast,
@@ -520,7 +540,6 @@ def _fit_general(source, model, request, outputs, primary, runtime, lengths):
             if model.reduced is None
             else model.design.shape[1] - model.reduced.shape[1]
         )
-        codes = np.where(np.isfinite(probabilities), 0, 4)
         return (
             effects,
             probabilities,
@@ -534,18 +553,15 @@ def _fit_general(source, model, request, outputs, primary, runtime, lengths):
         "comparison": "coefficient",
         "units": "independent",
     }:
-        return (
-            *_fit(
-                source,
-                source.gene_names,
-                model.design,
-                model.unit_ids,
-                request,
-                outputs,
-                primary,
-                runtime,
-            ),
-            None,
+        return _fit(
+            source,
+            source.gene_names,
+            model.design,
+            model.unit_ids,
+            request,
+            outputs,
+            primary,
+            runtime,
         )
     effects, probabilities, adjusted, codes, evidence = fit_mounted_model(
         source,
@@ -616,11 +632,8 @@ def _fit_mounted_inputs(inputs, outputs, request, genes, primary, runtime):
         fit = (
             _fit_general(source, model, request, outputs, primary, runtime, lengths)
             if model is not None
-            else (
-                *_fit(
-                    source, genes, design, unit_ids, request, outputs, primary, runtime
-                ),
-                None,
+            else _fit(
+                source, genes, design, unit_ids, request, outputs, primary, runtime
             )
         )
     _expression_identity(expression, request["expression_sha256"])
@@ -629,8 +642,35 @@ def _fit_mounted_inputs(inputs, outputs, request, genes, primary, runtime):
     return expression, cohort, condition, fit
 
 
+def _latent_score_metadata(solver, samples):
+    scores = solver.pop("_latent_score_bytes", None)
+    if scores is None:
+        return {}
+    # Keep each encoded value below the governed Parquet reader's 64 KiB limit.
+    chunk_size = 32 * 1024
+    prefix = "devbench.latent_scores."
+    chunks = {
+        f"{prefix}{index}": base64.b64encode(scores[start : start + chunk_size])
+        for index, start in enumerate(range(0, len(scores), chunk_size))
+    }
+    latent = solver["latent_diagnostics"]
+    latent["scores"] = {
+        "payload_sha256": hashlib.sha256(scores).hexdigest(),
+        "parquet_metadata_prefix": prefix,
+        "chunks": len(chunks),
+        "encoding": "base64_float64_little_endian_column_major",
+        "shape": [samples, latent["n_factors"]],
+        "sample_order": "expression_columns",
+    }
+    return chunks
+
+
 def run_mounted_bulk(
-    inputs: Path, outputs: Path, request_sha256: str, *, runtime="bioconductor",
+    inputs: Path,
+    outputs: Path,
+    request_sha256: str,
+    *,
+    runtime="bioconductor",
     claim_scope="admitted_research_inference",
 ):
     """Check the mount identities and publish the Parquet and summary together."""
@@ -667,7 +707,8 @@ def run_mounted_bulk(
     effects, probabilities, codes, solver, errors, confidence, adjusted = fit
 
     if adjusted is None:
-        adjusted = _bh(probabilities)
+        adjusted = _bh(probabilities, codes)
+    score_metadata = _latent_score_metadata(solver, design.shape[0])
     tested = int(np.count_nonzero(codes == 0))
     filtered = int(np.count_nonzero(codes == 1))
     status_counts = {
@@ -715,10 +756,12 @@ def run_mounted_bulk(
             probabilities,
             adjusted,
             codes,
+            measurement=request["measurement"],
             errors=errors,
             confidence=confidence,
         )
         with pq.ParquetWriter(table, schema, compression="snappy") as writer:
+            writer.add_key_value_metadata(score_metadata)
             while batch := list(islice(rows, 2048)):
                 writer.write_batch(pa.RecordBatch.from_pylist(batch, schema=schema))
         summary = {

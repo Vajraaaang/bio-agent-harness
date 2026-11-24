@@ -32,6 +32,7 @@ from .scrna_upstream_contract import (
 _ROSTER_FORMAT = "devbench.nb-split-donor-roster/1"
 _MAX_COUNT = 2**53 - 1
 _MIN_CELL_WARNING = 20
+_REST_CLUSTER = "__rest__"
 
 
 def _identifier(value: object) -> bool:
@@ -127,7 +128,20 @@ def _axis_rows(source: BackedExpression, labels, split, roster):
     return features, zip(labels["labels"], roster["rows"], strict=True)
 
 
+def _contrast_group(
+    cluster: str | None, numerator: str, denominator: str
+) -> str | None:
+    if denominator != _REST_CLUSTER:
+        return cluster if cluster in (numerator, denominator) else None
+    if cluster == _REST_CLUSTER:
+        raise ValueError("NB cluster label collides with the reserved rest denominator")
+    if cluster is None or cluster == numerator:
+        return cluster
+    return _REST_CLUSTER
+
+
 def _profile_inventory(rows, parameters: CountSplitPseudobulkParameters):
+    """Pool assigned non-numerator clusters when the denominator is __rest__."""
     groups = (parameters.denominator, parameters.numerator)
     bins = []
     by_donor: dict[str, set[str]] = defaultdict(set)
@@ -143,10 +157,13 @@ def _profile_inventory(rows, parameters: CountSplitPseudobulkParameters):
             raise ValueError("NB label contains an invalid cluster identifier")
         key = None
         if condition == parameters.condition:
-            by_donor[donor].add(specimen)
-            by_specimen[specimen].add(donor)
-            if cluster in groups:
-                key = (donor, cluster)
+            group = _contrast_group(
+                cluster, parameters.numerator, parameters.denominator
+            )
+            if group is not None:
+                by_donor[donor].add(specimen)
+                by_specimen[specimen].add(donor)
+                key = (donor, group)
         bins.append(key)
     if any(len(value) != 1 for value in (*by_donor.values(), *by_specimen.values())):
         raise ValueError("NB paired marker profiles require one specimen per donor")

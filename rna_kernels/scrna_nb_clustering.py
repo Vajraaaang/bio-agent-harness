@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from devbench.analysis.checkpoints import CheckpointStore
 
 _FOLD_GROUP = "clustering_fold"
+_FOLD_BATCH = "clustering_batch"
 
 
 def _split_report(path: Path, request: MountedSingleCellRequest) -> dict:
@@ -60,7 +62,9 @@ def _fold_axis(source: BackedExpression, report: dict) -> tuple[str, ...]:
     return cells
 
 
-def _fold_metrics(folder: Path, source: BackedExpression) -> dict[str, int]:
+def _fold_metrics(
+    folder: Path, source: BackedExpression, batch_labels: list[str] | None
+) -> dict[str, int]:
     from devbench.analysis.singlecell import validate_counts
 
     totals = np.empty(source.shape[0], dtype=np.int64)
@@ -75,9 +79,15 @@ def _fold_metrics(folder: Path, source: BackedExpression) -> dict[str, int]:
     if int(kept.sum()) < 3:
         raise ValueError("Clustering requires at least three positive-depth fold cells")
     metrics = pd.DataFrame(
-        {_FOLD_GROUP: "fold", "total_counts": totals, "qc_pass": kept},
+        {
+            _FOLD_GROUP: "fold",
+            "total_counts": totals,
+            "qc_pass": kept,
+        },
         index=source.obs.index,
     )
+    if batch_labels is not None:
+        metrics[_FOLD_BATCH] = batch_labels
     metrics.to_csv(folder / "metrics.csv")
     source.var.to_csv(folder / "features.csv")
     return {"positive_depth": int(kept.sum()), "zero_depth": int((~kept).sum())}
@@ -103,20 +113,62 @@ def _labels_from_graph(
     return dict(zip(assignment.index, labels, strict=True))
 
 
+def _declared_batch_labels(batch_labels: pd.Series, cell_ids: pd.Index) -> list[str]:
+    if (
+        not isinstance(batch_labels, pd.Series)
+        or not batch_labels.index.equals(cell_ids)
+    ):
+        raise ValueError("Batch labels must match the ordered clustering fold axis")
+    declared = batch_labels.tolist()
+    if any(
+        not isinstance(label, str)
+        or not 0 < len(label) <= 256
+        or label != label.strip()
+        or "\x00" in label
+        for label in declared
+    ):
+        raise ValueError("NB fold clustering requires nonempty batch identifiers")
+    return declared
+
+
 def cluster_mounted_fold(
     request: MountedSingleCellRequest,
     paths: Mapping[str, Path],
     store: CheckpointStore,
     parameters: CountSplitClusteringParameters,
+    *,
+    batch_labels: pd.Series | None = None,
+    correction: str = "none",
 ) -> dict[str, Path]:
+    """Optionally use trusted batch declarations on the exact clustering fold axis."""
     from devbench.analysis.embedding import run_embedding_stages
+    from devbench.analysis.scrna_qc import pin_configuration
     from devbench.analysis.streaming import stream_hvg, stream_selected
 
+    if correction not in {"none", "harmony"}:
+        raise ValueError("NB fold clustering supports none or harmony correction")
+    if correction != "none" and batch_labels is None:
+        raise ValueError("NB fold correction requires declared batch labels")
     counts = paths["clustering_counts"]
     report = _split_report(paths["split_report"], request)
     with open_h5ad(counts) as source:
         cell_ids = _fold_axis(source, report)
-        store.run("qc", lambda folder: _fold_metrics(folder, source))
+        declared, configuration = None, None
+        dependencies: tuple[str, ...] = ()
+        if batch_labels is not None:
+            declared = _declared_batch_labels(batch_labels, source.obs.index)
+            configuration = {
+                "requested_method": correction,
+                "batch_labels_sha256": content_sha256(declared),
+                "cell_ids_sha256": report["cell_ids_sha256"],
+            }
+            dependencies = (
+                pin_configuration(store, "nb_clustering_batches", configuration),
+            )
+        store.run(
+            "qc", lambda folder: _fold_metrics(folder, source, declared),
+            dependencies=dependencies,
+        )
     hvg = stream_hvg(
         counts,
         store,
@@ -124,11 +176,12 @@ def cluster_mounted_fold(
         batch_key=_FOLD_GROUP,
         n_top_genes=parameters.n_top_genes,
     )
-    stream_selected(counts, store, layer=None)
+    batch_key = _FOLD_GROUP if batch_labels is None else _FOLD_BATCH
+    stream_selected(counts, store, layer=None, batch_key=batch_key)
     accepted = run_embedding_stages(
         store,
-        batch_key=_FOLD_GROUP,
-        correction="none",
+        batch_key=batch_key,
+        correction=correction,
         governed=True,
         seed=parameters.seed,
         n_pcs=parameters.n_pcs,
@@ -136,8 +189,20 @@ def cluster_mounted_fold(
     )
     if "uncorrected" not in accepted:
         raise ValueError("Clustering fold requires a checked uncorrected graph")
-    graph = store.path("uncorrected_graph")
     assessment = store.path("integration_assessment") / "assessment.json"
+    graph_condition = "uncorrected"
+    if configuration is not None:
+        integration = json.loads(assessment.read_bytes())["integration_status"]
+        if integration["status"] == "applicable":
+            if correction not in accepted:
+                raise ValueError(
+                    "NB fold batch-corrected graph did not pass assessment"
+                )
+            graph_condition = correction
+        configuration = {
+            **configuration, **integration, "condition_used": graph_condition,
+        }
+    graph = store.path(graph_condition + "_graph")
     labels = _labels_from_graph(graph, store, cell_ids)
     label_path = store.root / "cluster_labels.json"
     label_path.write_bytes(
@@ -160,7 +225,10 @@ def cluster_mounted_fold(
         canonical_json(
             {
                 "format": "devbench.nb-fold-clustering/1",
-                "clustering_method": "shifted_log_hvg_pca_leiden",
+                "clustering_method": (
+                    "shifted_log_hvg_pca_harmony_leiden"
+                    if graph_condition == "harmony" else "shifted_log_hvg_pca_leiden"
+                ),
                 "clustering_counts_sha256": request.inputs["clustering_counts"],
                 "split_report_sha256": request.inputs["split_report"],
                 "labels_sha256": hash_bounded_file(label_path, MAX_TABLE_BYTES),
@@ -172,6 +240,7 @@ def cluster_mounted_fold(
                     assessment, MAX_TABLE_BYTES
                 ),
                 "parameters": parameters.model_dump(mode="json"),
+                **({"batch_correction": configuration} if configuration else {}),
                 "clusters": len(set(labels.values())),
                 "assigned_cells": len(labels),
                 "unassigned_zero_depth_cells": len(cell_ids) - len(labels),

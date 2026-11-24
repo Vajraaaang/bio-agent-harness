@@ -35,6 +35,7 @@ dimnames(expression) <- list(rownames_input, sample_ids)
 if (commandArgs(trailingOnly=TRUE)[1L] == "raw_counts") {
     means <- exp(expression) * 12
     expression[] <- rpois(length(means), means)
+    expression[62, ] <- c(1, rep(0, n - 1L))
     expression[64, ] <- 0
     expression[63, condition == "case"] <- 0
 } else {
@@ -47,6 +48,7 @@ fit <- bulk_dream(expression, metadata[rev(sample_ids), ], "group", "subject",
                   technical_factors = c("run", "age"), measurement = measurement)
 rows <- fit$rows
 estimated <- rows$estimate_status == "estimated"
+eligible <- rows$estimate_status %in% c("estimated", "failed")
 stopifnot(
     identical(rows$gene_id, rownames_input),
     sum(estimated) >= 58L,
@@ -61,12 +63,22 @@ stopifnot(
     fit$diagnostics$repeated_donor_count == 12L,
     !fit$diagnostics$balanced_donor_profile_counts,
     all(rows$q_value[estimated] ==
-        p.adjust(ifelse(estimated, rows$p_value, 1), method="BH")[estimated])
+        p.adjust(ifelse(estimated[eligible], rows$p_value[eligible], 1),
+                 method="BH")[estimated[eligible]])
 )
 if (measurement == "raw_counts") {
-    stopifnot(identical(rows$missing_reason[63L], "zero_marginal_condition_count"),
+    stopifnot(identical(rows$estimate_status[62L], "filtered"),
+              identical(rows$missing_reason[64L], "all_zero_gene"),
+              estimated[63L], rows$effect[63L] < 0,
               identical(fit$diagnostics$normalization, "TMM_effective_library_sizes"),
               isTRUE(fit$diagnostics$voom_weights))
+    zeros <- matrix(0, nrow=100, ncol=n,
+                    dimnames=list(paste0("zero", 1:100), sample_ids))
+    expanded <- bulk_dream(rbind(expression, zeros), metadata, "group", "subject",
+                          "case", "control", technical_factors=c("run", "age"))$rows
+    stopifnot(isTRUE(all.equal(expanded$p_value[1:64], rows$p_value)),
+              isTRUE(all.equal(expanded$q_value[1:64], rows$q_value)),
+              all(is.na(expanded$q_value[65:164])))
     factors <- seq(0.7, 1.3, length.out=n)
     weighted <- bulk_dream(expression, metadata, "group", "subject", "case", "control",
                           technical_factors=c("run", "age"), measurement=measurement,
