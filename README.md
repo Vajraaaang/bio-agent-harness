@@ -1,80 +1,121 @@
-# DevHarness · Companion Research Studio
+# DevHarness
+
+**A review-gated MCP server for AI-assisted RNA-seq.** Give Codex, Claude Code, Cursor, or a custom agent tools to inspect local data, check experimental design, and carry out reviewed workflows with verifiable receipts.
 
 [![Public software verification](https://github.com/Vajraaaang/bio-agent-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Vajraaaang/bio-agent-harness/actions/workflows/ci.yml)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13%2B-3776AB)](pyproject.toml)
 [![MIT license](https://img.shields.io/badge/License-MIT-216F57)](LICENSE)
-[![Platform macOS and Linux](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-44546A)](#run-companion-research-studio)
 
-DevHarness is a local RNA-seq workbench with a Codex copilot and a browser-based research studio. It checks whether the inputs support the question, freezes a plan for review, and binds completed outputs to execution receipts. DevBench evaluates agent behavior separately.
+[Quickstart](#quickstart) · [Workflows](docs/capabilities.md) · [MCP reference](docs/mcp-tools.md) · [Evaluation](docs/evaluation.md) · [Interactive Studio demo](https://vajraaaang.github.io/bio-agent-harness/)
 
-**[Launch Interactive Studio Demo](https://vajraaaang.github.io/bio-agent-harness/)** · [Architecture](#architecture) · [Evidence](#verification-and-limits)
+## A batch-confounded contrast, caught before fitting
 
-Work through ten checkpoints in a synthetic single-cell treatment study. Reconcile donor IDs, apply frozen QC, repair a batch-confounded design, and review separate composition and pseudobulk branches. The demo computes cohort and sensitivity summaries from embedded donor records, shows staged model diagnostics, and exports the decision trail. Real fitting runs in the local Workbench.
+The synthetic bulk example has six libraries from six donors. Every control
+was processed in one batch and every treated sample in the other.
 
-## Operate DevHarness two ways
+> Can these counts estimate a treated-versus-control effect after adjusting for batch? Audit the matrix if the contrast is blocked.
 
-### Autonomous Copilot in Codex
+The local STDIO server returns the following results in the runnable walkthrough.
 
-Configure and install the [DevHarness Codex MCP plugin](integrations/codex/devharness/README.md). In Codex, select the `@devharness` plugin or invoke `$rna-workbench`. Ask it to inspect a staged dataset, formulate an aim, and propose QC and donor-aware models. Execution requires an approved plan tied to an exact session and plan digest, a supported design, and an available runtime. The plugin and Studio can open the same research session.
-
-### Run Companion Research Studio
-
-Use `uv` and Python 3.13 on macOS or Linux. Keep the input directory and mutable workspace separate. From the repository root, with an existing `inputs/` directory:
-
-```sh
-make install
-repo="$(pwd -P)"
-mkdir -p "$repo/workspace"
-"$repo/.venv/bin/python" -m devbench.platform.cli workbench \
-  --input-root "$repo/inputs" \
-  --workspace "$repo/workspace" \
-  --enable-scientific --offline-only --port 8765
+```text
+inspect_rna_inputs       counts.csv and design.csv
+check_answerability     refused · rank_deficient_or_confounded_design
+plan_rna_workflow       matrix_audit · plan digest returned
+execute_reviewed_plan   queued · run ID returned
+get_run_status          completed
+get_execution_receipt   6 features · 6 libraries · replay bundle SHA-256
 ```
 
-Open the printed loopback URL. The scientific route checks for SQLite 3.51.3 or newer, or a documented backport. On macOS, a patched Homebrew installation can supply the library with `DYLD_LIBRARY_PATH="$(brew --prefix sqlite)/lib"`. Follow the [Workbench operating guide](docs/workbench-ui.md) for runtime setup and execution permissions.
+The receipt covers the descriptive audit. The condition effect remains
+unresolved. [Run the bulk RNA-seq example](examples/bulk-rnaseq/README.md)
 
-## Scientific scope and safeguards
+## What the server does
 
-- **20-family answerability.** The [registry](src/devbench/core/rna_answerability.py) evaluates whether the measurements and design support a question across 20 research families. The [measurement probes](tests/test_thesis_answerability_matrix.py) cover supported, underspecified, and unsupported cases. Numerical execution depends on the method, input and runtime.
-- **Biological replication.** [Design checks](src/devbench/core/contrast_design.py) validate contrasts and estimability. Donor-aware routes use the donor as the biological unit where the declared design calls for it. Multiple cells from a donor do not create independent donor replicates.
-- **Selection and inference.** [Negative-binomial count splitting](rna_kernels/scrna_nb_countsplit.py) supports selected marker workflows that separate discovery from inference. [Bayesian scCODA](src/devbench/core/scrna_composition_solver.py) estimates donor-level composition relative to a declared reference and reports posterior inclusion probabilities.
-- **Verifiable packages.** [Thesis replay](src/devbench/analysis/thesis_replay.py) checks SHA-256-bound research packages against their retained evidence. Statistical qualification and independent scientific review remain separate.
+- **Checks the study design.** Inspect counts and metadata, confirm the biological unit, and check model rank and contrast estimability before model fitting.
+- **Binds review to the plan.** Freeze input identities, parameters, and the route. Numerical runs follow the approval rules for that exact plan.
+- **Retains execution evidence.** Read back bounded results, artifact identities, and the execution receipt. Keep the receipt digest to verify the retained evidence later.
+
+## Quickstart
+
+**1. Install.** Clone the repository, open its root in a terminal, and sync the locked environment.
+
+```sh
+uv sync --locked --python 3.13
+```
+
+Use a native macOS or Linux runtime. See the runtime and SQLite checks if startup fails. [Installation](docs/installation.md)
+
+**2. Connect an MCP client.** The [Codex plugin](docs/quickstart.md#install-the-codex-plugin)
+includes the RNA workflow skill. For direct STDIO registration in Codex,
+run the following from the repository root.
+
+```sh
+repo="$(pwd -P)"
+input_root="$repo/examples/bulk-rnaseq/data"
+workspace="$repo/results/mcp-quickstart"
+mkdir -p "$workspace"
+codex mcp add devharness -- "$repo/.venv/bin/devbench" plugin-mcp \
+  --input-root "$input_root" --workspace "$workspace"
+```
+
+Claude Code, Cursor, and generic STDIO clients can use the same server command.
+[Client setup](docs/quickstart.md)
+
+**3. Ask a question.** In your client, give it the absolute paths to
+`counts.csv` and `design.csv` in the example input directory.
+
+> Use DevHarness to inspect these files. The synthetic study has distinct donors identified by `donor_id`. Check whether treated versus control is estimable with `~ condition + batch`. If the contrast is blocked, explain why and run a descriptive audit of the original counts.
+
+The [single-cell example](examples/single-cell-rnaseq/README.md) shows how accepted
+QC and donor identity govern pseudobulk and relative composition workflows.
+
+## Workflows
+
+| Workflow | Typical starting point |
+| --- | --- |
+| Bulk differential expression and Salmon quantification | Replicated gene counts and study design, or staged reads with pinned references |
+| Single-cell QC, doublets, preparation, and integration | Original counts with capture and batch annotations |
+| Donor-level pseudobulk and scCODA composition | Accepted QC selection, donor identities, and cell-type labels |
+| Neighborhood abundance and bulk deconvolution | A declared embedding or a matched cell-type reference |
+| Pathway testing and spatial patterns | A verified fit and mapped gene sets, or expression with physical coordinates |
+| Cell–cell coexpression and perturbation response | Replicated observations and a declared reference or control group |
+| Phenotype prediction | Donor-linked outcomes with a locked independent evaluation partition |
+
+The exact methods, required inputs, and review points are in the [workflow guide](docs/capabilities.md).
+
+## MCP tools
+
+| Tool | Role |
+| --- | --- |
+| `inspect_rna_inputs` | Identify input types, axes, and bounded metadata |
+| `check_answerability` | Check measurements, design, and route prerequisites |
+| `plan_rna_workflow` | Freeze the workflow, its sources, and the plan digest |
+| `manage_research_aim` | Create, revise, and inspect versioned aims and packages |
+| `execute_reviewed_plan` | Request execution with the exact session, plan ID, and digest |
+| `get_run_status` | Read progress, holds, and failures |
+| `get_execution_receipt` | Read results and verify retained evidence |
+
+[Request examples and field definitions](docs/mcp-tools.md)
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    A["Local input + research question"] --> B["Bounded inspection"]
-    B --> C{"Measurements and design support the question?"}
-    C -->|"Missing or unsupported"| D["Clarification or refusal"]
-    C -->|"Supported route"| E["Freeze input identity and plan"]
-    E --> F{"Review and execution permission?"}
-    F -->|"Pending or denied"| G["Hold with reason"]
-    F -->|"Approved"| H["Execute the exact reviewed plan"]
-    H --> I["Record outcome and evidence"]
-    I --> J["Inspect in Companion Studio"]
+    A["Local inputs and question"] --> B["Inspect and check design"]
+    B --> C["Freeze a plan"]
+    B --> D["Ask for evidence or refuse"]
+    C --> E["Review exact plan"]
+    E --> F["Execute in the selected runtime"]
+    F --> G["Verify receipt and inspect results"]
 ```
 
-The typed MCP interface exposes seven tools over local STDIO. Inspection and planning can run before execution is permitted. Starting a run requires the exact session, plan ID and plan digest. The local service owns review state, bounded execution and receipt verification. The browser renders the resulting session, including holds and failures.
+The MCP server and local Workbench share investigation state. [Architecture and trust boundaries](docs/architecture.md)
 
-| Layer | Code and contracts |
-| --- | --- |
-| Agent interface | [MCP server and tool schemas](src/devbench/platform/plugin_mcp.py) · [Codex plugin](integrations/codex/devharness) |
-| Scientific admission | [Answerability rules](src/devbench/core/rna_answerability.py) · [Contrast design](src/devbench/core/contrast_design.py) |
-| Durable workflow | [Investigation service](src/devbench/platform/workbench_investigations.py) · [LangGraph stage and review contracts](docs/langgraph-workflow.md#enforced-route-and-node-contracts) |
-| Local application | [Workbench service](src/devbench/platform/workbench_ui.py) · [Companion Studio assets](src/devbench/analysis/assets) |
-| Source custody | [Portable source bundles](scripts/source_bundle.py) · [Source include/exclude and tamper checks](tests/test_source_bundle_verification.py) |
+## Evaluation
 
-## Verification and limits
+DevBench defines matched baseline, optional-tool, and enforced-tool conditions.
+The public software checks exercise statistical safeguards and the execution
+contracts against synthetic inputs. [Evaluation design and runnable checks](docs/evaluation.md)
 
-- [Public CI](https://github.com/Vajraaaang/bio-agent-harness/actions/workflows/ci.yml) checks Workbench and source custody contracts and plugin packaging on macOS and Linux. Run `make test` for the local suite and `make test-wheel-custody` for installed-wheel checks with a patched SQLite runtime.
-- The [20-family capability assessment](docs/thesis-goal-and-capability-assessment.md) distinguishes implemented methods, partial support, and missing execution routes. The [method playbooks](docs/references/rna-workbench-method-playbooks-and-literature.md) explain evidence requirements.
-- The [verification archive](https://github.com/Vajraaaang/bio-agent-harness/tree/86df6dd5591f11d4fda5b410dcdaa80b33a439b0/reports) retains earlier software checks and calibration findings. See the [evaluation design](docs/public-three-condition-study.md) for the study boundaries.
-
-Software checks and evidence integrity have separate scopes from comparative scientific effectiveness. Clinical release remains held.
-
-## Related projects
-
-[OpenAI Agents SDK](https://github.com/openai/openai-agents-python) is a reference for typed tools and tracing. [LatchBio scBench](https://github.com/latchbio/scbench) evaluates agents on single-cell analysis tasks, while [CellAtria](https://github.com/AstraZeneca/cellatria) orchestrates single-cell ingestion and analysis. [nf-core/rnaseq](https://nf-co.re/rnaseq) documents a versioned RNA-seq pipeline with explicit inputs and outputs. DevHarness focuses on the local boundary between an agent request, a scientifically admissible plan, and independently inspectable execution evidence.
-
-Code is [MIT licensed](LICENSE). Dataset and reference terms are in [NOTICE.md](NOTICE.md).
+DevHarness is for computational research. Code is [MIT licensed](LICENSE).
+See the [data and reference terms](NOTICE.md) for third-party material.
