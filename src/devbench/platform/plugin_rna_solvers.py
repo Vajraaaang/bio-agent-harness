@@ -405,7 +405,9 @@ def _count_evidence(
     ids, features = tuple(metadata.index), tuple(genes)
     measured = [ObservedMeasurement(expression, "gene_counts", identity, ids, features)]
     if isinstance(choice, SpatialChoice):
-        require_labels(metadata, ("donor_id", "section_id", "cell_type"))
+        require_labels(metadata, ("donor_id", "section_id"))
+        if "cell_type" in metadata:
+            require_labels(metadata, ("cell_type",))
         if not {"x", "y"} <= set(metadata.columns):
             raise ValueError("spatial_coordinates_require_physical_x_and_y_columns")
         numeric_matrix(metadata[["x", "y"]])

@@ -298,7 +298,7 @@ Use the exact profile, contrasts, and unit scope of the registered investigation
 }
 ```
 
-For `fgsea` or `decoupleR`, omit `foreground_q_max`. Ranked staging uses the signed effect from the retained fit. decoupleR needs signed weights aligned with each gene list. Set `parameters.source_session_id` and `parameters.step_id` and omit `pathway_plan` to bind an already queued pathway step, including CAMERA when Studio registered its design and expression inputs.
+For `fgsea` or `decoupleR`, omit `foreground_q_max`. Ranked staging uses the retained p-value and the sign of the fitted effect. The score is `math.copysign(-math.log10(max(p, 1e-300)), effect) if effect else 0.0`. decoupleR needs signed weights aligned with each gene list. Set `parameters.source_session_id` and `parameters.step_id` and omit `pathway_plan` to bind an already queued pathway step, including CAMERA when Studio registered its design and expression inputs.
 
 ### Locally pre-staged FASTQ and Salmon
 
@@ -516,7 +516,7 @@ Stage a sample-by-feature CSV with `sample_id`, aligned metadata containing `don
 
 #### Spatial pattern and colocalization
 
-Stage a spot-by-gene raw-count CSV keyed by `spot_id` and matched `spot_id,donor_id,section_id,x,y,cell_type` metadata. Declare a physical frame and physical units. Graphs are bounded by donor and section. Empty libraries are reported and excluded from the graphs and expression tests. Spatial domains remain gated.
+Stage a spot-by-gene raw-count CSV keyed by `spot_id` and matched `spot_id,donor_id,section_id,x,y` metadata. The `cell_type` column is optional for spot-level spatially variable gene tests. Supply it for cell-type colocalization. Declare a physical frame and physical units. Graphs are bounded by donor and section. Empty libraries are reported and excluded from the graphs and expression tests. Spatial domains remain gated.
 
 ```json
 {

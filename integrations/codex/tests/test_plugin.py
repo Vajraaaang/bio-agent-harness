@@ -3,6 +3,7 @@
 import asyncio
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -39,6 +40,34 @@ def test_manifest_and_inactive_template():
     assert manifest["skills"] == "./skills/"
     assert manifest["interface"]["displayName"] == "DevHarness RNA Research"
     assert json.loads((SOURCE / ".mcp.json").read_text()) == {"mcpServers": {}}
+
+
+def test_pathway_and_spatial_payload_contracts():
+    contracts = (SOURCE / REFERENCES / "mcp-payload-contracts.md").read_text()
+    pathway = contracts.partition("### Gene-list pathway staging after DE\n")[2]
+    pathway = pathway.partition("\n### ")[0]
+    spatial = contracts.partition("#### Spatial pattern and colocalization\n")[2]
+    spatial = spatial.partition("\n#### ")[0]
+    assert "`fgsea` or `decoupleR`" in pathway
+    score = "math.copysign(-math.log10(max(p, 1e-300)), effect) if effect else 0.0"
+    assert score in pathway
+    assert "`spot_id,donor_id,section_id,x,y`" in spatial
+    assert "`cell_type` column is optional" in spatial
+    assert "cell-type colocalization" in spatial
+
+
+def test_retired_codex_package_is_absent():
+    retired = (
+        "devharness-0.1.0.zip",
+        "validation",
+        "package-evidence.json",
+        "package-evidence.sha256",
+        "tests/verify_rna_runtime.py",
+    )
+    assert not [name for name in retired if (SOURCE.parent / name).exists()]
+    readme = (SOURCE.parent / "README.md").read_text()
+    assert "devharness_server" not in readme
+    assert not re.search(r"\b(?:10|ten)[\s-]+tools?\b", readme, re.I)
 
 
 @pytest.mark.parametrize(

@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -163,6 +164,12 @@ def test_local_solvers_round_trip(workspace_tmp_path):
     payloads = {
         operation: _payload(inputs / operation, operation) for operation in operations
     }
+    spatial_without_types = _payload(inputs / "spatial_without_types", "spatial_pattern")
+    metadata = Path(spatial_without_types["inputs"][1]["path"])
+    pd.read_csv(metadata).drop(columns="cell_type").to_csv(metadata, index=False)
+    spatial_without_types["parameters"]["metadata_sha256"] = hashlib.sha256(
+        metadata.read_bytes()
+    ).hexdigest()
     options = StdioServerParameters(
         command=sys.executable,
         args=[
@@ -268,7 +275,8 @@ def test_local_solvers_round_trip(workspace_tmp_path):
                 error=True,
             )
 
-            for operation, payload in payloads.items():
+            for payload in [*payloads.values(), spatial_without_types]:
+                operation = payload["operation"]
                 plan = await call("plan_rna_workflow", payload)
                 assert plan["status"] == "planned"
                 assert plan["runtime"]["oci_digest"] is None
@@ -342,7 +350,17 @@ def test_local_solvers_round_trip(workspace_tmp_path):
                 assert path.is_relative_to(workspace / "runs" / run["run_id"])
                 data = path.read_bytes()
                 assert hashlib.sha256(data).hexdigest() == artifact["sha256"]
-                assert json.loads(data)["clinical_release_allowed"] is False
+                result = json.loads(data)
+                assert result["clinical_release_allowed"] is False
+                if operation == "spatial_pattern":
+                    assert result["status"] == "completed"
+                    assert result["gene_statistics"]
+                    assert result["input_sha256s"]["metadata"] == (
+                        payload["parameters"]["metadata_sha256"]
+                    )
+                    assert bool(result["neighborhood_enrichment"]) == (
+                        payload is not spatial_without_types
+                    )
 
                 if operation == "scrna_ccc":
                     path.chmod(0o600)
