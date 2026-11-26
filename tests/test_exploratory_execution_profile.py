@@ -212,7 +212,7 @@ Path('/outputs/out.json').write_text(json.dumps({'n':len(a),'sum_squares':sum(b)
 @docker
 @wal
 def test_real_training_graph_subgroup_figure_and_protected_grouped_scoring(tmp_path):
-    from devbench.adaptive.policy import GROUPED_EVALUATOR_SOURCE, authorize_holdout
+    from devbench.engine.exploratory_oci import GROUPED_EVALUATOR_SOURCE
     from devbench.engine.workflow_operations import OperationBlocked
     from devbench.platform.method_planner import ScientificMethodPlanner
     from devbench.platform.workflow_entrypoints import advance_adaptive_workflow
@@ -315,7 +315,7 @@ write('out', {'figure_id':'synthetic-subgroup', 'svg':tostring(chart, encoding='
     envelope["step"]["oci_method_version_id"] = alternative["version_id"]
     with pytest.raises(PermissionError, match="exact frozen grouped scoring"):
         worker.validate(envelope)
-    authorize_holdout(flow, "evaluate")
+    flow.authorize_protected_step("evaluate")
     assert advance_adaptive_workflow(planner, "study", ledger=flow.ledger, executor=worker,
         partition_check=partition, actor="tester", allow_data_execution=True)["steps_dispatched"] == 1
     assert all(value == "succeeded" for value in flow.status()["outcomes"].values())
@@ -346,7 +346,7 @@ write('out', {'figure_id':'synthetic-subgroup', 'svg':tostring(chart, encoding='
 @wal
 @pytest.mark.parametrize("fault", ["logs", "file", "symlink"])
 def test_real_overflow_or_link_fails_without_accepted_outputs(tmp_path, fault):
-    from devbench.adaptive.exploration import ExploratoryOCI
+    from devbench.engine.exploratory_oci import ExploratoryOCI
 
     tmp_path = tmp_path.resolve()
     flow = make(tmp_path, name=LEDGER_NAME)
@@ -374,7 +374,7 @@ def test_real_overflow_or_link_fails_without_accepted_outputs(tmp_path, fault):
 
 
 def dispatch_child(root):
-    from devbench.adaptive.exploration import ExploratoryOCI
+    from devbench.engine.exploratory_oci import ExploratoryOCI
     from devbench.engine.workflow_operations import WorkflowOperationLedger
     from devbench.platform.adaptive_workflow import AdaptiveWorkflow
     ledger = WorkflowOperationLedger(root / LEDGER_NAME, scientific=True)
@@ -390,7 +390,7 @@ def test_real_coordinator_death_or_cancel_while_worker_is_alive(tmp_path, effect
     import signal
     import time
 
-    from devbench.adaptive.exploration import ExploratoryOCI
+    from devbench.engine.exploratory_oci import ExploratoryOCI
     from devbench.engine.workflow_operations import OperationBlocked
     from devharness_controlled.native_runtime import LocalDocker, NativeRuntimeError
 
@@ -467,7 +467,7 @@ time.sleep(120)
 @wal
 @pytest.mark.parametrize("interruption", ["before_directory", "before_lease", "before_frozen", "after_frozen"])
 def test_recover_unlaunched_oci_reconciles_and_fences_late_coordinator(tmp_path, monkeypatch, interruption):
-    from devbench.adaptive.exploration import ExploratoryOCI
+    from devbench.engine.exploratory_oci import ExploratoryOCI
 
     root = tmp_path.resolve()
     flow = make(root, name=LEDGER_NAME)
@@ -505,7 +505,7 @@ def test_recover_unlaunched_oci_reconciles_and_fences_late_coordinator(tmp_path,
 @wal
 def test_held_out_failure_embargoes_diagnostics_even_if_cleanup_is_uncertain(tmp_path, monkeypatch):
     from types import SimpleNamespace
-    from devbench.adaptive.exploration import ExploratoryOCI
+    from devbench.engine.exploratory_oci import ExploratoryOCI
     from devbench.engine.partition_authority import PartitionAuthority, embargoed
 
     flow = make(tmp_path.resolve(), name=LEDGER_NAME)

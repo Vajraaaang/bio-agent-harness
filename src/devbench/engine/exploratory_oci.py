@@ -26,6 +26,48 @@ if TYPE_CHECKING:
 
 Document = dict[str, Any]
 
+# Existing registered methods bind the exact bytes of this grouped evaluator.
+GROUPED_EVALUATOR_SOURCE = """\
+import json
+import math
+import statistics
+from pathlib import Path
+
+def read(port):
+    return json.loads(Path('/inputs/' + port).read_bytes())
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+data, model = read('held'), read('model')
+centroids = model['centroids']
+mean = model['mean']
+features = data['features']
+require(features and features == model['features'], 'Evaluation features must match the frozen model')
+require(type(mean) in (int, float) and math.isfinite(mean), 'Frozen model mean must be finite')
+require(type(centroids) is dict and len(centroids) >= 2, 'Frozen model requires at least two centroids')
+require(all(type(v) in (int, float) and math.isfinite(v) for v in centroids.values()),
+        'Frozen model centroids must be finite')
+units = {}
+for row in data['rows']:
+    label = row['label']
+    require(label in centroids, 'Evaluation label is outside the frozen model')
+    recorded, scores = units.setdefault(row['unit'], (label, []))
+    require(recorded == label, 'Evaluation labels disagree within a biological unit')
+    counts = row['counts']
+    require(len(counts) == len(features) and all(type(v) is int and v >= 0 for v in counts),
+            'Evaluation counts must match the frozen features and be nonnegative integers')
+    total = sum(counts)
+    require(total > 0, 'Evaluation library size must be positive')
+    scores.append(math.log1p(counts[0] / total * 10000) - mean)
+require(units, 'Evaluation requires at least one biological unit')
+correct = sum(min(centroids, key=lambda key: (abs(statistics.mean(scores) - centroids[key]), key))
+              == label for label, scores in units.values())
+Path('/outputs/out.json').write_text(json.dumps({'units':len(units), 'accuracy':correct/len(units)},
+                                              allow_nan=False))
+"""  # noqa: E501
+
 
 class ExploratoryOCI:
     """Trusted I/O adapter for custom methods admitted by the adaptive ledger."""
@@ -87,8 +129,6 @@ class ExploratoryOCI:
 
             verify_benchmark_evaluator(self, envelope, contract, parameters)
         elif step.held_out:
-            from devbench.adaptive.policy import GROUPED_EVALUATOR_SOURCE
-
             if (
                 contract["implementation"]["source_sha256"]
                 != hashlib.sha256(GROUPED_EVALUATOR_SOURCE.encode()).hexdigest()

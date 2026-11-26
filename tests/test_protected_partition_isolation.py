@@ -105,13 +105,26 @@ def sealed_fixture(ledger, training, evaluation):
 
 @wal
 def test_embargo_entitlement_and_contamination_are_content_bound(tmp_path):
-    from devbench.adaptive.policy import access_holdout, authorize_holdout, seal_holdout
     from devbench.analysis.episode_evidence_queries import query_result
-    from devbench.analysis.evidence_access import AccessDenied, AccessPolicy, EvidenceBroker
+    from devbench.analysis.evidence_access import (
+        AccessDenied,
+        AccessPolicy,
+        EvidenceBroker,
+    )
+    from devbench.engine.methods import MethodService
+    from devbench.engine.partition_authority import seal_holdout
+    from devbench.engine.workflow_operations import LEDGER_NAME
     from devbench.platform.adaptive_workflow import AdaptiveWorkflow
 
-    flow = make(tmp_path)
-    partition, manifest = sealed_fixture(flow.ledger, digest("training"), digest("evaluation"))
+    root = tmp_path.resolve()
+    flow = make(root, name=LEDGER_NAME)
+    methods = MethodService(root)
+    source = root / "evaluation.json"
+    source.write_text('{"labels": ["synthetic"]}')
+    saved = methods.import_artifact(source, artifact_type="json", actor="tester")
+    partition, manifest = sealed_fixture(
+        flow.ledger, digest("training"), saved["sha256"]
+    )
     held = artifact("evaluation", permitted_uses=("exploratory", "protected_evaluation")).model_copy(
         update={"sha256": manifest["evaluation"]["sha256"], "unit_membership_sha256": manifest["evaluation"]["units_sha256"]})
     flow.register_artifact(held)
@@ -126,10 +139,12 @@ def test_embargo_entitlement_and_contamination_are_content_bound(tmp_path):
                      purpose="protected_evaluation", oci_method_version_id=digest("method"))
     protected.insert(evaluator)
     assert "entitlement" in protected.status()["blocked"]["evaluator"]
-    authorize_holdout(protected, "evaluator")
+    with pytest.raises(PermissionError, match="protected partition custody"):
+        flow.authorize_protected_step("evaluator")
+    protected.authorize_protected_step("evaluator")
     assert "evaluator" in protected.ready()
-    with pytest.raises(PermissionError):
-        access_holdout(partition, "held", "labels", session_id="copy")
+    with pytest.raises(PermissionError, match="exact evaluator entitlement"):
+        methods.artifact_path(saved["artifact_id"])
 
     token = {"attempt": "synthetic"}
     with partition.authority._execution_tx(partition.lineage) as db:
@@ -138,6 +153,13 @@ def test_embargo_entitlement_and_contamination_are_content_bound(tmp_path):
     assert "consumed" in protected.status()["blocked"]["evaluator"]
     copied = PartitionAuthority(flow.ledger, manifest["cohort_sha256"])
     assert seal_holdout(copied, manifest) == "consumed"
+
+    class AlternatePartition(PartitionAuthority):
+        pass
+
+    with pytest.raises(PermissionError, match="exact partition authority"):
+        alternate = AlternatePartition(flow.ledger, manifest["cohort_sha256"])
+        seal_holdout(alternate, manifest)
     with pytest.raises(OperationConflict, match="immutable"):
         seal_holdout(copied, {**manifest, "training": {**manifest["training"], "sha256": digest("alternate")}})
 
@@ -185,7 +207,7 @@ def test_declared_training_scope_without_verified_ancestry_is_blocked(tmp_path):
 
 @wal
 def test_no_binding_recovery_releases_one_shot_for_exact_retry(tmp_path, monkeypatch):
-    from devbench.adaptive.exploration import ExploratoryOCI
+    from devbench.engine.exploratory_oci import ExploratoryOCI
     from devbench.engine.methods import MethodService
     from devbench.platform.adaptive_workflow import AdaptiveWorkflow
     from devbench.platform.workflow_entrypoints import LEDGER_NAME

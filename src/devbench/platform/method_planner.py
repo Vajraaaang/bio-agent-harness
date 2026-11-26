@@ -327,7 +327,7 @@ class ScientificMethodPlanner:
 
     def exploratory_executor(self, session_id, ledger, parameters, *, partition=None):
         """Bind a local exploratory adapter to the existing planner and T11 ledger."""
-        from devbench.adaptive.exploration import ExploratoryOCI
+        from devbench.engine.exploratory_oci import ExploratoryOCI
         from devbench.engine.partition_authority import PartitionAuthority
 
         self.adaptive_workflow(session_id, ledger, partition_check=partition)
@@ -340,8 +340,11 @@ class ScientificMethodPlanner:
                                     verify_provenance, count_path, unit_column, label_column,
                                     evaluation_units, allow_data_execution=False):
         """Materialize a verified cohort in the same workspace as its adaptive evaluator."""
-        from devbench.adaptive.policy import seal_holdout
-        from devbench.engine.partition_authority import PartitionAuthority, materialize_counts
+        from devbench.engine.partition_authority import (
+            PartitionAuthority,
+            materialize_counts,
+            seal_holdout,
+        )
 
         if allow_data_execution is not True:
             raise PermissionError("Protected partitioning requires fresh data execution authority")
