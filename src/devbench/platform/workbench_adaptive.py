@@ -139,7 +139,11 @@ def _plugin_projection(app, binding: WorkbenchAdaptiveBinding) -> dict[str, Any]
             ).fetchone()
             if run is not None:
                 projected = studio_run_projection(
-                    app.workspace, binding.delivery.broker, plan, run, blocked,
+                    app.workspace,
+                    binding.delivery.broker,
+                    plan,
+                    run,
+                    blocked,
                 )
                 if app.offline_only:
                     paths = receipt_plot_paths(sid, projected)
@@ -990,8 +994,11 @@ def _mounted_startup(
 
     lifecycle, review_binding = review
     if (
-        controller is None and tier_a_executor is None
-        and lifecycle is None and review_binding is None and diagnostics is None
+        controller is None
+        and tier_a_executor is None
+        and lifecycle is None
+        and review_binding is None
+        and diagnostics is None
     ):
         ledger = WorkflowOperationLedger(retained.path)
         return ledger, TierAExecutor(
@@ -1058,8 +1065,10 @@ def local_startup_binding(
         )
     config, mounted_image_id, parameters = _startup_manifest(path)
     execution_configured = (
-        mounted_image_id is not None or parameters is not None
-        or controller is not None or tier_a_executor is not None
+        mounted_image_id is not None
+        or parameters is not None
+        or controller is not None
+        or tier_a_executor is not None
     )
     if execution_configured and app.allow_data_execution is not True:
         raise PermissionError(
@@ -1080,11 +1089,17 @@ def local_startup_binding(
             )
     broker = EvidenceBroker.open_existing(retained.scientific)
     broker.check_delivery(
-        config["context_id"], config["source_id"], lineage_id=session_id,
+        config["context_id"],
+        config["source_id"],
+        lineage_id=session_id,
         role="scientist",
     )
     _check_startup_attachment(
-        retained, session_id, mounted_image_id, parameters, controller,
+        retained,
+        session_id,
+        mounted_image_id,
+        parameters,
+        controller,
     )
     if mounted_image_id is not None:
         ledger, tier_a_executor = _mounted_startup(
@@ -1332,7 +1347,10 @@ def adaptive_view(app, session_id, *, cursor=None):
             if not can_retry:
                 raise
         except OperationBlocked as error:
-            if cursor is not None or error.state != "adaptive_projection_changed_before_delivery":
+            if (
+                cursor is not None
+                or error.state != "adaptive_projection_changed_before_delivery"
+            ):
                 raise
             if not can_retry:
                 raise _StudioReadbackChanged(str(error)) from error
@@ -1464,7 +1482,8 @@ def _studio_readback(app, binding, flow, plan, revision) -> dict[str, Any]:
     except (OperationBlocked, OSError, sqlite3.DatabaseError):
         pass  # Keep the admitted graph usable if optional retained evidence is absent.
     if (
-        app.offline_only and classification == "private"
+        app.offline_only
+        and classification == "private"
         and binding.delivery.context_id == "plugin-scientist-" + flow.lineage_id
     ):
         extra.update(_offline_plugin_results(app, flow.lineage_id))
@@ -1545,20 +1564,22 @@ def _approved_qc_candidate(app, binding, flow):
         return None
     with flow._read_connection() as db:
         controller = flow.controller_state(connection=db)
-        if (
-            (controller["binding"] or {}).get("scope") != "local_interactive_codex"
-            or controller["pending"] is not None
-        ):
+        if (controller["binding"] or {}).get(
+            "scope"
+        ) != "local_interactive_codex" or controller["pending"] is not None:
             return None
         state = flow._state(db)
         selected = {
-            row["result"].get("step_id") for row in controller["decisions"]
+            row["result"].get("step_id")
+            for row in controller["decisions"]
             if row["result"].get("kind") == "insert"
             and row["result"].get("status") == "applied"
         }
         ready = [
-            name for name in flow._status(db, state)["ready"]
-            if name in selected and state.generations[name] == 1
+            name
+            for name in flow._status(db, state)["ready"]
+            if name in selected
+            and state.generations[name] == 1
             and state.nodes[name].operation_id == "scrna_batch_qc"
             and state.nodes[name].purpose == "checked_observation"
         ]
@@ -1621,6 +1642,10 @@ def _run_operator_step(app, binding, flow, request, revision):
         )
     )
     actions.perform_adaptive(flow, supplied["step_id"], expected_revision=revision)
+    if supplied["step_id"] == _OPERATOR_BULK_STEP:
+        from .plugin_bulk_receipts import publish_reviewed_bulk_receipts
+
+        publish_reviewed_bulk_receipts(app.workspace, flow.lineage_id)
     return {
         "mode": ADAPTIVE_MODE,
         "steps_dispatched": 1,
@@ -1635,13 +1660,17 @@ def _run_approved_qc(app, binding, flow, request, revision):
     if _approved_qc_candidate(app, binding, flow) != supplied:
         raise OperationBlocked("current_checked_observation_required")
     actions = WorkflowActions(
-        app.scientific.planner(), flow.ledger, actor="workbench-operator",
-        selector=None, allow_data_execution=True,
+        app.scientific.planner(),
+        flow.ledger,
+        actor="workbench-operator",
+        selector=None,
+        allow_data_execution=True,
         tier_a_executor=binding.tier_a_executor,
     )
     actions.perform_adaptive(flow, supplied["step_id"], expected_revision=revision)
     return {
-        "mode": "adaptive/1", "steps_dispatched": 1,
+        "mode": "adaptive/1",
+        "steps_dispatched": 1,
         "revision": _graph_revision(flow),
     }
 
@@ -1733,14 +1762,26 @@ def _open_requested_controller(app, plan, binding, flow, request):
 
 
 def _authorize_adaptive_advance(
-    app, plan, binding, flow, request, name, state, revision,
+    app,
+    plan,
+    binding,
+    flow,
+    request,
+    name,
+    state,
+    revision,
 ):
     updated = _open_requested_controller(app, plan, binding, flow, request)
     if updated is not binding:
         revision = _graph_revision(flow)
         state = flow.controller_state()
     _require_adaptive_controller_action(
-        app, plan, request, name, updated.controller, state,
+        app,
+        plan,
+        request,
+        name,
+        updated.controller,
+        state,
     )
     return updated, revision
 
@@ -1783,13 +1824,21 @@ def adaptive_action(app, session_id, request):
     app._require_current_runtime()
     if name in {"advance", "resume"}:
         binding, revision = _authorize_adaptive_advance(
-            app, plan, binding, flow, request, name, controller_state, revision,
+            app,
+            plan,
+            binding,
+            flow,
+            request,
+            name,
+            controller_state,
+            revision,
         )
     with app._lock:
         with flow._read_connection() as db:
-            if session_id in app._adaptive_operations or _graph_revision(
-                flow, connection=db
-            ) != revision:
+            if (
+                session_id in app._adaptive_operations
+                or _graph_revision(flow, connection=db) != revision
+            ):
                 raise OperationConflict(
                     "Adaptive operation already active or graph revision changed"
                 )
@@ -1797,7 +1846,12 @@ def adaptive_action(app, session_id, request):
         app._adaptive_operations.add(session_id)
     try:
         return _dispatch_adaptive_action(
-            app, binding, flow, name, request, ledger_revision,
+            app,
+            binding,
+            flow,
+            name,
+            request,
+            ledger_revision,
         )
     finally:
         with app._lock:

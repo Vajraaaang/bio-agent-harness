@@ -296,8 +296,9 @@ class JobStore:
             "ON plugin_plans(session_id, created_at DESC)"
         )
 
-    def _connect(self) -> sqlite3.Connection:
-        db = sqlite3.connect(self.path.as_uri() + "?mode=rw", uri=True, timeout=10)
+    def _connect(self, *, readonly: bool = False) -> sqlite3.Connection:
+        mode = "ro" if readonly else "rw"
+        db = sqlite3.connect(f"{self.path.as_uri()}?mode={mode}", uri=True, timeout=10)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
         return db
@@ -369,7 +370,7 @@ class JobStore:
         )
 
     def has_private_input(self, fingerprints: set[str | None]) -> bool:
-        with closing(self._connect()) as db:
+        with closing(self._connect(readonly=True)) as db:
             return self._has_private_input(db, fingerprints)
 
     @staticmethod
@@ -409,7 +410,7 @@ class JobStore:
             yield plan, protected
 
     def plan(self, sid: str, plan_id: str | None = None) -> dict[str, Any]:
-        with closing(self._connect()) as db:
+        with closing(self._connect(readonly=True)) as db:
             if plan_id is not None:
                 row = db.execute(
                     "SELECT * FROM plugin_plans WHERE session_id=? AND plan_id=?",
@@ -558,11 +559,40 @@ class JobStore:
         row = self.managed_run(rid)
         if row is None:
             self.reconcile()
-            with closing(self._connect()) as db:
+        return self._selected_run(sid, rid, row)
+
+    def read_run(self, sid: str, rid: str) -> dict[str, Any]:
+        """Observe a managed or legacy run without initializing or reconciling jobs."""
+        from devbench.engine.workflow_operations import (
+            LEDGER_NAME,
+            WorkflowOperationLedger,
+        )
+
+        def managed(db):
+            if db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='scientific_daemon_runs'"
+            ).fetchone():
+                return db.execute(
+                    "SELECT * FROM scientific_daemon_runs WHERE run_id=?", (rid,)
+                ).fetchone()
+            return None
+
+        path = self.workspace / "methods" / LEDGER_NAME
+        row = None
+        if path.exists() or path.is_symlink():
+            row = WorkflowOperationLedger(path, readonly=True)._read(managed)
+        return self._selected_run(sid, rid, row)
+
+    def _selected_run(self, sid, rid, row) -> dict[str, Any]:
+        if row is None:
+            with closing(self._connect(readonly=True)) as db:
                 row = db.execute(
                     "SELECT * FROM plugin_runs WHERE session_id=? AND run_id=?",
                     (sid, rid),
                 ).fetchone()
+            if row is not None:
+                row = {**row, **_legacy_interruption(row)}
         if row is None or row["session_id"] != sid:
             raise OperationBlocked("unknown_run")
         return self.visible_run(row)
@@ -756,28 +786,35 @@ class JobStore:
         """Only reconcile unmanaged rows from installations predating the daemon."""
         with self._write() as db:
             for row in db.execute(
-                "SELECT run_id, pid, stage_json FROM plugin_runs "
+                "SELECT run_id, pid, stage_json, status FROM plugin_runs "
                 "WHERE status IN ('running','queued') AND "
                 "coalesce(json_extract(stage_json,'$.daemon_managed'),0)=0"
             ).fetchall():
-                stage = json.loads(row["stage_json"])
-                if _worker_alive(row["pid"], stage.get("process_created_at")):
+                update = _legacy_interruption(row)
+                if not update:
                     continue
-                # A missing worker cannot verify its descendants or OCI containers.
-                # Preserve the uncertain cleanup for the daemon migration.
-                stage["cleanup_state"] = "unconfirmed"
-                now = time.time()
                 db.execute(
-                    "UPDATE plugin_runs SET status='interrupted', error_text=?, "
-                    "stage_json=?,updated_at=?,finished_at=? WHERE run_id=?",
-                    (
-                        "worker_not_running",
-                        canonical(stage).decode(),
-                        now,
-                        now,
-                        row["run_id"],
-                    ),
+                    "UPDATE plugin_runs SET status=:status, error_text=:error_text, "
+                    "stage_json=:stage_json,updated_at=:now,finished_at=:now "
+                    "WHERE run_id=:run_id",
+                    {**update, "now": time.time(), "run_id": row["run_id"]},
                 )
+
+
+def _legacy_interruption(row) -> dict[str, str]:
+    if row["status"] not in ACTIVE:
+        return {}
+    stage = json.loads(row["stage_json"])
+    if stage.get("daemon_managed") or _worker_alive(
+        row["pid"], stage.get("process_created_at")
+    ):
+        return {}
+    # A missing worker cannot confirm that descendants and containers stopped.
+    return {
+        "status": "interrupted",
+        "error_text": "worker_not_running",
+        "stage_json": canonical({**stage, "cleanup_state": "unconfirmed"}).decode(),
+    }
 
 
 def _worker_alive(pid: int | None, created: float | None) -> bool:

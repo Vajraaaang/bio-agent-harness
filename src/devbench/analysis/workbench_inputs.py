@@ -59,6 +59,13 @@ def _names(group, maximum):
 def _h5ad_node(group, name):
     import h5py
 
+    if (
+        not isinstance(name, str)
+        or "/" in name
+        or name in ("", ".", "..")
+        or "\0" in name
+    ):
+        raise ValueError("Expected a direct AnnData header name")
     link = group.get(name, getlink=True)
     if link is None:
         raise ValueError("Required AnnData header is missing: " + name)
@@ -66,7 +73,10 @@ def _h5ad_node(group, name):
         raise ValueError(
             "External and symbolic HDF5 links are not permitted in inspected headers"
         )
-    return group[name]
+    node = group[name]
+    if isinstance(node, h5py.Dataset) and (node.external or node.is_virtual):
+        raise ValueError("External and virtual AnnData storage is not permitted")
+    return node
 
 
 def _h5ad_attribute(group, name, limit):
@@ -81,28 +91,106 @@ def _h5ad_attribute(group, name, limit):
     return group.attrs[name]
 
 
+def _h5ad_text(value):
+    if isinstance(value, bytes):
+        value = value.decode("utf-8")
+    if not isinstance(value, str) or not 1 <= len(value) <= 200:
+        raise ValueError("AnnData header label exceeds the metadata bounds")
+    return value
+
+
+def _h5ad_sparse_layout(group) -> tuple[str | None, tuple[int, int]]:
+    """Read only sparse metadata, including the pre-0.7 AnnData encoding."""
+    shape = None
+    for key in ("shape", "h5sparse_shape"):
+        if key in group.attrs:
+            attr = group.attrs.get_id(key)
+            if attr.shape != (2,) or attr.dtype.kind not in "iu":
+                raise ValueError(
+                    "Sparse AnnData shape must have two integer dimensions"
+                )
+            rows, columns = map(int, group.attrs[key])
+            if min(rows, columns) < 1:
+                raise ValueError("Sparse AnnData shape must be nonempty")
+            if shape is not None and shape != (rows, columns):
+                raise ValueError("Sparse AnnData shape headers conflict")
+            shape = (rows, columns)
+    if shape is None:
+        raise ValueError("Sparse AnnData matrix shape header is missing")
+
+    modern = _h5ad_attribute(group, "encoding-type", 1)
+    legacy = _h5ad_attribute(group, "h5sparse_format", 1)
+    encoding = _h5ad_text(modern) if modern is not None else None
+    if legacy is not None:
+        legacy_encoding = _h5ad_text(legacy) + "_matrix"
+        if encoding is not None and encoding != legacy_encoding:
+            raise ValueError("Sparse AnnData layout headers conflict")
+        encoding = legacy_encoding
+    layout = {"csr_matrix": "csr", "csc_matrix": "csc"}.get(encoding)
+    return layout, shape
+
+
+def _h5ad_record_fields(node, maximum):
+    if node.ndim != 1 or not node.dtype.names:
+        raise ValueError(
+            "Legacy AnnData metadata requires a one-dimensional record array"
+        )
+    return _names(node.dtype.names, maximum)
+
+
+def _h5ad_index_name(node) -> str:
+    import h5py
+
+    if isinstance(node, h5py.Dataset):
+        # Legacy AnnData frames store their index in the first compound field.
+        if node.ndim != 1 or not node.dtype.names:
+            raise ValueError("Legacy AnnData identity header requires a record array")
+        return _h5ad_text(node.dtype.names[0])
+    value = _h5ad_attribute(node, "_index", 1)
+    return "_index" if value is None else _h5ad_text(value)
+
+
 def _h5ad_axis_header(handle, name, maximum):
     import h5py
 
-    def plain(value):
-        result = value.decode("utf-8") if isinstance(value, bytes) else str(value)
-        if not 1 <= len(result) <= 200:
-            raise ValueError("AnnData header label exceeds the metadata budget")
-        return result
-
     group = _h5ad_node(handle, name)
+    if isinstance(group, h5py.Dataset):
+        fields = _h5ad_record_fields(group, maximum + 1)
+        return group.shape[0], fields[1:]
     if not isinstance(group, h5py.Group):
         raise ValueError("AnnData observation/feature headers must be groups")
     available = _names(group, maximum + 1)
     for column in available:
         _h5ad_node(group, column)  # Reject links without materializing any values.
-    index_name = plain(_h5ad_attribute(group, "_index", 1) or "_index")
+    index_name = _h5ad_index_name(group)
     index = _h5ad_node(group, index_name)
-    if not isinstance(index, h5py.Dataset) or len(index.shape) != 1:
+    if isinstance(index, h5py.Group):
+        if _h5ad_attribute(index, "encoding-type", 1) != "categorical":
+            raise ValueError("Unsupported AnnData identity encoding")
+        levels = _h5ad_node(index, "categories")
+        if (
+            not isinstance(levels, h5py.Dataset)
+            or levels.ndim != 1
+            or not levels.size
+            or h5py.check_string_dtype(levels.dtype) is None
+        ):
+            raise ValueError(
+                "Categorical AnnData identifiers require a text level axis"
+            )
+        index = _h5ad_node(index, "codes")
+        if (
+            not isinstance(index, h5py.Dataset)
+            or index.ndim != 1
+            or index.dtype.kind not in "iu"
+        ):
+            raise ValueError(
+                "Categorical AnnData identifiers require an integer code axis"
+            )
+    elif not isinstance(index, h5py.Dataset) or index.ndim != 1:
         raise ValueError("AnnData identity header must have one dimension")
     order = _h5ad_attribute(group, "column-order", maximum)
     columns = (
-        [plain(value) for value in order]
+        [_h5ad_text(value) for value in order]
         if order is not None
         else [value for value in available if value != index_name]
     )
@@ -115,12 +203,18 @@ def _h5ad_axis_header(handle, name, maximum):
     return int(index.shape[0]), columns
 
 
-def _h5ad_members(handle, name, maximum):
+def _h5ad_members(handle, name, maximum, *, expected_rows=None):
     import h5py
 
     if name not in handle:
         return []
     group = _h5ad_node(handle, name)
+    if name == "obsm" and isinstance(group, h5py.Dataset):
+        if group.shape != (expected_rows,):
+            raise ValueError(
+                "Legacy AnnData embeddings do not match the observation axis"
+            )
+        return _h5ad_record_fields(group, maximum)
     if not isinstance(group, h5py.Group):
         raise ValueError("AnnData named metadata collection must be a group")
     names = _names(group, maximum)
@@ -136,9 +230,7 @@ def _h5ad_header(handle, maximum):
     if isinstance(matrix, h5py.Dataset):
         shape = matrix.shape
     elif isinstance(matrix, h5py.Group):
-        shape = _h5ad_attribute(matrix, "shape", 2)
-        if shape is None:
-            raise ValueError("Sparse AnnData matrix shape header is missing")
+        _, shape = _h5ad_sparse_layout(matrix)
     else:
         raise ValueError("AnnData X must have a matrix shape header")
     if len(shape) != 2 or any(int(value) < 1 for value in shape):
@@ -153,7 +245,7 @@ def _h5ad_header(handle, maximum):
         "obs_columns": obs_columns,
         "var_columns": var_columns,
         "layers": _h5ad_members(handle, "layers", maximum),
-        "obsm_keys": _h5ad_members(handle, "obsm", maximum),
+        "obsm_keys": _h5ad_members(handle, "obsm", maximum, expected_rows=cells),
         "header_status": "inspected",
         "annotation_values_read": False,
     }

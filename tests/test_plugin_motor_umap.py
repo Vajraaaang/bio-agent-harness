@@ -68,6 +68,7 @@ def test_motor_umap_roundtrip(workspace_tmp_path):
             "-B",
             "-c",
             entrypoint,
+            "--open-browser",
             "--input-root",
             str(inputs),
             "--workspace",
@@ -142,7 +143,7 @@ def test_motor_umap_roundtrip(workspace_tmp_path):
             "label_column": "celltypes",
             "counts_layer": "counts",
         }
-        _run_through_studio(response)
+        _run_through_studio(response, workspace)
     finally:
         if marker.is_file():
             state = json.loads(marker.read_text())
@@ -156,7 +157,9 @@ def test_motor_umap_roundtrip(workspace_tmp_path):
                 pass
 
 
-def _run_through_studio(response):
+def _run_through_studio(response, workspace):
+    from devbench.daemon.auth import read_token
+
     url = urlsplit(response["studio_url"])
     assert url.scheme == "http" and url.hostname == "127.0.0.1" and url.port
     assert parse_qs(url.query) == {
@@ -165,10 +168,11 @@ def _run_through_studio(response):
     }
     origin = f"{url.scheme}://{url.netloc}"
     connection = http.client.HTTPConnection(url.hostname, url.port, timeout=6)
+    auth = {"Authorization": f"Bearer {read_token(workspace)}"}
     api = "/api/scientific/adaptive/" + response["session_id"]
 
     def get_view(*, allow_revision_change=False):
-        connection.request("GET", api)
+        connection.request("GET", api, headers=auth)
         reply = connection.getresponse()
         payload = json.loads(reply.read())
         if (
@@ -191,7 +195,7 @@ def _run_through_studio(response):
                     "allow_data_execution": allow,
                 }
             ),
-            headers={"Origin": origin, "Content-Type": "application/json"},
+            headers={**auth, "Origin": origin, "Content-Type": "application/json"},
         )
         reply = connection.getresponse()
         return reply.status, json.loads(reply.read())
@@ -216,7 +220,7 @@ def _run_through_studio(response):
         assert [stage["neuron"] for stage in view["stages"]] == [0, 5, 10]
         for kind in ("umap", "markers", "coordinates", "composition", "parameters"):
             artifact = view["artifacts"][kind]
-            connection.request("GET", artifact["url"])
+            connection.request("GET", artifact["url"], headers=auth)
             reply = connection.getresponse()
             data = reply.read()
             assert reply.status == 200

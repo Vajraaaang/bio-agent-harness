@@ -10,13 +10,15 @@ import json
 import math
 import os
 import re
+import shutil
 import sqlite3
 import stat
 import sys
 import time
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, suppress
 from dataclasses import replace
+from decimal import Decimal, InvalidOperation
 from errno import EEXIST, ENOTEMPTY
 from pathlib import Path
 from sqlite3 import Connection
@@ -43,8 +45,18 @@ from pydantic import (
 from devbench.analysis.evidence_access import AccessPolicy, EvidenceBroker
 from devbench.analysis.literature_adapter import LiteratureRequest
 from devbench.analysis.thesis_synthesis import ThesisSynthesisSpec
-from devbench.analysis.workbench_inputs import InputDiscovery
+from devbench.analysis.workbench_inputs import (
+    InputDiscovery,
+    _h5ad_sparse_layout,
+)
+from devbench.core.count_forensics import (
+    CONFLICTING_PROVENANCE,
+    SUSPECTED_TRANSFORM,
+    CountDistribution,
+    declares_count_transform,
+)
 from devbench.core.procedure_profile import ProcedureProfile
+from devbench.core.protected_partitions import PartitionVault
 from devbench.core.rna_answerability import (
     RNA_FAMILIES,
     AnswerabilityRequest,
@@ -59,6 +71,7 @@ from devbench.core.scrna_composition import CompositionObservationSpec, Composit
 from devbench.engine.workflow_operations import OperationBlocked, OperationConflict
 from devbench.engine.workspace import read_bounded_file
 from devbench.study.permissions import require_protected_storage
+from devharness_core.watchdog import RemoteWorkerError
 from rna_kernels.scrna_upstream_contract import SingleCellStepSpec
 
 from .plugin_jobs import (
@@ -70,6 +83,7 @@ from .plugin_jobs import (
     ensure_offline_studio,
     studio_handoff,
 )
+from .plugin_mcp_output import output_schema
 from .plugin_rna_solvers import (
     LOCAL_OPERATIONS,
     CCCChoice,
@@ -145,10 +159,17 @@ class LocalDesign(_Args):
     batch_columns: list[_TEXT] = Field(default_factory=list, max_length=16)
 
 
+class _Count1Confirmation(_Args):
+    source_sha256: _SHA
+    slot: _TEXT
+    evidence: Annotated[str, Field(min_length=1, max_length=1600, pattern=r"\S")]
+
+
 class Answerability(_Args):
     measurement: Literal["umi_counts", "non_umi_counts"] | None = None
     count_provenance: _TEXT | None = None
     counts_layer: _TEXT | None = None
+    count1_confirmation: _Count1Confirmation | None = None
     batch_column: _TEXT | None = None
     capture_column: _TEXT | None = None
     capture_units_confirmed: bool = False
@@ -629,7 +650,15 @@ def _profile(discovery: InputDiscovery, root: Path, item: Input) -> dict[str, An
     else:
         if not path.is_file():
             raise ValueError("Input requires a supported regular file or Zarr group")
-        profile = discovery.inspect(path, stream_selected_h5ad=declared_private)
+        try:
+            profile = discovery.inspect(path, stream_selected_h5ad=True)
+        except RemoteWorkerError as error:
+            if path.suffix.lower() != ".h5ad":
+                raise
+            # Worker tracebacks may include private filenames, fields or values.
+            raise OperationBlocked(
+                _PRIVATE if declared_private else "h5ad_header_inspection_failed"
+            ) from error
     obs = profile["observed"]
     names = (
         name
@@ -648,8 +677,8 @@ def _profile(discovery: InputDiscovery, root: Path, item: Input) -> dict[str, An
 
 _TABLE_TYPES = {"csv", "tsv", "csv.gz", "tsv.gz"}
 _AXIS_BUDGET = 4 * 1024 * 1024
-_H5_FILE_BUDGET = 100 * 1024 * 1024
 _H5_BLOCK = 1024 * 1024
+_H5_MAX_DECODED_CHUNK = 64 * 1024 * 1024
 _H5_LAYOUTS = {"10x_cellranger"}
 _FEATURE_LABELS = {"gene_id", "gene", "gene_name", ""}
 _METADATA_IDENTITIES = {
@@ -691,10 +720,31 @@ def _valid_numeric_table_row(row: list[str], measurement: str) -> bool:
     )
 
 
+def _observe_table_counts(values: list[str], distribution: CountDistribution) -> bool:
+    counts = []
+    for text in values:
+        # Do not round a fractional decimal through binary floating point.
+        try:
+            value = Decimal(text)
+        except InvalidOperation:
+            return False
+        if (
+            not value.is_finite()
+            or not 0 <= value < 2**53
+            or value != value.to_integral_value()
+        ):
+            return False
+        counts.append(int(value))
+    distribution.observe(counts)
+    return True
+
+
 def _table_axes(
     profile: dict[str, Any],
     *,
     verify_counts: bool = False,
+    count1_confirmed: bool = False,
+    maximum: int = _AXIS_BUDGET,
     numeric_measurement: Literal[
         "normalized_expression", "estimated_gene_counts", "effective_lengths"
     ]
@@ -711,9 +761,10 @@ def _table_axes(
             ),
             **({"feature_axis_sha256": digest(feature_ids)} if feature_ids else {}),
         }
+    from devbench.analysis.rna_input_contract import MAX_GENES
     from devbench.analysis.workbench_episode_intake import _expression_rows
 
-    with _expression_rows(profile, maximum=_AXIS_BUDGET) as rows:
+    with _expression_rows(profile, maximum=maximum) as rows:
         header: list[str] = next(rows, [])
         if len(header) < 2 or header[0] not in _FEATURE_LABELS:
             return {}
@@ -721,12 +772,22 @@ def _table_axes(
         if len(set(observations)) != len(observations):
             return {}
         features = []
+        distribution = (
+            CountDistribution(major_width=len(observations), libraries_in_rows=False)
+            if verify_counts
+            else None
+        )
         for row in rows:
-            if len(row) != len(header) or not row[0] or len(row[0]) > 200:
+            if (
+                maximum > _AXIS_BUDGET
+                and len(features) >= MAX_GENES
+                or len(row) != len(header)
+                or not row[0]
+                or len(row[0]) > 200
+            ):
                 return {}
-            if verify_counts and any(
-                not value.isdecimal() or not 0 <= int(value) < 2**53
-                for value in row[1:]
+            if distribution is not None and not _observe_table_counts(
+                row[1:], distribution
             ):
                 return {}
             if numeric_measurement and not _valid_numeric_table_row(
@@ -737,6 +798,12 @@ def _table_axes(
             features.append(row[0])
     if not features or len(set(features)) != len(features):
         return {}
+    if (
+        distribution is not None
+        and distribution.suspected_transform
+        and not count1_confirmed
+    ):
+        raise OperationBlocked(SUSPECTED_TRANSFORM)
     return {
         "observation_axis_sha256": digest(sorted(observations)),
         "feature_axis_sha256": digest(features),
@@ -746,9 +813,11 @@ def _table_axes(
 def _validate_h5_dataset(node) -> None:
     import h5py
 
+    if node.external or node.is_virtual:
+        raise ValueError("HDF5 inspection requires internal dataset storage")
     if (
         node.chunks
-        and math.prod(node.chunks) * max(node.dtype.itemsize, 8) > 8 * _H5_BLOCK
+        and math.prod(node.chunks) * node.dtype.itemsize > _H5_MAX_DECODED_CHUNK
     ):
         raise ValueError("HDF5 decoded chunk exceeds the inspection limit")
     filters = node.id.get_create_plist()
@@ -764,6 +833,52 @@ def _validate_h5_dataset(node) -> None:
         raise ValueError("HDF5 uses an unsupported inspection filter")
 
 
+def _h5_matrix_values(element, shape, layout):
+    """Return the backed value dataset only after validating its storage and axes."""
+    import h5py
+
+    from devbench.core.population_data import _node, _sparse_components
+
+    if layout in {"csr", "csc"}:
+        for key in ("data", "indices", "indptr"):
+            node = _node(element, key)
+            if not isinstance(node, h5py.Dataset):
+                return None
+            _validate_h5_dataset(node)
+        values, indices, pointers = _sparse_components(
+            element, shape, layout, _H5_BLOCK
+        )
+        return values if _canonical_sparse_indices(indices, pointers) else None
+    if layout is None and isinstance(element, h5py.Dataset) and element.shape == shape:
+        _validate_h5_dataset(element)
+        return element
+    return None
+
+
+def _h5_declares_count_transform(element) -> bool:
+    import h5py
+    import numpy as np
+
+    def text(key):
+        if key not in element.attrs:
+            return None
+        with closing(element.attrs.get_id(key)) as attr:
+            encoding = h5py.check_string_dtype(attr.dtype)
+            if attr.shape != () or encoding is None:
+                return None
+            target = np.empty(
+                (), dtype=h5py.string_dtype(encoding.encoding, length=129)
+            )
+            with closing(h5py.h5t.py_create(target.dtype, logical=True)) as bounded:
+                attr.read(target, mtype=bounded)
+        raw = target.item()
+        if len(raw) > 128:
+            raise ValueError("HDF5 processing label exceeds the metadata bound")
+        return raw.decode(encoding.encoding)
+
+    return declares_count_transform(text("representation"), text("transformation"))
+
+
 def _verify_h5_counts(
     element,
     shape: tuple[int, int],
@@ -771,36 +886,30 @@ def _verify_h5_counts(
     *,
     integer: bool = True,
     nonnegative: bool = True,
+    count1_flags: set[str] | None = None,
+    libraries_in_rows: bool = True,
 ) -> bool:
-    import h5py
     import numpy as np
 
-    from devbench.core.population_data import _node, _sparse_components
-
-    if layout in {"csr", "csc"}:
-        nodes = [_node(element, key) for key in ("data", "indices", "indptr")]
-        if any(not isinstance(node, h5py.Dataset) for node in nodes):
-            return False
-        if sum(node.nbytes for node in nodes) > _H5_FILE_BUDGET:
-            return False
-        for node in nodes:
-            _validate_h5_dataset(node)
-        values, indices, pointers = _sparse_components(
-            element, shape, layout, _H5_BLOCK
+    values = _h5_matrix_values(element, shape, layout)
+    if values is None or values.dtype.kind not in "iuf" or min(shape) < 1:
+        return False
+    if integer and _h5_declares_count_transform(element):
+        if count1_flags is not None:
+            count1_flags.add(CONFLICTING_PROVENANCE)
+        return False
+    distribution = (
+        CountDistribution(
+            total_values=math.prod(shape),
+            major_width=shape[0] if layout == "csc" else shape[1],
+            libraries_in_rows=not libraries_in_rows
+            if layout == "csc"
+            else libraries_in_rows,
         )
-        if not _canonical_sparse_indices(indices, pointers):
-            return False
-    elif isinstance(element, h5py.Dataset) and element.shape == shape:
-        values = element
-        _validate_h5_dataset(values)
-    else:
-        return False
-    if values.dtype.kind not in "iuf" or values.nbytes > _H5_FILE_BUDGET:
-        return False
-    width = shape[1] if values.ndim == 2 else 1
-    block = max(1, _H5_BLOCK // (width * values.dtype.itemsize))
-    for start in range(0, values.shape[0], block):
-        chunk = values[start : start + block]
+        if integer
+        else None
+    )
+    for chunk in _h5_value_blocks(values):
         if (
             not np.isfinite(chunk).all()
             or (nonnegative and np.any(chunk < 0))
@@ -812,7 +921,27 @@ def _verify_h5_counts(
             )
         ):
             return False
+        if distribution is not None:
+            distribution.observe(chunk)
+    if distribution is not None and distribution.suspected_transform:
+        if count1_flags is not None:
+            count1_flags.add(SUSPECTED_TRANSFORM)
+        return False
     return True
+
+
+def _h5_value_blocks(values):
+    """Read in storage order, splitting even a single very wide dense row."""
+    elements = max(1, _H5_BLOCK // values.dtype.itemsize)
+    if values.ndim == 1:
+        for start in range(0, values.size, elements):
+            yield values[start : start + elements]
+        return
+    width = min(values.shape[1], elements)
+    height = max(1, elements // width)
+    for row in range(0, values.shape[0], height):
+        for col in range(0, values.shape[1], width):
+            yield values[row : row + height, col : col + width]
 
 
 def _canonical_sparse_indices(indices, pointers) -> bool:
@@ -832,107 +961,86 @@ def _canonical_sparse_indices(indices, pointers) -> bool:
     return True
 
 
-def _h5_labels(node, expected: int, *, categorical: bool = True) -> list[str]:
-    import h5py
-
-    if not 0 < expected <= 200_000:
-        raise ValueError("HDF5 label axis exceeds the inspection budget")
-    if isinstance(node, h5py.Group):
-        if not categorical or node.attrs.get("encoding-type") != "categorical":
-            raise ValueError("Unsupported HDF5 label encoding")
-        return _h5_categorical_labels(node, expected)
-    if node.shape != (expected,) or h5py.check_string_dtype(node.dtype) is None:
-        raise ValueError("HDF5 axis requires bounded text labels")
-    _validate_h5_dataset(node)
-    labels = []
-    limit = 8 * _H5_BLOCK
-    reader = node.asstr()
-    for start in range(0, expected, 256):
-        chunk = reader[start : start + 256]
-        for value in chunk:
-            if not value.strip() or len(value) > 200 or "\x00" in value:
-                raise ValueError("HDF5 label exceeds the supported size or is empty")
-            limit -= len(value.encode("utf-8")) + 32
-            if limit < 0:
-                raise ValueError("HDF5 labels exceed the decoded inspection budget")
-            labels.append(value)
-    return labels
-
-
-def _h5_categorical_labels(node, expected: int) -> list[str]:
-    import h5py
-
-    from devbench.core.population_data import _node
-
-    codes, categories = (_node(node, key) for key in ("codes", "categories"))
-    if not isinstance(codes, h5py.Dataset) or (
-        codes.shape != (expected,) or codes.dtype.kind not in "iu"
-    ):
-        raise ValueError("HDF5 categorical codes do not match their label axis")
-    if not isinstance(categories, h5py.Dataset) or categories.ndim != 1:
-        raise ValueError("HDF5 categorical levels must be a text axis")
-    _validate_h5_dataset(codes)
-    labels = _h5_labels(categories, categories.shape[0], categorical=False)
-    return _decode_h5_categories(codes, labels, expected)
-
-
-def _decode_h5_categories(codes, labels: list[str], expected: int) -> list[str]:
-    import numpy as np
-
-    result: list[str] = []
-    for start in range(0, expected, 4096):
-        indices = codes[start : start + 4096]
-        if np.any(indices < 0) or np.any(indices >= len(labels)):
-            raise ValueError(
-                "HDF5 categorical annotation has missing or invalid labels"
-            )
-        result.extend(labels[code] for code in indices)
-    return result
-
-
-def _h5_index(group, expected: int) -> str:
-    import h5py
-
-    from devbench.core.population_data import _node
-    from rna_kernels.canonical import canonical_json
-
-    if not isinstance(group, h5py.Group) or (
-        "_index" in group.attrs and group.attrs.get_id("_index").shape != ()
-    ):
-        raise ValueError("Expected a scalar identifier for the AnnData index")
-    labels = _h5_labels(_node(group, group.attrs.get("_index", "_index")), expected)
-    if len(set(labels)) != expected:
-        raise ValueError("AnnData axis identifiers are not unique")
-    return hashlib.sha256(canonical_json(labels)).hexdigest()
-
-
-def _h5_annotation_values(node, column: str, expected: int) -> list[str]:
-    import h5py
-    import numpy as np
-
-    if (
-        column == "label"
-        and isinstance(node, h5py.Dataset)
-        and node.shape == (expected,)
-        and node.dtype.kind in "iub"
-    ):
-        if node.nbytes > _H5_BLOCK or expected > _H5_BLOCK // 32:
-            raise ValueError("Binary labels exceed the inspection budget")
-        _validate_h5_dataset(node)
-        values = node[:]
-        if not np.isin(values, (0, 1)).all():
-            raise ValueError("Phenotype labels require binary values")
-        return [str(int(value)) for value in values]
-    return _h5_labels(node, expected)
-
-
 def _bounded_hdf5_probe(probe: Callable[..., Any], *args: Any) -> Any:
     from devharness_core.watchdog import HarnessResourceInterrupt, run_sandboxed
 
     try:
         return run_sandboxed(probe, args, max_mem_mb=384, timeout_sec=30)
     except HarnessResourceInterrupt as exc:
-        raise RuntimeError("HDF5 inspection exceeded its resource budget") from exc
+        raise OperationBlocked("hdf5_inspection_resource_limit") from exc
+    except RemoteWorkerError as exc:
+        raise OperationBlocked("hdf5_evidence_inspection_failed") from exc
+
+
+def _annotation_relationships(db, columns, readers, batch, capture, control):
+    """Reduce selected columns together; retain only digests for cross-block joins."""
+    pairs = [
+        (child, parent)
+        for child, parent in ((capture, batch), ("donor_id", "label"))
+        if child != parent and child in columns and parent in columns
+    ]
+    db.execute(
+        "CREATE TABLE pairs (child TEXT, parent TEXT, lhs BLOB, rhs BLOB, "
+        "PRIMARY KEY (child, parent, lhs, rhs)) WITHOUT ROWID"
+    )
+    outcomes, controls = set(), set()
+    for blocks in zip(*readers, strict=True):
+        values = dict(zip(columns, blocks, strict=True))
+        outcomes.update(
+            v if v in ("0", "1") else "other" for v in values.get("label", ())
+        )
+        controls.update(v == control for v in values.get("perturbation", ()))
+        for child, parent in pairs:
+            unique = set(zip(values[child], values[parent], strict=True))
+            db.executemany(
+                "INSERT OR IGNORE INTO pairs VALUES (?, ?, ?, ?)",
+                (
+                    (
+                        child,
+                        parent,
+                        hashlib.sha256(left.encode()).digest(),
+                        hashlib.sha256(right.encode()).digest(),
+                    )
+                    for left, right in unique
+                ),
+            )
+    ambiguous = set(
+        db.execute(
+            "SELECT child, parent FROM pairs "
+            "GROUP BY child, parent, lhs HAVING count(*) > 1"
+        )
+    )
+    return set(pairs) - ambiguous, outcomes == {"0", "1"}, controls == {False, True}
+
+
+def _h5ad_annotation_measurements(
+    obs, expected, columns, batch, capture, control
+) -> list[tuple[Measurement, str]]:
+    from .plugin_h5ad_axes import h5ad_label_blocks
+
+    if not columns:
+        return []
+    readers = [
+        h5ad_label_blocks(obs, column, expected, _validate_h5_dataset, annotation=True)
+        for column in columns
+    ]
+    # An unnamed SQLite database spills to disk as needed and is deleted on close.
+    with closing(sqlite3.connect("")) as db:
+        links, binary, has_control = _annotation_relationships(
+            db, columns, readers, batch, capture, control
+        )
+    selected: list[tuple[Measurement, str]] = []
+    if "perturbation" in columns:
+        selected.append(("perturbation_assignments", "obs/perturbation"))
+        if has_control:
+            selected.append(("control_assignments", "obs/perturbation/control"))
+    if binary and ("donor_id", "label") in links:
+        selected.append(("phenotype_outcomes", "obs/label"))
+    if batch in columns:
+        selected.append(("batch_membership", "obs/" + batch))
+    if (capture, batch) in links:
+        selected.append(("batch_membership", "obs/" + capture))
+    return selected
 
 
 def _h5ad_evidence(
@@ -941,38 +1049,57 @@ def _h5ad_evidence(
     annotation_columns: tuple[str, ...] = (),
     continuous_slot: str | None = None,
     physical_spatial: bool = False,
-) -> tuple[dict[str, str], tuple[str, ...], dict[str, list[str]], dict[str, str]]:
+    confirmed_slot: str | None = None,
+    annotation_roles: tuple[str | None, str | None, str | None] = (None, None, None),
+) -> tuple[
+    dict[str, str], tuple[str, ...], list[tuple[Measurement, str]], dict[str, str]
+]:
     import h5py
 
     from devbench.analysis.rna_scrna_input_contract import _closed_storage
     from devbench.core.population_data import _node, bound_query_file
 
+    from .plugin_h5ad_axes import h5ad_index_digest
+
     observed = profile["observed"]
     shape = (observed["cells"], observed["genes"])
     with (
         bound_query_file(
-            profile["source"], profile["sha256"], _H5_FILE_BUDGET
+            profile["source"], profile["sha256"], profile["size_bytes"]
         ) as source,
         h5py.File(source, "r", rdcc_nbytes=_H5_BLOCK) as handle,
     ):
         _closed_storage(handle)
         obs = handle["obs"]
         axes = {
-            "observation_axis_sha256": _h5_index(obs, shape[0]),
-            "feature_axis_sha256": _h5_index(handle["var"], shape[1]),
+            "observation_axis_sha256": h5ad_index_digest(
+                obs, shape[0], _validate_h5_dataset
+            ),
+            "feature_axis_sha256": h5ad_index_digest(
+                handle["var"], shape[1], _validate_h5_dataset
+            ),
         }
-        annotations = {}
-        for column in annotation_columns:
-            if column in observed["obs_columns"]:
-                annotations[column] = _h5_annotation_values(
-                    _node(obs, column), column, shape[0]
-                )
-        verified = [
-            slot
-            for slot in check_slots
-            if _valid_h5ad_slot(handle, slot, observed["layers"], shape)
-        ]
+        columns = tuple(
+            col for col in annotation_columns if col in observed["obs_columns"]
+        )
+        annotations = _h5ad_annotation_measurements(
+            obs, shape[0], columns, *annotation_roles
+        )
+        verified = []
         additional = {}
+        for slot in check_slots:
+            flags: set[str] = set()
+            if _valid_h5ad_slot(
+                handle, slot, observed["layers"], shape, count1_flags=flags
+            ):
+                verified.append(slot)
+            elif CONFLICTING_PROVENANCE in flags:
+                additional["count1_reason"] = CONFLICTING_PROVENANCE
+            elif SUSPECTED_TRANSFORM in flags:
+                if confirmed_slot == ("X" if slot == "X" else "layers/" + slot):
+                    verified.append(slot)
+                else:
+                    additional["count1_reason"] = SUSPECTED_TRANSFORM
         if continuous_slot and _valid_h5ad_slot(
             handle, continuous_slot, observed["layers"], shape, integer=False
         ):
@@ -984,6 +1111,7 @@ def _h5ad_evidence(
         if (
             physical_spatial
             and "spatial" in observed["obsm_keys"]
+            and isinstance(handle["obsm"], h5py.Group)
             and _verify_h5_counts(
                 _node(handle["obsm"], "spatial"),
                 (shape[0], 2),
@@ -1003,6 +1131,7 @@ def _valid_h5ad_slot(
     shape: tuple[int, int],
     *,
     integer: bool = True,
+    count1_flags: set[str] | None = None,
 ) -> bool:
     import h5py
 
@@ -1013,16 +1142,22 @@ def _valid_h5ad_slot(
     else:
         return False
     if isinstance(element, h5py.Dataset):
-        return _verify_h5_counts(element, shape, None, integer=integer)
-    layout = element.attrs.get("encoding-type")
+        return _verify_h5_counts(
+            element, shape, None, integer=integer, count1_flags=count1_flags
+        )
+    layout, sparse_shape = _h5ad_sparse_layout(element)
     return (
-        layout in ("csr_matrix", "csc_matrix")
-        and tuple(element.attrs.get("shape", ())) == shape
-        and _verify_h5_counts(element, shape, layout[:3], integer=integer)
+        layout in ("csr", "csc")
+        and sparse_shape == shape
+        and _verify_h5_counts(
+            element, shape, layout, integer=integer, count1_flags=count1_flags
+        )
     )
 
 
-def _tenx_evidence(profile: dict[str, Any], verify_counts: bool) -> dict[str, str]:
+def _tenx_evidence(
+    profile: dict[str, Any], verify_counts: bool, confirmed: bool = False
+) -> dict[str, str]:
     import h5py
 
     from devbench.analysis.rna_scrna_input_contract import _closed_storage
@@ -1033,7 +1168,7 @@ def _tenx_evidence(profile: dict[str, Any], verify_counts: bool) -> dict[str, st
     genes, cells = obs["genes"], obs["cells"]
     with (
         bound_query_file(
-            profile["source"], profile["sha256"], _H5_FILE_BUDGET
+            profile["source"], profile["sha256"], profile["size_bytes"]
         ) as source,
         h5py.File(source, "r", rdcc_nbytes=_H5_BLOCK) as handle,
     ):
@@ -1054,10 +1189,17 @@ def _tenx_evidence(profile: dict[str, Any], verify_counts: bool) -> dict[str, st
             for label, kind in zip(labels, feature_types, strict=True)
             if kind == "Gene Expression"
         ]
-        if not rna_features or (
-            verify_counts and not _verify_h5_counts(matrix, (genes, cells), "csc")
-        ):
+        if not rna_features:
             return {}
+        flags: set[str] = set()
+        if verify_counts and not _verify_h5_counts(
+            matrix, (genes, cells), "csc", libraries_in_rows=False, count1_flags=flags
+        ):
+            if not flags:
+                return {}
+            reason = flags.pop()
+            if reason != SUSPECTED_TRANSFORM or not confirmed:
+                return {"count1_reason": reason}
     return {
         "observation_axis_sha256": digest(barcodes),
         "feature_axis_sha256": digest(rna_features),
@@ -1069,11 +1211,8 @@ def _inside_file_budget(profile: dict[str, Any]) -> bool:
     is_hdf5 = (
         observed["file_type"] == "h5ad" or observed.get("matrix_layout") in _H5_LAYOUTS
     )
-    return (
-        0
-        < (profile.get("size_bytes") or 0)
-        <= (_H5_FILE_BUDGET if is_hdf5 else _AXIS_BUDGET)
-    )
+    size = profile.get("size_bytes") or 0
+    return size > 0 and (is_hdf5 or size <= _AXIS_BUDGET)
 
 
 def _inspection_axes(profile: dict[str, Any]) -> dict[str, str]:
@@ -1089,6 +1228,8 @@ def _inspection_axes(profile: dict[str, Any]) -> dict[str, str]:
         if file_type in _TABLE_TYPES and profile["role"] == "expression":
             return _table_axes(profile)
     except (OSError, ValueError, RuntimeError, csv.Error):
+        if file_type == "h5ad" or observed.get("matrix_layout") in _H5_LAYOUTS:
+            return {"axis_verification_reason": "hdf5_axis_verification_failed"}
         return {}  # The bounded header is still available for discovery.
     return {}
 
@@ -1184,7 +1325,14 @@ def _h5ad_measurements(
             else None
         ),
         physical_spatial,
+        args.count1_confirmation.slot
+        if args.count1_confirmation
+        and args.count1_confirmation.source_sha256 == profile["sha256"]
+        else None,
+        (args.batch_column, args.capture_column, args.non_targeting_control),
     )
+    if "count1_reason" in additional:
+        raise OperationBlocked(additional["count1_reason"])
     kinds: dict[str, Measurement] = {
         "X": "gene_counts",
         "counts": "gene_counts",
@@ -1199,45 +1347,14 @@ def _h5ad_measurements(
     ]
     if continuous_bulk and "cell_type_expression" in additional:
         selected.append(("normalized_expression", additional["cell_type_expression"]))
-    elif (
-        annotations.get("cell_type")
-        and annotations.get("donor_id")
-        and "cell_type_expression" in additional
-    ):
+    elif {"cell_type", "donor_id"} <= set(
+        profile["observed"]["obs_columns"]
+    ) and "cell_type_expression" in additional:
         selected.append(("cell_type_expression", additional["cell_type_expression"]))
     if "spatial_coordinates" in additional:
         selected.append(("spatial_coordinates", additional["spatial_coordinates"]))
-    selected.extend(_h5ad_annotation_measurements(args, annotations))
+    selected.extend(annotations)
     return axes, selected
-
-
-def _h5ad_annotation_measurements(
-    args: Answerability,
-    annotations: dict[str, Any],
-) -> list[tuple[Measurement, str]]:
-    selected: list[tuple[Measurement, str]] = []
-    if assignments := annotations.get("perturbation"):
-        selected.append(("perturbation_assignments", "obs/perturbation"))
-        if args.non_targeting_control in assignments and len(set(assignments)) > 1:
-            selected.append(("control_assignments", "obs/perturbation/control"))
-    if set(annotations.get("label", ())) == {"0", "1"} and annotations.get("donor_id"):
-        labels = set(zip(annotations["donor_id"], annotations["label"], strict=True))
-        if len(labels) == len(set(annotations["donor_id"])):
-            selected.append(("phenotype_outcomes", "obs/label"))
-    batch, capture = args.batch_column, args.capture_column
-    if batch is not None and annotations.get(batch):
-        selected.append(("batch_membership", "obs/" + batch))
-    if (
-        capture is not None
-        and capture != batch
-        and batch is not None
-        and batch in annotations
-        and capture in annotations
-        and len(set(zip(annotations[capture], annotations[batch], strict=True)))
-        == len(set(annotations[capture]))
-    ):
-        selected.append(("batch_membership", "obs/" + capture))
-    return selected
 
 
 def _attested_solver_measurements(
@@ -1325,12 +1442,29 @@ def _profile_expression_measurements(
     if tximport:
         return {}, []
     if observed["file_type"] in _TABLE_TYPES and request.entry_point == "count_matrix":
-        axes = _table_axes(profile, verify_counts=True)
+        review = args.count1_confirmation
+        axes = _table_axes(
+            profile,
+            verify_counts=True,
+            count1_confirmed=bool(
+                review
+                and review.source_sha256 == profile["sha256"]
+                and review.slot == "feature_rows"
+            ),
+        )
         return axes, [("gene_counts", "feature_rows")] if axes else []
     if observed["file_type"] == "h5ad":
         return _h5ad_measurements(args, profile)
     if not numeric_measurement and observed.get("matrix_layout") in _H5_LAYOUTS:
-        axes = _bounded_hdf5_probe(_tenx_evidence, profile, True)
+        review = args.count1_confirmation
+        confirmed = bool(
+            review
+            and review.source_sha256 == profile["sha256"]
+            and review.slot == "matrix"
+        )
+        axes = _bounded_hdf5_probe(_tenx_evidence, profile, True, confirmed)
+        if "count1_reason" in axes:
+            raise OperationBlocked(axes["count1_reason"])
         return axes, [("gene_counts", "matrix")] if axes else []
     return {}, []
 
@@ -1370,6 +1504,18 @@ def _attested_measurements(
                         "inspection": projection["inspection_receipt_sha256"],
                         "verified_representation": kind,
                         "slot": slot,
+                        **(
+                            {
+                                "count1_confirmation_sha256": digest(
+                                    args.count1_confirmation.model_dump()
+                                )
+                            }
+                            if args.count1_confirmation
+                            and args.count1_confirmation.source_sha256
+                            == profile["sha256"]
+                            and args.count1_confirmation.slot == slot
+                            else {}
+                        ),
                         **(
                             {
                                 "coordinate_frame": args.coordinate_frame,
@@ -1668,6 +1814,12 @@ def _answer(
             answer.update(
                 status="refused", reason=observed["reason"], execution_route=None
             )
+    review = args.count1_confirmation
+    if review and any(
+        item.artifact_sha256 == review.source_sha256 and item.slot == review.slot
+        for item in measurements
+    ):
+        answer["count1_confirmation_sha256"] = digest(review.model_dump())
     return answer
 
 
@@ -1955,12 +2107,7 @@ def _retained_cell_answer(
     ) as folder:
         source = Path(folder) / "counts.h5ad"
         with executor.training.open(sha) as retained, source.open("xb") as target:
-            remaining = _H5_FILE_BUDGET
-            while block := retained.read(min(_H5_BLOCK, remaining + 1)):
-                remaining -= len(block)
-                if remaining < 0:
-                    raise OperationBlocked("single_cell_inspection_budget_exceeded")
-                target.write(block)
+            shutil.copyfileobj(retained, target, length=_H5_BLOCK)
         evidence = _bounded_hdf5_probe(
             _stage_readiness_digest,
             stage,
@@ -2153,10 +2300,12 @@ def _bootstrap_workspace(workspace: Path, input_root: Path) -> None:
         raise ValueError("Input root does not match the existing Studio workspace")
 
 
-def _ledger(workspace: Path):
+def _ledger(workspace: Path, *, readonly: bool = False):
     from devbench.engine.workflow_operations import LEDGER_NAME, WorkflowOperationLedger
 
-    return WorkflowOperationLedger(workspace / "methods" / LEDGER_NAME, scientific=True)
+    return WorkflowOperationLedger(
+        workspace / "methods" / LEDGER_NAME, scientific=True, readonly=readonly
+    )
 
 
 def _roots(plan: dict[str, Any]) -> tuple[str, ...]:
@@ -2215,8 +2364,7 @@ def _admit_session(
     for index, item in enumerate(plan["profiles"]):
         name = f"{item['role']}-{index}"
         if (
-            plan["data_classification"] == "private"
-            and item["observed"]["file_type"] == "h5ad"
+            item["observed"]["file_type"] == "h5ad"
             and item["size_bytes"] > MAX_DATASET_BYTES
         ):
             artifact = _retain_local_h5ad_reference(methods, discovery, item)
@@ -2340,11 +2488,81 @@ def _lineage(
     }
 
 
+def _assessed_count_inputs(args: _Plan) -> set[str]:
+    assessment = args.answerability
+    if (
+        assessment
+        and assessment.request.entry_point in {"count_matrix", "annotated_object"}
+        and (
+            assessment.counts_layer == args.counts_layer
+            or isinstance(args, _CellPlan)
+            and assessment.request.question in _CELL_ROUTES
+        )
+        and assessment.request.question != "rna_velocity"
+    ):
+        return {item.path for item in assessment.inputs}
+    return set()
+
+
+def _check_unassessed_plan_counts(args: _Plan, profiles: list[dict[str, Any]]) -> None:
+    """Check declared counts omitted from an optional question assessment."""
+    from devbench.analysis.rna_input_set_contract import MAX_SOURCE_BYTES
+
+    if not isinstance(args, (_CellPlan, _BulkPlan)) or args.measurement not in {
+        "raw_counts",
+        "umi_counts",
+        "non_umi_counts",
+    }:
+        return
+    assessment = args.answerability
+    checked = _assessed_count_inputs(args)
+    review = assessment.count1_confirmation if assessment else None
+    for profile in profiles:
+        if profile["role"] != "expression" or (
+            profile["source"] in checked and _inside_file_budget(profile)
+        ):
+            continue
+        confirmed = (
+            review.slot
+            if review and review.source_sha256 == profile["sha256"]
+            else None
+        )
+        observed = profile["observed"]
+        if observed["file_type"] == "h5ad":
+            slot = args.counts_layer or (
+                "counts" if "counts" in observed["layers"] else "X"
+            )
+            _, verified, _, evidence = _bounded_hdf5_probe(
+                _h5ad_evidence, profile, (slot,), (), None, False, confirmed
+            )
+            if not verified:
+                raise OperationBlocked(
+                    evidence.get("count1_reason", "raw_count_slot_unverified")
+                )
+        elif observed["file_type"] in _TABLE_TYPES:
+            if not _table_axes(
+                profile,
+                verify_counts=True,
+                count1_confirmed=confirmed == "feature_rows",
+                maximum=MAX_SOURCE_BYTES,
+            ):
+                raise OperationBlocked("raw_count_slot_unverified")
+        elif observed.get("matrix_layout") in _H5_LAYOUTS:
+            axes = _bounded_hdf5_probe(
+                _tenx_evidence, profile, True, confirmed == "matrix"
+            )
+            if not axes or "count1_reason" in axes:
+                raise OperationBlocked(
+                    axes.get("count1_reason", "raw_count_slot_unverified")
+                )
+
+
 def _plan_answer(
     args: _Plan,
     profiles: list[dict[str, Any]],
     image_id: str | None,
 ) -> dict[str, Any] | None:
+    _check_unassessed_plan_counts(args, profiles)
     answerability = args.answerability
     if answerability is None:
         return None
@@ -2449,8 +2667,19 @@ def _plan_input_pins(declarations, profiles):
 
 
 def _freeze_route_parameters(
-    plan: dict[str, Any], parameters: dict[str, Any], choice: SolverChoice | None
+    plan: dict[str, Any], args: _StandardPlan, choice: SolverChoice | None
 ) -> None:
+    parameters = args.parameters.model_dump(mode="json", exclude_unset=True)
+    if isinstance(args, _BulkPlan) and args.parameters.bulk_declarations:
+        parameters = {
+            "bulk_declarations": args.parameters.bulk_declarations.model_dump(
+                mode="json", exclude_none=True
+            )
+        }
+    if args.answerability and args.answerability.count1_confirmation:
+        plan["count1_confirmation"] = (
+            args.answerability.count1_confirmation.model_dump()
+        )
     plan["design"]["parameters"] = parameters
     if choice is not None:
         plan["local_solver"] = choice.model_dump(mode="json")
@@ -2479,6 +2708,9 @@ class Plugin:
         )
         self.mounted_image_id = mounted_image_id
         self.literature_root = directory(literature_root) if literature_root else None
+        from .plugin_bulk_receipts import publish_reviewed_bulk_receipts
+
+        publish_reviewed_bulk_receipts(workspace)
 
     def _handoff(
         self,
@@ -2602,12 +2834,12 @@ class Plugin:
     ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
         previous = self.jobs.plan(args.session_id) if args.session_id else None
         if previous is not None:
-            if previous["data_classification"] == "private":
-                if not (private_only or allow_offline_native):
-                    raise OperationBlocked(_PRIVATE)
-                private_only = True
-            if private_only and previous["data_classification"] != "private":
+            previous_private = previous["data_classification"] == "private"
+            if previous_private and not (private_only or allow_offline_native):
+                raise OperationBlocked(_PRIVATE)
+            if private_only and not previous_private:
                 raise OperationBlocked("session_input_scope_mismatch")
+            private_only = previous_private
             if not args.inputs:
                 args.inputs = [
                     Input.model_validate(row) for row in previous["input_declarations"]
@@ -2782,16 +3014,6 @@ class Plugin:
         }
 
     def _plan_standard(self, args: _StandardPlan) -> dict[str, Any]:
-        parameters = args.parameters.model_dump(
-            mode="json",
-            exclude_unset=True,
-        )
-        if isinstance(args, _BulkPlan) and args.parameters.bulk_declarations:
-            declarations = args.parameters.bulk_declarations.model_dump(
-                mode="json",
-                exclude_none=True,
-            )
-            parameters = {"bulk_declarations": declarations}
         offline_native = isinstance(args, _LOCAL_PLAN_TYPES)
         profiles, previous = self._plan_inputs(
             args, allow_offline_native=offline_native
@@ -2839,13 +3061,15 @@ class Plugin:
             "runtime": runtime_info,
             "mounted_image_id": self.mounted_image_id,
         }
-        _freeze_route_parameters(frozen, parameters, local_choice)
+        _freeze_route_parameters(frozen, args, local_choice)
         if args.operation == "qc-salmon" and classification != "private":
             frozen["runtime"]["network_policy"] = (
                 "Local data only; analysis containers offline; pinned engine bootstrap "
                 "may use network"
             )
-            frozen["fastq"] = _freeze_fastq(self.input_root, profiles, parameters)
+            frozen["fastq"] = _freeze_fastq(
+                self.input_root, profiles, frozen["design"]["parameters"]
+            )
             if frozen["fastq"]["private"]:
                 frozen["data_classification"] = classification = "private"
         if (
@@ -3006,12 +3230,12 @@ class Plugin:
 
     def status(self, args: Run) -> dict[str, Any]:
         self._allow_external(args.session_id)
-        row = self.jobs.run(args.session_id, args.run_id)
+        row = self.jobs.read_run(args.session_id, args.run_id)
         return self._status(row, self._allow_external(args.session_id, row["plan_id"]))
 
     def receipt(self, args: Run) -> dict[str, Any]:
         self._allow_external(args.session_id)
-        row = self.jobs.run(args.session_id, args.run_id)
+        row = self.jobs.read_run(args.session_id, args.run_id)
         plan = self._allow_external(args.session_id, row["plan_id"])
         ledger = _ledger(self.jobs.workspace)
         broker = EvidenceBroker.open_existing(ledger.scientific)
@@ -3019,23 +3243,8 @@ class Plugin:
         source = f"plugin-receipt-{args.run_id}"
         current = None
         if row["status"] == "awaiting_review" and plan["operation"] == "bulk_de":
-            subject = json.loads(row["stage_json"]).get("bulk_step_sha256")
-            receipt, current = _bulk_verified_fit(ledger, plan, args.run_id, subject)
-            receipt = _seal_bulk_replay(
-                self.jobs.workspace,
-                args.run_id,
-                plan,
-                row["plan_sha256"],
-                receipt,
-            )
-            receipt_hash = digest(receipt)
-            source = broker.register_source(
-                f"{source}-{receipt_hash[:24]}",
-                content_sha256=receipt_hash,
-                roots=_roots(plan),
-                parents=(lineage["source_id"],),
-                classification="target_outcome",
-                tags=_receipt_tags(receipt),
+            receipt, source, current = _read_reviewed_bulk_receipt(
+                self.jobs.workspace, plan, row
             )
         elif row["status"] == "completed":
             receipt = json.loads(row["receipt_json"])
@@ -3044,20 +3253,7 @@ class Plugin:
                 row["plan_sha256"],
                 receipt,
             )
-            if plan["operation"] in LOCAL_OPERATIONS:
-                _verify_solver_result(self.jobs.workspace, args.run_id, receipt)
-            if plan["operation"] == "registered_exploratory":
-                from .plugin_registered_method import verify_registered_method_result
-
-                verify_registered_method_result(
-                    self.jobs.workspace, args.run_id, plan, receipt
-                )
-            if plan.get("graph_runtime") is not None:
-                from .plugin_graph import verify_registered_plugin_result
-
-                verify_registered_plugin_result(
-                    self.jobs.workspace, args.run_id, plan, receipt
-                )
+            _verify_receipt_results(self.jobs.workspace, args.run_id, plan, receipt)
             current = _adaptive_receipt_guard(ledger, plan, receipt)
         else:
             raise OperationBlocked("run_receipt_unavailable")
@@ -3070,7 +3266,9 @@ class Plugin:
             lineage_id=args.session_id,
             role="scientist",
         )
-        context_id = _receipt_context(broker, plan, lineage, retained["tags"])
+        context_id = _receipt_context(
+            broker, plan, lineage, retained["tags"], lookup_only=True
+        )
         broker.check_delivery(
             context_id,
             source,
@@ -3205,6 +3403,23 @@ def studio_evidence_digests(value: Any) -> Iterator[str]:
         yield value
 
 
+def _verify_receipt_results(workspace, rid, plan, receipt) -> bool:
+    graph_verified = False
+    if plan["operation"] in LOCAL_OPERATIONS:
+        _verify_solver_result(workspace, rid, receipt)
+    if plan["operation"] == "registered_exploratory":
+        from .plugin_registered_method import verify_registered_method_result
+
+        verify_registered_method_result(workspace, rid, plan, receipt)
+        graph_verified = True
+    if plan.get("graph_runtime") is not None:
+        from .plugin_graph import verify_registered_plugin_result
+
+        verify_registered_plugin_result(workspace, rid, plan, receipt)
+        graph_verified = True
+    return graph_verified
+
+
 def _studio_receipt(
     workspace: Path,
     broker: EvidenceBroker,
@@ -3224,17 +3439,7 @@ def _studio_receipt(
     lineage = _lineage(sid, plan)
     graph_verified = False
     if row["status"] == "awaiting_review" and plan["operation"] == "bulk_de":
-        subject = json.loads(row["stage_json"]).get("bulk_step_sha256")
-        receipt, current = _bulk_verified_fit(ledger, plan, rid, subject)
-        checksum = digest(receipt)
-        source = broker.register_source(
-            f"{source}-studio-{checksum[:24]}",
-            content_sha256=checksum,
-            roots=_roots(plan),
-            parents=(lineage["source_id"],),
-            classification="target_outcome",
-            tags=_receipt_tags(receipt),
-        )
+        receipt, source, current = _read_reviewed_bulk_receipt(workspace, plan, row)
     else:
         receipt = json.loads(row["receipt_json"])
         _verify_replay(
@@ -3242,18 +3447,7 @@ def _studio_receipt(
             row["plan_sha256"],
             receipt,
         )
-        if plan["operation"] in LOCAL_OPERATIONS:
-            _verify_solver_result(workspace, rid, receipt)
-        if plan["operation"] == "registered_exploratory":
-            from .plugin_registered_method import verify_registered_method_result
-
-            verify_registered_method_result(workspace, rid, plan, receipt)
-            graph_verified = True
-        if plan.get("graph_runtime") is not None:
-            from .plugin_graph import verify_registered_plugin_result
-
-            verify_registered_plugin_result(workspace, rid, plan, receipt)
-            graph_verified = True
+        graph_verified = _verify_receipt_results(workspace, rid, plan, receipt)
         current = _adaptive_receipt_guard(ledger, plan, receipt)
     identities = set(studio_evidence_digests(receipt))
     exposure = receipt
@@ -3279,7 +3473,9 @@ def _studio_receipt(
         lineage_id=sid,
         role="scientist",
     )
-    context_id = _receipt_context(broker, plan, lineage, retained["tags"])
+    context_id = _receipt_context(
+        broker, plan, lineage, retained["tags"], lookup_only=True
+    )
     broker.check_delivery(context_id, source, lineage_id=sid, role="scientist")
     fields = {
         "metrics",
@@ -3378,7 +3574,7 @@ def _receipt_tags(receipt: dict[str, Any]) -> tuple[str, ...]:
     return ()
 
 
-def _receipt_context(broker, plan, lineage, tags) -> str:
+def _receipt_context(broker, plan, lineage, tags, *, lookup_only: bool = False) -> str:
     if "inferential_statistics" not in tags:
         return lineage["context_id"]
     if plan["data_classification"] not in {"public", "synthetic"}:
@@ -3390,22 +3586,33 @@ def _receipt_context(broker, plan, lineage, tags) -> str:
     context_id = f"plugin-statistics-v2-{sid}-{parent['policy_sha256'][:12]}"
     if not original.allow_outcomes or set(original.allowed_roots) != set(_roots(plan)):
         raise OperationBlocked("receipt_statistics_scope_unavailable")
-    policy = broker.register_policy(
-        replace(
-            original,
-            policy_id=context_id,
-            allow_statistics=True,
+    policy = replace(original, policy_id=context_id, allow_statistics=True)
+    if lookup_only:
+        context, retained = broker.authority.ledger._read(
+            lambda db: broker._context_policy(db, context_id)
         )
-    )
+        if retained != policy or context["parents"] != [lineage["context_id"]]:
+            raise OperationBlocked("receipt_statistics_scope_unavailable")
+        return context_id
+    policy_sha = broker.register_policy(policy)
     return broker.register_context(
         context_id,
         principal_id="plugin-verified-receipt-reader",
         lineage_id=sid,
         role="scientist",
         phase="readback",
-        policy_sha256=policy,
+        policy_sha256=policy_sha,
         parents=(lineage["context_id"],),
     )
+
+
+class _RetainedParameters(PartitionVault):
+    """Recomputing a bulk preflight on read must match an existing vault object."""
+
+    def put(self, raw: bytes) -> str:
+        identity = hashlib.sha256(raw).hexdigest()
+        with self.open(identity):
+            return identity
 
 
 def _bulk_verified_fit(
@@ -3441,6 +3648,8 @@ def _bulk_verified_fit(
     executor = TierAExecutor(
         ledger, allow_data_execution=False, mounted_image_id=plan["mounted_image_id"]
     )
+    if ledger.readonly:
+        executor._parameters = _RetainedParameters(executor._parameters.root)
     actions = operator_bulk_actions(flow, executor, planner=None, step_id=step)
     actions.prepare_research_admission(flow, step)
     flow.review_admission = actions.adaptive_review_admission
@@ -3503,7 +3712,7 @@ def _bulk_waiting(workspace: Path, sid: str) -> dict[str, Any]:
 
     from .adaptive_workflow import AdaptiveWorkflow
 
-    ledger = _ledger(workspace)
+    ledger = _ledger(workspace, readonly=True)
     flow = AdaptiveWorkflow(ledger, sid)
     lifecycle = ReviewHoldLifecycle(ledger.scientific, sid)
     step = "operator-bulk-de"
@@ -4130,6 +4339,19 @@ def run_frozen_plan(jobs: JobStore, rid: str, plan: dict[str, Any]) -> dict[str,
     return _run_external_plan(jobs, rid, plan)
 
 
+def _verify_execution_inputs(discovery, root, plan) -> None:
+    profiles = [
+        _profile(discovery, root, Input.model_validate(row))
+        for row in plan["input_declarations"]
+    ]
+    if any(row["data_classification"] == "private" for row in profiles):
+        raise OperationBlocked(_PRIVATE)
+    if [item["sha256"] for item in profiles] != [
+        item["sha256"] for item in plan["profiles"]
+    ]:
+        raise OperationBlocked("input_snapshot_changed")
+
+
 def _run_external_plan(
     jobs: JobStore, rid: str, plan: dict[str, Any]
 ) -> dict[str, Any]:
@@ -4142,16 +4364,7 @@ def _run_external_plan(
     )
 
     def verify():
-        profiles = [
-            _profile(discovery, root, Input.model_validate(row))
-            for row in plan["input_declarations"]
-        ]
-        if any(row["data_classification"] == "private" for row in profiles):
-            raise OperationBlocked(_PRIVATE)
-        if [item["sha256"] for item in profiles] != [
-            item["sha256"] for item in plan["profiles"]
-        ]:
-            raise OperationBlocked("input_snapshot_changed")
+        _verify_execution_inputs(discovery, root, plan)
 
     verify()
     operation = plan["operation"]
@@ -4241,6 +4454,21 @@ def _write_replay(root, plan, receipt, manifest):
     ):
         with (root / name).open("xb") as target:
             target.write(canonical(value))
+
+
+def _read_reviewed_bulk_receipt(workspace, plan, row):
+    from .plugin_bulk_receipts import reviewed_bulk_source_id
+
+    rid = row["run_id"]
+    subject = json.loads(row["stage_json"]).get("bulk_step_sha256")
+    receipt, current = _bulk_verified_fit(
+        _ledger(workspace, readonly=True), plan, rid, subject
+    )
+    manifest = _replay_manifest(plan, receipt)
+    released = {**receipt, "replay_bundle_sha256": digest(manifest)}
+    root = workspace / "runs" / rid / "replay_bundle" / manifest["receipt_sha256"]
+    _verify_replay(root, row["plan_sha256"], released)
+    return released, reviewed_bulk_source_id(rid, released), current
 
 
 def _seal_bulk_replay(
@@ -5731,8 +5959,8 @@ _TOOLS: dict[str, tuple[type[BaseModel], str, str, bool, str | None]] = {
     "plan_rna_workflow": (
         Plan,
         "plan",
-        "Freeze local inputs and the objective as a plan. Starts no run.",
-        True,
+        "Freeze inputs and the objective in a scientific session. Starts no run.",
+        False,
         "plan-card",
     ),
     "execute_reviewed_plan": (
@@ -5752,7 +5980,7 @@ _TOOLS: dict[str, tuple[type[BaseModel], str, str, bool, str | None]] = {
     "get_execution_receipt": (
         Run,
         "receipt",
-        "Release the bounded broker-checked receipt for a completed non-private run.",
+        "Read a verified non-private run receipt. The broker records each disclosure.",
         True,
         "receipt-card",
     ),
@@ -5804,26 +6032,62 @@ def _validation_diagnostics(
     return diagnostics
 
 
-def build_server(plugin: Plugin, *, auto_studio: bool = True) -> Server:
-    from .plugin_mcp_ui import CARD_NAMES, MIME, RESOURCE_META, card_html
+def _tool_error(
+    plugin: Plugin, name: str, arguments: dict[str, Any], error: Exception
+) -> CallToolResult:
+    if isinstance(error, OperationBlocked):
+        reason = error.state
+    elif isinstance(error, (ValueError, KeyError)):
+        reason = "invalid_request"
+    elif isinstance(
+        error, (OSError, OperationConflict, RuntimeError, TypeError, csv.Error)
+    ):
+        reason = "local_workflow_unavailable"
+    else:
+        reason = "internal_tool_error"
+    result = {"error": "OperationBlocked", "reason": reason}
+    if isinstance(error, ValidationError):
+        result["validation_errors"] = _validation_diagnostics(_TOOLS[name][0], error)
+    sid = arguments.get("session_id") if isinstance(arguments, dict) else None
+    if (
+        reason == _PRIVATE
+        and isinstance(sid, str)
+        and re.fullmatch(r"[0-9a-f]{32}", sid)
+    ):
+        result["studio_url"] = plugin._handoff(sid, "overview")["studio_url"]
+    return CallToolResult(
+        isError=True,
+        content=[TextContent(type="text", text=canonical(result).decode())],
+        structuredContent=result,
+    )
+
+
+def _open_studio_handoff(
+    workspace: Path, result: dict[str, Any], previous: str | None
+) -> str | None:
+    from .plugin_jobs import _studio_origin
     from .workbench_ui import _open_browser_async
+
+    link = result.get("studio_url")
+    if not isinstance(link, str):
+        return previous
+    origin = _studio_origin(workspace, offline_only=True)
+    if origin is None or previous == origin or not link.startswith(origin + "?"):
+        return previous
+    try:
+        _open_browser_async(link)
+    except (OSError, RuntimeError):
+        return previous
+    return origin
+
+
+def build_server(
+    plugin: Plugin, *, auto_studio: bool = True, open_browser: bool = False
+) -> Server:
+    from .plugin_mcp_ui import CARD_NAMES, MIME, RESOURCE_META, card_html
 
     server: Server = Server("devharness-rna", version="0.2.0")
     opened_studio = None
-
-    def show_studio(origin: str | None, result: dict[str, Any]) -> None:
-        nonlocal opened_studio
-        if origin is None or opened_studio == origin:
-            return
-        link = result.get("studio_url")
-        target = (
-            link if isinstance(link, str) and link.startswith(origin + "?") else origin
-        )
-        try:
-            _open_browser_async(target)
-        except (OSError, RuntimeError):
-            return
-        opened_studio = origin
 
     @server.list_tools()
     async def list_tools():
@@ -5832,10 +6096,15 @@ def build_server(plugin: Plugin, *, auto_studio: bool = True) -> Server:
                 name=name,
                 description=description,
                 inputSchema=model.model_json_schema(),
+                outputSchema=output_schema(name),
                 annotations=ToolAnnotations(
                     readOnlyHint=readonly,
                     destructiveHint=False,
-                    openWorldHint=False,
+                    openWorldHint=name == "execute_reviewed_plan"
+                    or (
+                        name == "manage_research_aim"
+                        and plugin.literature_root is not None
+                    ),
                     idempotentHint=readonly or name == "execute_reviewed_plan",
                 ),
                 _meta={"ui": {"resourceUri": f"ui://devharness/{card}"}}
@@ -5874,63 +6143,33 @@ def build_server(plugin: Plugin, *, auto_studio: bool = True) -> Server:
         name: str,
         arguments: dict[str, Any],
     ) -> CallToolResult | tuple[list[TextContent], dict[str, Any]]:
+        nonlocal opened_studio
         result: dict[str, Any]
-        origin = None
         try:
-            model, handler, _, _, _ = _TOOLS[name]
+            model, handler, _, readonly, _ = _TOOLS[name]
             if len(canonical(arguments)) > MAX_DOCUMENT_BYTES:
                 raise ValueError("Request exceeds the byte budget")
             args = model.model_validate_json(canonical(arguments), strict=True)
-            if auto_studio:
-                try:
-                    origin = await anyio.to_thread.run_sync(
+            if auto_studio and not readonly:
+                # A failed optional startup still leaves a manual Studio handoff.
+                with suppress(OSError, ValueError):
+                    await anyio.to_thread.run_sync(
                         ensure_offline_studio,
                         plugin.jobs.workspace,
                         plugin.input_root,
                         plugin.mounted_image_id,
                     )
-                except (OSError, ValueError):
-                    # The workflow's existing handoff still offers manual startup.
-                    pass
             result = await anyio.to_thread.run_sync(getattr(plugin, handler), args)
-        except (
-            OperationBlocked,
-            ValidationError,
-            OSError,
-            ValueError,
-            OperationConflict,
-            RuntimeError,
-            KeyError,
-            TypeError,
-            csv.Error,
-        ) as error:
-            reason = (
-                error.state
-                if isinstance(error, OperationBlocked)
-                else (
-                    "invalid_request"
-                    if isinstance(error, (ValidationError, ValueError, KeyError))
-                    else "local_workflow_unavailable"
-                )
+        except Exception as error:
+            # The SDK otherwise echoes unexpected exception text over STDIO.
+            return _tool_error(plugin, name, arguments, error)
+        if open_browser:
+            opened_studio = _open_studio_handoff(
+                plugin.jobs.workspace, result, opened_studio
             )
-            result = {"error": "OperationBlocked", "reason": reason}
-            if isinstance(error, ValidationError):
-                result["validation_errors"] = _validation_diagnostics(model, error)
-            sid = arguments.get("session_id") if isinstance(arguments, dict) else None
-            if (
-                reason == _PRIVATE
-                and isinstance(sid, str)
-                and re.fullmatch(r"[0-9a-f]{32}", sid)
-            ):
-                result.update(plugin._handoff(sid, "overview"))
-            show_studio(origin, result)
-            return CallToolResult(
-                isError=True,
-                content=[TextContent(type="text", text=canonical(result).decode())],
-                structuredContent=result,
-            )
-        show_studio(origin, result)
-        return [TextContent(type="text", text=canonical(result).decode())], result
+        # The SDK validates this dict before encoding the JSON-RPC response.
+        payload = canonical(result).decode()
+        return [TextContent(type="text", text=payload)], json.loads(payload)
 
     return server
 
@@ -5950,8 +6189,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--no-auto-studio",
         action="store_true",
-        help="Leave Companion Studio startup and opening to the operator.",
+        help="Leave Companion Studio startup to the operator.",
     )
+    browser = parser.add_mutually_exclusive_group()
+    browser.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="Open an offline Studio handoff in the browser.",
+    )
+    browser.add_argument(
+        "--no-auto-browser",
+        action="store_false",
+        dest="open_browser",
+        help="Keep Studio links passive (default).",
+    )
+    parser.set_defaults(open_browser=False)
     args = parser.parse_args(argv)
     if args.allow_literature_network != (args.literature_plugin_root is not None):
         parser.error(
@@ -5965,7 +6217,9 @@ def main(argv: list[str] | None = None) -> int:
             args.literature_plugin_root,
             allow_external_files=args.allow_external_input_files,
         )
-        server = build_server(plugin, auto_studio=not args.no_auto_studio)
+        server = build_server(
+            plugin, auto_studio=not args.no_auto_studio, open_browser=args.open_browser
+        )
 
         async def serve():
             async with stdio_server() as (reader, writer):

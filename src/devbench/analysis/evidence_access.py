@@ -346,7 +346,7 @@ class EvidenceBroker:
             self._get(db, "policy", policy_sha256)
             if not db.execute(
                 (
-                    'SELECT 1 FROM scientific_records WHERE lineage_id=? AND '
+                    "SELECT 1 FROM scientific_records WHERE lineage_id=? AND "
                     "kind='binding'"
                 ),
                 (lineage_id,),
@@ -377,6 +377,7 @@ class EvidenceBroker:
         tags=(),
         classification="unknown",
         parents=(),
+        _guard=None,
     ):
         if (
             not _matches(_ID, source_id)
@@ -417,6 +418,8 @@ class EvidenceBroker:
                 "parents": sorted(parents),
             }
             self._put(db, "source", source_id, record)
+            if _guard is not None:
+                _guard(db)
         return source_id
 
     def _source_peers(self, db, content_sha256):
@@ -477,14 +480,15 @@ class EvidenceBroker:
 
     def check_delivery(self, context_id, source_id, *, lineage_id, role):
         """Revalidate a local read against the current source and recipient scope."""
+        self.authority.ledger._read(
+            lambda db: self._check_delivery(db, context_id, source_id, lineage_id, role)
+        )
 
-        def check(db):
-            context, policy = self._context_policy(db, context_id)
-            if context["lineage_id"] != lineage_id or context["role"] != role:
-                raise AccessDenied("Evidence recipient is outside the bound lineage")
-            self._check(context, policy, self._source(db, source_id), set())
-
-        self.authority.ledger._read(check)
+    def _check_delivery(self, db, context_id, source_id, lineage_id, role):
+        context, policy = self._context_policy(db, context_id)
+        if context["lineage_id"] != lineage_id or context["role"] != role:
+            raise AccessDenied("Evidence recipient is outside the bound lineage")
+        self._check(context, policy, self._source(db, source_id), set())
 
     def _context_policy(self, db, context_id):
         context = self._get(db, "context", context_id)
@@ -567,13 +571,13 @@ class EvidenceBroker:
             and tags & _SECRET_TAGS
         ):
             raise AccessDenied(
-                'Initial challenger context cannot receive controller narrative or '
-                'plan handles'
+                "Initial challenger context cannot receive controller narrative or "
+                "plan handles"
             )
         if context["role"] == "training" and tags & _TRAINING_RESTRICTED_TAGS:
             raise AccessDenied(
-                'Training context cannot receive protected evaluation or '
-                'full-cohort learned state'
+                "Training context cannot receive protected evaluation or "
+                "full-cohort learned state"
             )
         if not policy.allow_statistics and (
             fields is None
@@ -877,8 +881,8 @@ class EvidenceBroker:
                 or not callable(_guard)
             ):
                 raise AccessDenied(
-                    'Stable controller delivery requires its current scoped '
-                    'planning context'
+                    "Stable controller delivery requires its current scoped "
+                    "planning context"
                 )
             if _guard is not None:
                 _guard(db)
