@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -15,7 +16,115 @@ from importlib import import_module
 from typing import Any
 from urllib.parse import SplitResult, parse_qs, quote, urlencode, urlsplit
 
+from devbench.daemon.auth import local_actor, valid_bearer
+
 _UNHANDLED_ROUTE = object()
+_SESSION_PATH = "/api/studio/session"
+_WORKER_PATH = "/studio-session-worker.js"
+_SECRET = re.compile(r"[0-9a-f]{64}\Z")
+
+# Cookies for 127.0.0.1 are shared across ports. Bind the HttpOnly cookie to
+# an independent proof stored in the authenticated origin's CacheStorage.
+# A service worker also supplies this header on downloads, SSE and iframe GETs.
+_SESSION_WORKER = b"""\
+const sessionStore = 'devbench-studio-session-v1';
+self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', event => {
+  const req = event.request;
+  const url = new URL(req.url);
+  const origin = req.headers.get('Origin'), site = req.headers.get('Sec-Fetch-Site');
+  if (url.origin !== self.location.origin || url.pathname === '/api/studio/session'
+      || url.pathname === '/mcp' || req.headers.has('Authorization')
+      || (origin && origin !== self.location.origin)
+      || (site && !['same-origin', 'none'].includes(site))) return;
+  event.respondWith((async () => {
+    if (!['GET','HEAD'].includes(req.method)) {
+      const owner = event.clientId && await self.clients.get(event.clientId);
+      if (!owner || new URL(owner.url).origin !== self.location.origin)
+        return fetch(req);
+    }
+    const entry = await (await caches.open(sessionStore)).match('/studio-session-key');
+    if (!entry) return fetch(req);
+    const headers = new Headers(req.headers);
+    headers.set('X-Workbench-Session', await entry.text());
+    return fetch(new Request(req, {headers, redirect: 'error'}));
+  })());
+});
+"""
+
+_SIGN_IN = """\
+<h1>Connect to Companion Studio</h1>
+<p>Paste the token from <code>.devbench-daemon/__TOKEN_FILE__</code>
+in your workspace.</p>
+<form id="login"><label>Workspace token
+<input name="token" type="password" autocomplete="off" required
+minlength="64" maxlength="64" pattern="[0-9a-f]{64}"></label>
+<button>Connect</button></form><p role="status"></p>
+<script nonce="__NONCE__">
+const form = document.querySelector('form');
+form.onsubmit = async event => {
+  event.preventDefault();
+  const message = document.querySelector('[role=status]');
+  const token = form.elements.token.value;
+  form.reset();
+  try {
+    const result = await fetch('/api/studio/session', {
+      method: 'POST', headers: {Authorization: 'Bearer ' + token}, redirect: 'error'
+    });
+    if (!result.ok) throw Error();
+    const {session_key} = await result.json();
+    const cache = await caches.open('devbench-studio-session-v1');
+    await cache.put('/studio-session-key', new Response(session_key));
+    await navigator.serviceWorker.register('/studio-session-worker.js', {scope: '/'});
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller)
+      await new Promise(done => navigator.serviceWorker.addEventListener(
+        'controllerchange', done, {once: true}));
+    location.reload();
+  } catch {
+    message.textContent = 'Could not connect. Check the current token and try again.';
+  }
+};
+</script>"""
+
+_APPROVAL_FORM = """\
+<h1>Approve a frozen plan</h1>
+<form><label>Session ID<input name="session_id" required pattern="[0-9a-f]{32}"></label>
+<label>Plan ID<input name="plan_id" required pattern="[0-9a-f]{32}"></label>
+<label>Plan SHA-256<input name="plan_sha256" required pattern="[0-9a-f]{64}"></label>
+<label>Actor <small>(defaults to the local account)</small><input name="actor_id">
+</label><label>Rationale <small>(optional)</small><textarea name="rationale"></textarea>
+</label><button>Approve this plan</button></form><p role="status"></p>
+<p><a href="/">Back to Studio</a></p>
+<script nonce="__NONCE__">
+const form = document.querySelector('form');
+const query = new URLSearchParams(location.search);
+for (const key of ['session_id','plan_id','plan_sha256'])
+  form.elements[key].value = query.get(key) || '';
+form.onsubmit = async event => {
+  event.preventDefault();
+  const body = Object.fromEntries(new FormData(form));
+  if (!body.actor_id) delete body.actor_id;
+  const result = await fetch('/api/approve', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body), redirect: 'error'
+  });
+  document.querySelector('[role=status]').textContent = result.ok ?
+    'Approval recorded for this plan digest.' : 'Approval refused. Verify the plan.';
+};
+</script>"""
+
+_FORM_PAGE = """\
+<!doctype html><html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Companion Studio</title><style nonce="__NONCE__">
+:root {color-scheme: light dark; font: 100%/1.5 system-ui, sans-serif}
+main {max-width: 34rem; padding: 1rem; margin: 7vh auto}
+label {display:block; margin: 1rem 0}
+input, textarea {box-sizing: border-box; display:block; width:100%; padding:.5rem}
+button {font:inherit; padding:.45rem 1rem}
+</style><main>__BODY__</main></html>"""
 _PLOTLY_FRAME = re.compile(
     r"/api/scientific/adaptive/([0-9a-f]{32})/"
     r"(motor-umap|comparison)/([0-9a-f]{64})/plotly"
@@ -70,7 +179,8 @@ def _require_local_graph_source(app, checksum):
         with ledger._database() as db:
             db.execute("BEGIN")
             if check_schema(db) and (
-                embargoed(db, checksum) or _known_adaptive_identity(ledger, db, checksum)
+                embargoed(db, checksum)
+                or _known_adaptive_identity(ledger, db, checksum)
             ):
                 raise PermissionError("publication_source_withheld")
 
@@ -270,15 +380,25 @@ class _WorkbenchHandler:
         self.wfile.write(rendered.content)
 
     def _local_graph_presentation_bytes(
-        self, content, media_type, filename, *, source_sha256, plotly_nonce=None,
+        self,
+        content,
+        media_type,
+        filename,
+        *,
+        source_sha256,
+        plotly_nonce=None,
     ):
         """Present exact, current graph bytes to the local Studio operator."""
         if self._response_app.offline_only is not True or self._delivery() is not None:
             raise PermissionError("Private figures require local offline Studio")
         _require_local_graph_source(self._response_app, source_sha256)
         self._headers(
-            200, media_type, len(content), filename=filename,
-            nonce=plotly_nonce, plotly_frame=plotly_nonce is not None,
+            200,
+            media_type,
+            len(content),
+            filename=filename,
+            nonce=plotly_nonce,
+            plotly_frame=plotly_nonce is not None,
         )
         return self.wfile.write(content)
 
@@ -304,6 +424,8 @@ class _WorkbenchHandler:
         filename=None,
         revision_root=None,
         plotly_frame=False,
+        browser_bootstrap=False,
+        session_cookie=None,
     ):
         self._reserve_response(content_type, size)
         self._headers_prepared = True
@@ -313,6 +435,8 @@ class _WorkbenchHandler:
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        if session_cookie is not None:
+            self.send_header("Set-Cookie", session_cookie)
         self.send_header("X-Frame-Options", "SAMEORIGIN" if plotly_frame else "DENY")
         if plotly_frame:
             csp = (
@@ -330,6 +454,12 @@ class _WorkbenchHandler:
                 csp += (
                     f"; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
                     "connect-src 'self'; img-src 'self' blob: data:; frame-src 'self'"
+                )
+            if browser_bootstrap:
+                csp += (
+                    "; worker-src 'self'; connect-src 'self'"
+                    if not nonce
+                    else ("; worker-src 'self'")
                 )
         self.send_header("Content-Security-Policy", csp)
         if filename:
@@ -365,7 +495,8 @@ class _WorkbenchHandler:
         body = json.dumps(value, allow_nan=False).encode()
         self._pending_body = body
         self._headers(code, "application/json; charset=utf-8", len(body))
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def _stream_events(self, app, investigation_id):
         ui = self._ui
@@ -432,8 +563,94 @@ class _WorkbenchHandler:
         origins = self.headers.get_all("Origin") or []
         if (origins and origins != [origin]) or (mutation and origins != [origin]):
             raise PermissionError("Invalid or missing same-origin request")
-        if self.headers.get("Sec-Fetch-Site") not in {None, "same-origin", "none"}:
+        sites = self.headers.get_all("Sec-Fetch-Site") or []
+        if sites and sites not in (["same-origin"], ["none"]):
             raise PermissionError("Cross-site requests are unavailable")
+
+    def _bearer(self):
+        headers = self.headers.get_all("Authorization") or []
+        return len(headers) == 1 and valid_bearer(headers[0], self.server.daemon_token)
+
+    def _session_signature(self, key):
+        return hmac.digest(
+            bytes.fromhex(self.server.daemon_token), b"studio:" + key.encode(), "sha256"
+        ).hex()
+
+    def _browser_session(self):
+        keys = self.headers.get_all("X-Workbench-Session") or []
+        cookies = self.headers.get_all("Cookie") or []
+        if len(keys) != 1 or not _SECRET.fullmatch(keys[0]) or len(cookies) != 1:
+            return False
+        name = self.server.studio_cookie_name + "="
+        values = [
+            part.removeprefix(name)
+            for item in cookies[0].split(";")
+            if (part := item.strip()).startswith(name)
+        ]
+        return (
+            len(values) == 1
+            and _SECRET.fullmatch(values[0]) is not None
+            and hmac.compare_digest(values[0], self._session_signature(keys[0]))
+        )
+
+    def _form_page(self, template, code):
+        nonce = secrets.token_urlsafe(24)
+        contents = template.replace("__TOKEN_FILE__", self.server.studio_token_file)
+        body = _FORM_PAGE.replace("__BODY__", contents).replace("__NONCE__", nonce)
+        data = body.encode()
+        self._static_response = True
+        self._headers(
+            code,
+            "text/html; charset=utf-8",
+            len(data),
+            nonce=nonce,
+            browser_bootstrap=template is _SIGN_IN,
+        )
+        self.wfile.write(data)
+
+    def _exchange_session(self):
+        if self.headers.get("Transfer-Encoding") is not None or self.headers.get_all(
+            "Content-Length"
+        ) not in (None, ["0"]):
+            raise ValueError("Session exchange expects an empty body")
+        key = secrets.token_hex(32)
+        token = self._session_signature(key)
+        cookie = (
+            f"{self.server.studio_cookie_name}={token}; "
+            "HttpOnly; SameSite=Strict; Path=/"
+        )
+        data = json.dumps({"session_key": key}).encode()
+        self._static_response = True
+        self._headers(200, "application/json", len(data), session_cookie=cookie)
+        self.wfile.write(data)
+
+    def _authenticate(self, target):
+        """Serve public sign-in assets or authenticate before touching the workspace."""
+        if self.command == "GET" and self.path == _WORKER_PATH:
+            self._static_response = True
+            self._headers(
+                200,
+                "application/javascript",
+                len(_SESSION_WORKER),
+                browser_bootstrap=True,
+            )
+            self.wfile.write(_SESSION_WORKER)
+            return False
+        bearer = self._bearer()
+        self._auth_method = "bearer" if bearer else "session_cookie"
+        bearer_only = target.path in {"/mcp", _SESSION_PATH}
+        if bearer or (
+            not bearer_only
+            and self.headers.get_all("Authorization") is None
+            and self._browser_session()
+        ):
+            return True
+        self.close_connection = True
+        if self.command == "GET" and target.path in {"/", "/approve"}:
+            self._form_page(_SIGN_IN, 401)
+        else:
+            self._json({"error": "authentication_required"}, 401, admitted=True)
+        return False
 
     def _render_home(self, target):
         ui, project_hub = self._ui, self._project_hub
@@ -445,15 +662,26 @@ class _WorkbenchHandler:
             workflow_link = (
                 workflow
                 and re.fullmatch(r"[0-9a-f]{32}", query["session_id"][0])
-                and query["view"][0] in {
-                    "overview", "findings", "workflows", "qc", "figures",
-                    "code", "evidence",
+                and query["view"][0]
+                in {
+                    "overview",
+                    "findings",
+                    "workflows",
+                    "qc",
+                    "figures",
+                    "code",
+                    "evidence",
                 }
             )
             if (
-                not (workflow_link or fields in (
-                    set(), {"object_type", "object_id", "version_id"},
-                ))
+                not (
+                    workflow_link
+                    or fields
+                    in (
+                        set(),
+                        {"object_type", "object_id", "version_id"},
+                    )
+                )
                 or not query
                 or any(not values[0] for values in query.values())
                 or any(len(items) != 1 for items in query.values())
@@ -467,7 +695,13 @@ class _WorkbenchHandler:
             ):
                 raise ValueError("Use an exact scientific version or workflow link")
         nonce = secrets.token_urlsafe(24)
-        body = ui.render_page(nonce).encode()
+        page = ui.render_page(nonce)
+        link = '<a class="secondary" href="/approve">Approve a frozen plan</a>'
+        body = page.replace(
+            '<div class="scientific-toolbar">',
+            '<div class="scientific-toolbar">' + link,
+            1,
+        ).encode()
         self._headers(200, "text/html; charset=utf-8", len(body), nonce=nonce)
         self.wfile.write(body)
         return
@@ -871,7 +1105,10 @@ class _WorkbenchHandler:
             raise PermissionError("publication_source_withheld")
         content, name = motor_program_csv(record, result_ref, source_hash)
         return self._publication_bytes(
-            content, "text/csv; charset=utf-8", name, source_sha256=result_ref,
+            content,
+            "text/csv; charset=utf-8",
+            name,
+            source_sha256=result_ref,
         )
 
     def _investigation_routes(self, request: _Request):
@@ -909,7 +1146,8 @@ class _WorkbenchHandler:
             )
         motor_labels = re.fullmatch(
             r"/api/investigations/([0-9a-f]{32})/motor-program-labels/"
-            r"([0-9a-f]{64})/([0-9a-f]{64})\.csv", target.path,
+            r"([0-9a-f]{64})/([0-9a-f]{64})\.csv",
+            target.path,
         )
         if motor_labels and not mutation and not target.query:
             return self._motor_label_download(app, *motor_labels.groups())
@@ -959,7 +1197,9 @@ class _WorkbenchHandler:
 
             content = guarded_local_package_archive(request.app, *package.groups())
             self._headers(
-                200, "application/zip", len(content),
+                200,
+                "application/zip",
+                len(content),
                 filename="thesis-evidence.zip",
             )
             return self.wfile.write(content)
@@ -1004,8 +1244,10 @@ class _WorkbenchHandler:
             raise ValueError("Select one exact QC step and generation")
         return self._json(
             curated_view(
-                request.app, session_id,
-                qc_step=fields["qc_step"][0], generation=int(fields["generation"][0]),
+                request.app,
+                session_id,
+                qc_step=fields["qc_step"][0],
+                generation=int(fields["generation"][0]),
             ),
             admitted=True,
         )
@@ -1014,18 +1256,85 @@ class _WorkbenchHandler:
         target = request.target
         app = request.app
         private_run = re.fullmatch(
-            r"/api/scientific/adaptive/([0-9a-f]{32})/plugin-execute", target.path,
+            r"/api/scientific/adaptive/([0-9a-f]{32})/plugin-execute",
+            target.path,
         )
         if not private_run or not request.mutation or target.query:
             return _UNHANDLED_ROUTE
-        if app.offline_only is not True or app.allow_data_execution is not True or (
-            self._project_hub is not None
-            and self._project_hub.read_only(request.project_id)
+        if (
+            app.offline_only is not True
+            or app.allow_data_execution is not True
+            or (
+                self._project_hub is not None
+                and self._project_hub.read_only(request.project_id)
+            )
         ):
-            raise PermissionError("Private graph steps require offline Studio execution")
+            raise PermissionError(
+                "Private graph steps require offline Studio execution"
+            )
         from .plugin_graph_studio import studio_launch
 
-        return self._json(studio_launch(app, private_run[1], request.body), 202, admitted=True)
+        with self._private_execution_approval(request, private_run[1]):
+            result = studio_launch(app, private_run[1], request.body)
+        return self._json(result, 202, admitted=True)
+
+    def _record_approval(self, app, body):
+        from .plugin_jobs import JobStore
+
+        required = {"session_id", "plan_id", "plan_sha256"}
+        if (
+            type(body) is not dict
+            or not required <= body.keys()
+            or body.keys() - required - {"actor_id", "rationale"}
+            or not all(isinstance(value, str) for value in body.values())
+        ):
+            raise ValueError("Supply an exact frozen plan identity and its approval")
+        jobs = JobStore(app.workspace)
+        plan = jobs.plan(body["session_id"], body["plan_id"])
+        if (
+            plan.get("data_classification") not in {"public", "synthetic"}
+            and not app.offline_only
+        ):
+            raise PermissionError("Restricted plans require offline Studio approval")
+        return jobs.approve(
+            body["session_id"],
+            body["plan_id"],
+            body["plan_sha256"],
+            actor_id=body.get("actor_id", local_actor()),
+            surface="studio",
+            auth_method=self._auth_method,
+            rationale=body.get("rationale", ""),
+        )
+
+    def _private_execution_approval(self, request, session_id):
+        from .plugin_jobs import studio_approval
+
+        body = request.body
+        if (
+            type(body) is not dict
+            or body.keys() != {"plan_id", "plan_sha256", "allow_data_execution"}
+            or body["allow_data_execution"] is not True
+        ):
+            raise PermissionError("Explicit approval of the frozen plan is required")
+        return studio_approval(
+            session_id,
+            body["plan_id"],
+            body["plan_sha256"],
+            actor_id=local_actor(),
+            auth_method=self._auth_method,
+            rationale="Approved local execution of this frozen plan in Studio",
+        )
+
+    def _approval_route(self, request: _Request):
+        if (
+            not request.mutation
+            or request.target.path != "/api/approve"
+            or request.target.query
+        ):
+            return _UNHANDLED_ROUTE
+        return self._json(
+            self._record_approval(request.app, request.body), 201, admitted=True
+        )
 
     def _adaptive_routes(self, request: _Request):
         target = request.target
@@ -1065,7 +1374,10 @@ class _WorkbenchHandler:
                     )
                 except _StudioReadbackChanged:
                     return self._json(
-                        {"error": "OperationConflict", "message": "adaptive_view_revision_changed"},
+                        {
+                            "error": "OperationConflict",
+                            "message": "adaptive_view_revision_changed",
+                        },
                         409,
                         admitted=True,
                     )
@@ -1093,7 +1405,10 @@ class _WorkbenchHandler:
 
             content, media, filename = studio_code_artifact(request.app, *code.groups())
             return self._publication_bytes(
-                content, media, filename, source_sha256=code[3],
+                content,
+                media,
+                filename,
+                source_sha256=code[3],
             )
         route = re.fullmatch(
             r"/api/scientific/adaptive/([0-9a-f]{32})/motor-umap"
@@ -1101,7 +1416,8 @@ class _WorkbenchHandler:
             request.target.path,
         )
         if (
-            route is None or request.target.query
+            route is None
+            or request.target.query
             or request.mutation != (route[2] is None)
         ):
             return _UNHANDLED_ROUTE
@@ -1112,15 +1428,24 @@ class _WorkbenchHandler:
             return self._launch_shared_motor_umap(request, session_id)
 
         (content, media, filename), local_graph = _motor_figure_artifact(
-            request.app, session_id, kind, checksum,
+            request.app,
+            session_id,
+            kind,
+            checksum,
         )
         filename = None if media == "image/png" else filename
         if local_graph:
             return self._local_graph_presentation_bytes(
-                content, media, filename, source_sha256=checksum,
+                content,
+                media,
+                filename,
+                source_sha256=checksum,
             )
         return self._publication_bytes(
-            content, media, filename, source_sha256=checksum,
+            content,
+            media,
+            filename,
+            source_sha256=checksum,
         )
 
     def _launch_shared_motor_umap(self, request: _Request, session_id: str):
@@ -1131,7 +1456,9 @@ class _WorkbenchHandler:
             raise PermissionError("Local execution is disabled for this workspace")
         from .plugin_motor_umap import studio_launch
 
-        return self._json(studio_launch(request.app, session_id, request.body), 202)
+        with self._private_execution_approval(request, session_id):
+            result = studio_launch(request.app, session_id, request.body)
+        return self._json(result, 202)
 
     def _studio_read_routes(self, request: _Request):
         if request.mutation or request.target.query:
@@ -1162,7 +1489,9 @@ class _WorkbenchHandler:
 
             session_id, sha256 = local_analysis.groups()
             content = local_analysis_figure(request.app, session_id, sha256)
-            return self._publication_bytes(content, "image/png", None, source_sha256=sha256)
+            return self._publication_bytes(
+                content, "image/png", None, source_sha256=sha256
+            )
         package = re.fullmatch(
             r"/api/scientific/adaptive/([0-9a-f]{32})/package/([0-9a-f]{32})/zip",
             path,
@@ -1193,12 +1522,19 @@ class _WorkbenchHandler:
 
             session_id, run_id, index, identity = receipt.groups()
             figure, checksum = receipt_plotly(
-                request.app, session_id, run_id, int(index), identity,
+                request.app,
+                session_id,
+                run_id,
+                int(index),
+                identity,
             )
         elif frame is not None and frame[2] == "motor-umap":
             session_id, _, checksum = frame.groups()
             (coordinates, _, _), local_graph = _motor_figure_artifact(
-                request.app, session_id, "coordinates", checksum,
+                request.app,
+                session_id,
+                "coordinates",
+                checksum,
             )
             figure = motor_umap_figure(coordinates)
         else:
@@ -1210,12 +1546,18 @@ class _WorkbenchHandler:
         content, nonce = render_plotly_frame(figure, theme)
         if local_graph:
             return self._local_graph_presentation_bytes(
-                content, "text/html; charset=utf-8", None,
-                source_sha256=checksum, plotly_nonce=nonce,
+                content,
+                "text/html; charset=utf-8",
+                None,
+                source_sha256=checksum,
+                plotly_nonce=nonce,
             )
         return self._publication_bytes(
-            content, "text/html; charset=utf-8", None,
-            source_sha256=checksum, plotly_nonce=nonce,
+            content,
+            "text/html; charset=utf-8",
+            None,
+            source_sha256=checksum,
+            plotly_nonce=nonce,
         )
 
     def _adaptive_json(self, app, view):
@@ -1224,8 +1566,13 @@ class _WorkbenchHandler:
         studio = {
             key: view.pop(key)
             for key in (
-                "session_summary", "plugin_session", "packages", "retained_comparison",
-                "shared_motor_umap", "private_workflow", "local_analysis",
+                "session_summary",
+                "plugin_session",
+                "packages",
+                "retained_comparison",
+                "shared_motor_umap",
+                "private_workflow",
+                "local_analysis",
             )
             if key in view
         }
@@ -1569,6 +1916,7 @@ class _WorkbenchHandler:
             (
                 self._project_routes,
                 self._configuration_routes,
+                self._approval_route,
                 self._local_analyst_routes,
                 self._episode_routes,
                 self._local_analyst_exports,
@@ -1583,6 +1931,49 @@ class _WorkbenchHandler:
             raise KeyError("Unknown or unavailable route")
         return response
 
+    def _authorized_route(self, target, mutation):
+        if self.command not in {"GET", "POST", "DELETE"}:
+            self._headers(405, "text/plain", 0)
+            return
+        if target.path == "/mcp":
+            if target.query or self.server.streamable_http is None:
+                raise KeyError("Streamable HTTP is disabled")
+            return self.server.streamable_http(self)
+        if self.command == "DELETE":
+            raise KeyError("Unknown local action")
+        if mutation and self.path == _SESSION_PATH:
+            return self._exchange_session()
+        if not mutation and target.path == "/approve":
+            return self._form_page(_APPROVAL_FORM, 200)
+        if not mutation and target.path == "/":
+            return self._render_home(target)
+        if getattr(self._default_app, "awaiting_input_root", False):
+            if not mutation and self.path == "/api/config":
+                return self._json(self._default_app.configuration(), admitted=True)
+            raise KeyError("Attach an explicit input root first")
+        return self._project_request(target, mutation)
+
+    def _project_request(self, target, mutation):
+        frame_project = None
+        if not mutation and (
+            _PLOTLY_FRAME.fullmatch(target.path)
+            or _RECEIPT_PLOTLY_FRAME.fullmatch(target.path)
+        ):
+            _, frame_project = _plotly_options(target.query)
+        app, project_id = self._bind_project(frame_project)
+        if mutation and target.path == "/api/inputs/import":
+            if self._project_hub is not None and self._project_hub.read_only(
+                project_id
+            ):
+                raise PermissionError("This retained project is read-only")
+            from .workbench_input_import import import_input
+
+            return self._json(
+                import_input(app, target.query, self.headers, self.rfile), 201
+            )
+        body = self._read_request_body() if mutation else None
+        return self._route_request(_Request(target, app, project_id, mutation, body))
+
     def _dispatch(self, mutation=False):
         self._response_app = None
         self._response_reservation = None
@@ -1591,40 +1982,22 @@ class _WorkbenchHandler:
         self._static_response = False
         self._access_denied = False
         self._headers_prepared = False
+        attached = False
+        admitted_mutation = False
         try:
             self._boundary(mutation=mutation)
             target = urlsplit(self.path)
             if target.scheme or target.netloc or target.fragment:
                 raise ValueError("Use an allowed local route")
-            if not mutation and target.path == "/":
-                return self._render_home(target)
-            frame_project = None
-            if not mutation and (
-                _PLOTLY_FRAME.fullmatch(target.path)
-                or _RECEIPT_PLOTLY_FRAME.fullmatch(target.path)
-            ):
-                _, frame_project = _plotly_options(target.query)
-            app, project_id = self._bind_project(frame_project)
-            if mutation and target.path == "/api/inputs/import":
-                if self._project_hub is not None and self._project_hub.read_only(
-                    project_id,
-                ):
-                    raise PermissionError("This retained project is read-only")
-                from .workbench_input_import import import_input
-
-                return self._json(
-                    import_input(app, target.query, self.headers, self.rfile), 201
-                )
-            body = self._read_request_body() if mutation else None
-            return self._route_request(
-                _Request(
-                    target=target,
-                    app=app,
-                    project_id=project_id,
-                    mutation=mutation,
-                    body=body,
-                )
-            )
+            if not self._authenticate(target):
+                return
+            if self.server.on_client is not None:
+                self.server.on_client(1)
+                attached = True
+            if mutation and self.server.on_mutation is not None:
+                self.server.on_mutation(1)
+                admitted_mutation = True
+            return self._authorized_route(target, mutation)
         except (
             ValueError,
             PermissionError,
@@ -1653,6 +2026,13 @@ class _WorkbenchHandler:
                     code,
                     admitted=True,
                 )
+        finally:
+            try:
+                if admitted_mutation:
+                    self.server.on_mutation(-1)
+            finally:
+                if attached:
+                    self.server.on_client(-1)
 
     def do_GET(self):
         self._dispatch()
@@ -1660,12 +2040,45 @@ class _WorkbenchHandler:
     def do_POST(self):
         self._dispatch(mutation=True)
 
+    def do_DELETE(self):
+        self._dispatch(mutation=True)
 
-def make_workbench_server(app, *, port, project_hub, default_project_id, ui):
+    # Run common unsupported verbs through the same Host/origin/auth boundary.
+    do_HEAD = do_GET
+    do_OPTIONS = do_GET
+    do_PUT = do_POST
+    do_PATCH = do_POST
+
+
+def make_workbench_server(
+    app,
+    *,
+    port,
+    project_hub,
+    default_project_id,
+    ui,
+    daemon_token=None,
+    streamable_http=None,
+    on_client=None,
+    on_mutation=None,
+):
+    """Return an authenticated loopback listener, including for embedded clients."""
+    if daemon_token is None:
+        daemon_token = secrets.token_hex(32)
+    if not isinstance(daemon_token, str) or not _SECRET.fullmatch(daemon_token):
+        raise ValueError("A 256-bit workspace token is required")
+
     class Handler(_WorkbenchHandler, ui.BaseHTTPRequestHandler):
         _default_app = app
         _project_hub = project_hub
         _default_project_id = default_project_id
         _ui = ui
 
-    return ui.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = ui.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server.daemon_token = daemon_token
+    server.studio_cookie_name = "devbench_" + secrets.token_hex(12)
+    server.studio_token_file = "daemon.token"
+    server.streamable_http = streamable_http
+    server.on_client = on_client
+    server.on_mutation = on_mutation
+    return server

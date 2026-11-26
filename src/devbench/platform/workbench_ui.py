@@ -3,6 +3,7 @@
 Reuses the existing, explicitly authorized proposal selector. No input upload,
 arbitrary command endpoint or additional scientific engine is provided.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -12,6 +13,7 @@ import math
 import mimetypes
 import os
 import re
+import secrets
 import shutil
 import signal
 import stat
@@ -161,15 +163,18 @@ def render_page(nonce):
     theme = "\n".join(
         (ASSET.parent / name).read_text(encoding="utf-8") for name in styles
     )
-    return (ASSET.read_text(encoding="utf-8")
+    return (
+        ASSET.read_text(encoding="utf-8")
         .replace("/*__WORKBENCH_MODULES__*/", modules)
         .replace("/*__WORKBENCH_THEME__*/", theme)
-        .replace("__NONCE__", nonce))
+        .replace("__NONCE__", nonce)
+    )
 
 
 def decode_json(body, *, max_bytes=MAX_BODY):
     if not isinstance(body, bytes) or len(body) > max_bytes:
         raise ValueError("JSON size exceeds the permitted bound")
+
     def pairs(items):
         result = {}
         for key, value in items:
@@ -177,8 +182,10 @@ def decode_json(body, *, max_bytes=MAX_BODY):
                 raise ValueError("Duplicate JSON key")
             result[key] = value
         return result
+
     def invalid(_):
         raise ValueError("JSON numbers must be finite")
+
     try:
         value = json.loads(
             body.decode("utf-8"), object_pairs_hook=pairs, parse_constant=invalid
@@ -372,13 +379,55 @@ def _migrate_workspace_state(value):
 def _assert_workspace_settings(retained, configuration, offline_only):
     if offline_only:
         retained = {
-            key: value for key, value in retained.items()
+            key: value
+            for key, value in retained.items()
             if key not in {"proposal_selector", "model_data_scope"}
         }
     if retained != configuration:
         raise ValueError(
             "Existing workspace has different frozen settings; use a fresh workspace"
         )
+
+
+class _WorkbenchExecutor(ThreadPoolExecutor):
+    """Fence daemon retirement against every queued or running Workbench task."""
+
+    def __init__(self):
+        super().__init__(max_workers=1, thread_name_prefix="reviewed-scrna")
+        self._admission = threading.Lock()
+        self._active = 0
+        self._retired = False
+
+    def submit(self, fn, /, *args, **kwargs):
+        with self._admission:
+            if self._retired:
+                raise RuntimeError("Workbench is stopping")
+            self._active += 1
+        try:
+            future = super().submit(fn, *args, **kwargs)
+        except BaseException:
+            self._finished(None)
+            raise
+        # Cancellation before dispatch and completion both release the reservation.
+        future.add_done_callback(self._finished)
+        return future
+
+    def _finished(self, _future):
+        with self._admission:
+            self._active -= 1
+
+    def active_count(self):
+        with self._admission:
+            return self._active
+
+    def stop_if_idle(self, stop_supervisor):
+        with self._admission:
+            if self._retired:
+                return True
+            if self._active or not stop_supervisor():
+                return False
+            self._retired = True
+            return True
 
 
 class WorkbenchService:
@@ -433,6 +482,7 @@ class WorkbenchService:
         self.workspace = _canonical(workspace)
         if evidence_delivery is not None:
             from devbench.analysis.evidence_access import EvidenceDelivery
+
             if type(evidence_delivery) is not EvidenceDelivery:
                 raise ValueError(
                     "Workbench evidence delivery must be coordinator-owned"
@@ -440,7 +490,8 @@ class WorkbenchService:
         self.evidence_delivery = evidence_delivery
         self.offline_only = offline_only is True
         proposal_selector, codex_model, method_selector = (
-            (None, None, None) if self.offline_only
+            (None, None, None)
+            if self.offline_only
             else (proposal_selector, codex_model, method_selector)
         )
         allow_model_execution = allow_model_execution and not self.offline_only
@@ -463,11 +514,13 @@ class WorkbenchService:
         )
         require_protected_storage(self.workspace)
         self._configure_input_roots(
-            input_roots, synthetic_erql_capsule=synthetic_erql_capsule,
+            input_roots,
+            synthetic_erql_capsule=synthetic_erql_capsule,
             enable_scientific=enable_scientific,
         )
         self.input_import_root = (
-            None if input_import_root is None
+            None
+            if input_import_root is None
             else _canonical(input_import_root, exists=True)
         )
         if self.input_import_root not in (None, *self.input_roots):
@@ -514,6 +567,7 @@ class WorkbenchService:
         self.local_analyst = None
         if local_analyst_spec is not None:
             from devbench.analysis.workbench_episodes import WorkbenchEpisodeBridge
+
             self.local_analyst = WorkbenchEpisodeBridge(self, local_analyst_spec)
         self._lock = threading.RLock()
         self._workspace_lock = None
@@ -532,9 +586,7 @@ class WorkbenchService:
             self._load_locked_workspace(
                 marker, configuration, restore_view_state_backup, trial_request
             )
-            self._executor = shared_executor or ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix="reviewed-scrna"
-            )
+            self._executor = shared_executor or _WorkbenchExecutor()
             self._initialize_scientific_workspace(
                 enable_scientific=enable_scientific,
                 scientific_workspace=scientific_workspace,
@@ -551,12 +603,16 @@ class WorkbenchService:
             from devbench.analysis.workbench_inputs import InputDiscovery
 
             from .workbench_investigations import InvestigationService
-            self.inputs = InputDiscovery(self.input_roots,
+
+            self.inputs = InputDiscovery(
+                self.input_roots,
                 timeout_seconds=min(20, self.parameters["stage_timeout_seconds"]),
-                memory_mb=min(512, self.parameters["memory_mb"]))
+                memory_mb=min(512, self.parameters["memory_mb"]),
+            )
             from devbench.analysis.workbench_agentic import (
                 InvestigationEpisodeController,
             )
+
             self.agentic_episodes = InvestigationEpisodeController(self)
             self.investigations = InvestigationService(self, self.inputs)
         except BaseException:
@@ -733,13 +789,26 @@ class WorkbenchService:
             configuration["singlecell_trial_request_sha256"] = digest(trial_request)
         marker = self.workspace / "service.json"
         if self.workspace.exists():
+            daemon_state = self.workspace / ".devbench-daemon"
+            if daemon_state.exists() or daemon_state.is_symlink():
+                from devbench.daemon.auth import state_directory
+
+                with state_directory(self.workspace):
+                    pass  # Verify owner, mode and descriptor identity before admission.
             if not self.workspace.is_dir() or (
                 any(
-                    path.name not in {
-                        "methods", "plugin-jobs.sqlite3", "plugin-jobs.sqlite3-wal",
-                        "plugin-jobs.sqlite3-shm", "studio-server.json",
-                        ".service.lock", "runs",
-                    } or path.is_symlink()
+                    path.name
+                    not in {
+                        "methods",
+                        "plugin-jobs.sqlite3",
+                        "plugin-jobs.sqlite3-wal",
+                        "plugin-jobs.sqlite3-shm",
+                        "studio-server.json",
+                        ".service.lock",
+                        ".devbench-daemon",
+                        "runs",
+                    }
+                    or path.is_symlink()
                     for path in self.workspace.iterdir()
                 )
                 and not marker.is_file()
@@ -1063,7 +1132,7 @@ class WorkbenchService:
     def _update(self, job, **fields):
         with self._lock:
             record = self._job(job)
-            if fields.get("status",record.get("status")) != record.get("status"):
+            if fields.get("status", record.get("status")) != record.get("status"):
                 history = record.setdefault("state_history", [])
                 if len(history) >= 200:
                     raise RuntimeError(
@@ -1123,13 +1192,13 @@ class WorkbenchService:
                         "disabled": "Agent proposal selection is disabled",
                         "codex": "Codex agent proposals",
                         "recorded_fixture": "Recorded offline proposal fixture; no "
-                            "live model",
+                        "live model",
                     }[mode],
                 },
                 "support": "scRNA UMI counts; QC, integration, clustering and "
-                    "available annotation",
+                "available annotation",
                 "scope": "Research use; operator declarations are not independent "
-                    "experimental verification",
+                "experimental verification",
                 "investigations": {
                     "enabled": True,
                     "format": "devbench.investigation/1",
@@ -1140,7 +1209,8 @@ class WorkbenchService:
                     **({"adaptive_interactive": True} if adaptive_interactive else {}),
                 },
                 "scientific": {**scientific, "adaptive_workflows": True}
-                if scientific["enabled"] else scientific,
+                if scientific["enabled"]
+                else scientific,
                 "erql_capsule": {
                     "enabled": self.erql_capsule is not None,
                     "scope": "synthetic_verification",
@@ -1407,10 +1477,10 @@ class WorkbenchService:
         elapsed = 0.0
         for attempt in record.get("execution_history", []):
             value = attempt.get("elapsed_sec")
-            if type(value) not in (int,float) or not math.isfinite(value) or value < 0:
+            if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
                 raise ValueError("Retained execution budget accounting is invalid")
             elapsed += value
-        return max(0.0,self.run_timeout_seconds-elapsed)
+        return max(0.0, self.run_timeout_seconds - elapsed)
 
     def _can_resume(self, record):
         if record.get("operation_kind") == "presentation":
@@ -1445,11 +1515,12 @@ class WorkbenchService:
 
     def _submit(self, job, function):
         self._cancellations[job] = threading.Event()
-        self._update(job,operation_pending=True)
-        self._futures[job] = self._executor.submit(self._task,job,function)
+        self._update(job, operation_pending=True)
+        self._futures[job] = self._executor.submit(self._task, job, function)
 
     def _task(self, job, function):
         from devharness_core.watchdog import WorkerCancelled, cancel_workers_on
+
         event = self._cancellations[job]
         control = {"workers": []}
         try:
@@ -1511,6 +1582,7 @@ class WorkbenchService:
         self._require_current_runtime()
         if mode == "agent":
             from devbench.analysis.episode_agent import selector_configuration
+
             if selector_configuration(self.proposal_selector) != self.selector_config:
                 raise ValueError(
                     "Proposal selector configuration changed; use a fresh reviewed "
@@ -1562,7 +1634,9 @@ class WorkbenchService:
                 None,
             )
             if prior is None:
-                return self._register_new(source,params,config,mode,request_identity)
+                return self._register_new(
+                    source, params, config, mode, request_identity
+                )
             if prior.get("operation_pending"):
                 # The existing operation owns input verification. Deduplicate
                 # in-flight requests without starting a second reader or job.
@@ -1613,15 +1687,25 @@ class WorkbenchService:
     def _verify_cached_input(self, job, source, expected):
         from devbench.analysis.runtime import verify_data_identity
         from devharness_core.watchdog import cancel_workers_on, run_sandboxed
+
         with self._lock:
             self._require_known_workers()
-            self._update(job,cache_validation_pending=True)
-        control = {"workers":[]}
+            self._update(job, cache_validation_pending=True)
+        control = {"workers": []}
         try:
             with cancel_workers_on(threading.Event()) as control:
-                run_sandboxed(verify_data_identity,(self._input(source),expected),
-                    timeout_sec=min(self.parameters["stage_timeout_seconds"],self.run_timeout_seconds),
-                    max_mem_mb=self.parameters["memory_mb"],growth_window_seconds=self.parameters.get("growth_window_seconds",0))
+                run_sandboxed(
+                    verify_data_identity,
+                    (self._input(source), expected),
+                    timeout_sec=min(
+                        self.parameters["stage_timeout_seconds"],
+                        self.run_timeout_seconds,
+                    ),
+                    max_mem_mb=self.parameters["memory_mb"],
+                    growth_window_seconds=self.parameters.get(
+                        "growth_window_seconds", 0
+                    ),
+                )
         finally:
             stopped = all(
                 row["cleanup"].get("verified_stopped") is True
@@ -1663,13 +1747,16 @@ class WorkbenchService:
             "completed_analysis": False,
         }
         self._update(job)
+
         def prepare():
             from devbench.analysis.workbench_proposals import prepare_workbench_proposal
+
             self._update(job, status="inspecting")
             # Recheck containment immediately before opening the external input.
             self._input(source)
             if mode == "agent":
                 from devbench.analysis.episode_planning import propose_analysis
+
                 self._update(job, status="planning")
                 result = propose_analysis(
                     self._path("jobs", job, "planning"),
@@ -1720,7 +1807,7 @@ class WorkbenchService:
             )
 
         self._submit(job, prepare)
-        return {"id": job, "status": "queued", "cached":False}
+        return {"id": job, "status": "queued", "cached": False}
 
     def review(self, job, request):
         from devbench.analysis.episode_proposals import _review_decision
@@ -1758,10 +1845,12 @@ class WorkbenchService:
                 )
             receipt = record["proposal_receipt"]
             self._update(job, status="recording_review")
+
             def review():
                 from devbench.analysis.workbench_proposals import (
                     record_workbench_review,
                 )
+
                 self._input(record["source"])
                 result = record_workbench_review(
                     self._path("jobs", job, "review"),
@@ -1808,12 +1897,14 @@ class WorkbenchService:
                 raise RuntimeError("Reviewed execution budget exhausted")
             attempt_number = len(record.get("execution_history", [])) + 1
             self._update(job, status="preparing")
+
             def execute():
                 from devbench.analysis.workbench_proposals import (
                     execute_reviewed_workbench,
                     prepare_reviewed_workbench,
                 )
                 from devharness_core.watchdog import worker_limits
+
                 self._input(record["source"])
                 bundle = self._path("jobs", job, "bundle")
                 output = self._path(
@@ -1869,6 +1960,7 @@ class WorkbenchService:
                         },
                     ]
                     self._update(job, execution_history=history)
+
             self._submit(job, execute)
             return {"id": job, "status": "preparing"}
 
@@ -1880,10 +1972,16 @@ class WorkbenchService:
             event.set()
             future = self._futures.get(job)
             if future is None or future.cancel() or future.done():
-                self._update(job,status="cancelled",worker_liveness="stopped",completed_analysis=False,operation_pending=False)
+                self._update(
+                    job,
+                    status="cancelled",
+                    worker_liveness="stopped",
+                    completed_analysis=False,
+                    operation_pending=False,
+                )
             else:
-                self._update(job,status="cancel_requested")
-            return {"id":job,"status":self._job(job)["status"]}
+                self._update(job, status="cancel_requested")
+            return {"id": job, "status": self._job(job)["status"]}
 
     def resume(self, job):
         if not self.allow_data_execution:
@@ -1903,6 +2001,7 @@ class WorkbenchService:
                 _approved,
                 verify_workbench_review,
             )
+
             proposal, review = record["proposal_receipt"], record["review_receipt"]
             self._input(record["source"])
             _approved(
@@ -1926,7 +2025,7 @@ class WorkbenchService:
             return self._execute(job, resume=True)
 
     def _validate_bundle_input(self, job, bundle):
-        binding = _read(bundle/"bindings.json")
+        binding = _read(bundle / "bindings.json")
         if set(binding) != {"data"}:
             raise ValueError("Unexpected bundle input binding")
         actual = self._input(binding["data"])
@@ -1936,6 +2035,7 @@ class WorkbenchService:
 
     def _verified(self, job):
         from devbench.analysis.bundles import verify_bundle
+
         record = self._status(job)
         _require_job_publication(self, record)
         if record["status"] not in {
@@ -1953,6 +2053,7 @@ class WorkbenchService:
     def figures(self, job, *, public=False):
         from devbench.analysis.figure_artifacts import load_figure
         from devbench.analysis.figure_catalog import figure_catalog
+
         record, bundle, _ = self._verified(job)
         manifest = bundle / "figures/manifest.json"
         figures = []
@@ -1960,6 +2061,7 @@ class WorkbenchService:
             for entry in _read(manifest)["figures"]:
                 if public:
                     from devbench.analysis.figure_revisions import check_public_figure
+
                     try:
                         check_public_figure(
                             bundle,
@@ -1997,7 +2099,7 @@ class WorkbenchService:
             "reason": None
             if figures
             else "presentation_revision_unavailable: legacy figure semantics are "
-                "absent",
+            "absent",
         }
 
     def revise_figure(self, job, request, *, public=False):
@@ -2066,6 +2168,7 @@ class WorkbenchService:
                 "scientific_review": "inherited_parent_context_not_new_review",
             }
             self._update(child)
+
             def render():
                 started = time.monotonic()
                 output = self._path("jobs", child, "bundle")
@@ -2139,6 +2242,7 @@ class WorkbenchService:
     def download_figure_revision(self, job, revision, name, *, public=False):
         from devbench.analysis.bundles import verify_bundle
         from devbench.analysis.figure_artifacts import load_figure
+
         record = self.figure_revision(job, revision)
         if record["status"] != "completed_presentation":
             raise RuntimeError(
@@ -2149,6 +2253,7 @@ class WorkbenchService:
         verify_bundle(bundle, record["execution"]["manifest_sha256"])
         if public:
             from devbench.analysis.figure_revisions import check_public_figure
+
             parent = self._path("jobs", job, "bundle")
             guard = workspace_guard(self.workspace)
             check_public_figure(parent, record["figure_id"], guard=guard)
@@ -2174,7 +2279,9 @@ class WorkbenchService:
         _, bundle, verification = self._verified(job)
         manifest = _read(bundle / "receipts.json")
         names = [name for name in manifest["artifacts"] if self._allowed_artifact(name)]
-        value = {"verification": verification, "report": _read(bundle / "report.json"),
+        value = {
+            "verification": verification,
+            "report": _read(bundle / "report.json"),
             "deterministic_review": _read(bundle / "reviewer-report.json"),
             "scientific_review": "not_performed_by_this_service",
             "artifacts": [
@@ -2226,13 +2333,80 @@ class WorkbenchService:
             path.name,
         )
 
+    def active_count(self):
+        """Count admitted work on this service's owned executor."""
+        if not self._owns_executor:
+            raise RuntimeError("Shared executor activity is managed by its owner")
+        return self._executor.active_count()
+
+    def stop_if_idle(self, stop_supervisor):
+        """Fence both execution pools or leave both accepting work."""
+        if not self._owns_executor:
+            raise RuntimeError("Shared executor retirement is managed by its owner")
+        return self._executor.stop_if_idle(stop_supervisor)
+
     def close(self):
         if self._executor is not None and self._owns_executor:
             self._executor.shutdown(wait=True, cancel_futures=False)
         self._release_lock()
 
 
-def make_server(app, *, port=8765, project_hub=None, default_project_id=None):
+class _UnconfiguredWorkbench:
+    """A management-only daemon has no authority to enumerate any input directory."""
+
+    awaiting_input_root = True
+    input_roots = ()
+
+    def __init__(self, workspace, offline_only):
+        self.workspace = workspace
+        self.offline_only = offline_only
+
+    def configuration(self):
+        return {"status": "awaiting_input_root", "offline_only": self.offline_only}
+
+    def active_count(self):
+        return 0
+
+    def stop_if_idle(self, stop_supervisor):
+        return stop_supervisor()
+
+    def close(self):
+        pass
+
+
+def make_daemon_workbench(
+    workspace,
+    input_root,
+    *,
+    offline_only,
+    mounted_image_id=None,
+    allow_data_execution=False,
+):
+    if input_root is None:
+        return _UnconfiguredWorkbench(workspace, offline_only)
+    return WorkbenchService(
+        workspace,
+        [input_root],
+        enable_scientific=True,
+        interactive_adaptive=True,
+        offline_only=offline_only,
+        mounted_image_id=mounted_image_id,
+        allow_data_execution=allow_data_execution,
+    )
+
+
+def make_server(
+    app,
+    *,
+    port=8765,
+    project_hub=None,
+    default_project_id=None,
+    daemon_token=None,
+    streamable_http=None,
+    on_client=None,
+    on_mutation=None,
+):
+    """Bind loopback only. Embedded clients authenticate with server.daemon_token."""
     from .workbench_http import make_workbench_server
 
     return make_workbench_server(
@@ -2241,12 +2415,17 @@ def make_server(app, *, port=8765, project_hub=None, default_project_id=None):
         project_hub=project_hub,
         default_project_id=default_project_id,
         ui=sys.modules[__name__],
+        daemon_token=daemon_token,
+        streamable_http=streamable_http,
+        on_client=on_client,
+        on_mutation=on_mutation,
     )
 
 
 _BROWSER_OPEN_FAILURE = (
     "Workbench is still running, but a browser could not be opened. "
-    "Open the displayed loopback URL manually.")
+    "Open the displayed loopback URL manually."
+)
 
 
 def _open_system_browser(launch_url):
@@ -2279,6 +2458,7 @@ def _open_system_browser(launch_url):
 
 def _open_browser_async(launch_url):
     """Opening the desktop browser must never block the bound service loop."""
+
     def open_page():
         try:
             opened = _open_system_browser(launch_url)
@@ -2294,13 +2474,50 @@ def _open_browser_async(launch_url):
     return launch
 
 
+def _attach_workbench_daemon(args, argv):
+    # Advanced profiles own frozen legacy settings that the daemon cannot infer.
+    common = {
+        "--input-root",
+        "--workspace",
+        "--offline-only",
+        "--port",
+        "--open-browser",
+        "--no-auto-browser",
+        "--allow-data-execution",
+        "--mounted-image-id",
+    }
+    options = {item.split("=", 1)[0] for item in argv if item.startswith("--")}
+    if options - common or len(args.input_root) != 1:
+        return False
+    from devbench.daemon.ipc import start_daemon
+
+    policy = {}
+    if args.allow_data_execution:
+        policy["allow_data_execution"] = True
+    if args.mounted_image_id is not None:
+        policy["mounted_image_id"] = args.mounted_image_id
+    record = start_daemon(
+        args.workspace,
+        input_root=args.input_root[0],
+        offline_only=args.offline_only,
+        http_port=args.port if "--port" in options else 0,
+        **policy,
+    )
+    url = record["http_url"].rstrip("/") + "/"
+    print("Open " + url, flush=True)
+    if args.open_browser:
+        _open_browser_async(url)
+    return True
+
+
 def main(argv=None, *, pin_execution=False, interactive_adaptive=False):
     parser = argparse.ArgumentParser(
         prog="devbench workbench" if interactive_adaptive else None, description=__doc__
     )
     parser.add_argument("--input-root", action="append", type=Path, required=True)
     parser.add_argument(
-        "--input-import-root", type=Path,
+        "--input-import-root",
+        type=Path,
         help="Allow browser imports into this exact configured input directory",
     )
     parser.add_argument("--workspace", type=Path, required=True)
@@ -2317,13 +2534,14 @@ def main(argv=None, *, pin_execution=False, interactive_adaptive=False):
     parser.add_argument("--run-timeout-seconds", type=int, default=3600)
     parser.add_argument("--allow-data-execution", action="store_true")
     parser.add_argument(
-        "--offline-only", action="store_true",
+        "--offline-only",
+        action="store_true",
         help="Disable model and discovery access for this startup only",
     )
     parser.add_argument(
         "--attach-retained-comparison",
         type=Path,
-        help="Persist an exact local comparison manifest in this offline Studio workspace",
+        help="Retain an exact local comparison manifest in this offline workspace",
     )
     parser.add_argument(
         "--attach-local-analysis",
@@ -2334,19 +2552,19 @@ def main(argv=None, *, pin_execution=False, interactive_adaptive=False):
         "--restore-view-state-backup",
         action="store_true",
         help="Explicitly recover missing/invalid local view metadata from its "
-            "previous valid snapshot; does not restore jobs or permissions",
+        "previous valid snapshot; does not restore jobs or permissions",
     )
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument(
         "--codex-model",
         help="Configure the existing Codex proposal selector; does not authorize "
-            "model calls",
+        "model calls",
     )
     selection.add_argument(
         "--recorded-plan-answer",
         type=Path,
         help="Explicit offline fixture decision, visibly labeled; never live model "
-            "evidence",
+        "evidence",
     )
     parser.add_argument(
         "--agent-workspaces",
@@ -2357,7 +2575,7 @@ def main(argv=None, *, pin_execution=False, interactive_adaptive=False):
         "--allow-model-execution",
         action="store_true",
         help="Explicitly permit the configured Codex selector and its mandatory "
-            "preflight",
+        "preflight",
     )
     parser.add_argument(
         "--model-data-scope",
@@ -2365,11 +2583,14 @@ def main(argv=None, *, pin_execution=False, interactive_adaptive=False):
         default="local_only",
     )
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument(
+    browser = parser.add_mutually_exclusive_group()
+    browser.add_argument(
         "--open-browser",
         action="store_true",
         help="Open the local Workbench in the default browser",
     )
+    browser.add_argument("--no-auto-browser", action="store_false", dest="open_browser")
+    parser.set_defaults(open_browser=False)
     parser.add_argument(
         "--local-analyst-spec",
         type=Path,
@@ -2379,13 +2600,13 @@ def main(argv=None, *, pin_execution=False, interactive_adaptive=False):
         "--singlecell-trial-request",
         type=Path,
         help="Explicit absolute path to frozen source/question-bound single-cell "
-            "facts; does not grant planning or execution permission",
+        "facts; does not grant planning or execution permission",
     )
     parser.add_argument(
         "--enable-scientific",
         action="store_true",
         help="Expose shared scientific metadata; initialization remains an explicit "
-            "authenticated action",
+        "authenticated action",
     )
     parser.add_argument(
         "--scientific-workspace",
@@ -2426,12 +2647,16 @@ def main(argv=None, *, pin_execution=False, interactive_adaptive=False):
         "--restore-scientific-backup",
         type=Path,
         help="Explicitly recover invalid scientific metadata from its validated "
-            "retained backup; never restores execution grants or launches work",
+        "retained backup; never restores execution grants or launches work",
     )
     args = parser.parse_args(argv)
     _validate_cli_args(parser, args)
     if interactive_adaptive and not args.offline_only:
         _validate_interactive_model_args(parser, args)
+    if interactive_adaptive and _attach_workbench_daemon(
+        args, sys.argv[1:] if argv is None else argv
+    ):
+        return
     trial_request = None
     if pin_execution:
         from devbench.engine.execution_snapshot import launch
@@ -2447,6 +2672,7 @@ def main(argv=None, *, pin_execution=False, interactive_adaptive=False):
             parser.error(str(error))
     if args.singlecell_trial_request:
         from .workbench_singlecell import load_singlecell_trial_request
+
         trial_request = load_singlecell_trial_request(args.singlecell_trial_request)
     from devbench.analysis.episode_planning import RecordedPlanningSelector
 
@@ -2563,8 +2789,8 @@ def _validate_cli_args(
         or not args.attach_retained_comparison.is_absolute()
     ):
         parser.error(
-            "--attach-retained-comparison requires --offline-only, --enable-scientific, "
-            "an absolute manifest path and a dedicated workspace"
+            "--attach-retained-comparison requires --offline-only, "
+            "--enable-scientific, an absolute manifest path and a dedicated workspace"
         )
     if args.attach_local_analysis is not None and (
         not args.offline_only
@@ -2625,12 +2851,18 @@ def _project_hub(app, args, service_options):
         if args.agent_workspaces is not None:
             protected += (args.agent_workspaces,)
         return WorkbenchService(
-            workspace, [data], agent_workspaces=actors, shared_executor=executor,
-            actor_denied_roots=protected, **service_options,
+            workspace,
+            [data],
+            agent_workspaces=actors,
+            shared_executor=executor,
+            actor_denied_roots=protected,
+            **service_options,
         )
 
     hub = WorkbenchProjectHub(
-        args.projects_root, project_service, library_roots=app.input_roots,
+        args.projects_root,
+        project_service,
+        library_roots=app.input_roots,
         existing={"startup": app},
     )
     return hub
@@ -2639,6 +2871,7 @@ def _project_hub(app, args, service_options):
 def _attach_startup_workflow(app, args, parser):
     if args.adaptive_workflow is not None:
         from .workbench_adaptive import local_startup_binding
+
         try:
             app.bind_adaptive_workflow(
                 local_startup_binding(app, args.adaptive_workflow)
@@ -2650,16 +2883,16 @@ def _attach_startup_workflow(app, args, parser):
             RuntimeError,
             KeyError,
         ) as error:
-            parser.error(
-                "Adaptive workflow startup refused: " + safe_diagnostic(error)
-            )
+            parser.error("Adaptive workflow startup refused: " + safe_diagnostic(error))
     if args.attach_retained_comparison is not None:
         from .workbench_retained_comparison import retain_local_comparison
 
         try:
             retain_local_comparison(app, args.attach_retained_comparison)
         except (OSError, ValueError, RuntimeError, KeyError) as error:
-            parser.error("Retained comparison startup refused: " + safe_diagnostic(error))
+            parser.error(
+                "Retained comparison startup refused: " + safe_diagnostic(error)
+            )
 
     if args.attach_local_analysis is not None:
         from .workbench_local_analysis import retain_local_analysis
@@ -2685,7 +2918,10 @@ def _remove_studio_liveness(path, inode):
 
 
 def _serve_workbench(app, args, parser, service_options):
+    from devbench.daemon.auth import remove_file, state_directory, write_file
+
     server = project_hub = liveness_path = liveness_inode = None
+    token_written = False
     main_thread = threading.current_thread() is threading.main_thread()
     previous_signal = (
         signal.signal(signal.SIGTERM, _handle_studio_shutdown) if main_thread else None
@@ -2701,13 +2937,25 @@ def _serve_workbench(app, args, parser, service_options):
                 project_hub.create({"name": "Local project"})
             current_app = project_hub.resolve()
             server = make_server(current_app, port=args.port, project_hub=project_hub)
+        # The service lock is held through token cleanup. Use a distinct token
+        # for legacy advanced profiles so daemon credentials are never replaced.
+        server.daemon_token = secrets.token_hex(32)
+        server.studio_token_file = "studio.token"
+        with state_directory(app.workspace, create=True) as fd:
+            write_file(fd, "studio.token", server.daemon_token.encode("ascii"))
+        token_written = True
         origin = f"http://127.0.0.1:{server.server_address[1]}"
         liveness_path = app.workspace / "studio-server.json"
-        atomic_json(liveness_path, {
-            "url": origin + "/", "pid": os.getpid(), "workspace": str(app.workspace),
-            "offline_only": app.offline_only,
-            "started_at": datetime.now(UTC).isoformat(),
-        })
+        atomic_json(
+            liveness_path,
+            {
+                "url": origin + "/",
+                "pid": os.getpid(),
+                "workspace": str(app.workspace),
+                "offline_only": app.offline_only,
+                "started_at": datetime.now(UTC).isoformat(),
+            },
+        )
         liveness_inode = liveness_path.stat().st_ino
         if args.open_browser:
             print(
@@ -2737,6 +2985,9 @@ def _serve_workbench(app, args, parser, service_options):
         try:
             if server is not None:
                 server.server_close()
+            if token_written:
+                with state_directory(app.workspace) as fd:
+                    remove_file(fd, "studio.token")
             _remove_studio_liveness(liveness_path, liveness_inode)
             if previous_signal is not None:
                 signal.signal(signal.SIGTERM, previous_signal)

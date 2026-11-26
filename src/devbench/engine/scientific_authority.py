@@ -11,6 +11,7 @@ import uuid
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .workflow_operations import OperationBlocked, OperationConflict, _digest, _json
@@ -59,6 +60,39 @@ EXECUTION_SCHEMA = {
         "NOT NULL, sha256 TEXT NOT NULL,\n"
         "        PRIMARY KEY(lineage_id,attempt_id))"
     ),
+}
+
+# Optional, additive schema for local supervisor state. The operation ledger and
+# existing scientific lineages keep their original versions and column layouts.
+DAEMON_SCHEMA = {
+    "scientific_daemon_schema": (
+        "CREATE TABLE scientific_daemon_schema (version INTEGER PRIMARY KEY "
+        "CHECK(version=1))"
+    ),
+    "scientific_daemon_runs": """CREATE TABLE scientific_daemon_runs (
+        run_id TEXT NOT NULL PRIMARY KEY, session_id TEXT NOT NULL,
+        plan_id TEXT NOT NULL, plan_sha256 TEXT NOT NULL, profile TEXT NOT NULL,
+        pool TEXT NOT NULL CHECK(pool IN ('cpu','gpu')),
+        memory_mb INTEGER NOT NULL CHECK(memory_mb>=0),
+        deadline_sec REAL NOT NULL CHECK(deadline_sec>0 AND deadline_sec<=259200),
+        status TEXT NOT NULL, pid INTEGER, create_time REAL, started_at REAL NOT NULL,
+        dispatched_at REAL, updated_at REAL NOT NULL, finished_at REAL,
+        stage_json TEXT NOT NULL DEFAULT '{}', receipt_json TEXT, error_text TEXT,
+        cleanup_state TEXT NOT NULL DEFAULT 'pending', cancel_requested_at REAL,
+        resume_from_run_id TEXT REFERENCES scientific_daemon_runs(run_id),
+        checkpoint_sha256 TEXT, generation TEXT)""",
+    "scientific_daemon_plan_attempt": (
+        "CREATE UNIQUE INDEX scientific_daemon_plan_attempt ON "
+        "scientific_daemon_runs(plan_id,coalesce(resume_from_run_id,''))"
+    ),
+    "scientific_daemon_queue": (
+        "CREATE INDEX scientific_daemon_queue ON scientific_daemon_runs(status)"
+    ),
+    "scientific_plan_approvals": """CREATE TABLE scientific_plan_approvals (
+        session_id TEXT NOT NULL, plan_id TEXT NOT NULL, plan_sha256 TEXT NOT NULL,
+        actor_id TEXT NOT NULL, surface TEXT NOT NULL, auth_method TEXT NOT NULL,
+        granted_at_utc TEXT NOT NULL, rationale TEXT NOT NULL,
+        UNIQUE(session_id,plan_id,plan_sha256,actor_id,surface,auth_method,rationale))""",
 }
 DISCLOSURE_SCHEMA = {
     "scientific_disclosure_schema": (
@@ -155,10 +189,9 @@ def check_schema(connection):
     expected = dict(SCHEMA)
     if _PROJECTION_TABLE in found:
         expected[_PROJECTION_TABLE] = _PROJECTION_SQL
-    if found.keys() & EXECUTION_SCHEMA.keys():
-        expected.update(EXECUTION_SCHEMA)
-    if found.keys() & DISCLOSURE_SCHEMA.keys():
-        expected.update(DISCLOSURE_SCHEMA)
+    for extension in (EXECUTION_SCHEMA, DISCLOSURE_SCHEMA, DAEMON_SCHEMA):
+        if found.keys() & extension.keys():
+            expected.update(extension)
     if found != expected or [
         row[0] for row in connection.execute("SELECT version FROM scientific_schema")
     ] != [1]:
@@ -175,6 +208,11 @@ def check_schema(connection):
         )
     ] != [1]:
         raise OperationConflict("Unsupported scientific disclosure schema")
+    if found.keys() & DAEMON_SCHEMA.keys() and [
+        row[0]
+        for row in connection.execute("SELECT version FROM scientific_daemon_schema")
+    ] != [1]:
+        raise OperationConflict("Unsupported scientific daemon schema")
     return True
 
 
@@ -207,6 +245,49 @@ def require_same_ledger_transaction(connection, ledger):
 
 def _matches(pattern, value):
     return type(value) is str and pattern.fullmatch(value) is not None
+
+
+def verify_frozen_plan(frozen_plan, session_id, plan_id, plan_sha256):
+    """Verify frozen plan identity and the clinical-release hold before use."""
+    # JobStore's historic byte format uses ASCII escapes. The general scientific
+    # record format uses UTF-8 and cannot re-hash existing frozen plugin plans.
+    encoded = json.dumps(
+        frozen_plan, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+    if (
+        not _matches(_ID, session_id)
+        or not _matches(_ID, plan_id)
+        or not _matches(_SHA, plan_sha256)
+        or type(frozen_plan) is not dict
+        or frozen_plan.get("session_id") != session_id
+        or frozen_plan.get("plan_id") != plan_id
+        or _digest(encoded) != plan_sha256
+    ):
+        raise OperationBlocked("plan_identity_mismatch")
+    pending = [frozen_plan]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            if value.get("clinical_release_allowed", False) is not False:
+                raise OperationBlocked("clinical_release_forbidden")
+            pending.extend(value.values())
+        elif isinstance(value, list):
+            pending.extend(value)
+
+
+def _validate_approval_actor(actor_id, surface, auth_method, rationale):
+    if (
+        not isinstance(actor_id, str)
+        or not actor_id.strip()
+        or not actor_id.isprintable()
+        or len(actor_id.encode()) > 256
+        or surface not in ("cli", "studio")
+        or not _matches(_ID, auth_method)
+        or not isinstance(rationale, str)
+        or "\x00" in rationale
+        or len(rationale.encode()) > 4096
+    ):
+        raise ValueError("Invalid local operator approval attribution")
 
 
 def _record_payload(record):
@@ -510,6 +591,89 @@ class ScientificAuthority:
 
     def __init__(self, ledger):
         self.ledger = ledger
+
+    @contextmanager
+    def daemon_transaction(self):
+        """Fence queue transitions and pool reservations on the scientific WAL."""
+        self.ledger._writable()
+        with self.ledger._database() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if not check_schema(db):
+                raise OperationConflict("Scientific authority schema unavailable")
+            if not db.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='scientific_daemon_schema'"
+            ).fetchone():
+                for statement in DAEMON_SCHEMA.values():
+                    db.execute(statement)
+                db.execute("INSERT INTO scientific_daemon_schema VALUES (1)")
+            yield db
+
+    def initialize_daemon(self):
+        """Install the complete optional daemon schema in one transaction."""
+        with self.daemon_transaction():
+            pass
+
+    def daemon_read(self, query):
+        """Run a materializing query in a read-only snapshot of the scientific WAL."""
+        return self.ledger._read(query)
+
+    def record_plan_approval(
+        self,
+        *,
+        session_id,
+        plan_id,
+        plan_sha256,
+        frozen_plan,
+        actor_id,
+        surface,
+        auth_method,
+        rationale="",
+    ):
+        """Record a local operator's grant for the verified frozen plan."""
+        verify_frozen_plan(frozen_plan, session_id, plan_id, plan_sha256)
+        _validate_approval_actor(actor_id, surface, auth_method, rationale)
+        identity = (session_id, plan_id, plan_sha256)
+        attribution = (actor_id, surface, auth_method, rationale)
+        with self.daemon_transaction() as db:
+            changed_digest = db.execute(
+                "SELECT 1 FROM scientific_plan_approvals WHERE session_id=? "
+                "AND plan_id=? AND plan_sha256<>? LIMIT 1",
+                identity,
+            ).fetchone()
+            if changed_digest:
+                raise OperationBlocked("plan_identity_mismatch")
+            db.execute(
+                "INSERT INTO scientific_plan_approvals "
+                "(session_id,plan_id,plan_sha256,actor_id,surface,auth_method,"
+                "rationale,granted_at_utc) VALUES (?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(session_id,plan_id,plan_sha256,actor_id,surface,"
+                "auth_method,rationale) DO NOTHING",
+                (*identity, *attribution, datetime.now(UTC).isoformat()),
+            )
+            row = db.execute(
+                "SELECT * FROM scientific_plan_approvals WHERE session_id=? "
+                "AND plan_id=? AND plan_sha256=? AND actor_id=? AND surface=? "
+                "AND auth_method=? AND rationale=?",
+                (*identity, *attribution),
+            ).fetchone()
+            return dict(row)
+
+    def plan_approval(self, session_id, plan_id, plan_sha256):
+        """Return the latest exact grant; legacy ledgers have no operator grants."""
+
+        def lookup(db):
+            if not db.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='scientific_plan_approvals'"
+            ).fetchone():
+                return None
+            row = db.execute(
+                "SELECT * FROM scientific_plan_approvals WHERE session_id=? "
+                "AND plan_id=? AND plan_sha256=? ORDER BY rowid DESC LIMIT 1",
+                (session_id, plan_id, plan_sha256),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+        return self.daemon_read(lookup)
 
     def commit(self, lineage_id, *, expected_revision, record, verify_output=None):
         self.ledger._writable()

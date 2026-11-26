@@ -226,7 +226,8 @@ class _SharedMotorUMAPPlan(_ScopedPlan):
     operation: Literal["shared_motor_umap"]
     objective: _TEXT
     inputs: list[Input] = Field(
-        min_length=3, max_length=3,
+        min_length=3,
+        max_length=3,
         description="Three H5AD inputs in e09, e10, e11 order.",
     )
     parameters: _SharedMotorUMAPParameters = Field(
@@ -434,16 +435,28 @@ _SOLVER_FIELDS = {"operation", "parameters", "transcript_reference"}
 _SOLVER_ADAPTER: TypeAdapter[SolverChoice] = TypeAdapter(SolverChoice)
 
 _StandardPlan = (
-    _MatrixPlan | _BulkPlan | _CellPlan | _PathwayPlan | _FastqPlan | _CCCPlan
-    | _NeighborhoodPlan | _DeconvolutionPlan | _DTUPlan | _SpatialPlan
-    | _PerturbationPlan | _PredictionPlan
+    _MatrixPlan
+    | _BulkPlan
+    | _CellPlan
+    | _PathwayPlan
+    | _FastqPlan
+    | _CCCPlan
+    | _NeighborhoodPlan
+    | _DeconvolutionPlan
+    | _DTUPlan
+    | _SpatialPlan
+    | _PerturbationPlan
+    | _PredictionPlan
 )
 
 
 class Plan(
     RootModel[
         Annotated[
-            _StandardPlan | _SharedMotorUMAPPlan | _MotorProgramComparisonPlan | _RegisteredExploratoryPlan,
+            _StandardPlan
+            | _SharedMotorUMAPPlan
+            | _MotorProgramComparisonPlan
+            | _RegisteredExploratoryPlan,
             Field(discriminator="operation"),
         ]
     ]
@@ -717,7 +730,8 @@ def _table_axes(
             ):
                 return {}
             if numeric_measurement and not _valid_numeric_table_row(
-                row[1:], numeric_measurement,
+                row[1:],
+                numeric_measurement,
             ):
                 return {}
             features.append(row[0])
@@ -1198,7 +1212,8 @@ def _h5ad_measurements(
 
 
 def _h5ad_annotation_measurements(
-    args: Answerability, annotations: dict[str, Any],
+    args: Answerability,
+    annotations: dict[str, Any],
 ) -> list[tuple[Measurement, str]]:
     selected: list[tuple[Measurement, str]] = []
     if assignments := annotations.get("perturbation"):
@@ -1226,7 +1241,10 @@ def _h5ad_annotation_measurements(
 
 
 def _attested_solver_measurements(
-    args: Answerability, solver_evidence: SolverEvidence, *, offline_private: bool = False,
+    args: Answerability,
+    solver_evidence: SolverEvidence,
+    *,
+    offline_private: bool = False,
 ) -> tuple[AttestedMeasurement, ...]:
     attestations = []
     choice = args.local_solver
@@ -1243,14 +1261,18 @@ def _attested_solver_measurements(
         )
         if offline_private and measured.source["data_classification"] == "private":
             # Input inspection stays in the sealed private plan.
-            inspection = digest({
-                "format": "devbench.offline-rna-solver-inspection/1",
-                "input_sha256": measured.source["sha256"],
-                "size_bytes": measured.source["size_bytes"],
-                "axes": axes,
-            })
+            inspection = digest(
+                {
+                    "format": "devbench.offline-rna-solver-inspection/1",
+                    "input_sha256": measured.source["sha256"],
+                    "size_bytes": measured.source["size_bytes"],
+                    "axes": axes,
+                }
+            )
         else:
-            inspection = _inspect_projection(measured.source, axes=axes)["inspection_receipt_sha256"]
+            inspection = _inspect_projection(measured.source, axes=axes)[
+                "inspection_receipt_sha256"
+            ]
         attestations.append(
             AttestedMeasurement(
                 kind=measured.kind,
@@ -1261,9 +1283,7 @@ def _attested_solver_measurements(
                         "inspection": inspection,
                         "kind": measured.kind,
                         "slot": measured.slot,
-                        "solver": choice.model_dump(mode="json")
-                        if choice
-                        else None,
+                        "solver": choice.model_dump(mode="json") if choice else None,
                     }
                 ),
                 observation_axis_sha256=axes.get("observation_axis_sha256"),
@@ -1279,15 +1299,15 @@ def _attested_solver_measurements(
 
 
 def _profile_expression_measurements(
-    args: Answerability, profile: dict[str, Any], tximport: bool,
+    args: Answerability,
+    profile: dict[str, Any],
+    tximport: bool,
 ) -> tuple[dict[str, str], list[tuple[Measurement, str]]]:
     request = args.request
     role = profile["role"]
     observed = profile["observed"]
     numeric_measurement: (
-        Literal[
-            "normalized_expression", "estimated_gene_counts", "effective_lengths"
-        ]
+        Literal["normalized_expression", "estimated_gene_counts", "effective_lengths"]
         | None
     ) = None
     if tximport:
@@ -1304,10 +1324,7 @@ def _profile_expression_measurements(
         return axes, [(numeric_measurement, "feature_rows")] if axes else []
     if tximport:
         return {}, []
-    if (
-        observed["file_type"] in _TABLE_TYPES
-        and request.entry_point == "count_matrix"
-    ):
+    if observed["file_type"] in _TABLE_TYPES and request.entry_point == "count_matrix":
         axes = _table_axes(profile, verify_counts=True)
         return axes, [("gene_counts", "feature_rows")] if axes else []
     if observed["file_type"] == "h5ad":
@@ -2027,7 +2044,9 @@ def _local_solver_answer(
     except ValueError as error:
         # Report a controlled category rather than arbitrary values from inputs.
         raise OperationBlocked("local_solver_input_or_design_invalid") from error
-    measurements = _attested_solver_measurements(args, evidence, offline_private=offline_private)
+    measurements = _attested_solver_measurements(
+        args, evidence, offline_private=offline_private
+    )
     design = None
     if evidence.design_units:
         axis = measurements[0].observation_axis_sha256
@@ -2420,7 +2439,11 @@ def _plan_runtime_and_answer(
 
 def _plan_input_pins(declarations, profiles):
     return [
-        {"declaration": declaration, "sha256": profile["sha256"], "size_bytes": profile["size_bytes"]}
+        {
+            "declaration": declaration,
+            "sha256": profile["sha256"],
+            "size_bytes": profile["size_bytes"],
+        }
         for declaration, profile in zip(declarations, profiles, strict=True)
     ]
 
@@ -2458,7 +2481,11 @@ class Plugin:
         self.literature_root = directory(literature_root) if literature_root else None
 
     def _handoff(
-        self, sid: str, view: str, *, mounted_image_id: str | None = None,
+        self,
+        sid: str,
+        view: str,
+        *,
+        mounted_image_id: str | None = None,
         allow_data_execution: bool = False,
     ) -> dict[str, Any]:
         return studio_handoff(
@@ -2588,26 +2615,40 @@ class Plugin:
         if not args.inputs:
             raise OperationBlocked("plan_input_required")
         inspected = (
-            [item.model_copy(update={"data_classification": "private"}) for item in args.inputs]
-            if private_only else args.inputs
+            [
+                item.model_copy(update={"data_classification": "private"})
+                for item in args.inputs
+            ]
+            if private_only
+            else args.inputs
         )
         declared_for_private_execution = allow_offline_native and any(
-            item.data_classification not in {"public", "synthetic"} or item.clinical_metadata
+            item.data_classification not in {"public", "synthetic"}
+            or item.clinical_metadata
             for item in inspected
         )
         profiles = self._profiles(
-            inspected, allow_retained_private=private_only or declared_for_private_execution,
+            inspected,
+            allow_retained_private=private_only or declared_for_private_execution,
         )
         if any(row["sha256"] is None for row in profiles):
             raise OperationBlocked("input_snapshot_unavailable")
         if previous is not None:
-            if not private_only and any(row["data_classification"] == "private" for row in profiles):
+            if not private_only and any(
+                row["data_classification"] == "private" for row in profiles
+            ):
                 raise OperationBlocked(_PRIVATE)
-            pins = _plan_input_pins([item.model_dump(mode="json") for item in args.inputs], profiles)
-            previous_pins = _plan_input_pins(previous["input_declarations"], previous["profiles"])
+            pins = _plan_input_pins(
+                [item.model_dump(mode="json") for item in args.inputs], profiles
+            )
+            previous_pins = _plan_input_pins(
+                previous["input_declarations"], previous["profiles"]
+            )
             allowed = previous.get("session_inputs", previous_pins)
             if previous["input_root"] != str(self.input_root) or (
-                any(pin not in allowed for pin in pins) if args.depends_on else pins != previous_pins
+                any(pin not in allowed for pin in pins)
+                if args.depends_on
+                else pins != previous_pins
             ):
                 raise OperationBlocked("session_input_scope_mismatch")
         return profiles, previous
@@ -2615,7 +2656,9 @@ class Plugin:
     def _retain_plan_scope(self, plan, args, previous):
         if previous is not None:
             plan["session_id"] = previous["session_id"]
-            plan["session_intake"] = _lineage(previous["session_id"], previous)["intake"]
+            plan["session_intake"] = _lineage(previous["session_id"], previous)[
+                "intake"
+            ]
             if not set(_roots(plan)) <= set(_roots(previous)):
                 raise OperationBlocked("session_input_scope_mismatch")
             plan["session_roots"] = list(_roots(previous))
@@ -2643,64 +2686,98 @@ class Plugin:
             return self._plan_registered_method(args)
         return self._plan_standard(args)
 
-    def _plan_registered_method(self, args: _RegisteredExploratoryPlan) -> dict[str, Any]:
+    def _plan_registered_method(
+        self, args: _RegisteredExploratoryPlan
+    ) -> dict[str, Any]:
         from .plugin_registered_method import freeze_registered_method
 
         if args.depends_on:
             raise OperationBlocked("registered_method_requires_verified_input_versions")
         profiles, previous = self._plan_inputs(args)
-        if previous is None or previous["data_classification"] not in {"public", "synthetic"}:
-            raise OperationBlocked("registered_method_public_or_synthetic_scope_required")
+        if previous is None or previous["data_classification"] not in {
+            "public",
+            "synthetic",
+        }:
+            raise OperationBlocked(
+                "registered_method_public_or_synthetic_scope_required"
+            )
         self._allow_external(args.session_id)
         plan_id = uuid4().hex
         binding = freeze_registered_method(
-            self.jobs.workspace, args.session_id, plan_id=plan_id,
-            method_version_id=args.method_version_id, step_name=args.step_name,
-            parameters=args.parameters, input_versions=args.input_versions,
+            self.jobs.workspace,
+            args.session_id,
+            plan_id=plan_id,
+            method_version_id=args.method_version_id,
+            step_name=args.step_name,
+            parameters=args.parameters,
+            input_versions=args.input_versions,
         )
         frozen = {
-            "format": "devbench.plugin-plan/1", "plan_id": plan_id,
-            "operation": args.operation, "objective": args.objective,
+            "format": "devbench.plugin-plan/1",
+            "plan_id": plan_id,
+            "operation": args.operation,
+            "objective": args.objective,
             "input_root": str(self.input_root),
             "allow_external_input_files": self.discovery.allow_external_files,
             "data_classification": previous["data_classification"],
             "profiles": profiles,
-            "input_declarations": [item.model_dump(mode="json") for item in args.inputs],
-            "design": {"parameters": args.parameters}, "runtime": _runtime_info(None),
-            "mounted_image_id": None, "registered_method": binding,
+            "input_declarations": [
+                item.model_dump(mode="json") for item in args.inputs
+            ],
+            "design": {"parameters": args.parameters},
+            "runtime": _runtime_info(None),
+            "mounted_image_id": None,
+            "registered_method": binding,
         }
         self._retain_plan_scope(frozen, args, previous)
         pid, sha = self.jobs.freeze(frozen)
         return {
-            "status": "planned", "execution_route": "mcp", "session_id": args.session_id,
-            "plan_id": pid, "plan_sha256": sha,
+            "status": "planned",
+            "execution_route": "mcp",
+            "session_id": args.session_id,
+            "plan_id": pid,
+            "plan_sha256": sha,
             **self._handoff(args.session_id, "workflows"),
         }
 
     def _plan_motor_programs(self, args: _MotorProgramComparisonPlan) -> dict[str, Any]:
         from .plugin_graph import registered_plugin_runtime
-        from .plugin_motor_programs import motor_program_runtime, validate_motor_program_profiles
+        from .plugin_motor_programs import (
+            motor_program_runtime,
+            validate_motor_program_profiles,
+        )
 
         profiles, previous = self._plan_inputs(args, private_only=True)
         validate_motor_program_profiles(profiles)
         frozen = {
-            "format": "devbench.plugin-plan/1", "plan_id": uuid4().hex,
-            "operation": args.operation, "objective": args.objective,
+            "format": "devbench.plugin-plan/1",
+            "plan_id": uuid4().hex,
+            "operation": args.operation,
+            "objective": args.objective,
             "input_root": str(self.input_root),
             "allow_external_input_files": self.discovery.allow_external_files,
-            "data_classification": "private", "profiles": profiles,
-            "input_declarations": [item.model_dump(mode="json") for item in args.inputs],
-            "design": {"parameters": {}}, "runtime": motor_program_runtime(),
+            "data_classification": "private",
+            "profiles": profiles,
+            "input_declarations": [
+                item.model_dump(mode="json") for item in args.inputs
+            ],
+            "design": {"parameters": {}},
+            "runtime": motor_program_runtime(),
             "mounted_image_id": None,
         }
         self._retain_plan_scope(frozen, args, previous)
         frozen["graph_runtime"] = registered_plugin_runtime(frozen)
-        sid = args.session_id or _admit_session(self.jobs.workspace, frozen, self.discovery)
+        sid = args.session_id or _admit_session(
+            self.jobs.workspace, frozen, self.discovery
+        )
         frozen["session_id"] = sid
         pid, sha = self.jobs.freeze(frozen)
         return {
-            "status": "local_studio_only", "execution_route": "offline_studio",
-            "session_id": sid, "plan_id": pid, "plan_sha256": sha,
+            "status": "local_studio_only",
+            "execution_route": "offline_studio",
+            "session_id": sid,
+            "plan_id": pid,
+            "plan_sha256": sha,
             **self._handoff(sid, "workflows", allow_data_execution=True),
         }
 
@@ -2716,7 +2793,9 @@ class Plugin:
             )
             parameters = {"bulk_declarations": declarations}
         offline_native = isinstance(args, _LOCAL_PLAN_TYPES)
-        profiles, previous = self._plan_inputs(args, allow_offline_native=offline_native)
+        profiles, previous = self._plan_inputs(
+            args, allow_offline_native=offline_native
+        )
         classes = {profile["data_classification"] for profile in profiles}
         classification = (
             "private"
@@ -2769,12 +2848,18 @@ class Plugin:
             frozen["fastq"] = _freeze_fastq(self.input_root, profiles, parameters)
             if frozen["fastq"]["private"]:
                 frozen["data_classification"] = classification = "private"
-        if previous is not None and classification == "private" and (
-            not offline_native or previous["data_classification"] != "private"
+        if (
+            previous is not None
+            and classification == "private"
+            and (not offline_native or previous["data_classification"] != "private")
         ):
             raise OperationBlocked(_PRIVATE)
         self._retain_plan_scope(frozen, args, previous)
-        if offline_native or classification != "private" and args.operation in {"matrix_audit", "qc-salmon"}:
+        if (
+            offline_native
+            or classification != "private"
+            and args.operation in {"matrix_audit", "qc-salmon"}
+        ):
             from .plugin_graph import registered_plugin_runtime
 
             frozen["graph_runtime"] = registered_plugin_runtime(frozen)
@@ -2794,8 +2879,10 @@ class Plugin:
         if classification == "private":
             if offline_native:
                 return {
-                    "status": "local_studio_only", "execution_route": "offline_studio",
-                    **identity, **self._handoff(sid, "workflows", allow_data_execution=True),
+                    "status": "local_studio_only",
+                    "execution_route": "offline_studio",
+                    **identity,
+                    **self._handoff(sid, "workflows", allow_data_execution=True),
                 }
             return {
                 "status": "local_studio_only",
@@ -2962,11 +3049,15 @@ class Plugin:
             if plan["operation"] == "registered_exploratory":
                 from .plugin_registered_method import verify_registered_method_result
 
-                verify_registered_method_result(self.jobs.workspace, args.run_id, plan, receipt)
+                verify_registered_method_result(
+                    self.jobs.workspace, args.run_id, plan, receipt
+                )
             if plan.get("graph_runtime") is not None:
                 from .plugin_graph import verify_registered_plugin_result
 
-                verify_registered_plugin_result(self.jobs.workspace, args.run_id, plan, receipt)
+                verify_registered_plugin_result(
+                    self.jobs.workspace, args.run_id, plan, receipt
+                )
             current = _adaptive_receipt_guard(ledger, plan, receipt)
         else:
             raise OperationBlocked("run_receipt_unavailable")
@@ -3170,8 +3261,10 @@ def _studio_receipt(
         # Studio's broker-scoped research projection carries structural receipt
         # identities, but never publishes the raw graph output artifacts.
         exposure = {
-            key: value for key, value in receipt.items()
-            if key not in {"result_artifact", "registered_method_outputs", "graph_execution"}
+            key: value
+            for key, value in receipt.items()
+            if key
+            not in {"result_artifact", "registered_method_outputs", "graph_execution"}
         }
     if not blocked_hashes.isdisjoint(studio_evidence_digests(exposure)):
         raise PermissionError("Plugin receipt references protected evidence")
@@ -3976,24 +4069,35 @@ def _matrix_preview(workspace: Path, result: dict[str, Any]) -> str | None:
 
 
 def run_frozen_plan(jobs: JobStore, rid: str, plan: dict[str, Any]) -> dict[str, Any]:
-    if plan["operation"] in {
-        "matrix_audit", "qc-salmon", "shared_motor_umap", "motor_program_comparison", *LOCAL_OPERATIONS,
-    } and plan.get("graph_runtime") is None:
+    if (
+        plan["operation"]
+        in {
+            "matrix_audit",
+            "qc-salmon",
+            "shared_motor_umap",
+            "motor_program_comparison",
+            *LOCAL_OPERATIONS,
+        }
+        and plan.get("graph_runtime") is None
+    ):
         # A legacy approval never authorized the registered graph implementation.
         raise OperationBlocked("plugin_graph_replan_required")
     if plan["operation"] == "shared_motor_umap":
-        from .plugin_motor_umap import _check_scope, run_shared_motor_umap_plan
         from .plugin_graph import run_registered_plugin_step
+        from .plugin_motor_umap import _check_scope, run_shared_motor_umap_plan
 
         result = run_registered_plugin_step(
-            jobs, rid, plan,
+            jobs,
+            rid,
+            plan,
             execute=lambda: run_shared_motor_umap_plan(jobs, rid, plan),
             verify_sources=lambda: _check_scope(jobs.workspace, plan),
         )
         result.pop("receipt_sha256", None)
         return {**result, "receipt_sha256": digest(result)}
     if plan["data_classification"] == "private" and plan["operation"] in {
-        "motor_program_comparison", *LOCAL_OPERATIONS,
+        "motor_program_comparison",
+        *LOCAL_OPERATIONS,
     }:
         from .plugin_graph import run_registered_plugin_step
         from .plugin_motor_programs import run_motor_program_comparison
@@ -4004,8 +4108,10 @@ def run_frozen_plan(jobs: JobStore, rid: str, plan: dict[str, Any]) -> dict[str,
 
         def verify_private_scope():
             broker.check_delivery(
-                lineage["context_id"], lineage["source_id"],
-                lineage_id=plan["session_id"], role="scientist",
+                lineage["context_id"],
+                lineage["source_id"],
+                lineage_id=plan["session_id"],
+                role="scientist",
             )
             ledger._read(lambda db: broker._query_dependencies(db, _roots(plan)))
 
@@ -4015,7 +4121,9 @@ def run_frozen_plan(jobs: JobStore, rid: str, plan: dict[str, Any]) -> dict[str,
             return _run_local_solver(jobs, rid, plan)
 
         return run_registered_plugin_step(
-            jobs, rid, plan,
+            jobs,
+            rid,
+            plan,
             execute=execute_private,
             verify_sources=verify_private_scope,
         )
@@ -4058,6 +4166,7 @@ def _run_external_plan(
         lambda db: broker._context_policy(db, lineage["context_id"])[0]["policy_sha256"]
     )
     lineage = _lineage(sid, plan, policy)
+
     def execute_native():
         if operation == "matrix_audit":
             return _run_matrix(jobs, rid, plan, ledger, lineage, verify)
@@ -4069,7 +4178,11 @@ def _run_external_plan(
         from .plugin_graph import run_registered_plugin_step
 
         result = run_registered_plugin_step(
-            jobs, rid, plan, execute=execute_native, verify_sources=verify,
+            jobs,
+            rid,
+            plan,
+            execute=execute_native,
+            verify_sources=verify,
         )
     elif operation == "registered_exploratory":
         from .plugin_registered_method import run_registered_method
@@ -4223,6 +4336,38 @@ def _freeze_fastq(
     return result
 
 
+def _fastq_worker_options(jobs, rid, cleanup):
+    options = {}
+    if callable(getattr(jobs, "bind_nextflow_runtime", None)):
+        options["container_cleanup"] = cleanup
+    if remaining := getattr(jobs, "remaining_deadline_sec", None):
+        options["timeout_sec"] = remaining(rid)
+    if resources := getattr(jobs, "nextflow_resources", None):
+        options["resources"] = resources(rid)
+    return options
+
+
+def _fastq_custody_stage(event):
+    kind = event["event"]
+    if kind == "attempt_created":
+        fields = {"nextflow_attempt": event["attempt_dir"]}
+        if "prelaunch_sha256" in event:
+            fields["nextflow_prelaunch_sha256"] = event["prelaunch_sha256"]
+        return fields
+    if kind in {"version_probe_started", "engine_process_bound"}:
+        field = (
+            "nextflow_version_probe"
+            if kind == "version_probe_started"
+            else "nextflow_engine_process"
+        )
+        return {field: {"pid": event["pid"], "create_time": event["create_time"]}}
+    if kind == "version_probe_finished":
+        return {"nextflow_version_probe_finished": True}
+    if kind == "engine_launch_intent":
+        return {"nextflow_engine_launch_intent": True}
+    return {}
+
+
 def _run_fastq(jobs: JobStore, rid: str, plan: dict[str, Any]) -> dict[str, Any]:
     from inspect import signature
 
@@ -4237,12 +4382,23 @@ def _run_fastq(jobs: JobStore, rid: str, plan: dict[str, Any]) -> dict[str, Any]
     destination = jobs.workspace / "runs" / rid / "nextflow"
     destination.mkdir(mode=0o700, parents=True, exist_ok=False)
     trace_attempt = None
+    docker_binding = None
+    bind_runtime = getattr(jobs, "bind_nextflow_runtime", None)
 
     def observe(event):
-        nonlocal trace_attempt
+        nonlocal trace_attempt, docker_binding
         if event["event"] == "attempt_created":
             trace_attempt = event["attempt_dir"]
-            jobs.stage(rid, nextflow_attempt=trace_attempt)
+        elif event["event"] == "before_engine_start" and bind_runtime is not None:
+            docker_binding = bind_runtime(rid, Path(event["attempt_dir"]))
+            return docker_binding
+        if stage := _fastq_custody_stage(event):
+            jobs.stage(rid, **stage)
+
+    def cleanup(attempt):
+        from devbench.daemon.supervisor import _nextflow_containers
+
+        return _nextflow_containers(attempt, docker_binding)
 
     runtime: Any = run_fastq_plan
     result = runtime(
@@ -4257,7 +4413,7 @@ def _run_fastq(jobs: JobStore, rid: str, plan: dict[str, Any]) -> dict[str, Any]
         ),
         mounted_image_id=plan["mounted_image_id"],
         execution_observer=observe,
-        timeout_sec=3300,
+        **_fastq_worker_options(jobs, rid, cleanup),
     )
     if result["status"] != "completed":
         raise OperationBlocked("qc_salmon_execution_incomplete")
@@ -4570,7 +4726,7 @@ _CHAIN_PORTS = {
 
 
 def _run_singlecell(jobs, rid, flow, record, broker, executor, parameters):
-    from .workbench_curated_actions import _queue
+    from devbench.daemon.native_steps import NativeSteps
 
     counts, aliases = _cell_inputs(flow, record, broker, executor, parameters)
     biological_unit = counts["biological_unit"]
@@ -4582,6 +4738,17 @@ def _run_singlecell(jobs, rid, flow, record, broker, executor, parameters):
     steps = parameters["steps"]
     if not isinstance(steps, list) or not 1 <= len(steps) <= 16:
         raise ValueError("Use one to sixteen ordered registered single-cell steps")
+    checkpoints = NativeSteps(
+        jobs,
+        rid,
+        flow,
+        executor,
+        record["plugin_plan_id"],
+        enabled=not composition,
+        actor=_ACTOR,
+    )
+    if len(checkpoints.entries) > len(steps):
+        raise OperationBlocked("native_step_checkpoint_mismatch")
     for index, step in enumerate(steps, 1):
         if set(step) != {"operation", "parameters", "sources"}:
             raise ValueError(
@@ -4594,30 +4761,29 @@ def _run_singlecell(jobs, rid, flow, record, broker, executor, parameters):
             port: {"id": aliases.get(link["id"], link["id"]), "port": link.get("port")}
             for port, link in step["sources"].items()
         }
-        with flow.authority._execution_tx(flow.lineage_id) as db:
-            _queue(
-                flow,
-                executor,
-                db,
-                flow._state(db),
-                {
-                    **step,
-                    "step_id": identity,
-                    "branch_id": "plugin-single-cell",
-                    "biological_unit": biological_unit,
-                    "sources": links,
-                },
-            )
-        task_rows.append(
-            {"step": step["operation"], "target": "local_tier_a", "status": "running"}
+        outcome = checkpoints.prepare(
+            {
+                **step,
+                "step_id": identity,
+                "branch_id": "plugin-single-cell",
+                "biological_unit": biological_unit,
+                "sources": links,
+            },
+            index,
         )
-        jobs.stage(rid, tasks=task_rows, step_total=len(steps))
-        started = time.monotonic()
-        outcome = flow.dispatch(identity, executor, actor=_ACTOR)
-        task_rows[-1].update(
-            status=outcome["status"],
-            duration_seconds=round(time.monotonic() - started, 2),
-        )
+        task = {"step": step["operation"], "target": "local_tier_a"}
+        task_rows.append(task)
+        if outcome is None:
+            task["status"] = "running"
+            jobs.stage(rid, tasks=task_rows, step_total=len(steps))
+            started = time.monotonic()
+            outcome = flow.dispatch(identity, executor, actor=_ACTOR)
+            task["duration_seconds"] = round(time.monotonic() - started, 2)
+            if outcome["status"] == "succeeded" and checkpoints.enabled:
+                outcome = checkpoints.accept(identity, index)
+        else:
+            task["resumed_from_checkpoint"] = True
+        task["status"] = outcome["status"]
         jobs.stage(rid, tasks=task_rows, step_total=len(steps))
         if outcome["status"] != "succeeded":
             raise OperationBlocked("single_cell_step_did_not_succeed")
@@ -4775,11 +4941,16 @@ def _bind_pseudobulk(jobs, plan, flow, broker, executor, request, staged, profil
         verify_attestation=lambda _db, record: record in (measurement, design, runtime),
     )
     broker.check_delivery(
-        f"plugin-scientist-{sid}", f"plugin-session-{sid}",
-        lineage_id=sid, role="scientist",
+        f"plugin-scientist-{sid}",
+        f"plugin-session-{sid}",
+        lineage_id=sid,
+        role="scientist",
     )
     return _bind_pseudobulk_capsule(
-        flow, lifecycle, executor, (jobs.workspace, flow.ledger.path.parent),
+        flow,
+        lifecycle,
+        executor,
+        (jobs.workspace, flow.ledger.path.parent),
         staged=staged,
         step_id=f"plugin-step-{plan['plan_id']}-pseudobulk",
         branch_id="plugin-pseudobulk",
@@ -5645,7 +5816,9 @@ def build_server(plugin: Plugin, *, auto_studio: bool = True) -> Server:
         if origin is None or opened_studio == origin:
             return
         link = result.get("studio_url")
-        target = link if isinstance(link, str) and link.startswith(origin + "?") else origin
+        target = (
+            link if isinstance(link, str) and link.startswith(origin + "?") else origin
+        )
         try:
             _open_browser_async(target)
         except (OSError, RuntimeError):
@@ -5711,7 +5884,9 @@ def build_server(plugin: Plugin, *, auto_studio: bool = True) -> Server:
             if auto_studio:
                 try:
                     origin = await anyio.to_thread.run_sync(
-                        ensure_offline_studio, plugin.jobs.workspace, plugin.input_root,
+                        ensure_offline_studio,
+                        plugin.jobs.workspace,
+                        plugin.input_root,
                         plugin.mounted_image_id,
                     )
                 except (OSError, ValueError):
@@ -5765,14 +5940,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--input-root", required=True, type=Path)
     parser.add_argument("--workspace", required=True, type=Path)
     parser.add_argument(
-        "--allow-external-input-files", action="store_true",
+        "--allow-external-input-files",
+        action="store_true",
         help="Allow explicitly named files outside the configured input root.",
     )
     parser.add_argument("--mounted-image-id")
     parser.add_argument("--allow-literature-network", action="store_true")
     parser.add_argument("--literature-plugin-root", type=Path)
     parser.add_argument(
-        "--no-auto-studio", action="store_true",
+        "--no-auto-studio",
+        action="store_true",
         help="Leave Companion Studio startup and opening to the operator.",
     )
     args = parser.parse_args(argv)

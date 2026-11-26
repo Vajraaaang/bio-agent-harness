@@ -13,6 +13,10 @@ def _runtime_failure(error):
 
 
 def main():
+    command = sys.argv[1] if len(sys.argv) > 1 else None
+    local_commands = {"daemon": run_daemon, "mcp": run_mcp_shim, "approve": approve}
+    if command in local_commands:
+        return local_commands[command](sys.argv[2:])
     if sys.argv[1:2] == ["plugin-mcp"]:
         from .plugin_mcp import main as plugin_main
 
@@ -35,6 +39,124 @@ def main():
 
         return run_sweep()
     return run_population(sys.argv[2:], pin_execution=True)
+
+
+_DEADLINE_PROFILES = ("qc", "standard", "long")
+
+
+def _daemon_parser():
+    parser = argparse.ArgumentParser(
+        prog="devbench daemon", description=run_daemon.__doc__
+    )
+    commands = parser.add_subparsers(dest="operation", required=True)
+    start = commands.add_parser("start", help="Start or attach to the research daemon")
+    status = commands.add_parser("status", help="Inspect the current daemon")
+    stop = commands.add_parser("stop", help="Stop the daemon once its jobs are idle")
+    for command in (start, status, stop):
+        command.add_argument("--workspace", required=True, type=Path)
+    start.add_argument("--input-root", type=Path)
+    start.add_argument("--http-port", type=int, default=0)
+    start.add_argument("--idle-timeout-sec", type=float, default=1800)
+    start.add_argument("--offline-only", action="store_true")
+    start.add_argument("--enable-streamable-http", action="store_true")
+    for name in ("cpu-slots", "gpu-slots", "memory-budget-mb", "max-concurrent-runs"):
+        start.add_argument(f"--{name}", type=int, default=argparse.SUPPRESS)
+    start.add_argument("--cancel-grace-sec", dest="grace_sec", type=float)
+    for profile in _DEADLINE_PROFILES:
+        start.add_argument(f"--{profile}-deadline-sec", type=int)
+    return parser
+
+
+def run_daemon(argv):
+    """Start, inspect or stop the research daemon for one workspace."""
+    from devbench.daemon import ipc
+
+    options = vars(_daemon_parser().parse_args(argv))
+    operation = options.pop("operation")
+    workspace = options.pop("workspace")
+    try:
+        if operation == "start":
+            deadlines = {}
+            for profile in _DEADLINE_PROFILES:
+                seconds = options.pop(f"{profile}_deadline_sec")
+                if seconds is not None:
+                    deadlines[profile] = seconds
+            if deadlines:
+                options["deadlines"] = deadlines
+            options = {
+                key: value for key, value in options.items() if value is not None
+            }
+            result = ipc.start_daemon(workspace, **options)
+        elif operation == "status":
+            result = ipc.daemon_status(workspace)
+            if result["status"] == "running":
+                result = ipc.request(workspace, "status")
+        else:
+            result = ipc.stop_daemon(workspace)
+    except (OSError, ValueError, RuntimeError) as error:
+        return _runtime_failure(error)
+    print(json.dumps(result, allow_nan=False))
+    return 0
+
+
+def run_mcp_shim(argv):
+    """Connect an MCP STDIO client to the workspace's Unix socket."""
+    from devbench.daemon.ipc import stdio_shim
+
+    parser = argparse.ArgumentParser(
+        prog="devbench mcp", description=run_mcp_shim.__doc__
+    )
+    parser.add_argument("--workspace", required=True, type=Path)
+    parser.add_argument("--input-root", required=True, type=Path)
+    parser.add_argument(
+        "--no-auto-browser",
+        action="store_true",
+        help="Keep Studio links passive (default)",
+    )
+    args = parser.parse_args(argv)
+    try:
+        return stdio_shim(args.workspace, args.input_root)
+    except (OSError, ValueError, RuntimeError):
+        # STDIO is the protocol channel. Keep local data out of diagnostics.
+        print("devbench mcp: workspace daemon connection failed", file=sys.stderr)
+        return 1
+
+
+def approve(argv):
+    """Record the local operator's approval of an exact frozen plan."""
+    from devbench.daemon import ipc
+    from devbench.daemon.auth import local_actor
+
+    parser = argparse.ArgumentParser(
+        prog="devbench approve", description=approve.__doc__
+    )
+    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--session-id", required=True)
+    parser.add_argument("--plan-id", required=True)
+    parser.add_argument("--plan-sha256", required=True)
+    parser.add_argument(
+        "--actor", help="Operator attribution (defaults to the OS user)"
+    )
+    parser.add_argument("--rationale", default="")
+    args = parser.parse_args(argv)
+    try:
+        if ipc.daemon_status(args.workspace)["status"] != "running":
+            if not (args.workspace / "plugin-jobs.sqlite3").is_file():
+                raise ValueError("No frozen plan exists in this workspace")
+            ipc.start_daemon(args.workspace, offline_only=True)
+        result = ipc.request(
+            args.workspace,
+            "approve",
+            session_id=args.session_id,
+            plan_id=args.plan_id,
+            plan_sha256=args.plan_sha256,
+            actor_id=args.actor if args.actor is not None else local_actor(),
+            rationale=args.rationale,
+        )
+    except (OSError, ValueError, RuntimeError) as error:
+        return _runtime_failure(error)
+    print(json.dumps(result, allow_nan=False))
+    return 0
 
 
 def run_workflow(argv):

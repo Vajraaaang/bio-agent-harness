@@ -16,7 +16,9 @@ pytestmark = pytest.mark.wal
 
 
 @pytest.mark.parametrize("automatic", [True, False])
-def test_first_tool_starts_and_opens_offline_studio(workspace_tmp_path, automatic):
+def test_first_tool_offers_offline_studio_without_opening_browser(
+    workspace_tmp_path, automatic
+):
     inputs = workspace_tmp_path / "inputs"
     inputs.mkdir(mode=0o700)
     workspace = workspace_tmp_path / "workspace"
@@ -72,7 +74,7 @@ def test_first_tool_starts_and_opens_offline_studio(workspace_tmp_path, automati
                 assert detail["studio_url"], detail
                 state = json.loads(marker.read_text())
                 assert state["offline_only"] is True
-                assert browser_calls.read_text().splitlines() == [detail["studio_url"]]
+                assert not browser_calls.exists()
                 url = urlsplit(detail["studio_url"])
                 assert url.hostname == "127.0.0.1"
                 connection = http.client.HTTPConnection(
@@ -80,6 +82,19 @@ def test_first_tool_starts_and_opens_offline_studio(workspace_tmp_path, automati
                 )
                 try:
                     connection.request("GET", "/api/config")
+                    response = connection.getresponse()
+                    assert response.status == 401
+                    response.read()
+                    token = (
+                        (workspace / ".devbench-daemon" / "daemon.token")
+                        .read_text()
+                        .strip()
+                    )
+                    connection.request(
+                        "GET",
+                        "/api/config",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
                     response = connection.getresponse()
                     assert response.status == 200
                     assert json.loads(response.read())["offline_only"] is True
@@ -90,7 +105,7 @@ def test_first_tool_starts_and_opens_offline_studio(workspace_tmp_path, automati
                 )
                 assert not followup.isError
                 assert json.loads(marker.read_text())["pid"] == state["pid"]
-                assert browser_calls.read_text().splitlines() == [detail["studio_url"]]
+                assert not browser_calls.exists()
                 frozen = {
                     key: detail[key] for key in ("session_id", "plan_id", "plan_sha256")
                 }
@@ -116,7 +131,7 @@ def test_first_tool_starts_and_opens_offline_studio(workspace_tmp_path, automati
                 assert not receipt.isError, receipt.structuredContent
                 assert receipt.structuredContent["run_id"] == run_key["run_id"]
                 assert json.loads(marker.read_text())["pid"] == state["pid"]
-                assert browser_calls.read_text().splitlines() == [detail["studio_url"]]
+                assert not browser_calls.exists()
 
     try:
         asyncio.run(roundtrip())
