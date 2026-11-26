@@ -40,6 +40,7 @@ jobs:
       - name: Verify portable Workbench and source contracts
         run: |
           .venv/bin/python -m pytest -q \
+            tests/test_agents_md.py \
             tests/test_workbench_redesign.py \
             tests/test_workbench_studio_thesis.py \
             tests/test_workbench_project_scope.py \

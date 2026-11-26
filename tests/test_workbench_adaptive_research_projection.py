@@ -9,6 +9,7 @@ from tests.test_workbench_operator_runtime import operator  # noqa: F401
 pytestmark = pytest.mark.wal
 
 
+@pytest.mark.usefixtures("authenticated_workbench_client")
 def test_investigation_shows_a_queued_step_without_revising_the_chat(
     request, monkeypatch
 ):

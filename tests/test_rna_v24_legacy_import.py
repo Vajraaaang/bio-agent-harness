@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -134,7 +135,7 @@ def test_legacy_import_retains_exact_bytes_without_new_scientific_semantics(
 
 
 def test_legacy_reader_bounds_source_bytes_before_hashing(tmp_path):
-    from devbench.adaptive.legacy import LegacyRejected, import_legacy_source
+    from devbench.analysis.bundles import LegacyRejected, import_legacy_source
 
     source = tmp_path / "oversize.json"
     with source.open("wb") as stream:
@@ -148,3 +149,72 @@ def test_legacy_reader_bounds_source_bytes_before_hashing(tmp_path):
                 "original_claim_status": "failed",
             }
         )
+
+
+@pytest.fixture
+def legacy_source(workspace_tmp_path):
+    path = workspace_tmp_path / "episode.json"
+    content = b'{"status":"failed"}'
+    path.write_bytes(content)
+    return {
+        "source_kind": "episode",
+        "source_path": str(path),
+        "source_sha256": hashlib.sha256(content).hexdigest(),
+        "original_claim_status": "failed",
+        "evidence_use_scope": "structural_only",
+        "data_use_plan": None,
+        "qualified_in_regime": False,
+    }
+
+
+def test_legacy_source_retains_exact_identity_and_missing_semantics(legacy_source):
+    from devbench.analysis.bundles import import_legacy_source
+
+    record = import_legacy_source(legacy_source)
+    assert record.source_sha256 == legacy_source["source_sha256"]
+    assert record.source_path == legacy_source["source_path"]
+    assert record.original_claim_status == "failed"
+    assert record.qualified_in_regime is False
+    assert record.observed_fields == (
+        "evidence_use_scope",
+        "original_claim_status",
+        "source_kind",
+        "source_path",
+        "source_sha256",
+    )
+    assert record.missing_semantics == (
+        "biological_unit_context",
+        "qualification_regime",
+        "selection_history",
+        "claim_eligibility",
+        "data_use_plan",
+        "operation_idempotency",
+    )
+
+
+@pytest.mark.parametrize(
+    ("changes", "reason"),
+    [
+        ({"source_path": "relative.json"}, "LEGACY_PATH_NOT_ABSOLUTE"),
+        ({"source_sha256": "0" * 64}, "LEGACY_HASH_MISMATCH"),
+        ({"qualified_in_regime": True}, "LEGACY_QUALIFICATION_FABRICATION"),
+    ],
+)
+def test_legacy_source_rejects_unbound_or_upgraded_records(
+    legacy_source, changes, reason
+):
+    from devbench.analysis.bundles import LegacyRejected, import_legacy_source
+
+    with pytest.raises(LegacyRejected) as rejected:
+        import_legacy_source({**legacy_source, **changes})
+    assert rejected.value.code == reason
+
+
+def test_legacy_source_rejects_symlink_with_matching_digest(legacy_source):
+    from devbench.analysis.bundles import LegacyRejected, import_legacy_source
+
+    source = Path(legacy_source["source_path"])
+    link = source.with_name("linked.json")
+    link.symlink_to(source)
+    with pytest.raises(LegacyRejected, match="LEGACY_SYMLINK"):
+        import_legacy_source({**legacy_source, "source_path": str(link)})

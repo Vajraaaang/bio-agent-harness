@@ -248,7 +248,7 @@ def test_oci_execution_error_survives_cleanup_failure(tmp_path, monkeypatch):
 
 
 def test_grouped_evaluator_validates_under_python_optimization(tmp_path):
-    from devbench.adaptive.policy import GROUPED_EVALUATOR_SOURCE
+    from devbench.engine.exploratory_oci import GROUPED_EVALUATOR_SOURCE
 
     inputs = tmp_path / "inputs"
     outputs = tmp_path / "outputs"

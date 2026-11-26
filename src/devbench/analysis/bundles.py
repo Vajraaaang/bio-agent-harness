@@ -9,6 +9,9 @@ import shutil
 import stat
 import zipfile
 
+from devbench.adaptive.models import LegacyImport
+from devbench.core._files import hash_bounded_file
+
 from ._fixed_replay import (
     REPLAY_FORMAT as REPLAY_FORMAT,
     _ERQL_ARTIFACTS as _ERQL_ARTIFACTS,
@@ -81,6 +84,68 @@ _MAX_BUNDLE_MEMBERS = 10_000
 _MAX_BUNDLE_EXPANDED_BYTES = 8 * 1024**3
 _MAX_BUNDLE_MEMBER_BYTES = 2 * 1024**3
 _MAX_BUNDLE_RECEIPTS_BYTES = 16 * 1024**2
+_ADAPTIVE_SEMANTICS = (
+    "evidence_use_scope",
+    "biological_unit_context",
+    "qualification_regime",
+    "selection_history",
+    "claim_eligibility",
+    "data_use_plan",
+    "operation_idempotency",
+)
+
+
+class LegacyRejected(ValueError):
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def import_legacy_source(raw: dict) -> LegacyImport:
+    """Bind a legacy record to its source bytes and retain its original claim status."""
+    if raw.get("qualified_in_regime") is True:
+        raise LegacyRejected("LEGACY_QUALIFICATION_FABRICATION")
+    kind = raw.get("source_kind")
+    claim = raw.get("original_claim_status")
+    digest = raw.get("source_sha256")
+    if not isinstance(kind, str) or not isinstance(claim, str) or not claim:
+        raise LegacyRejected("LEGACY_IDENTITY_INCOMPLETE")
+    if not isinstance(digest, str):
+        raise LegacyRejected("LEGACY_HASH_MISSING")
+    path = raw.get("source_path")
+    if not isinstance(path, str):
+        raise LegacyRejected("LEGACY_PATH_MISSING")
+    source = Path(path)
+    if not source.is_absolute():
+        raise LegacyRejected("LEGACY_PATH_NOT_ABSOLUTE")
+    if source.is_symlink():
+        raise LegacyRejected("LEGACY_SYMLINK")
+    if not source.is_file():
+        raise LegacyRejected("LEGACY_SOURCE_ABSENT")
+    try:
+        actual = hash_bounded_file(source, REPLAY_MAX_BYTES)
+    except (ValueError, OSError) as error:
+        raise LegacyRejected("LEGACY_SOURCE_BOUND_OR_UNSAFE") from error
+    if actual != digest:
+        raise LegacyRejected("LEGACY_HASH_MISMATCH")
+    observed = tuple(
+        sorted(
+            key
+            for key, value in raw.items()
+            if key != "qualified_in_regime" and value not in (None, "")
+        )
+    )
+    return LegacyImport(
+        source_kind=kind,
+        source_path=str(source),
+        source_sha256=digest,
+        original_claim_status=claim,
+        observed_fields=observed,
+        missing_semantics=tuple(
+            name for name in _ADAPTIVE_SEMANTICS if name not in observed
+        ),
+        qualified_in_regime=False,
+    )
 
 
 def _legacy_report(members, expected_root):

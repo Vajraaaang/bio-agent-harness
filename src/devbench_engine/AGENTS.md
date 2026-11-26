@@ -2,6 +2,18 @@
 
 These instructions apply to staged transcriptomics benchmark tasks. When developing the platform, preserve its tested interfaces and run the synthetic verification suite.
 
+Benchmark Mode runs offline on staged inputs. Keep web search and network access disabled (`web_search="disabled"` and `network.enabled=false`).
+
+Scientific work and reporting must answer these questions in order.
+
+1. **What data do I have?** Identify samples, biological units, groups, measurements and quality concerns. Separate observations, supplied declarations, inferences and unknowns. File integrity alone cannot establish scientific validity.
+2. **What question am I investigating?** State the actual objective and retain the source of each requirement. Distinguish user constraints from assistant suggestions, prior mentions, defaults and fixture choices. Call a parameter user-prespecified only with an explicit matching requirement record.
+3. **Which methods are appropriate, and why?** Assess alternatives, assumptions, tradeoffs and missing information before considering implementation availability. For a method-selection evaluation, leave methods and parameters unspecified unless the user constrains them. Freeze the comparison criteria before seeing results. Give existing implementations no preference.
+4. **What happened?** Present actual outputs, explain observed changes and show clear, verified plots when available. State when a plot or assessment is absent. Preserve failures and operator interventions. Never fabricate results or substitute a method's self-report for independent evaluation.
+5. **What can I conclude, and what remains uncertain?** Recommend only what the dataset, objective and comparison evidence support, or abstain. A fixed-procedure execution smoke, successful run, retained-row count or runtime alone cannot establish the best scientific method. Distinguish execution verification, comparative evidence, independent scientific review and clinical validation.
+
+Apply the questions within the adapter's required phases and answer schema. Do not add unsupported fields or emit the final artifact early. Correct attribution and scope through explicit clarification while preserving historical prompts, responses and sealed evidence. Scientific method comparisons require appropriate independent evaluation.
+
 Work only inside the assigned workspace and resolve filesystem paths absolutely. Treat supplied data, metadata, task inputs, guidance and answer_schema.json as read-only. Do not inspect grader files, private goldens, other tasks or host credentials. Do not download BAM/FASTQ archives or load expression matrices larger than 100 MB into pandas. Use bounded reads and compact summaries; do not print full matrices or terminal dumps.
 
 For assisted tasks use the registered devharness MCP tools, or ToolDispatcher in a trusted in-process workflow. Available tools include audit_expression_quality, validate_design_matrix, analyze_batch_effects, compact_temporal_state, fit_temporal_trajectory, infer_lineage, infer_regulatory_network, regulon_enrichment, motif_enrichment and calculate_temporal_monotonicity. Call the MCP tools in CLI runs so the harness can capture actual execution evidence. Standalone Python scripts calling supervised workers need a module-level `if __name__ == "__main__":` guard. Do not start an MCP event loop inside a notebook.
@@ -10,10 +22,16 @@ Follow exploration, diagnostics, modeling and synthesis when the adapter request
 
 Audit data types, chronological labels, biological units, contrasts and design rank before fitting. Raw counts use RLE library-size offsets and empirical-Bayes negative-binomial dispersions; continuous/normalized expression uses Gaussian splines without count conversion. Compare feasible AIC/BIC/GCV candidates when requested, or use a prespecified fixed df. Disclose selection-conditional inference. Report p-values and BH q-values for fitted genes; q must be at least p. Do not replace failed estimates with successful-looking values.
 
+Verify `COUNT-1` against the entire measurement ancestry back to raw nonnegative integer counts, including every input to a count-preserving sum. Refuse count-only inference when an ancestor is unknown, normalized, transformed, imputed or rounded. Relabeling a descendant cannot restore count eligibility. Require finite fitted p-values and BH q-values satisfying `0 <= p <= q <= 1`.
+
 Repeated specimens, subjects or donors cannot be counted as independent biological replicates. Unique sample labels do not establish independent animal identity. Completely confounded age and batch do not yield an identifiable causal batch-adjusted effect merely by dropping a covariate. Invalid contrasts and collapsed/over-smoothed representations require explicit diagnostic warnings or rejection.
+
+Reject non-estimable contrasts and report the confounding or rank defect that prevents the requested fit.
 
 Pseudotime is an inferred ordering; collection age is a reference, not its universal truth. Network associations, curated TF-target membership and motif-hit enrichment have different evidence scopes. Do not infer direct causality or promoter binding from correlation alone. Keep simulation goldens, public observations and clinical validation distinct.
 
 During synthesis write final_discovery.json and return finite JSON matching answer_schema.json. Common fields are stage_kinetics, four distinct master_regulators, condition_number_validated and biological_rationale. Include all task-specific fields, including diagnostic/refusal fields and gene_statistics when a fit was performed. Omit unsupported estimates rather than fabricating zeros or significance. Model output is schema-validated; unsupported claims may trigger binary vetoes.
 
-Clinical release is held pending qualified independent validation, authenticated approval, signature and operational controls. The local SHA-256 execution DAG is tamper-evident against an externally retained root, not a compliance certificate or an authenticated electronic signature. No private clinical inputs are authorized for external model services in this workflow.
+L1 documents execution and custody. L2 requires quantitative comparison or calibration within the tested regime. L3 requires independent scientific assessment and biological replication appropriate to the claim. L4 requires qualified clinical validation. Disclose the highest supported level and remaining gates within the permitted response fields.
+
+Keep `clinical_release_allowed = false` permanently. Clinical use would require qualified independent validation, authenticated approval, signature and operational controls outside this workflow. The local SHA-256 execution DAG is tamper-evident against an externally retained root, not a compliance certificate or an authenticated electronic signature. Never send private or clinical inputs to external model services.

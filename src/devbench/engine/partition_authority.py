@@ -494,3 +494,12 @@ class PartitionAuthority:
     def protect_outputs(self, identities):
         with self.authority._execution_tx(self.lineage) as db:
             self._protect(db, identities)
+
+
+def seal_holdout(partition: PartitionAuthority, manifest: dict) -> str:
+    """Seal a held-out manifest through the coordinator's partition authority."""
+    if type(partition) is not PartitionAuthority:
+        raise PermissionError(
+            "Sealing a holdout requires the exact partition authority"
+        )
+    return partition.seal(manifest)
