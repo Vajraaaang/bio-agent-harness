@@ -146,6 +146,20 @@ def _payload(root, operation):
     }
 
 
+async def _check_invalid_spatial_labels(inputs, call):
+    for case, label in (("empty", ""), ("leading_space", " A")):
+        bad_spatial = _payload(inputs / case, "spatial_pattern")
+        path = Path(bad_spatial["inputs"][1]["path"])
+        annotations = pd.read_csv(path)
+        annotations.loc[0, "cell_type"] = label
+        annotations.to_csv(path, index=False)
+        bad_spatial["parameters"]["metadata_sha256"] = hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        refusal = await call("plan_rna_workflow", bad_spatial, error=True)
+        assert refusal["reason"] == "local_solver_input_or_design_invalid"
+
+
 def test_local_solvers_round_trip(workspace_tmp_path):
     operations = {
         "scrna_ccc": {"cell_type_expression", "ligand_receptor_reference"},
@@ -164,7 +178,9 @@ def test_local_solvers_round_trip(workspace_tmp_path):
     payloads = {
         operation: _payload(inputs / operation, operation) for operation in operations
     }
-    spatial_without_types = _payload(inputs / "spatial_without_types", "spatial_pattern")
+    spatial_without_types = _payload(
+        inputs / "spatial_without_types", "spatial_pattern"
+    )
     metadata = Path(spatial_without_types["inputs"][1]["path"])
     pd.read_csv(metadata).drop(columns="cell_type").to_csv(metadata, index=False)
     spatial_without_types["parameters"]["metadata_sha256"] = hashlib.sha256(
@@ -218,6 +234,8 @@ def test_local_solvers_round_trip(workspace_tmp_path):
                 result = await client.call_tool(name, args)
                 assert result.isError is error, result
                 return result.structuredContent
+
+            await _check_invalid_spatial_labels(inputs, call)
 
             ccc = payloads["scrna_ccc"]
             await call(
@@ -355,12 +373,14 @@ def test_local_solvers_round_trip(workspace_tmp_path):
                 if operation == "spatial_pattern":
                     assert result["status"] == "completed"
                     assert result["gene_statistics"]
-                    assert result["input_sha256s"]["metadata"] == (
-                        payload["parameters"]["metadata_sha256"]
+                    assert (
+                        result["input_sha256s"]["metadata"]
+                        == payload["parameters"]["metadata_sha256"]
                     )
-                    assert bool(result["neighborhood_enrichment"]) == (
-                        payload is not spatial_without_types
-                    )
+                    if payload is spatial_without_types:
+                        assert result["neighborhood_enrichment"] == []
+                    else:
+                        assert result["neighborhood_enrichment"]
 
                 if operation == "scrna_ccc":
                     path.chmod(0o600)

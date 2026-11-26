@@ -3,13 +3,20 @@
 import asyncio
 import importlib.util
 import json
+import math
 import re
 import shutil
 import subprocess
 import sys
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
+
+from devbench.platform import plugin_mcp
 
 SOURCE = Path(__file__).resolve().parents[1] / "devharness"
 REFERENCES = Path("skills", "rna-workbench", "references")
@@ -49,8 +56,59 @@ def test_pathway_and_spatial_payload_contracts():
     spatial = contracts.partition("#### Spatial pattern and colocalization\n")[2]
     spatial = spatial.partition("\n#### ")[0]
     assert "`fgsea` or `decoupleR`" in pathway
-    score = "math.copysign(-math.log10(max(p, 1e-300)), effect) if effect else 0.0"
-    assert score in pathway
+    (formula,) = re.findall(r"The score is `([^`]+)`", pathway)
+    # Only evaluate the reviewed arithmetic expression from the documentation.
+    assert (
+        formula
+        == "math.copysign(-math.log10(max(p, 1e-300)), effect) if effect else 0.0"
+    )
+    cases = [
+        ("positive", 2.0, 0.05),
+        ("negative", -0.5, 0.01),
+        ("zero_effect", 0.0, 0.001),
+        ("zero_p", -0.5, 0.0),
+        ("below_floor", 0.5, 1e-320),
+        ("unit_p", -1.0, 1.0),
+    ]
+    rows = pa.Table.from_pylist(
+        [
+            dict(
+                gene_id=gene,
+                effect=effect,
+                p_value=p,
+                q_value=1.0,
+                estimate_status="estimated",
+            )
+            for gene, effect, p in cases
+        ]
+    )
+    parquet = BytesIO()
+    pq.write_table(rows, parquet)
+    executor = SimpleNamespace(open_output=lambda _: BytesIO(parquet.getvalue()))
+    source = {
+        "receipt_sha256": "a" * 64,
+        "artifact": {
+            "version_id": "fixture",
+            "sha256": "b" * 64,
+            "representation": "gene_statistics",
+            "biological_unit": "donor",
+            "kind": "table",
+            "unit_membership_sha256": "c" * 64,
+        },
+    }
+    _, scores = plugin_mcp._pathway_universe(executor, source, q_max=None, ranked=True)
+    assert scores == {
+        gene: eval(
+            formula,
+            {"__builtins__": {}, "math": math, "max": max},
+            {"p": p, "effect": effect},
+        )
+        for gene, effect, p in cases
+    }
+
+    (example,) = re.findall(r"```json\n(.*?)\n```", spatial, re.DOTALL)
+    validated = plugin_mcp.Plan.model_validate(json.loads(example))
+    assert validated.root.operation == "spatial_pattern"
     assert "`spot_id,donor_id,section_id,x,y`" in spatial
     assert "`cell_type` column is optional" in spatial
     assert "cell-type colocalization" in spatial
@@ -66,6 +124,7 @@ def test_retired_codex_package_is_absent():
     )
     assert not [name for name in retired if (SOURCE.parent / name).exists()]
     readme = (SOURCE.parent / "README.md").read_text()
+    assert all(f"`{name}`" in readme for name in plugin_mcp._TOOLS)
     assert "devharness_server" not in readme
     assert not re.search(r"\b(?:10|ten)[\s-]+tools?\b", readme, re.I)
 
@@ -111,7 +170,10 @@ def test_configured_plugin_keeps_template(paths, allow_external):
     inputs, workspace, output = paths
     original = (SOURCE / ".mcp.json").read_bytes()
     result = api().configure(
-        Path(sys.executable), inputs, workspace, output,
+        Path(sys.executable),
+        inputs,
+        workspace,
+        output,
         allow_external_input_files=allow_external,
     )
     mcp = json.loads((output / ".mcp.json").read_text())
