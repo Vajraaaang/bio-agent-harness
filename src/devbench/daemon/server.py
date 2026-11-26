@@ -124,6 +124,8 @@ async def _serve_mcp(server, reader, writer):
     async def read_messages():
         async with send_in:
             while line := await reader.readline():
+                if not line.endswith(b"\n") or len(line) > _FRAME_BYTES:
+                    raise ValueError("Invalid MCP frame")
                 try:
                     message = types.JSONRPCMessage.model_validate_json(line)
                 except ValueError:
@@ -142,7 +144,8 @@ async def _serve_mcp(server, reader, writer):
         async with read_out:
             async for item in read_out:
                 encoded = item.message.model_dump_json(by_alias=True, exclude_none=True)
-                if len(data := encoded.encode()) > _FRAME_BYTES:
+                data = encoded.encode()
+                if len(data) + 1 > _FRAME_BYTES:
                     raise ValueError("MCP response too large")
                 writer.write(data + b"\n")
                 await writer.drain()
@@ -470,6 +473,8 @@ class _Daemon:
             self.activity.client(1)
             attached = True
             frame = await asyncio.wait_for(reader.readline(), timeout=10)
+            if not frame.endswith(b"\n"):
+                raise ValueError("Incomplete IPC frame")
             fields = decode_json(frame, max_bytes=_FRAME_BYTES)
             op = fields.pop("op")
             if self.stop.is_set():

@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -140,19 +142,48 @@ def approve(argv):
     parser.add_argument("--rationale", default="")
     args = parser.parse_args(argv)
     try:
+        actor = args.actor if args.actor is not None else local_actor()
         if ipc.daemon_status(args.workspace)["status"] != "running":
             if not (args.workspace / "plugin-jobs.sqlite3").is_file():
                 raise ValueError("No frozen plan exists in this workspace")
-            ipc.start_daemon(args.workspace, offline_only=True)
-        result = ipc.request(
-            args.workspace,
-            "approve",
-            session_id=args.session_id,
-            plan_id=args.plan_id,
-            plan_sha256=args.plan_sha256,
-            actor_id=args.actor if args.actor is not None else local_actor(),
-            rationale=args.rationale,
-        )
+            from devbench.engine.scientific_authority import require_patched_wal
+
+            from .plugin_jobs import JobStore
+
+            env = os.environ.copy()
+            ipc._macos_sqlite_environment(env)
+            if env.get("DYLD_LIBRARY_PATH") != os.environ.get("DYLD_LIBRARY_PATH"):
+                # A macOS shell launcher can strip DYLD_* before Python starts.
+                # Run just this approval with the same patched SQLite selector.
+                source = str(Path(__file__).resolve().parents[2])
+                entry = (
+                    f"import sys; sys.path.insert(0, {source!r}); "
+                    "from devbench.platform.cli import approve; "
+                    "raise SystemExit(approve(sys.argv[1:]))"
+                )
+                return subprocess.run(
+                    [sys.executable, "-I", "-B", "-c", entry, *argv], env=env
+                ).returncode
+            require_patched_wal()
+            result = JobStore(args.workspace).approve(
+                args.session_id,
+                args.plan_id,
+                args.plan_sha256,
+                actor_id=actor,
+                surface="cli",
+                auth_method="local_os_user",
+                rationale=args.rationale,
+            )
+        else:
+            result = ipc.request(
+                args.workspace,
+                "approve",
+                session_id=args.session_id,
+                plan_id=args.plan_id,
+                plan_sha256=args.plan_sha256,
+                actor_id=actor,
+                rationale=args.rationale,
+            )
     except (OSError, ValueError, RuntimeError) as error:
         return _runtime_failure(error)
     print(json.dumps(result, allow_nan=False))

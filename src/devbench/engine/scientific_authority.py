@@ -8,7 +8,7 @@ import re
 import sqlite3
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -628,13 +628,20 @@ class ScientificAuthority:
         surface,
         auth_method,
         rationale="",
+        public_plan_policy=None,
     ):
         """Record a local operator's grant for the verified frozen plan."""
         verify_frozen_plan(frozen_plan, session_id, plan_id, plan_sha256)
         _validate_approval_actor(actor_id, surface, auth_method, rationale)
         identity = (session_id, plan_id, plan_sha256)
         attribution = (actor_id, surface, auth_method, rationale)
-        with self.daemon_transaction() as db:
+        # Match scheduler lock order. Keep the custody fence until the grant
+        # commits so a concurrent private declaration cannot slip between them.
+        with ExitStack() as custody, self.daemon_transaction() as db:
+            if public_plan_policy is not None:
+                _, protected = custody.enter_context(public_plan_policy)
+                if protected:
+                    raise PermissionError("Restricted plans require offline approval")
             changed_digest = db.execute(
                 "SELECT 1 FROM scientific_plan_approvals WHERE session_id=? "
                 "AND plan_id=? AND plan_sha256<>? LIMIT 1",

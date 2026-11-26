@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -123,14 +124,28 @@ def _socket_address(workspace: Path, value: str) -> Path:
     return path
 
 
-def _check_socket(workspace: Path, value: str, *, remove: bool = False) -> Path:
+def _check_socket(workspace: Path, value: str) -> Path:
     path = _socket_address(workspace, value)
     with auth.owned_directory(path.parent) as directory:
-        info = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+        info = os.lstat(path.name, dir_fd=directory)
         auth.verify_owner(info, stat.S_IFSOCK, 0o600)
-        if remove:
-            os.unlink(path.name, dir_fd=directory)
     return path
+
+
+def _unlink_socket(directory: int, name: str, bound: os.stat_result) -> bool:
+    try:
+        current = os.lstat(name, dir_fd=directory)
+    except FileNotFoundError:
+        return True
+    if (
+        not os.path.samestat(bound, current)
+        or not stat.S_ISSOCK(current.st_mode)
+        or current.st_uid != os.getuid()
+        or current.st_nlink != 1
+    ):
+        return False
+    os.unlink(name, dir_fd=directory)
+    return True
 
 
 def _record(directory: int) -> dict:
@@ -141,26 +156,26 @@ def _record(directory: int) -> dict:
 
 
 def _remove_stale_socket(workspace: Path, value: str) -> None:
-    address = _check_socket(workspace, value)
-    before = address.lstat()
-    # Metadata can be absent after a crash during startup. Prove that the
-    # recorded address no longer has a listener before unlinking its inode.
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
-        probe.settimeout(0.5)
-        try:
-            probe.connect(str(address))
-        except ConnectionRefusedError:
-            pass
-        else:
-            raise DaemonError("daemon_socket_in_use")
+    address = _socket_address(workspace, value)
     with auth.owned_directory(address.parent) as directory:
-        after = os.stat(address.name, dir_fd=directory, follow_symlinks=False)
-        if not os.path.samestat(before, after):
-            raise DaemonError("daemon_socket_changed")
-        os.unlink(address.name, dir_fd=directory)
+        bound = os.lstat(address.name, dir_fd=directory)
+        # Older Linux launches could stop between bind (0700) and chmod.
+        mode = stat.S_IMODE(bound.st_mode)
+        if mode not in (0o600, 0o700):
+            raise PermissionError("Stale daemon socket must be owner-only")
+        auth.verify_owner(bound, stat.S_IFSOCK, mode)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.5)
+            try:
+                probe.connect(str(address))
+            except ConnectionRefusedError:
+                if not _unlink_socket(directory, address.name, bound):
+                    raise DaemonError("daemon_socket_changed") from None
+            else:
+                raise DaemonError("daemon_socket_in_use")
 
 
-def _is_live(record: dict) -> bool:
+def _is_live(record: dict, *, owns_lifetime_lock: bool = False) -> bool:
     pid, created = record.get("pid"), record.get("create_time")
     if (
         type(pid) is not int
@@ -178,6 +193,9 @@ def _is_live(record: dict) -> bool:
     except psutil.NoSuchProcess:
         return False
     except psutil.AccessDenied as error:
+        if owns_lifetime_lock:
+            # An inaccessible PID cannot belong to an earlier locked generation.
+            return False
         raise DaemonError("daemon_identity_unavailable") from error
 
 
@@ -206,10 +224,8 @@ def daemon_status(workspace: Path) -> dict:
     try:
         with auth.state_directory(workspace) as directory:
             record = _record(directory)
-            if not _is_live(record):
+            if not _locked(directory) or not _is_live(record):
                 return stopped
-            if not _locked(directory):
-                raise DaemonError("daemon_lifetime_lock_missing")
             if record.get("workspace") != str(workspace) or not _origin(
                 record.get("http_url")
             ):
@@ -263,7 +279,7 @@ def _reap(workspace: Path, directory: int, selected: Path) -> None:
         pass
     paths = {str(selected)}
     if previous is not None:
-        if _is_live(previous):
+        if _is_live(previous, owns_lifetime_lock=True):
             raise DaemonError("daemon_already_running")
         if "socket_path" in previous:
             paths.add(str(_socket_address(workspace, previous["socket_path"])))
@@ -279,7 +295,7 @@ def _reap(workspace: Path, directory: int, selected: Path) -> None:
 @contextmanager
 def daemon_listener(workspace: Path, lock_fd: int):
     """Own the inherited flock until the listener, state and credentials are retired."""
-    with auth.state_directory(workspace) as directory:
+    with auth.state_directory(workspace) as directory, ExitStack() as cleanup:
         info = os.fstat(lock_fd)
         os.set_inheritable(lock_fd, False)
         auth.verify_owner(info, stat.S_IFREG, 0o600)
@@ -290,19 +306,25 @@ def daemon_listener(workspace: Path, lock_fd: int):
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         address = socket_path(workspace)
         _reap(workspace, directory, address)
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+        parent = cleanup.enter_context(auth.owned_directory(address.parent))
+        listener = cleanup.enter_context(
+            socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        )
+        # Bootstrap is single-threaded. The socket is private at creation.
+        mask = os.umask(0o177)
+        try:
             listener.bind(str(address))
-            try:
-                os.chmod(address, 0o600, follow_symlinks=False)
-                token = secrets.token_hex(32)
-                auth.write_file(directory, "daemon.token", token.encode())
-                listener.listen(64)
-                yield listener, address, token
-            finally:
-                # No subsequent generation can bind until this descriptor closes.
-                auth.remove_file(directory, _RECORD)
-                auth.remove_file(directory, "daemon.token")
-                _check_socket(workspace, str(address), remove=True)
+        finally:
+            os.umask(mask)
+        bound = os.lstat(address.name, dir_fd=parent)
+        cleanup.callback(_unlink_socket, parent, address.name, bound)
+        auth.verify_owner(bound, stat.S_IFSOCK, 0o600)
+        cleanup.callback(auth.remove_file, directory, "daemon.token")
+        cleanup.callback(auth.remove_file, directory, _RECORD)
+        token = secrets.token_hex(32)
+        auth.write_file(directory, "daemon.token", token.encode())
+        listener.listen(64)
+        yield listener, address, token
 
 
 def _connect(workspace: Path, record: dict, *, timeout: float) -> socket.socket:
@@ -540,7 +562,12 @@ def _spawn_daemon(workspace: Path, config: dict, fd: int):
     )
 
 
-def _try_start(workspace: Path, directory: int, config: dict):
+def _try_start(
+    workspace: Path,
+    directory: int,
+    config: dict,
+    detect_launch_image: Callable[[], str | None] | None = None,
+):
     flags = os.O_RDWR | auth.FILE_FLAGS
     try:
         fd = os.open(_LOCK, flags, dir_fd=directory)
@@ -561,6 +588,24 @@ def _try_start(workspace: Path, directory: int, config: dict):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return None
+        # An attaching caller keeps the image bound by the lock's owner.
+        if (
+            detect_launch_image is not None
+            and config["offline_only"]
+            and "mounted_image_id" not in config
+        ):
+            from devharness_controlled.native_contracts import limma_voom_kernel_images
+
+            image = detect_launch_image()
+            if image is not None:
+                if (
+                    not isinstance(image, str)
+                    or image not in limma_voom_kernel_images()
+                ):
+                    raise ValueError(
+                        "Detected image must be a registered kernel digest"
+                    )
+                config = {**config, "mounted_image_id": image}
         # pass_fds shares the open file description and its flock across exec.
         # Closing this process's copy is safe; explicitly unlocking it is not.
         return _spawn_daemon(workspace, config, fd)
@@ -574,9 +619,11 @@ def start_daemon(
     input_root: Path | None = None,
     http_port: int = 0,
     idle_timeout_sec: float = 1800,
-    offline_only: bool = False,
+    offline_only: bool | None = None,
     enable_streamable_http: bool = False,
     defer_studio: bool = False,
+    _mcp_bootstrap: bool = False,
+    _detect_launch_image: Callable[[], str | None] | None = None,
     **options,
 ) -> dict:
     workspace = auth.workspace_path(workspace)
@@ -585,21 +632,42 @@ def start_daemon(
         input_root,
         http_port,
         idle_timeout_sec,
-        offline_only,
+        False if offline_only is None else offline_only,
         enable_streamable_http,
         defer_studio,
         options,
     )
+    # The stdio shim sets safe defaults only for a new daemon. Attaching,
+    # including after a concurrent operator start, checks the original request.
+    launch_config = config
+    if _mcp_bootstrap:
+        launch_offline = True if offline_only is None else offline_only
+        launch_config = {
+            **config,
+            "offline_only": launch_offline,
+            "allow_data_execution": config.get("allow_data_execution", launch_offline),
+        }
     deadline = time.monotonic() + _START_TIMEOUT
     process = None
     with auth.state_directory(workspace, create=True) as directory:
         while time.monotonic() < deadline:
-            record = daemon_status(workspace)
-            if record["status"] == "running":
-                return _attach(workspace, record, config, options)
+            try:
+                record = daemon_status(workspace)
+            except DaemonError as error:
+                # A starter may hold the lock while its child imports and the
+                # previous generation's inaccessible PID is still published.
+                if str(error) != "daemon_identity_unavailable":
+                    raise
+            else:
+                if record["status"] == "running":
+                    return _attach(workspace, record, config, options)
             if process is None:
-                process = _try_start(workspace, directory, config)
+                process = _try_start(
+                    workspace, directory, launch_config, _detect_launch_image
+                )
                 if process is not None:
+                    # Local image discovery precedes the child's readiness window.
+                    deadline = time.monotonic() + _START_TIMEOUT
                     threading.Thread(target=process.wait, daemon=True).start()
             elif process.poll() is not None:
                 raise DaemonError("daemon_start_failed")
@@ -617,7 +685,7 @@ def _reap_stopped(workspace: Path) -> None:
                 auth.verify_owner(os.fstat(fd), stat.S_IFREG, 0o600)
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 previous = _record(directory)
-                if not _is_live(previous):
+                if not _is_live(previous, owns_lifetime_lock=True):
                     selected = _socket_address(workspace, previous.get("socket_path"))
                     _reap(workspace, directory, selected)
             finally:
@@ -661,7 +729,9 @@ def _copy_stdin(client: socket.socket, source: int) -> None:
 def _mcp_connection(workspace: Path, input_root: Path, options: dict):
     deadline = time.monotonic() + _START_TIMEOUT
     while True:
-        record = start_daemon(workspace, input_root=input_root, **options)
+        record = start_daemon(
+            workspace, input_root=input_root, _mcp_bootstrap=True, **options
+        )
         with ExitStack() as stack:
             try:
                 client = stack.enter_context(_connect(workspace, record, timeout=30))

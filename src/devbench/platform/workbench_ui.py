@@ -2483,19 +2483,33 @@ def _attach_workbench_daemon(args, argv):
         "--port",
         "--open-browser",
         "--no-auto-browser",
+        "--enable-scientific",
         "--allow-data-execution",
         "--mounted-image-id",
     }
     options = {item.split("=", 1)[0] for item in argv if item.startswith("--")}
     if options - common or len(args.input_root) != 1:
         return False
-    from devbench.daemon.ipc import start_daemon
+    from devbench.daemon.ipc import daemon_status, start_daemon
 
+    if (
+        args.enable_scientific
+        and not args.offline_only
+        and args.mounted_image_id is None
+        and daemon_status(args.workspace)["status"] == "stopped"
+    ):
+        # An unpinned scientific launch detects its local image in the existing
+        # standalone bootstrap. A live daemon already owns its scientific setup.
+        return False
     policy = {}
     if args.allow_data_execution:
         policy["allow_data_execution"] = True
     if args.mounted_image_id is not None:
         policy["mounted_image_id"] = args.mounted_image_id
+    elif args.offline_only and args.enable_scientific:
+        # The elected launcher can inspect local images without constraining
+        # attachment to a concurrently started daemon.
+        policy["_detect_launch_image"] = _detect_mounted_image
     record = start_daemon(
         args.workspace,
         input_root=args.input_root[0],

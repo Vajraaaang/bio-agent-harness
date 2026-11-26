@@ -2,19 +2,22 @@
 
 import asyncio
 import concurrent.futures
+import fcntl
 import hashlib
 import http.client
 import json
 import os
 import re
+import shlex
 import signal
 import socket
 import sqlite3
 import stat
 import subprocess
 import sys
+import threading
 import time
-from contextlib import asynccontextmanager, contextmanager, suppress
+from contextlib import ExitStack, asynccontextmanager, closing, contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -48,6 +51,21 @@ def _json(path):
     return json.loads(path.read_text())
 
 
+def _stop_when_idle(workspace):
+    from devbench.daemon import ipc
+
+    def stopped():
+        try:
+            return ipc.stop_daemon(workspace)["status"] == "stopped"
+        except ipc.DaemonError as error:
+            if str(error) != "daemon_busy":
+                raise
+            return False
+
+    # A worker may have published its receipt just before its group exits.
+    _until(stopped, timeout=60)
+
+
 @contextmanager
 def _daemon(root, *, offline_only=True, **options):
     from devbench.daemon import ipc
@@ -61,17 +79,7 @@ def _daemon(root, *, offline_only=True, **options):
         )
         yield workspace, inputs, metadata
     finally:
-        # A worker may have published its receipt just before its group exits.
-        def stopped():
-            try:
-                ipc.stop_daemon(workspace)
-            except ipc.DaemonError as exc:
-                if str(exc) != "daemon_busy":
-                    raise
-                return False
-            return True
-
-        _until(stopped)
+        _stop_when_idle(workspace)
 
 
 def _freeze(store, classification="synthetic", **options):
@@ -212,6 +220,155 @@ def test_reap_stale_socket_after_crash_and_pid_reuse(workspace_tmp_path):
                 assert ipc.request(workspace, "status")["pid"] == second["pid"]
             finally:
                 bystander.terminate()
+
+
+@contextmanager
+def _listener_lock(workspace):
+    from devbench.daemon import auth
+
+    with auth.state_directory(workspace, create=True) as directory:
+        fd = os.open("daemon.lock", os.O_CREAT | os.O_RDWR, 0o600, dir_fd=directory)
+        try:
+            yield fd
+        finally:
+            os.close(fd)
+
+
+def test_listener_binds_owner_only_without_nofollow_chmod(
+    workspace_tmp_path, monkeypatch
+):
+    from devbench.daemon import ipc
+
+    workspace = workspace_tmp_path / "workspace"
+    bind, chmod = socket.socket.bind, os.chmod
+    modes = []
+    address = ipc.socket_path(workspace)
+
+    def observe_bind(listener, path):
+        bind(listener, path)
+        modes.append(stat.S_IMODE(os.lstat(path).st_mode))
+
+    def linux_chmod(path, mode, **options):
+        if not options.get("follow_symlinks", True):
+            raise NotImplementedError("chmod does not support follow_symlinks=False")
+        return chmod(path, mode, **options)
+
+    monkeypatch.setattr(socket.socket, "bind", observe_bind)
+    monkeypatch.setattr(
+        os, "supports_follow_symlinks", os.supports_follow_symlinks - {chmod}
+    )
+    monkeypatch.setattr(os, "chmod", linux_chmod)
+    mask = os.umask(0o022)
+    try:
+        with (
+            _listener_lock(workspace) as fd,
+            ipc.daemon_listener(workspace, fd) as listener,
+        ):
+            _, address, _ = listener
+            assert modes == [0o600] and stat.S_ISSOCK(address.lstat().st_mode)
+            assert os.umask(0o022) == 0o022
+        assert not address.exists()
+    finally:
+        os.umask(mask)
+        address.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize("replaced", [False, True], ids=["bound-inode", "replacement"])
+def test_listener_initialization_failure_only_unlinks_its_bound_inode(
+    workspace_tmp_path, monkeypatch, replaced
+):
+    from devbench.daemon import auth, ipc
+
+    workspace = workspace_tmp_path / "workspace"
+    with _listener_lock(workspace) as fd, socket.socket(socket.AF_UNIX) as substitute:
+        address = ipc.socket_path(workspace)
+
+        def fail_publication(*_args):
+            if replaced:
+                address.unlink()
+                substitute.bind(str(address))
+                address.chmod(0o600)
+            else:
+                # The listener still owns this inode after an incomplete setup.
+                address.chmod(0o700)
+            raise OSError("interrupted token publication")
+
+        monkeypatch.setattr(auth, "write_file", fail_publication)
+        try:
+            with pytest.raises(OSError, match="interrupted token publication"):
+                with ipc.daemon_listener(workspace, fd):
+                    pytest.fail("listener unexpectedly advertised itself")
+            assert address.is_socket() is replaced
+        finally:
+            address.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize("recover", ["stop", "start"])
+def test_inaccessible_recycled_pid_is_reaped_only_without_a_lifetime_owner(
+    workspace_tmp_path, monkeypatch, recover
+):
+    from devbench.daemon import auth, ipc
+
+    workspace = workspace_tmp_path / "workspace"
+    children = []
+    spawn = ipc._spawn_daemon
+
+    def launch(*args):
+        child = spawn(*args)
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(ipc, "_spawn_daemon", launch)
+    with (
+        _listener_lock(workspace) as fd,
+        subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"]
+        ) as bystander,
+    ):
+        address = ipc.socket_path(workspace)
+        try:
+            with socket.socket(socket.AF_UNIX) as stale:
+                stale.bind(str(address))
+                address.chmod(0o700)  # An incomplete earlier bind.
+            with auth.state_directory(workspace) as directory:
+                marker = {
+                    "pid": bystander.pid,
+                    "create_time": psutil.Process(bystander.pid).create_time() - 10,
+                    "workspace": str(workspace),
+                    "http_url": "http://127.0.0.1:12345/",
+                    "socket_path": str(address),
+                }
+                auth.write_file(directory, "daemon.json", json.dumps(marker).encode())
+                auth.write_file(directory, "daemon.token", b"a" * 64)
+            inspect = psutil.Process
+
+            def protected(pid=None):
+                if pid == bystander.pid:
+                    raise psutil.AccessDenied(pid)
+                return inspect(pid)
+
+            monkeypatch.setattr(psutil, "Process", protected)
+            assert ipc.daemon_status(workspace)["status"] == "stopped"
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            with pytest.raises(ipc.DaemonError, match="daemon_identity_unavailable"):
+                ipc.daemon_status(workspace)
+            assert address.is_socket()
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            if recover == "start":
+                fresh = ipc.start_daemon(workspace, idle_timeout_sec=10)
+                assert fresh["pid"] == children[0].pid != bystander.pid
+                assert ipc.request(workspace, "status")["pid"] == fresh["pid"]
+            assert ipc.stop_daemon(workspace)["status"] == "stopped"
+            for name in ("daemon.json", "daemon.token"):
+                assert not (workspace / auth.STATE_DIR / name).exists()
+            assert not address.exists() and bystander.poll() is None
+        finally:
+            for child in children:
+                if child.poll() is None:
+                    child.terminate()
+                    child.wait(timeout=10)
+            address.unlink(missing_ok=True)
+            bystander.terminate()
 
 
 @pytest.mark.parametrize("link", ["directory", "lock"])
@@ -479,6 +636,140 @@ def test_cli_approval_exact_immutable_identity(workspace_tmp_path):
         assert authority.plan_approval(**override) is None
 
 
+def test_stopped_approve_coexists_with_standalone_workbench(workspace_tmp_path):
+    from devbench.daemon import ipc
+    from devbench.platform.plugin_jobs import JobStore
+    from devbench.platform.workbench_ui import WorkbenchService
+
+    workspace, inputs = workspace_tmp_path / "workspace", workspace_tmp_path / "inputs"
+    inputs.mkdir(mode=0o700)
+    app = WorkbenchService(
+        workspace, [inputs], offline_only=True, run_timeout_seconds=71
+    )
+    try:
+        identity = _freeze(JobStore(workspace), "private")
+        assert ipc.daemon_status(workspace)["status"] == "stopped"
+        lock = workspace / ".service.lock"
+        with lock.open("rb") as probe:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            args = [
+                "approve",
+                "--workspace",
+                workspace,
+                "--session-id",
+                identity["session_id"],
+                "--plan-id",
+                identity["plan_id"],
+                "--actor",
+                "headless-reviewer",
+                "--rationale",
+                "Reviewed the local frozen plan",
+                "--plan-sha256",
+            ]
+            assert _cli(*args, "0" * 64, check=False).returncode != 0
+            assert _authority(workspace).plan_approval(**identity) is None
+            granted = json.loads(_cli(*args, identity["plan_sha256"]).stdout)
+            assert granted == _authority(workspace).plan_approval(**identity)
+            assert (
+                granted["actor_id"] == "headless-reviewer"
+                and granted["surface"] == "cli"
+            )
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            assert ipc.daemon_status(workspace)["status"] == "stopped"
+    finally:
+        ipc.stop_daemon(workspace)
+        app.close()
+
+
+@pytest.mark.parametrize(
+    ("scope", "expected"),
+    [("sticky-input", 403), ("fastq-private", 403), ("public", 201)],
+)
+def test_online_studio_rechecks_protected_scope_before_approving(
+    workspace_tmp_path, scope, expected
+):
+    from devbench.daemon.auth import read_token
+    from devbench.platform.plugin_jobs import JobStore
+
+    with _daemon(workspace_tmp_path, offline_only=False) as (workspace, _, metadata):
+        jobs = JobStore(workspace)
+        if scope == "sticky-input":
+            profiles = [{"sha256": "f" * 64}]
+            identity = _freeze(jobs, "public", profiles=profiles)
+            _freeze(jobs, "private", profiles=profiles)
+        elif scope == "fastq-private":
+            identity = _freeze(jobs, "synthetic", fastq={"private": True})
+        else:
+            identity = _freeze(jobs, "public")
+        origin = metadata["http_url"].rstrip("/")
+        status, _, _ = _http(
+            origin,
+            "/api/approve",
+            method="POST",
+            headers={
+                "Origin": origin,
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {read_token(workspace)}",
+            },
+            body=json.dumps(identity),
+        )
+        assert status == expected
+        grant = _authority(workspace).plan_approval(**identity)
+        if expected == 201:
+            assert (
+                grant["surface"] == "studio"
+                and grant["plan_sha256"] == identity["plan_sha256"]
+            )
+        else:
+            assert grant is None
+
+
+def test_legacy_http_client_preserves_explicit_authorization(
+    workspace_tmp_path, authenticated_workbench_client, monkeypatch
+):
+    from devbench.platform.workbench_ui import make_daemon_workbench, make_server
+
+    app = make_daemon_workbench(workspace_tmp_path, None, offline_only=True)
+    with make_server(app, port=0) as server:
+        seen = []
+        handler = server.RequestHandlerClass
+        check = handler._bearer
+
+        def observe(request):
+            seen.append(request.headers.get_all("Authorization"))
+            return check(request)
+
+        monkeypatch.setattr(handler, "_bearer", observe)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            origin = f"http://127.0.0.1:{server.server_port}"
+            bearer = f"Bearer {server.daemon_token}"
+            assert _http(origin, "/api/config")[0] == 200
+            assert (
+                _http(origin, "/api/config", headers={"authorization": bearer})[0]
+                == 200
+            )
+            connection = http.client.HTTPConnection(
+                "127.0.0.1", server.server_port, timeout=5
+            )
+            try:
+                connection.putrequest("GET", "/api/config")
+                connection.putheader(b"aUtHoRiZaTiOn", "Bearer incorrect")
+                connection.endheaders()
+                response = connection.getresponse()
+                assert response.status == 401
+                response.read()
+            finally:
+                connection.close()
+            assert seen == [[bearer], [bearer], ["Bearer incorrect"]]
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+
+
 def test_loopback_boundaries_session_exchange_and_studio_approval(
     workspace_tmp_path, monkeypatch
 ):
@@ -585,9 +876,49 @@ def test_opt_in_streamable_http_serves_existing_mcp_tools(workspace_tmp_path):
         from mcp.client.streamable_http import streamable_http_client
 
         origin = metadata["http_url"].rstrip("/")
-        headers = {"Origin": origin, "Authorization": f"Bearer {read_token(workspace)}"}
-        status, _, _ = _http(origin, "/mcp", method="POST", headers={"Origin": origin})
-        assert status in {401, 403}
+        headers = {"Authorization": f"Bearer {read_token(workspace)}"}
+        for method in ("GET", "POST", "DELETE"):
+            assert _http(origin, "/mcp", method=method)[0] == 401
+        for invalid in (
+            {"Origin": "https://other.invalid"},
+            {"Host": "other.invalid"},
+            {"Sec-Fetch-Site": "cross-site"},
+        ):
+            assert (
+                _http(origin, "/mcp", method="POST", headers={**headers, **invalid})[0]
+                == 403
+            )
+        with closing(
+            http.client.HTTPConnection("127.0.0.1", urlsplit(origin).port, timeout=5)
+        ) as client:
+            client.putrequest("POST", "/mcp", skip_host=True)
+            client.putheader("Authorization", headers["Authorization"])
+            client.endheaders()
+            response = client.getresponse()
+            assert response.status == 403
+            response.read()
+        status, response_headers, response_body = _http(
+            origin,
+            "/api/studio/session",
+            method="POST",
+            headers={**headers, "Origin": origin},
+        )
+        assert status == 200
+        browser = {
+            "Cookie": response_headers["Set-Cookie"].partition(";")[0],
+            "X-Workbench-Session": json.loads(response_body)["session_key"],
+        }
+        assert _http(origin, "/api/config", headers=browser)[0] == 200
+        assert (
+            _http(origin, "/mcp", method="POST", headers={**browser, "Origin": origin})[
+                0
+            ]
+            == 401
+        )
+        assert (
+            _http(origin, "/api/studio/session", method="POST", headers=headers)[0]
+            == 403
+        )
         sentinel = "LOCAL_INPUT_VALUE_MUST_NOT_APPEAR"
         invalid = {"jsonrpc": sentinel, "id": 17, "method": "initialize"}
         status, _, diagnostic = _http(
@@ -616,6 +947,62 @@ def test_opt_in_streamable_http_serves_existing_mcp_tools(workspace_tmp_path):
 
         names = asyncio.run(tools())
         assert len(names) == 7 and "execute_reviewed_plan" in names
+
+
+def test_control_frame_requires_newline_before_dispatch(workspace_tmp_path):
+    from devbench.daemon import ipc
+
+    with _daemon(workspace_tmp_path) as (workspace, _, daemon):
+        with socket.socket(socket.AF_UNIX) as client:
+            client.settimeout(5)
+            client.connect(daemon["socket_path"])
+            client.sendall(b'{"op":"status"}')
+            client.shutdown(socket.SHUT_WR)
+            with client.makefile("rb") as stream:
+                assert json.loads(stream.readline()) == {
+                    "ok": False,
+                    "error": "invalid_request",
+                }
+        assert ipc.request(workspace, "status")["pid"] == daemon["pid"]
+
+
+def test_mcp_outbound_byte_limit_includes_delimiter(monkeypatch):
+    from mcp import types
+    from mcp.shared.message import SessionMessage
+
+    from devbench.daemon import server
+
+    message = types.JSONRPCMessage.model_validate(
+        {"jsonrpc": "2.0", "id": 1, "result": {"text": "µ"}}
+    )
+    frame = message.model_dump_json(by_alias=True, exclude_none=True).encode() + b"\n"
+
+    async def exercise(limit):
+        drained, packets = asyncio.Event(), []
+        reader = asyncio.StreamReader()
+        reader.feed_eof()
+
+        async def drain():
+            drained.set()
+
+        async def run(_reader, writer, _options):
+            await writer.send(SessionMessage(message))
+            await drained.wait()
+
+        endpoint = SimpleNamespace(create_initialization_options=lambda: None, run=run)
+        writer = SimpleNamespace(write=packets.append, drain=drain)
+        monkeypatch.setattr(server, "_FRAME_BYTES", limit)
+        if limit == len(frame):
+            await server._serve_mcp(endpoint, reader, writer)
+            assert packets == [frame]
+        else:
+            with pytest.raises(ExceptionGroup) as failure:
+                await server._serve_mcp(endpoint, reader, writer)
+            assert failure.value.subgroup(ValueError)
+            assert not packets
+
+    asyncio.run(asyncio.wait_for(exercise(len(frame)), 5))
+    asyncio.run(asyncio.wait_for(exercise(len(frame) - 1), 5))
 
 
 async def _rpc(process, method, params, *, notify=False):
@@ -686,7 +1073,160 @@ async def _tool(process, name, arguments, *, expect_error=False):
     return result["structuredContent"]
 
 
-def test_default_legacy_plugin_mcp_uses_online_daemon_without_popup(workspace_tmp_path):
+@pytest.mark.parametrize("legacy", [False, True], ids=["mcp-shim", "plugin-mcp"])
+def test_cold_mcp_private_plan_executes_only_after_offline_studio_consent(
+    workspace_tmp_path, legacy
+):
+    import h5py
+
+    from devbench.daemon import ipc
+    from devbench.daemon.auth import read_token
+    from tests.test_installed_plugin_private_graph import _fixture_days
+
+    workspace, inputs = workspace_tmp_path / "workspace", workspace_tmp_path / "inputs"
+    sentinel = "private_marker_must_stay_in_studio"
+    private = inputs / sentinel
+    private.mkdir(parents=True)
+    paths = _fixture_days(private)
+    cell_sentinel = "SYNTHETIC_PRIVATE_CELL_IDENTIFIER"
+    with h5py.File(paths[0], "r+") as h5:
+        h5["obs/_index"][0] = cell_sentinel
+    declarations = [{"path": str(p), "data_classification": "private"} for p in paths]
+    errors = workspace_tmp_path / "stderr"
+    opened = workspace_tmp_path / "browser.log"
+
+    async def request(rid=None):
+        with errors.open("ab") as stderr:
+            async with _stdio_session(
+                workspace, inputs, stderr, legacy_browser_log=opened if legacy else None
+            ) as process:
+
+                async def call(name, arguments, *, denied=False):
+                    packet = await _rpc(
+                        process, "tools/call", {"name": name, "arguments": arguments}
+                    )
+                    assert bool(packet.get("isError")) is denied
+                    for secret in (
+                        sentinel,
+                        cell_sentinel,
+                        str(paths[0]),
+                        read_token(workspace),
+                    ):
+                        assert (
+                            secret not in json.dumps(packet)
+                            and secret not in errors.read_text()
+                        )
+                    return packet["structuredContent"]
+
+                if rid is not None:
+                    receipt = await call(
+                        "get_execution_receipt",
+                        {"session_id": sid, "run_id": rid},
+                        denied=True,
+                    )
+                    assert receipt["reason"] == "private_data_local_studio_only"
+                    return
+                planned = await call(
+                    "plan_rna_workflow",
+                    {
+                        "operation": "motor_program_comparison",
+                        "objective": "Review the synthetic marker counts locally",
+                        "inputs": declarations,
+                    },
+                )
+                assert planned["status"] == "local_studio_only"
+                frozen = {
+                    key: planned[key]
+                    for key in ("session_id", "plan_id", "plan_sha256")
+                }
+                denial = await call("execute_reviewed_plan", frozen, denied=True)
+                assert denial["reason"] == "private_data_local_studio_only"
+                return planned, frozen
+
+    try:
+        assert ipc.daemon_status(workspace)["status"] == "stopped"
+        plan, identity = asyncio.run(request())
+        daemon = ipc.daemon_status(workspace)
+        origin = daemon["http_url"].rstrip("/")
+        sid = identity["session_id"]
+        assert plan["studio_url"] == f"{origin}/?session_id={sid}&view=workflows"
+        assert daemon["offline_only"] and daemon["allow_data_execution"]
+        assert not opened.exists()
+        launch = shlex.split(plan["launch_hint"])
+        assert launch[:2] == ["devbench", "workbench"]
+        assert {
+            "--offline-only",
+            "--enable-scientific",
+            "--allow-data-execution",
+        } <= set(launch)
+        entry = (
+            "from unittest.mock import patch; from devbench.platform.cli import main; "
+            "opener=patch('devbench.platform.workbench_ui._open_browser_async')"
+            ".start(); "
+            "code=main(); opener.assert_not_called(); raise SystemExit(code)"
+        )
+        attached = subprocess.run(
+            [sys.executable, "-c", entry, *launch[1:]],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        assert attached.returncode == 0, attached.stderr
+        assert (
+            daemon["http_url"] in attached.stdout
+            and ipc.daemon_status(workspace)["pid"] == daemon["pid"]
+        )
+        route = "/api/scientific/adaptive/" + sid + "/plugin-execute"
+        payload = {
+            "plan_id": identity["plan_id"],
+            "plan_sha256": identity["plan_sha256"],
+            "allow_data_execution": True,
+        }
+        headers = {"Origin": origin, "Content-Type": "application/json"}
+        assert (
+            _http(
+                origin, route, method="POST", headers=headers, body=json.dumps(payload)
+            )[0]
+            == 401
+        )
+        assert _authority(workspace).plan_approval(**identity) is None
+        headers["Authorization"] = f"Bearer {read_token(workspace)}"
+        assert (
+            _http(
+                origin,
+                route,
+                method="POST",
+                headers=headers,
+                body=json.dumps({**payload, "allow_data_execution": False}),
+            )[0]
+            == 403
+        )
+        assert _authority(workspace).plan_approval(**identity) is None
+        status, _, response = _http(
+            origin, route, method="POST", headers=headers, body=json.dumps(payload)
+        )
+        assert status == 202, response
+        rid = json.loads(response)["run_id"]
+
+        def completed():
+            row = ipc.request(workspace, "run_status", run_id=rid)
+            return row if row["cleanup_state"] == "confirmed" else None
+
+        row = _until(completed, timeout=45)
+        assert row["status"] == "completed", row["error_text"]
+        grant = _authority(workspace).plan_approval(**identity)
+        assert grant["surface"] == "studio" and grant["auth_method"] == "bearer"
+        asyncio.run(request(rid))
+        assert not opened.exists()
+    finally:
+        _stop_when_idle(workspace)
+
+
+@pytest.mark.parametrize("legacy", [True, False], ids=["plugin-mcp", "mcp-shim"])
+def test_default_legacy_plugin_mcp_uses_online_daemon_without_popup(
+    workspace_tmp_path, legacy
+):
     from devbench.daemon import ipc
     from devbench.platform.plugin_jobs import JobStore, studio_handoff
 
@@ -698,7 +1238,10 @@ def test_default_legacy_plugin_mcp_uses_online_daemon_without_popup(workspace_tm
         async def inspect():
             with (workspace_tmp_path / "stderr").open("wb") as errors:
                 async with _stdio_session(
-                    workspace, inputs, errors, legacy_browser_log=browser_log
+                    workspace,
+                    inputs,
+                    errors,
+                    legacy_browser_log=browser_log if legacy else None,
                 ) as process:
                     assert len((await _rpc(process, "tools/list", {}))["tools"]) == 7
                     inspected = await _tool(
@@ -715,6 +1258,7 @@ def test_default_legacy_plugin_mcp_uses_online_daemon_without_popup(workspace_tm
         asyncio.run(inspect())
         current = ipc.daemon_status(workspace)
         assert current["pid"] == daemon["pid"] and current["offline_only"] is False
+        assert not current.get("allow_data_execution")
         assert not browser_log.exists()
         private = _freeze(JobStore(workspace), "private")
         assert (
@@ -971,6 +1515,70 @@ def _supervisor(root, *, worker_mode="controlled", heartbeat_sec=0.2, **options)
 def _ready(runs, rid):
     _until(lambda: (runs / rid / "ready").is_file())
     return runs / rid
+
+
+def test_fast_exit_worker_records_birth_before_reaper_collects_child(
+    workspace_tmp_path, monkeypatch
+):
+    from devbench.daemon import supervisor
+
+    with subprocess.Popen(
+        [sys.executable, "-c", "import sys; sys.stdin.buffer.read(1)"],
+        stdin=subprocess.PIPE,
+        start_new_session=True,
+    ) as child:
+        try:
+            birth = psutil.Process(child.pid).create_time()
+            owner = supervisor.Supervisor(
+                workspace_tmp_path / "workspace", worker_factory=lambda *_: child
+            )
+            row = owner.submit(**_freeze(owner.jobs))
+
+            def immediate_reaper(*, target, **_):
+                def start():
+                    # Force the earliest legal reap once the reaper is started.
+                    child.stdin.close()
+                    target()
+
+                return SimpleNamespace(start=start)
+
+            monkeypatch.setattr(
+                supervisor, "threading", SimpleNamespace(Thread=immediate_reaper)
+            )
+            assert owner._dispatch()
+            dispatched = owner.status(row["run_id"])
+            assert child.returncode == 0
+            assert dispatched["status"] == "running"
+            assert dispatched["pid"] == child.pid and dispatched["create_time"] == birth
+        finally:
+            if child.poll() is None:
+                child.kill()
+
+
+def test_atomic_heartbeat_read_reopens_superseded_inode(
+    workspace_tmp_path, monkeypatch
+):
+    from devbench.daemon import auth
+
+    name = "worker-heartbeat.json"
+    with auth.owned_directory(workspace_tmp_path) as directory:
+        auth.write_file(directory, name, b"first")
+        original = os.stat(name, dir_fd=directory)
+        fstat = os.fstat
+
+        def publish_before_check(fd):
+            info = fstat(fd)
+            if info.st_nlink == 1 and os.path.samestat(original, info):
+                auth.write_file(directory, name, b"second")
+                info = fstat(fd)
+                assert info.st_nlink == 0
+            return info
+
+        monkeypatch.setattr(os, "fstat", publish_before_check)
+        assert auth.read_file(directory, name, 2048) == b"second"
+        os.link(name, "other-name", src_dir_fd=directory, dst_dir_fd=directory)
+        with pytest.raises(PermissionError):
+            auth.read_file(directory, name, 2048)
 
 
 def _state(supervisor, rid, status):
@@ -2153,6 +2761,172 @@ def test_same_run_receipt_resume_rebinds_capacity_after_restart(workspace_tmp_pa
             receipt = plugin.receipt(Run(session_id=plan["session_id"], run_id=run_id))
             assert receipt["run_id"] == run_id and receipt["metrics"]["genes"] == 2
         assert reservation(small.submit(**identity, **retry)) == expected
+
+
+def test_legacy_studio_attaches_to_offline_management_owner_without_escalation(
+    workspace_tmp_path,
+):
+    from devbench.daemon import ipc
+    from devbench.daemon.auth import read_token
+    from devbench.platform.plugin_jobs import (
+        JobStore,
+        ensure_offline_studio,
+        studio_handoff,
+    )
+
+    workspace, inputs = workspace_tmp_path / "workspace", workspace_tmp_path / "inputs"
+    inputs.mkdir(mode=0o700)
+    try:
+        owner = ipc.start_daemon(
+            workspace, offline_only=True, allow_data_execution=False
+        )
+        assert owner["input_root"] is None
+        token = read_token(workspace)
+        assert ensure_offline_studio(workspace, inputs, None) is None
+        live = ipc.daemon_status(workspace)
+        assert live["input_root"] == str(inputs) and live["pid"] == owner["pid"]
+        assert live["offline_only"] and not live.get("allow_data_execution")
+        assert read_token(workspace) == token
+        origin = live["http_url"]
+        assert _http(origin, "/api/config")[0] == 401
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Origin": origin.rstrip("/"),
+            "Content-Type": "application/json",
+        }
+        status, _, body = _http(origin, "/api/config", headers=headers)
+        config = json.loads(body)
+        assert status == 200 and config["offline_only"] is True
+        assert config.get("status") != "awaiting_input_root"
+        assert _json(workspace / "studio-server.json")["pid"] == owner["pid"]
+        frozen = _freeze(JobStore(workspace), "private")
+        session = frozen.pop("session_id")
+        handoff = studio_handoff(
+            workspace, inputs, session, "workflows", allow_data_execution=True
+        )
+        assert handoff["studio_url"] == f"{origin}?session_id={session}&view=workflows"
+        assert (
+            _http(
+                origin,
+                f"/api/scientific/adaptive/{session}/plugin-execute",
+                method="POST",
+                headers=headers,
+                body=json.dumps({**frozen, "allow_data_execution": True}),
+            )[0]
+            == 403
+        )
+        assert _authority(workspace).plan_approval(session_id=session, **frozen) is None
+    finally:
+        _stop_when_idle(workspace)
+
+
+@pytest.mark.parametrize("owner", ["cold", "pinned", "racing-unpinned"])
+def test_scientific_workbench_selects_local_image_only_for_new_daemon(
+    workspace_tmp_path, monkeypatch, owner
+):
+    from devbench.daemon import ipc
+    from devbench.engine import execution_snapshot
+    from devbench.platform import workbench_ui
+    from devharness_controlled.native_contracts import limma_voom_kernel_images
+
+    workspace, inputs = workspace_tmp_path / "workspace", workspace_tmp_path / "inputs"
+    inputs.mkdir(mode=0o700)
+    registered = sorted(limma_voom_kernel_images())
+    detect = Mock(return_value=registered[0])
+    monkeypatch.setattr(workbench_ui, "_detect_mounted_image", detect)
+    monkeypatch.setattr(
+        execution_snapshot, "launch", lambda *a, **k: pytest.fail("Standalone fallback")
+    )
+    flags = [
+        "--workspace",
+        str(workspace),
+        "--input-root",
+        str(inputs),
+        "--offline-only",
+        "--enable-scientific",
+        "--allow-data-execution",
+        "--port",
+        "0",
+    ]
+    try:
+        current = None
+        if owner != "cold":
+            options = {"mounted_image_id": registered[-1]} if owner == "pinned" else {}
+            current = ipc.start_daemon(
+                workspace,
+                input_root=inputs,
+                offline_only=True,
+                allow_data_execution=True,
+                **options,
+            )
+        with monkeypatch.context() as attach:
+            if owner == "racing-unpinned":
+                # The daemon can become visible after the caller's first observation.
+                status = ipc.daemon_status
+                first = iter([{"status": "stopped", "workspace": str(workspace)}])
+                attach.setattr(
+                    ipc, "daemon_status", lambda path: next(first, None) or status(path)
+                )
+            workbench_ui.main(flags, pin_execution=True, interactive_adaptive=True)
+        live = ipc.request(workspace, "status")
+        if current is None:
+            detect.assert_called_once_with()
+            assert live["mounted_image_id"] == registered[0]
+        else:
+            detect.assert_not_called()
+            assert live["pid"] == current["pid"]
+            assert live.get("mounted_image_id") == current.get("mounted_image_id")
+    finally:
+        _stop_when_idle(workspace)
+
+
+def test_slow_optional_image_discovery_leaves_time_for_daemon_readiness(
+    workspace_tmp_path, monkeypatch
+):
+    from devbench.daemon import ipc
+    from devbench.platform import workbench_ui
+
+    workspace, inputs = workspace_tmp_path / "workspace", workspace_tmp_path / "inputs"
+    inputs.mkdir(mode=0o700)
+    clock = SimpleNamespace(monotonic=time.monotonic, sleep=time.sleep)
+
+    def no_image():
+        clock.monotonic = lambda: time.monotonic() + ipc._START_TIMEOUT + 1
+        return None
+
+    detect = Mock(side_effect=no_image)
+    monkeypatch.setattr(ipc, "time", clock)
+    monkeypatch.setattr(workbench_ui, "_detect_mounted_image", detect)
+    spawn = ipc._spawn_daemon
+    with ExitStack() as cleanup:
+
+        def spawn_owned(*args):
+            child = spawn(*args)
+            # A broken starter can time out after forking but before discovery.
+            cleanup.callback(child.wait, timeout=10)
+            cleanup.callback(child.terminate)
+            return child
+
+        monkeypatch.setattr(ipc, "_spawn_daemon", spawn_owned)
+        workbench_ui.main(
+            [
+                "--workspace",
+                str(workspace),
+                "--input-root",
+                str(inputs),
+                "--port",
+                "0",
+                "--offline-only",
+                "--enable-scientific",
+                "--allow-data-execution",
+            ],
+            pin_execution=True,
+            interactive_adaptive=True,
+        )
+        detect.assert_called_once_with()
+        live = ipc.request(workspace, "status")
+        assert live["status"] == "running" and live.get("mounted_image_id") is None
+        assert ipc.stop_daemon(workspace)["status"] == "stopped"
 
 
 if __name__ == "__main__":

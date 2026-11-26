@@ -1187,16 +1187,13 @@ class Supervisor:
                 (now, now, rid),
             )
             return
-        # Reap this exact child independently of polling its PID. In particular a
-        # cancelled, unreaped group leader still makes killpg(pgid,0) succeed.
-        threading.Thread(target=process.wait, name="devbench-reap", daemon=True).start()
         try:
             identity = psutil.Process(process.pid)
+            created = identity.create_time()
             if process.pid != os.getpgid(process.pid) or process.pid != os.getsid(
                 process.pid
             ):
                 raise ValueError("Worker must own its process group and session")
-            created = identity.create_time()
         except (psutil.Error, ProcessLookupError, ValueError):
             cleanup = self._reject_unbound_child(process)
             db.execute(
@@ -1206,6 +1203,11 @@ class Supervisor:
                 (now, now, process.pid, cleanup, rid),
             )
             return
+        finally:
+            # Capture the child's birth before a reaper can release its PID.
+            threading.Thread(
+                target=process.wait, name="devbench-reap", daemon=True
+            ).start()
         stage = json.loads(row["stage_json"])
         stage["_offline_only"] = self.offline_only
         db.execute(

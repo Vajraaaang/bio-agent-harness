@@ -80,15 +80,33 @@ def state_directory(workspace: Path, *, create: bool = False):
         os.close(parent)
 
 
+def _linked_private_generation(fd: int) -> bool:
+    info = os.fstat(fd)
+    if (
+        info.st_nlink == 0
+        and info.st_uid == os.getuid()
+        and stat.S_ISREG(info.st_mode)
+        and stat.S_IMODE(info.st_mode) == 0o600
+    ):
+        # An atomic publication removed this generation from the directory.
+        return False
+    verify_owner(info, stat.S_IFREG, 0o600)
+    return True
+
+
 def read_file(directory_fd: int, name: str, limit: int) -> bytes:
-    fd = os.open(name, FILE_FLAGS | os.O_RDONLY, dir_fd=directory_fd)
-    with os.fdopen(fd, "rb") as stream:
-        info = os.fstat(fd)
-        verify_owner(info, stat.S_IFREG, 0o600)
-        data = stream.read(limit + 1)
-        if len(data) > limit:
-            raise ValueError("Daemon state exceeds its size limit")
-        return data
+    for _ in range(3):
+        fd = os.open(name, FILE_FLAGS | os.O_RDONLY, dir_fd=directory_fd)
+        with os.fdopen(fd, "rb") as stream:
+            if not _linked_private_generation(fd):
+                continue
+            data = stream.read(limit + 1)
+            if not _linked_private_generation(fd):
+                continue
+            if len(data) > limit:
+                raise ValueError("Daemon state exceeds its size limit")
+            return data
+    raise PermissionError("Daemon state was repeatedly replaced during read")
 
 
 def _existing_regular(directory_fd: int, name: str) -> bool:

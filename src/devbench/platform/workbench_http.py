@@ -561,7 +561,10 @@ class _WorkbenchHandler:
         if self.headers.get_all("Host") != [host]:
             raise PermissionError("Invalid local Host")
         origins = self.headers.get_all("Origin") or []
-        if (origins and origins != [origin]) or (mutation and origins != [origin]):
+        # Native MCP clients authenticate with a bearer and can omit Origin.
+        # Every supplied Origin still names exactly this listener.
+        require_origin = mutation and self.path != "/mcp"
+        if origins != [origin] and (origins or require_origin):
             raise PermissionError("Invalid or missing same-origin request")
         sites = self.headers.get_all("Sec-Fetch-Site") or []
         if sites and sites not in (["same-origin"], ["none"]):
@@ -1290,12 +1293,6 @@ class _WorkbenchHandler:
         ):
             raise ValueError("Supply an exact frozen plan identity and its approval")
         jobs = JobStore(app.workspace)
-        plan = jobs.plan(body["session_id"], body["plan_id"])
-        if (
-            plan.get("data_classification") not in {"public", "synthetic"}
-            and not app.offline_only
-        ):
-            raise PermissionError("Restricted plans require offline Studio approval")
         return jobs.approve(
             body["session_id"],
             body["plan_id"],
@@ -1304,6 +1301,7 @@ class _WorkbenchHandler:
             surface="studio",
             auth_method=self._auth_method,
             rationale=body.get("rationale", ""),
+            require_public=not app.offline_only,
         )
 
     def _private_execution_approval(self, request, session_id):

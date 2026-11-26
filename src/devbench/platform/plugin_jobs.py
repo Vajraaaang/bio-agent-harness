@@ -184,7 +184,13 @@ def ensure_offline_studio(
             owner = daemon_status(workspace)
             if owner.get("status") == "running" and not owner.get("offline_only"):
                 return None
-            start_daemon(workspace, input_root=input_root, offline_only=True, **options)
+            start_daemon(
+                workspace,
+                input_root=input_root,
+                offline_only=True,
+                _mcp_bootstrap=True,
+                **options,
+            )
         except DaemonError:
             # Optional Studio startup cannot weaken a live owner's configuration
             # or prevent the legacy MCP handler from evaluating its own request.
@@ -432,7 +438,16 @@ class JobStore:
         return authority
 
     def approve(
-        self, sid, plan_id, sha, *, actor_id, surface, auth_method, rationale=""
+        self,
+        sid,
+        plan_id,
+        sha,
+        *,
+        actor_id,
+        surface,
+        auth_method,
+        rationale="",
+        require_public=False,
     ):
         return self.authority.record_plan_approval(
             session_id=sid,
@@ -443,6 +458,9 @@ class JobStore:
             surface=surface,
             auth_method=auth_method,
             rationale=rationale,
+            public_plan_policy=self.frozen_policy(sid, plan_id, sha)
+            if require_public
+            else None,
         )
 
     def unsettled_legacy_runs(self):

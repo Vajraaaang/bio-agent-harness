@@ -72,12 +72,8 @@ def module_workspace_tmp_path(pytestconfig):
 
 
 @pytest.fixture(autouse=True)
-def authenticated_workbench_client(request, monkeypatch):
-    """Give existing route tests credentials for their own in-process listeners.
-
-    These suites exercise authorized project, asset and scientific routes. The
-    daemon transport and authentication suites supply credentials explicitly.
-    """
+def _legacy_workbench_clients(request):
+    """Enable authenticated clients for the existing authorized route suites."""
     route_suites = {
         "test_bulk_plot_workbench",
         "test_evidence_disclosure_reservations",
@@ -100,27 +96,51 @@ def authenticated_workbench_client(request, monkeypatch):
         "test_workbench_ui",
         "test_workbench_ui_organization",
     }
-    if request.node.path.stem not in route_suites:
-        return
+    if request.node.path.stem in route_suites:
+        request.getfixturevalue("authenticated_workbench_client")
+
+
+@pytest.fixture
+def authenticated_workbench_client(monkeypatch):
+    """Supply a bearer for a test-owned listener when the caller omits one."""
     from devbench.platform import workbench_http
 
     listeners = {}
+    explicit_auth = set()
     make_server = workbench_http.make_workbench_server
     putrequest = http.client.HTTPConnection.putrequest
+    putheader = http.client.HTTPConnection.putheader
+    endheaders = http.client.HTTPConnection.endheaders
 
     def bind(*args, **kwargs):
         server = make_server(*args, **kwargs)
         listeners[server.server_address] = server
         return server
 
-    def send(connection, *args, **kwargs):
-        putrequest(connection, *args, **kwargs)
+    def begin(connection, *args, **kwargs):
+        explicit_auth.discard(connection)
+        return putrequest(connection, *args, **kwargs)
+
+    def header(connection, name, *values):
+        putheader(connection, name, *values)
+        if name.lower() in ("authorization", b"authorization"):
+            explicit_auth.add(connection)
+
+    def finish(connection, *args, **kwargs):
         server = listeners.get((connection.host, connection.port))
-        if server is not None and server.fileno() >= 0:
-            connection.putheader("Authorization", f"Bearer {server.daemon_token}")
+        if (
+            connection not in explicit_auth
+            and server is not None
+            and server.fileno() >= 0
+        ):
+            putheader(connection, "Authorization", f"Bearer {server.daemon_token}")
+        explicit_auth.discard(connection)
+        return endheaders(connection, *args, **kwargs)
 
     monkeypatch.setattr(workbench_http, "make_workbench_server", bind)
-    monkeypatch.setattr(http.client.HTTPConnection, "putrequest", send)
+    monkeypatch.setattr(http.client.HTTPConnection, "putrequest", begin)
+    monkeypatch.setattr(http.client.HTTPConnection, "putheader", header)
+    monkeypatch.setattr(http.client.HTTPConnection, "endheaders", finish)
 
 
 @pytest.fixture
