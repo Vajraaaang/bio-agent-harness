@@ -2,7 +2,8 @@
 
 - **Spec Suite Root:** [README.md](README.md) · [01](01-baseline-audit-and-gaps.md) · [02](02-problem-space-and-methods.md) · [03](03-adaptive-research-design.md) · [04](04-system-architecture-and-governance.md) · [05](05-codex-and-mcp-integration.md) · [06](06-milestones-and-evaluation.md)
 - **Audited Code Baseline:** `18161fdabd162084732a4dd3c74e1ea42254a81b` (Merge PR #13; delta from `ad1d74724e1e4d12a3c0fe6840e6521bd34a445b`)
-- **Current Phase:** **`M0` Ready for Implementation** (`0` blocking `M0` open decisions remain)
+- **Latest Landed Code on `main`:** `292d16faeb3f40979b7c409c3cb20b867bac3d9f` (`M0-0` `83877f5`, `M0-1` `970069c`, `M1-1` `292d16fa`)
+- **Current Phase:** **`M0` & `M1` In Progress** (`0` blocking `M0` open decisions remain; `M0-1` and `M1-1` landed on `main`)
 - **Permanent Non-Goal:** `clinical_release_allowed = false` (`L4` permanently out of scope)
 
 ---
@@ -21,8 +22,8 @@
 
 | Wave / Order | PR ID & Branch | Status | Target Files & Scope | Acceptance Gates |
 |---|---|---|---|---|
-| **Wave 0** *(Sequential Prereq)* | `M0-0` (`main` baseline) | `[done]` | Commit `docs/specs/rna-research-agent/` (`README.md`, `STATUS.md`, `01`–`06`) as clean git baseline. | Spec hygiene |
-| **Wave 1** *(Parallel Worktrees)* | `M0-1` (`m0/preflight-and-codex-hygiene`) | `[todo]` | Fix optional `cell_type` preflight (`src/devbench/platform/plugin_rna_solvers.py:408`); fix `mcp-payload-contracts.md` (`L301`, `L519`); retire stale v0.1.0 Codex artifacts (`integrations/codex/{devharness-0.1.0.zip,validation/,package-evidence.*,README.md,tests/verify_rna_runtime.py}`); add tests. | `BA-1`, `M0` #1, #3 |
+| **Wave 0** *(Sequential Prereq)* | `M0-0` (`main` baseline) | `[done]` (`83877f5`) | Commit `docs/specs/rna-research-agent/` (`README.md`, `STATUS.md`, `01`–`06`) as clean git baseline. | Spec hygiene |
+| **Wave 1** *(Parallel Worktrees)* | `M0-1` (`m0/preflight-and-codex-hygiene`) | `[done]` (`970069c`) | Fix optional `cell_type` preflight (`src/devbench/platform/plugin_rna_solvers.py:408`); fix `mcp-payload-contracts.md` (`L301`, `L519`); retire stale v0.1.0 Codex artifacts (`integrations/codex/{devharness-0.1.0.zip,validation/,package-evidence.*,README.md,tests/verify_rna_runtime.py}`); add tests. | `BA-1`, `M0` #1, #3 |
 | **Wave 1** *(Parallel Worktrees)* | `M0-2` (`m0/mcp-protocol-streaming-count1`) | `[todo]` | Add `outputSchema` to `list_tools()`, set `readOnlyHint=False` on `plan_rna_workflow` + opt-in browser popup, remove private-only H5AD streaming asymmetry (`plugin_mcp.py:619`), resolve Kang 38 MB `local_workflow_unavailable` (`L5738`), harden `COUNT-1` vs integer-`log2(1+x)`. | `BA-2(c)`, `BA-3` (`M0`), `M0` #2 |
 | **Wave 1** *(Parallel Worktrees)* | `M0-3` (`m0/agents-md-and-adaptive-cleanup`) | `[todo]` | Split Benchmark Mode out of `AGENTS.md` (`< 8 KiB` target, CI `< 16 KiB` / `< 32 KiB`); migrate live `devbench.adaptive.{exploration,policy}` callers (`method_planner.py:330,343`, `exploratory_oci.py:90`, `rna_investigation_backend.py:225-230`) and retire dead quarantined stubs (keep `models.py`, `admission.py`). | `M0` #6, `BA-6` (stubs) |
 | **Wave 1** *(Parallel Worktrees)* | `M0-4` (`m0/cross-arch-equivalence-verifier`) | `[todo]` | Implement `ADR-16` same-arch SHA-256 + cross-arch (`arm64`/`amd64`) hybrid equivalence verifier + optional Netlib/FlexiBLAS debug oracle, wired into `tests/thesis_calibration_parity.py`. | `BA-2(b)`, `M0` #5 |
@@ -31,12 +32,23 @@
 
 ---
 
-## 3. Milestone Rollup (`M0`–`M5`)
+## 3. `M1` Implementation PR Board
+
+| Order | PR ID & Branch | Status | Target Files & Scope | Acceptance Gates |
+|---|---|---|---|---|
+| **1** | `M1-1` (`m1/local-research-daemon`) | `[done]` (`292d16fa`) | Ship workspace-scoped Local Research Engine Daemon (`devbench daemon`, `devbench mcp` STDIO shim, `devbench approve`), `0o700` `.devbench-daemon/`, macOS >96-byte hashed `0o600` `AF_UNIX` socket, transactional multi-pool SQLite WAL supervisor (`cpu_slots`/`gpu_slots`/`memory_budget_mb`/`max_concurrent_runs`, multi-hour deadlines, checkpoints/resume, `cancel_run` + verified OCI/Nextflow cleanup), 256-bit loopback bearer token + origin-bound Studio cookie session + opt-in `--enable-streamable-http`, and passive browser defaults (`--no-auto-browser`). | `M1` #2, `04` §8 #1, #4, `05` §9 #4, #6 |
+| **2** | `M1-2` (`m1/mcp-13-tool-control-plane`) | `[todo]` | Decompose `src/devbench/platform/plugin_mcp.py` into the thin 13-tool MCP control plane (`outputSchema`, honest `ToolAnnotations`, `inspect_runtime_capabilities`, `register_investigation_input`, `list_kernels_and_methods`, `list_investigation_state`, `query_artifact_table`, `freeze_analysis_plan`, `submit_reviewed_run`, `cancel_run`); retire the 15-op `Plan` union and extract `shared_motor_umap` / `motor_program_comparison` out of core schema; scope `src/devharness_server/` strictly to Benchmark Mode. | `M1` #1, `04` §8 #5, #6, `05` §9 #2, #3 |
+| **3** | `M1-3` (`m1/dual-lane-sandbox-and-out-of-core-vault`) | `[todo]` | Generalize Tier 1 (`mounted_kernel_oci.py`) and Tier 2 Governed Exploratory Code Sandbox (`exploratory_oci.py`, `plugin_registered_method.py` — offline Python/R `--network none`, quota-bounded `/outputs`, `L1_execution_verified`, `PartitionVault` holdout block); lift 100 MB / 12.5M-entry / 4,096-sample / 20k-gene / 512 MiB caps across `expression_io.py`, `_rna_solver_inputs.py`, `mounted_matrix_vault.py`, and `rna_answerability.py` (3-Axis `A0–A3 × B1–B12/B_OPEN × C1–C2`, `>= 500 MB` H5AD/Zarr out-of-core streaming). | `M1` #3, #4, `04` §8 #2, #3 |
+| **4** | `M1-4` (`m1/portable-codex-plugin-and-skills`) | `[todo]` | Upgrade `integrations/codex/devharness/` to portable root `plugin.json` (`agent-plugins.org/schemas/1.0.0`) + 8 modular progressive-disclosure `.agents/skills/`, update `configure.py`, add live isolated `CODEX_HOME` smoke test (`codex plugin marketplace add` / `codex mcp list` / `codex exec` + `probe_boundary()`), Layer 1–4 conformance & sentinel privacy leakage suites, and patched-SQLite CI coverage. | `M1` #5, `05` §9 #1, #5, #6 |
+
+---
+
+## 4. Milestone Rollup (`M0`–`M5`)
 
 | Milestone | Status | Dependencies | Target Claim Level | Canonical Acceptance Reference |
 |---|---|---|---|---|
-| **`M0`** — Hygiene, Bug Fixes & Calibration Triage | **Ready / In Progress** | Baseline `18161fd` | `L1` + `L2` (DE triage) | [06](06-milestones-and-evaluation.md) `M0` #1–#6; [01](01-baseline-audit-and-gaps.md) `BA-1`–`BA-3`, `BA-7` |
-| **`M1`** — Local Daemon, 13-Tool MCP, Dual-Lane Sandbox & Portable Codex Plugin | Pending | `M0` | `L1` | [06](06-milestones-and-evaluation.md) `M1` #1–#5; [04](04-system-architecture-and-governance.md) §8; [05](05-codex-and-mcp-integration.md) §9 |
+| **`M0`** — Hygiene, Bug Fixes & Calibration Triage | **In Progress** (`M0-1` done) | Baseline `18161fd` | `L1` + `L2` (DE triage) | [06](06-milestones-and-evaluation.md) `M0` #1–#6; [01](01-baseline-audit-and-gaps.md) `BA-1`–`BA-3`, `BA-7` |
+| **`M1`** — Local Daemon, 13-Tool MCP, Dual-Lane Sandbox & Portable Codex Plugin | **In Progress** (`M1-1` done) | `M0` | `L1` | [06](06-milestones-and-evaluation.md) `M1` #1–#5; [04](04-system-architecture-and-governance.md) §8; [05](05-codex-and-mcp-integration.md) §9 |
 | **`M2`** — Single-Cell / Single-Nucleus Core (`P1`) | Pending | `M0`, `M1` | `L1` + `L2` (`P1`) | [06](06-milestones-and-evaluation.md) `M2` #1–#5; [02](02-problem-space-and-methods.md) §7 |
 | **`M3`** — Adaptive Investigation Graph (`E0`–`E6`), Multi-Aim Continuity & Critic | Pending | `M1`, `M2` | `L1` + `L2` | [06](06-milestones-and-evaluation.md) `M3` #1–#4; [03](03-adaptive-research-design.md) `AC-3.1`–`AC-3.10` |
 | **`M4`** — Bulk Hardening (`P2`) & Modality Extensions (`P3`) | Pending | `M2` | `L1` + `L2` (`P2`/`P3`) | [06](06-milestones-and-evaluation.md) `M4` #1–#3 |
@@ -44,7 +56,7 @@
 
 ---
 
-## 4. Outstanding Blockers & Open Decisions
+## 5. Outstanding Blockers & Open Decisions
 
 - **Blocking `M0` Open Decisions:** **None (`0`).**
 - **Open Decisions for `M1`–`M4`:** `UD-03`–`UD-23` in [README.md §6](README.md#L98) (immediate pre-`M1` gates: `UD-03`–`UD-11`).
