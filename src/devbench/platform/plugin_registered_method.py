@@ -27,10 +27,10 @@ _PLAN_ID = re.compile(r"[0-9a-f]{32}")
 _INTAKE = ("workbench-intake", "workbench-exposure")
 
 
-def _context(workspace, session_id, parameters):
+def _context(workspace, session_id, parameters, *, readonly=False):
     from .plugin_mcp import _ledger
 
-    ledger = _ledger(workspace)
+    ledger = _ledger(workspace, readonly=readonly)
     broker = EvidenceBroker.open_existing(ledger.scientific)
     broker.check_delivery(
         f"plugin-scientist-{session_id}",
@@ -38,7 +38,7 @@ def _context(workspace, session_id, parameters):
         lineage_id=session_id,
         role="scientist",
     )
-    methods = MethodService(workspace / "methods", reconcile=False)
+    methods = MethodService(workspace / "methods", reconcile=False, readonly=readonly)
     planner = ScientificMethodPlanner(methods)
     flow = planner.adaptive_workflow(session_id, ledger)
     flow.manual_local_oci = True
@@ -240,7 +240,7 @@ def freeze_registered_method(
     }
 
 
-def _bound_plan(workspace, plan):
+def _bound_plan(workspace, plan, *, readonly=False):
     if (
         plan["operation"] != OPERATION
         or plan["data_classification"] not in _EXTERNAL_SCOPE
@@ -258,7 +258,7 @@ def _bound_plan(workspace, plan):
         or step.parameters_sha256 != digest(binding["parameters"])
     ):
         raise OperationBlocked("registered_method_plan_changed")
-    flow, executor = _context(workspace, sid, binding["parameters"])
+    flow, executor = _context(workspace, sid, binding["parameters"], readonly=readonly)
     _, contract = _live_method(executor, step.oci_method_version_id)
     if digest(contract) != binding["method_contract_sha256"]:
         raise OperationBlocked("registered_method_contract_changed")
@@ -404,7 +404,9 @@ def verify_registered_method_result(workspace, rid, plan, receipt) -> dict:
         or receipt.get("run_id") != rid
     ):
         raise OperationBlocked("registered_method_result_scope_changed")
-    binding, flow, executor, _, draft, basis = _bound_plan(workspace, plan)
+    binding, flow, executor, _, draft, basis = _bound_plan(
+        workspace, plan, readonly=True
+    )
     step = draft.model_copy(update={"basis": (*draft.basis, basis)})
     result = _verified_result(flow, executor, plan, binding, step, basis)
     if any(receipt.get(key) != value for key, value in result.items()):

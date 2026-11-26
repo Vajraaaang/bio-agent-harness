@@ -539,10 +539,10 @@ class RegisteredPluginExecutor:
         return flow.complete(token, receipt, verify=self.verify)
 
 
-def _flow(workspace, plan):
+def _flow(workspace, plan, *, readonly=False):
     from .plugin_mcp import _ledger
 
-    return AdaptiveWorkflow(_ledger(workspace), plan["session_id"])
+    return AdaptiveWorkflow(_ledger(workspace, readonly=readonly), plan["session_id"])
 
 
 def _accepted_result(flow, workspace, rid, plan):
@@ -603,7 +603,9 @@ def _accepted_result(flow, workspace, rid, plan):
 
 def verify_registered_plugin_result(workspace, rid, plan, receipt):
     """Check readback and return only results bound to accepted graph evidence."""
-    actual = _accepted_result(_flow(workspace, plan), workspace, rid, plan)
+    actual = _accepted_result(
+        _flow(workspace, plan, readonly=True), workspace, rid, plan
+    )
     for key, value in actual.items():
         if key == "receipt_sha256" or (key == "figure_preview" and key not in receipt):
             continue
