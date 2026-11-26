@@ -23,6 +23,10 @@ from devharness_controlled.native_contracts import KERNEL_VERSIONS
 from devharness_core.provenance import copy_artifact, hash_artifact
 from rna_kernels.canonical import canonical_json
 from rna_kernels.mounted_bulk import MAX_MATRIX_BYTES, MAX_PARQUET_BYTES
+from rna_kernels.numerical_equivalence import (
+    ReplayRuntime,
+    verify_numerical_equivalence,
+)
 
 from .thesis_compact_replay import (
     COMPACT_FILES,
@@ -268,7 +272,8 @@ def replay_files(
         capture_qc_derivations(
             workflow, executor, spec.expected_revision, recipes, single_cell
         )
-        if executor is not None else ({}, [])
+        if executor is not None
+        else ({}, [])
     )
     files.update(qc_files)
     kernel_images = {
@@ -297,7 +302,8 @@ def replay_files(
                     "qc_derivations": qc_derivations,
                     "qc_coordinator": qc_coordinator_identity(),
                 }
-                if qc_derivations else {}
+                if qc_derivations
+                else {}
             ),
             **(
                 {
@@ -325,12 +331,14 @@ def replay_files(
         **({"qc_derivation_replay_available": True} if qc_derivations else {}),
         **(
             {"single_cell_replay_omissions": omitted_single_cell}
-            if omitted_single_cell else {}
+            if omitted_single_cell
+            else {}
         ),
         **({"exploratory_replay_available": True} if exploratory else {}),
         **(
             {"exploratory_replay_omissions": omitted_exploratory}
-            if omitted_exploratory else {}
+            if omitted_exploratory
+            else {}
         ),
         **(
             {"compact_fit_replay": True}
@@ -349,8 +357,12 @@ def _joint_replay_status(published: int, selected: int) -> dict[str, str]:
 
 
 def _hydrate(
-    source: Path, target: Path, inputs: dict[str, str], *,
-    compact=False, recovered=None,
+    source: Path,
+    target: Path,
+    inputs: dict[str, str],
+    *,
+    compact=False,
+    recovered=None,
 ) -> None:
     if not inputs or not inputs.keys() <= (COMPACT_FILES if compact else _MEMBERS):
         raise ValueError("Mounted thesis replay has an invalid input inventory")
@@ -377,8 +389,59 @@ def _hydrate(
             )
 
 
+def compare_replayed_fit(
+    source: Path,
+    target: Path,
+    *,
+    mode: str,
+    source_runtime: ReplayRuntime,
+    target_runtime: ReplayRuntime,
+    alpha: float = 0.05,
+    blas_debug_oracle: bool = False,
+) -> dict[str, Any]:
+    """Assess two mounted fit directories without promoting downstream artifacts."""
+    from rna_kernels.mounted_bulk import MAX_SUMMARY_BYTES
+
+    summaries = [
+        read_bounded_json(path / "summary.json", MAX_SUMMARY_BYTES)
+        for path in (source, target)
+    ]
+    for summary in summaries:
+        if not isinstance(summary, dict) or not all(
+            isinstance(summary.get(k), str) and _SHA.fullmatch(summary[k])
+            for k in ("genes_sha256", "request_sha256", "family_sha256")
+        ):
+            raise ValueError(
+                "Mounted comparison requires bound genes, request and family"
+            )
+    receipt = verify_numerical_equivalence(
+        read_bounded_file(source / "genes.parquet", MAX_PARQUET_BYTES),
+        read_bounded_file(target / "genes.parquet", MAX_PARQUET_BYTES),
+        mode=mode,
+        source_runtime=source_runtime,
+        target_runtime=target_runtime,
+        source_summary=summaries[0],
+        target_summary=summaries[1],
+        alpha=alpha,
+        blas_debug_oracle=blas_debug_oracle,
+    )
+    receipt["fits"] = {
+        side: {
+            "genes_sha256": receipt[side + "_sha256"],
+            **{k: summary[k] for k in ("request_sha256", "solver", "tested_count")},
+        }
+        for side, summary in zip(("source", "target"), summaries, strict=True)
+    }
+    return receipt
+
+
 def _run_recipe(
-    root: Path, output: Path, source: Path, recipe: dict[str, Any], *, recovered=None,
+    root: Path,
+    output: Path,
+    source: Path,
+    recipe: dict[str, Any],
+    *,
+    recovered=None,
 ) -> str:
     output.mkdir(mode=0o700)
     stage = output / ".work"
@@ -477,7 +540,12 @@ def replay_thesis_package(
     destination.mkdir(mode=0o700)
     recovered: dict[str, Path] = {}
     qc_steps, rebuilt = run_qc_derivations(
-        root, destination, source, qc_derivations, single_cell, recovered,
+        root,
+        destination,
+        source,
+        qc_derivations,
+        single_cell,
+        recovered,
     )
     digests = {}
     fitted_files = {}
@@ -493,8 +561,14 @@ def replay_thesis_package(
         for identity, release in releases.items()
     }
     cells = _replay_single_cell_steps(
-        root, destination, source, single_cell, digests, fitted_files,
-        prior=qc_steps, recovered=recovered,
+        root,
+        destination,
+        source,
+        single_cell,
+        digests,
+        fitted_files,
+        prior=qc_steps,
+        recovered=recovered,
     )
     custom = _replay_exploratory_steps(destination, exploratory_plans)
     return {
@@ -503,15 +577,18 @@ def replay_thesis_package(
         "steps": digests,
         **(
             {"exact_single_cell_artifacts_match": True, "single_cell_steps": cells}
-            if cells else {}
+            if cells
+            else {}
         ),
         **(
             {"exact_qc_derived_inputs_match": True, "qc_derivations": rebuilt}
-            if rebuilt else {}
+            if rebuilt
+            else {}
         ),
         **(
             {"exact_exploratory_artifacts_match": True, "exploratory_steps": custom}
-            if custom else {}
+            if custom
+            else {}
         ),
         **(
             {"exact_pooled_parquet_match": True, "cross_aim_bh": pooled}
@@ -544,14 +621,25 @@ def _replay_exploratory_steps(destination, prepared):
 
 
 def _replay_single_cell_steps(
-    root, destination, source, recipes, bulk, fitted_files, *, prior, recovered,
+    root,
+    destination,
+    source,
+    recipes,
+    bulk,
+    fitted_files,
+    *,
+    prior,
+    recovered,
 ):
     recovered.update({digest: fitted_files[name] for name, digest in bulk.items()})
     completed = dict(prior)
     for index, recipe in enumerate(recipes, start=1):
         if recipe["step_id"] not in completed:
             completed[recipe["step_id"]] = run_single_cell_recipe(
-                root, destination / f"single-cell-{index:03d}", source, recovered,
+                root,
+                destination / f"single-cell-{index:03d}",
+                source,
+                recovered,
                 recipe,
             )
     return completed
