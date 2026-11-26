@@ -1,8 +1,9 @@
-"""Publish a reviewed Studio bulk fit before a Plugin receipt is requested."""
+"""Publish retained reviewed bulk fits through mutation paths."""
 
 import json
 import re
 import sqlite3
+import time
 from contextlib import closing
 from pathlib import Path
 
@@ -39,7 +40,7 @@ def reviewed_bulk_source_id(run_id: str, sealed_receipt: dict) -> str:
     return f"plugin-receipt-{run_id}-{digest(sealed_receipt)[:24]}"
 
 
-def _publish(workspace, jobs, row):
+def _publish(workspace, row):
     from . import plugin_mcp as mcp
 
     plan = JobStore._plan(row)
@@ -50,9 +51,11 @@ def _publish(workspace, jobs, row):
         not isinstance(subject, str)
         or not re.fullmatch(r"[0-9a-f]{64}", subject)
         or not re.fullmatch(r"[0-9a-f]{32}", rid)
-        or JobStore.protected_inputs(jobs, plan)
     ):
         return
+    with mcp.studio_job_readback(workspace) as jobs:
+        if jobs is None or JobStore.protected_inputs(jobs, plan):
+            return
     ledger = mcp._ledger(workspace)
     broker = EvidenceBroker.open_existing(ledger.scientific)
     lineage, roots = mcp._lineage(sid, plan), mcp._roots(plan)
@@ -72,7 +75,7 @@ def _publish(workspace, jobs, row):
     # Lock the job's public custody at final registration, in the same order
     # as JobStore.frozen_policy. Keep potentially slow fit verification outside.
     uri = (workspace / "plugin-jobs.sqlite3").as_uri() + "?mode=rw"
-    with closing(sqlite3.connect(uri, uri=True, timeout=1)) as pinned, pinned:
+    with closing(sqlite3.connect(uri, uri=True, timeout=10)) as pinned, pinned:
         pinned.row_factory = sqlite3.Row
         pinned.execute("BEGIN IMMEDIATE")
         active = pinned.execute(_CANDIDATES + " AND run.run_id=?", (rid,)).fetchone()
@@ -80,8 +83,9 @@ def _publish(workspace, jobs, row):
             active is None
             or active["plan_sha256"] != plan_sha
             or json.loads(active["stage_json"]).get("bulk_step_sha256") != subject
-            or JobStore.protected_inputs(pinned, JobStore._plan(active))
         ):
+            raise OperationBlocked("bulk_receipt_candidate_changed")
+        if JobStore.protected_inputs(pinned, JobStore._plan(active)):
             return
         context = mcp._receipt_context(broker, plan, lineage, tags)
 
@@ -111,26 +115,93 @@ def _publish(workspace, jobs, row):
         )
 
 
-def publish_reviewed_bulk_receipts(workspace: Path, session_id: str | None = None):
-    """Recover eligible old runs, or publish fits for the operator's session."""
+_PUBLISH_BACKOFF = (0.05, 0.2)
+
+
+def _retry_busy(action, *args):
+    for delay in (*_PUBLISH_BACKOFF, None):
+        try:
+            return action(*args)
+        except sqlite3.OperationalError as error:
+            code = getattr(error, "sqlite_errorcode", 0) & 0xFF
+            if delay is None or code not in {
+                sqlite3.SQLITE_BUSY,
+                sqlite3.SQLITE_LOCKED,
+            }:
+                raise
+            time.sleep(delay)
+
+
+def _candidate_batch(workspace, session_id, step_subject, after):
     from .plugin_mcp import studio_job_readback
 
-    if not (workspace / "methods" / LEDGER_NAME).is_file():
-        return
-    sql, params = _CANDIDATES, ()
+    sql, params = _CANDIDATES + " AND run.run_id > ?", (after,)
     if session_id is not None:
         sql += " AND run.session_id=?"
-        params = (session_id,)
+        params += (session_id,)
+    if step_subject is not None:
+        sql += (
+            " AND CASE WHEN json_valid(run.stage_json) THEN "
+            "json_extract(run.stage_json, '$.bulk_step_sha256') END = ?"
+        )
+        params += (step_subject,)
+    with studio_job_readback(workspace) as jobs:
+        if jobs is None:
+            return []
+        return jobs.execute(sql + " ORDER BY run.run_id LIMIT 8", params).fetchall()
+
+
+def _publication_failure(error):
+    if isinstance(error, sqlite3.OperationalError):
+        code = getattr(error, "sqlite_errorcode", 0) & 0xFF
+        if code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+            return "bulk_receipt_publication_retry_required"
+    return "bulk_receipt_publication_unavailable"
+
+
+def publish_reviewed_bulk_receipts(
+    workspace: Path,
+    session_id: str | None = None,
+    *,
+    strict: bool = False,
+    step_subject: str | None = None,
+) -> None:
+    """Publish bounded candidate batches, with strict errors for completed fits."""
+    if not (workspace / "methods" / LEDGER_NAME).is_file():
+        return
+    after = ""
+    failure = None
     try:
-        with studio_job_readback(workspace) as jobs:
-            if jobs is None:
-                return
-            # The cursor streams one bounded frozen plan at a time. A pending
-            # or superseded review cannot mask a later session that is ready.
-            for row in jobs.execute(sql, params):
+        while rows := _retry_busy(
+            _candidate_batch, workspace, session_id, step_subject, after
+        ):
+            after = rows[-1]["run_id"]
+            # The enumeration transaction has closed before publication can write.
+            for row in rows:
                 try:
-                    _publish(workspace, jobs, row)
-                except _UNAVAILABLE:
-                    continue
-    except _UNAVAILABLE:
-        return  # Studio also serves workspaces with no Plugin or receipt schema.
+                    _retry_busy(_publish, workspace, row)
+                except _UNAVAILABLE as error:
+                    if failure is None:
+                        failure = _publication_failure(error)
+    except _UNAVAILABLE as error:
+        if failure is None:
+            failure = _publication_failure(error)
+    if strict and failure is not None:
+        raise OperationBlocked(failure)
+
+
+def completed_operator_bulk_subject(flow, *, generation=None) -> str | None:
+    """Read the current durable outcome so a mutation can resume publication."""
+    from .workbench_interactive import _OPERATOR_BULK_STEP
+
+    step = _OPERATOR_BULK_STEP
+    with flow._read_connection() as db:
+        state = flow._state(db)
+        if step not in state.nodes or (
+            generation is not None and state.generations[step] != generation
+        ):
+            return None
+        outcome = state.outcome(step)
+        if outcome is None or outcome["status"] != "succeeded":
+            return None
+        return digest(state.nodes[step].model_dump(mode="json"))

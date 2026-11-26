@@ -1622,10 +1622,27 @@ def _operator_candidates(app, binding, flow):
 
 
 def _run_operator_step(app, binding, flow, request, revision):
+    from .plugin_bulk_receipts import (
+        completed_operator_bulk_subject,
+        publish_reviewed_bulk_receipts,
+    )
     from .workbench_interactive import _OPERATOR_BULK_STEP, operator_bulk_actions
     from .workflow_actions import WorkflowActions
 
     supplied = {key: request[key] for key in ("step_id", "generation")}
+    if supplied["step_id"] == _OPERATOR_BULK_STEP and (
+        subject := completed_operator_bulk_subject(
+            flow, generation=supplied["generation"]
+        )
+    ):
+        publish_reviewed_bulk_receipts(
+            app.workspace, flow.lineage_id, strict=True, step_subject=subject
+        )
+        return {
+            "mode": ADAPTIVE_MODE,
+            "steps_dispatched": 0,
+            "revision": _graph_revision(flow),
+        }
     if supplied not in _operator_candidates(app, binding, flow):
         raise OperationBlocked("current_operator_step_required")
     planner = app.scientific.planner()
@@ -1641,11 +1658,16 @@ def _run_operator_step(app, binding, flow, request, revision):
             tier_a_executor=binding.tier_a_executor,
         )
     )
-    actions.perform_adaptive(flow, supplied["step_id"], expected_revision=revision)
-    if supplied["step_id"] == _OPERATOR_BULK_STEP:
-        from .plugin_bulk_receipts import publish_reviewed_bulk_receipts
-
-        publish_reviewed_bulk_receipts(app.workspace, flow.lineage_id)
+    outcome = actions.perform_adaptive(
+        flow, supplied["step_id"], expected_revision=revision
+    )
+    if supplied["step_id"] == _OPERATOR_BULK_STEP and outcome["status"] == "succeeded":
+        if subject := completed_operator_bulk_subject(
+            flow, generation=supplied["generation"]
+        ):
+            publish_reviewed_bulk_receipts(
+                app.workspace, flow.lineage_id, strict=True, step_subject=subject
+            )
     return {
         "mode": ADAPTIVE_MODE,
         "steps_dispatched": 1,

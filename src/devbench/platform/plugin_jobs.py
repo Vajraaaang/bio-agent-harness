@@ -556,13 +556,11 @@ class JobStore:
         return dict(row) if row else None
 
     def run(self, sid: str, rid: str) -> dict[str, Any]:
-        row = self.managed_run(rid)
-        if row is None:
+        if self.managed_run(rid) is None:
             self.reconcile()
-        return self._selected_run(sid, rid, row)
+        return self.read_run(sid, rid)
 
-    def read_run(self, sid: str, rid: str) -> dict[str, Any]:
-        """Observe a managed or legacy run without initializing or reconciling jobs."""
+    def _committed_run(self, sid: str, rid: str) -> dict[str, Any]:
         from devbench.engine.workflow_operations import (
             LEDGER_NAME,
             WorkflowOperationLedger,
@@ -582,20 +580,43 @@ class JobStore:
         row = None
         if path.exists() or path.is_symlink():
             row = WorkflowOperationLedger(path, readonly=True)._read(managed)
-        return self._selected_run(sid, rid, row)
-
-    def _selected_run(self, sid, rid, row) -> dict[str, Any]:
         if row is None:
             with closing(self._connect(readonly=True)) as db:
                 row = db.execute(
                     "SELECT * FROM plugin_runs WHERE session_id=? AND run_id=?",
                     (sid, rid),
                 ).fetchone()
-            if row is not None:
-                row = {**row, **_legacy_interruption(row)}
         if row is None or row["session_id"] != sid:
             raise OperationBlocked("unknown_run")
-        return self.visible_run(row)
+        return dict(row)
+
+    def read_run(self, sid: str, rid: str) -> dict[str, Any]:
+        """Observe a managed or legacy run without initializing or reconciling jobs."""
+        row = self._committed_run(sid, rid)
+        if "create_time" in row:
+            created = row["create_time"]
+        else:
+            stage = json.loads(row["stage_json"])
+            if not stage.get("daemon_managed"):
+                return self.visible_run({**row, **_legacy_interruption(row)})
+            created = stage.get("process_created_at")
+        fields = self.visible_run(row)
+        # A queued reservation survives a restart and has no worker until dispatch.
+        expects_worker = fields["status"] in {"starting", "running", "cancelling"}
+        if expects_worker and _orphaned_worker(self.workspace, row["pid"], created):
+            # The supervisor can finish cleanup and exit between the first snapshot
+            # and the liveness probe. Prefer its newer committed state.
+            fresh = self._committed_run(sid, rid)
+            if fresh != row:
+                return self.visible_run(fresh)
+            fields.update(
+                status="interrupted",
+                error_text="worker_not_running",
+                cleanup_state="unconfirmed",
+                receipt_json=None,
+                finished_at=None,
+            )
+        return fields
 
     @staticmethod
     def _owned(db, rid):
@@ -817,6 +838,17 @@ def _legacy_interruption(row) -> dict[str, str]:
     }
 
 
+def _orphaned_worker(workspace: Path, pid: int | None, created: float | None) -> bool:
+    """A live supervisor owns state transitions even while a worker exits."""
+    from devbench.daemon.ipc import daemon_status
+    from devbench.daemon.supervisor import local_supervisor
+
+    if local_supervisor(workspace) is not None or _worker_alive(pid, created):
+        return False
+    # Read the lifetime lock and PID generation. No RPC, startup or reconciliation.
+    return daemon_status(workspace)["status"] == "stopped"
+
+
 def _worker_alive(pid: int | None, created: float | None) -> bool:
     if not pid:
         return False
@@ -825,7 +857,10 @@ def _worker_alive(pid: int | None, created: float | None) -> bool:
         return (
             created is None or created == process.create_time()
         ) and process.status() != psutil.STATUS_ZOMBIE
-    except psutil.Error:
+    except psutil.AccessDenied:
+        # An inaccessible process cannot be recorded as lost.
+        return True
+    except psutil.NoSuchProcess:
         return False
 
 

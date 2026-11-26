@@ -180,3 +180,146 @@ def test_small_plateau_compares_every_library_in_either_storage_order():
         for block in np.array_split(storage.ravel(), 7):
             distribution.observe(block)
         assert not distribution.suspected_transform
+
+
+@pytest.mark.parametrize("seed", [17, 103, 211, 419, 811])
+def test_rounded_transforms_and_matched_raw_count_controls(seed):
+    rng = np.random.default_rng(seed)
+    transformed = []
+    for name, mean in (
+        ("log2", 20),
+        ("log2", 100),
+        ("log2", 500),
+        ("log2", 1000),
+        ("log1p", 100),
+    ):
+        raw = rng.negative_binomial(8, 8 / (8 + mean), size=(100, 8))
+        logged = np.log2(1 + raw) if name == "log2" else np.log1p(raw)
+        transformed.append((f"{name} mean {mean}", np.rint(logged)))
+        assert _inspect(raw)["count_values_valid"], (seed, name, mean)
+    transformed.append(
+        (
+            "skewed levels",
+            rng.choice([1, 2, 3, 4], size=(100, 8), p=[0.35, 0.30, 0.20, 0.15]),
+        )
+    )
+    moderate_zeros = np.r_[np.zeros(8), rng.integers(1, 5, size=92)]
+    rng.shuffle(moderate_zeros)
+    transformed.append(("eight percent zeros", moderate_zeros.reshape(25, 4)))
+    counts = rng.negative_binomial(5, 0.15, size=(200, 12))
+    rate = counts / rng.uniform(0.4, 3, size=(200, 1))
+    for name, source, target in (
+        ("CPM", counts, 1_000_000),
+        ("TPM", rate, 1_000_000),
+        ("counts per ten thousand", counts, 10_000),
+    ):
+        transformed.append((name, np.rint(source / source.sum(axis=0) * target)))
+    for name, matrix in transformed:
+        result = _inspect(matrix)
+        assert result.get("count1_reason") == "suspected_transformed_integer_counts", (
+            seed,
+            name,
+        )
+        assert result["count_values_valid"] is False
+
+    genuine = [
+        rng.poisson(2, size=(100, 8)),
+        rng.poisson(2, size=(25, 4)),
+        rng.negative_binomial(1, 0.25, size=(100, 8)),
+        rng.poisson(0.035, size=(500, 8)),  # low-UMI nuclei
+        counts,
+        rng.poisson(np.linspace(4000, 6000, 12), size=(200, 12)),
+    ]
+    for matrix in genuine:
+        result = _inspect(matrix)
+        assert result["count_values_valid"] is True
+        assert "count1_reason" not in result
+
+
+@pytest.mark.parametrize("slot_field", ["representation", "transformation"])
+@pytest.mark.parametrize(
+    "label",
+    [
+        "log",
+        "log10",
+        "log10(1+x)",
+        "ln",
+        "RPKM",
+        "FPKM",
+        "rlog",
+        "vst",
+        "SCT",
+        "sctransform",
+        "zscore",
+        "scaled",
+    ],
+)
+def test_standard_slot_processing_labels_conflict_with_declared_counts(
+    slot_field, label
+):
+    values = [[3, 257], [9, 1023]]
+    result = _inspect(values, provenance={slot_field: label})
+    assert result["count1_reason"] == "conflicting_count_provenance"
+    assert result["count_values_valid"] is False
+    assert _inspect(values, provenance={"source": label})["count_values_valid"] is True
+
+
+def test_zero_inclusive_log_plateau_in_dense_and_sparse_storage():
+    from devbench.core.count_forensics import CountDistribution
+
+    raw = np.array([[0, 1, 3, 7, 15], [15, 7, 3, 1, 0]])
+    matrix = np.log2(1 + raw)
+    assert _inspect(matrix)["count_values_valid"] is False
+    assert _inspect(raw)["count_values_valid"] is True
+    for storage, libraries_in_rows in ((matrix, True), (matrix.T, False)):
+        major, minor = np.nonzero(storage)
+        libraries = major if libraries_in_rows else minor
+        distribution = CountDistribution(
+            total_values=matrix.size,
+            major_width=storage.shape[1],
+            libraries_in_rows=libraries_in_rows,
+        )
+        for chunk in np.array_split(np.arange(libraries.size), 3):
+            distribution.observe(
+                storage[major[chunk], minor[chunk]], library_indices=libraries[chunk]
+            )
+        assert distribution.suspected_transform
+
+
+def test_sparse_depths_use_coordinates_preserving_empty_libraries():
+    from devbench.core.count_forensics import CountDistribution
+
+    matrix = np.zeros((8, 200), dtype=np.int64)
+    for library in range(8):
+        matrix[library, library : library + 2] = (750_000, 250_000)
+    for empty_library in (False, True):
+        if empty_library:
+            matrix[-1] = 0
+        for storage, libraries_in_rows in ((matrix, True), (matrix.T, False)):
+            major, minor = np.nonzero(storage)
+            libraries = major if libraries_in_rows else minor
+            distribution = CountDistribution(
+                total_values=matrix.size,
+                major_width=storage.shape[1],
+                libraries_in_rows=libraries_in_rows,
+            )
+            for value, library in zip(storage[major, minor], libraries, strict=True):
+                distribution.observe([value], library_indices=int(library))
+            assert distribution.suspected_transform is (not empty_library)
+
+
+def test_sparse_coordinate_bounds_precede_histogram_allocation():
+    from devbench.core.count_forensics import CountDistribution
+
+    distribution = CountDistribution(total_values=400, major_width=4)
+    for invalid in (-1, 100, [0, 1 << 60], [0.0, 1.0], [1]):
+        with pytest.raises(ValueError, match="coordinates"):
+            distribution.observe([200, 12], library_indices=invalid)
+
+
+def test_short_raw_poisson_sample_with_truncated_but_compatible_histogram():
+    matrix = np.random.default_rng(941).poisson(2, size=(25, 4))
+    assert np.bincount(matrix.ravel()).tolist() == [14, 26, 27, 19, 14]
+    result = _inspect(matrix)
+    assert result["count_values_valid"] is True
+    assert "count1_reason" not in result

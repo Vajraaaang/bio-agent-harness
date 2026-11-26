@@ -103,17 +103,26 @@ def test_categorical_index_decodes_before_hashing_and_checks_invalid_codes(
             axes.h5ad_index_digest(handle["var"], 4, lambda _: None)
 
 
+@pytest.mark.parametrize("fixed_bytes", [False, True])
 def test_anndata_categorical_index_inspects_headers_then_hashes(
-    workspace_tmp_path, monkeypatch
+    workspace_tmp_path, monkeypatch, fixed_bytes
 ):
     import anndata as ad
     import pandas as pd
 
     labels = ["cell-b", "cell-c", "cell-a"]
     path = workspace_tmp_path / "categorical-index.h5ad"
-    obs = pd.DataFrame(index=pd.CategoricalIndex(labels, name="barcode"))
+    batches = ["B", "A", "B"]
+    obs = pd.DataFrame(
+        {"batch": pd.Categorical(batches)},
+        index=pd.CategoricalIndex(labels, name="barcode"),
+    )
     ad.AnnData(np.ones((3, 2)), obs=obs).write_h5ad(path)
-    with h5py.File(path, "r") as handle:
+    with h5py.File(path, "r+") as handle:
+        if fixed_bytes:
+            for field in ("barcode", "batch"):
+                attrs = handle["obs"][field].attrs
+                attrs["encoding-type"] = np.bytes_(b"categorical")
         assert isinstance(handle["obs/barcode"], h5py.Group)
         with monkeypatch.context() as header_only:
 
@@ -125,10 +134,40 @@ def test_anndata_categorical_index_inspects_headers_then_hashes(
             header_only.setattr(h5py.Dataset, "__getitem__", forbid)
             header = _h5ad_header(handle, 128)
         assert (header["cells"], header["genes"]) == (3, 2)
-        assert header["obs_columns"] == []
+        assert header["obs_columns"] == ["batch"]
         assert axes.h5ad_index_digest(handle["obs"], 3, lambda _: None) == (
             hashlib.sha256(canonical_json(labels)).hexdigest()
         )
+        assert list(
+            axes.h5ad_label_blocks(
+                handle["obs"], "batch", 3, lambda _: None, annotation=True
+            )
+        ) == [tuple(batches)]
+
+
+@pytest.mark.parametrize(
+    "encoding",
+    [
+        np.array([b"categorical"]),
+        np.array([b"categorical"] * 2),
+        np.bytes_(b"categorical" + b"x" * 801),
+    ],
+)
+def test_categorical_encoding_requires_bounded_scalar_text(
+    workspace_tmp_path, encoding
+):
+    with h5py.File(workspace_tmp_path / "encoding.h5ad", "w") as handle:
+        handle.create_dataset("X", shape=(2, 1), dtype="i4")
+        handle.create_group("var").create_dataset("_index", data=[b"gene"])
+        obs = handle.create_group("obs")
+        idx = obs.create_group("_index")
+        idx.attrs["encoding-type"] = encoding
+        idx["categories"] = [b"a", b"b"]
+        idx["codes"] = [1, 0]
+        with pytest.raises(ValueError):
+            _h5ad_header(handle, 128)
+        with pytest.raises(ValueError):
+            list(axes.h5ad_label_blocks(obs, "_index", 2, lambda _: None))
 
 
 @pytest.mark.parametrize(

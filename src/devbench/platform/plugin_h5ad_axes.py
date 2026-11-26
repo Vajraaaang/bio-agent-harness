@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 import h5py
 import numpy as np
 
-from devbench.analysis.workbench_inputs import _h5ad_attribute, _h5ad_index_name
+from devbench.analysis.workbench_inputs import _h5ad_encoding, _h5ad_index_name
 from devbench.core.population_data import _node
 from rna_kernels.canonical import canonical_json
 
@@ -115,7 +115,7 @@ def _labels(axis, field, expected, validate_dataset, annotation):
     legacy = isinstance(axis, h5py.Dataset)
     node = axis if legacy else _node(axis, field)
     if isinstance(node, h5py.Group):
-        if _h5ad_attribute(node, "encoding-type", 1) != "categorical":
+        if _h5ad_encoding(node) != "categorical":
             raise ValueError("Unsupported HDF5 label encoding")
         reader, dtype = _reader(_node(node, "codes"), None, expected, validate_dataset)
         yield from _categorical_values(

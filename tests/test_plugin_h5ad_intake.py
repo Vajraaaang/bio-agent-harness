@@ -292,6 +292,42 @@ def _write_four_feature_counts(path, counts):
         handle.create_dataset("var/_index", data=[b"w", b"x", b"y", b"z"])
 
 
+@pytest.mark.parametrize("layout", ["csr", "csc"])
+@pytest.mark.parametrize("library_rows", [True, False])
+def test_library_sums_use_logical_sparse_coordinates(
+    workspace_tmp_path, monkeypatch, layout, library_rows
+):
+    from devbench.platform import plugin_mcp
+
+    rng = np.random.default_rng(145)
+    raw = rng.negative_binomial(2, 0.2, (8, 600))
+    raw[rng.random(raw.shape) < 0.93] = 0
+    cpm = np.rint(1_000_000 * raw / raw.sum(axis=1, keepdims=True)).astype("int32")
+    monkeypatch.setattr(plugin_mcp, "_H5_BLOCK", 256)
+    with h5py.File(workspace_tmp_path / "sparse.h5", "w") as h5:
+        for name, array, valid in (("counts", raw, True), ("rounded_cpm", cpm, False)):
+            stored = sparse.coo_matrix(array if library_rows else array.T).asformat(
+                layout
+            )
+            group = h5.create_group(name)
+            for key in ("data", "indices", "indptr"):
+                group.create_dataset(key, data=getattr(stored, key))
+            flags = set()
+            assert (
+                _verify_h5_counts(
+                    group,
+                    stored.shape,
+                    layout,
+                    count1_flags=flags,
+                    libraries_in_rows=library_rows,
+                )
+                is valid
+            )
+            assert flags == (
+                set() if valid else {"suspected_transformed_integer_counts"}
+            )
+
+
 @pytest.mark.wal
 def test_count1_log_plateau_and_safe_h5ad_diagnostics_over_stdio(workspace_tmp_path):
     inputs = workspace_tmp_path / "inputs"

@@ -83,7 +83,7 @@ from .plugin_jobs import (
     ensure_offline_studio,
     studio_handoff,
 )
-from .plugin_mcp_output import output_schema
+from .plugin_mcp_output import PRIVATE_LAUNCH_HINT, output_schema, output_validator
 from .plugin_rna_solvers import (
     LOCAL_OPERATIONS,
     CCCChoice,
@@ -680,6 +680,7 @@ _AXIS_BUDGET = 4 * 1024 * 1024
 _H5_BLOCK = 1024 * 1024
 _H5_MAX_DECODED_CHUNK = 64 * 1024 * 1024
 _H5_LAYOUTS = {"10x_cellranger"}
+_INTEGER_COUNT_KINDS = {"gene_counts", "spliced_counts", "unspliced_counts"}
 _FEATURE_LABELS = {"gene_id", "gene", "gene_name", ""}
 _METADATA_IDENTITIES = {
     "sample_id",
@@ -833,8 +834,8 @@ def _validate_h5_dataset(node) -> None:
         raise ValueError("HDF5 uses an unsupported inspection filter")
 
 
-def _h5_matrix_values(element, shape, layout):
-    """Return the backed value dataset only after validating its storage and axes."""
+def _h5_matrix_storage(element, shape, layout):
+    """Return validated, backed dense or sparse components without materialization."""
     import h5py
 
     from devbench.core.population_data import _node, _sparse_components
@@ -848,10 +849,14 @@ def _h5_matrix_values(element, shape, layout):
         values, indices, pointers = _sparse_components(
             element, shape, layout, _H5_BLOCK
         )
-        return values if _canonical_sparse_indices(indices, pointers) else None
+        return (
+            (values, indices, pointers)
+            if _canonical_sparse_indices(indices, pointers)
+            else None
+        )
     if layout is None and isinstance(element, h5py.Dataset) and element.shape == shape:
         _validate_h5_dataset(element)
-        return element
+        return element, None, None
     return None
 
 
@@ -891,25 +896,33 @@ def _verify_h5_counts(
 ) -> bool:
     import numpy as np
 
-    values = _h5_matrix_values(element, shape, layout)
-    if values is None or values.dtype.kind not in "iuf" or min(shape) < 1:
+    storage = _h5_matrix_storage(element, shape, layout)
+    if storage is None or min(shape) < 1:
         return False
-    if integer and _h5_declares_count_transform(element):
+    values, indices, pointers = storage
+    if values.dtype.kind not in "iuf":
+        return False
+    check_raw_counts = integer and nonnegative
+    if check_raw_counts and _h5_declares_count_transform(element):
         if count1_flags is not None:
             count1_flags.add(CONFLICTING_PROVENANCE)
         return False
+    libraries_in_major_axis = libraries_in_rows != (layout == "csc")
     distribution = (
         CountDistribution(
             total_values=math.prod(shape),
             major_width=shape[0] if layout == "csc" else shape[1],
-            libraries_in_rows=not libraries_in_rows
-            if layout == "csc"
-            else libraries_in_rows,
+            libraries_in_rows=libraries_in_major_axis,
         )
-        if integer
+        if check_raw_counts
         else None
     )
-    for chunk in _h5_value_blocks(values):
+    blocks = (
+        _sparse_library_blocks(values, indices, pointers, libraries_in_major_axis)
+        if check_raw_counts and indices is not None
+        else ((chunk, None) for chunk in _h5_value_blocks(values))
+    )
+    for chunk, libraries in blocks:
         if (
             not np.isfinite(chunk).all()
             or (nonnegative and np.any(chunk < 0))
@@ -922,7 +935,7 @@ def _verify_h5_counts(
         ):
             return False
         if distribution is not None:
-            distribution.observe(chunk)
+            distribution.observe(chunk, library_indices=libraries)
     if distribution is not None and distribution.suspected_transform:
         if count1_flags is not None:
             count1_flags.add(SUSPECTED_TRANSFORM)
@@ -942,6 +955,29 @@ def _h5_value_blocks(values):
     for row in range(0, values.shape[0], height):
         for col in range(0, values.shape[1], width):
             yield values[row : row + height, col : col + width]
+
+
+def _sparse_library_blocks(values, indices, pointers, libraries_in_major_axis):
+    """Map stored entries to their logical library without expanding implicit zeros."""
+    import numpy as np
+
+    stride = max(1, _H5_BLOCK // max(8, values.dtype.itemsize, indices.dtype.itemsize))
+    if not libraries_in_major_axis:
+        for start in range(0, len(values), stride):
+            span = slice(start, start + stride)
+            yield values[span], indices[span]
+        return
+    # Iterate the compressed axis a page at a time. Repeated indptr offsets
+    # represent empty libraries; side="right" skips those at block boundaries.
+    for major in range(0, len(pointers) - 1, 4096):
+        offsets = pointers[major : major + 4097]
+        end = int(offsets[-1])
+        for start in range(int(offsets[0]), end, stride):
+            stop = min(start + stride, end)
+            ids = major + np.searchsorted(
+                offsets[1:], np.arange(start, stop), side="right"
+            )
+            yield values[start:stop], ids
 
 
 def _canonical_sparse_indices(indices, pointers) -> bool:
@@ -1510,7 +1546,8 @@ def _attested_measurements(
                                     args.count1_confirmation.model_dump()
                                 )
                             }
-                            if args.count1_confirmation
+                            if kind in _INTEGER_COUNT_KINDS
+                            and args.count1_confirmation
                             and args.count1_confirmation.source_sha256
                             == profile["sha256"]
                             and args.count1_confirmation.slot == slot
@@ -1816,7 +1853,9 @@ def _answer(
             )
     review = args.count1_confirmation
     if review and any(
-        item.artifact_sha256 == review.source_sha256 and item.slot == review.slot
+        item.kind in _INTEGER_COUNT_KINDS
+        and item.artifact_sha256 == review.source_sha256
+        and item.slot == review.slot
         for item in measurements
     ):
         answer["count1_confirmation_sha256"] = digest(review.model_dump())
@@ -2504,57 +2543,69 @@ def _assessed_count_inputs(args: _Plan) -> set[str]:
     return set()
 
 
-def _check_unassessed_plan_counts(args: _Plan, profiles: list[dict[str, Any]]) -> None:
-    """Check declared counts omitted from an optional question assessment."""
+def _check_plan_count_source(
+    args: _Plan, profile: dict[str, Any], confirmed: str | None
+) -> str | None:
+    """Verify the selected count slot and return its canonical name."""
     from devbench.analysis.rna_input_set_contract import MAX_SOURCE_BYTES
 
-    if not isinstance(args, (_CellPlan, _BulkPlan)) or args.measurement not in {
-        "raw_counts",
-        "umi_counts",
-        "non_umi_counts",
-    }:
-        return
-    assessment = args.answerability
+    observed = profile["observed"]
+    if observed["file_type"] == "h5ad":
+        slot = args.counts_layer or (
+            "counts" if "counts" in observed["layers"] else "X"
+        )
+        _, verified, _, evidence = _bounded_hdf5_probe(
+            _h5ad_evidence, profile, (slot,), (), None, False, confirmed
+        )
+        if not verified:
+            raise OperationBlocked(
+                evidence.get("count1_reason", "raw_count_slot_unverified")
+            )
+        return slot if slot == "X" else "layers/" + slot
+    if observed["file_type"] in _TABLE_TYPES:
+        if not _table_axes(
+            profile,
+            verify_counts=True,
+            count1_confirmed=confirmed == "feature_rows",
+            maximum=MAX_SOURCE_BYTES,
+        ):
+            raise OperationBlocked("raw_count_slot_unverified")
+        return "feature_rows"
+    if observed.get("matrix_layout") in _H5_LAYOUTS:
+        axes = _bounded_hdf5_probe(_tenx_evidence, profile, True, confirmed == "matrix")
+        if not axes or "count1_reason" in axes:
+            raise OperationBlocked(
+                axes.get("count1_reason", "raw_count_slot_unverified")
+            )
+        return "matrix"
+    return None
+
+
+def _check_unassessed_plan_counts(
+    args: _Plan, profiles: list[dict[str, Any]]
+) -> dict[str, str]:
+    """Check declared counts omitted from an optional question assessment."""
+    if not isinstance(
+        args, (_MatrixPlan, _CellPlan, _BulkPlan)
+    ) or args.measurement not in {"raw_counts", "umi_counts", "non_umi_counts"}:
+        return {}
     checked = _assessed_count_inputs(args)
-    review = assessment.count1_confirmation if assessment else None
+    review = args.answerability.count1_confirmation if args.answerability else None
+    confirmation = {}
     for profile in profiles:
         if profile["role"] != "expression" or (
             profile["source"] in checked and _inside_file_budget(profile)
         ):
             continue
-        confirmed = (
+        selected = (
             review.slot
             if review and review.source_sha256 == profile["sha256"]
             else None
         )
-        observed = profile["observed"]
-        if observed["file_type"] == "h5ad":
-            slot = args.counts_layer or (
-                "counts" if "counts" in observed["layers"] else "X"
-            )
-            _, verified, _, evidence = _bounded_hdf5_probe(
-                _h5ad_evidence, profile, (slot,), (), None, False, confirmed
-            )
-            if not verified:
-                raise OperationBlocked(
-                    evidence.get("count1_reason", "raw_count_slot_unverified")
-                )
-        elif observed["file_type"] in _TABLE_TYPES:
-            if not _table_axes(
-                profile,
-                verify_counts=True,
-                count1_confirmed=confirmed == "feature_rows",
-                maximum=MAX_SOURCE_BYTES,
-            ):
-                raise OperationBlocked("raw_count_slot_unverified")
-        elif observed.get("matrix_layout") in _H5_LAYOUTS:
-            axes = _bounded_hdf5_probe(
-                _tenx_evidence, profile, True, confirmed == "matrix"
-            )
-            if not axes or "count1_reason" in axes:
-                raise OperationBlocked(
-                    axes.get("count1_reason", "raw_count_slot_unverified")
-                )
+        verified = _check_plan_count_source(args, profile, selected)
+        if review and selected is not None and verified == selected:
+            confirmation["count1_confirmation_sha256"] = digest(review.model_dump())
+    return confirmation
 
 
 def _plan_answer(
@@ -2562,7 +2613,7 @@ def _plan_answer(
     profiles: list[dict[str, Any]],
     image_id: str | None,
 ) -> dict[str, Any] | None:
-    _check_unassessed_plan_counts(args, profiles)
+    confirmation = _check_unassessed_plan_counts(args, profiles)
     answerability = args.answerability
     if answerability is None:
         return None
@@ -2606,12 +2657,13 @@ def _plan_answer(
     required = [*answerability.inputs, *([metadata] if metadata else [])]
     if any(item not in args.inputs for item in required):
         raise ValueError("Answerability evidence must be within the frozen input scope")
-    return _answer(
+    result = _answer(
         answerability,
         frozen[metadata.path] if metadata else None,
         profiles=[frozen[item.path] for item in answerability.inputs],
         image_id=image_id,
     )
+    return {**result, **confirmation}
 
 
 def _plan_runtime_and_answer(
@@ -2677,9 +2729,12 @@ def _freeze_route_parameters(
             )
         }
     if args.answerability and args.answerability.count1_confirmation:
-        plan["count1_confirmation"] = (
-            args.answerability.count1_confirmation.model_dump()
-        )
+        review = args.answerability.count1_confirmation.model_dump()
+        if plan["data_classification"] != "private" and (
+            plan.get("answerability") or {}
+        ).get("count1_confirmation_sha256") != digest(review):
+            raise OperationBlocked("count1_confirmation_scope_mismatch")
+        plan["count1_confirmation"] = review
     plan["design"]["parameters"] = parameters
     if choice is not None:
         plan["local_solver"] = choice.model_dump(mode="json")
@@ -3484,6 +3539,7 @@ def _studio_receipt(
         "limitations",
         "warnings",
         "replay_bundle_sha256",
+        "count1_confirmation_sha256",
         "figure_preview",
         "probability_bounds_status",
         "nextflow_trace",
@@ -3704,7 +3760,7 @@ def _bulk_verified_fit(
             "review and release authority.",
         ],
     }
-    return receipt, require_current
+    return _record_count1_confirmation(plan, receipt), require_current
 
 
 def _bulk_waiting(workspace: Path, sid: str) -> dict[str, Any]:
@@ -4352,6 +4408,21 @@ def _verify_execution_inputs(discovery, root, plan) -> None:
         raise OperationBlocked("input_snapshot_changed")
 
 
+def _record_count1_confirmation(plan, result):
+    review = plan.get("count1_confirmation")
+    if review is None:
+        return result
+    return {
+        **result,
+        "count1_confirmation_sha256": digest(review),
+        "limitations": [
+            *result.get("limitations", ()),
+            "Caller confirmed suspected integer-transformed count distribution "
+            "against external provenance.",
+        ],
+    }
+
+
 def _run_external_plan(
     jobs: JobStore, rid: str, plan: dict[str, Any]
 ) -> dict[str, Any]:
@@ -4394,15 +4465,17 @@ def _run_external_plan(
             jobs,
             rid,
             plan,
-            execute=execute_native,
+            execute=lambda: _record_count1_confirmation(plan, execute_native()),
             verify_sources=verify,
         )
-    elif operation == "registered_exploratory":
-        from .plugin_registered_method import run_registered_method
-
-        result = run_registered_method(jobs, rid, plan, verify_sources=verify)
     else:
-        result = _run_adaptive(jobs, rid, plan, ledger, broker, lineage)
+        if operation == "registered_exploratory":
+            from .plugin_registered_method import run_registered_method
+
+            result = run_registered_method(jobs, rid, plan, verify_sources=verify)
+        else:
+            result = _run_adaptive(jobs, rid, plan, ledger, broker, lineage)
+        result = _record_count1_confirmation(plan, result)
     verify()
     if result.get("_terminal_status"):
         return result
@@ -6054,7 +6127,15 @@ def _tool_error(
         and isinstance(sid, str)
         and re.fullmatch(r"[0-9a-f]{32}", sid)
     ):
-        result["studio_url"] = plugin._handoff(sid, "overview")["studio_url"]
+        result["studio_url"] = None
+        with suppress(OSError, ValueError, RuntimeError, KeyError):
+            result["studio_url"] = plugin._handoff(sid, "overview")["studio_url"]
+        if result["studio_url"] is None:
+            # Configured folders may contain private identifiers. The full local
+            # command is also available in the caller's original plan handoff.
+            result["launch_hint"] = PRIVATE_LAUNCH_HINT
+    if name in _TOOLS and not output_validator(name).is_valid(result):
+        result = {"error": "OperationBlocked", "reason": "internal_tool_error"}
     return CallToolResult(
         isError=True,
         content=[TextContent(type="text", text=canonical(result).decode())],
@@ -6079,6 +6160,26 @@ def _open_studio_handoff(
     except (OSError, RuntimeError):
         return previous
     return origin
+
+
+def _checked_tool_success(name: str, result: dict[str, Any]) -> CallToolResult:
+    # Validate the actual JSON that crosses the wire. The SDK can include the
+    # offending instance in error text if handed an invalid tuple response.
+    try:
+        payload = canonical(result).decode()
+        structured = json.loads(payload)
+        if (
+            not isinstance(structured, dict)
+            or "error" in structured
+            or not output_validator(name).is_valid(structured)
+        ):
+            raise ValueError("Invalid tool result")
+        return CallToolResult(
+            content=[TextContent(type="text", text=payload)],
+            structuredContent=structured,
+        )
+    except Exception:
+        raise OperationBlocked("internal_tool_error") from None
 
 
 def build_server(
@@ -6142,7 +6243,7 @@ def build_server(
     async def call_tool(
         name: str,
         arguments: dict[str, Any],
-    ) -> CallToolResult | tuple[list[TextContent], dict[str, Any]]:
+    ) -> CallToolResult:
         nonlocal opened_studio
         result: dict[str, Any]
         try:
@@ -6160,6 +6261,7 @@ def build_server(
                         plugin.mounted_image_id,
                     )
             result = await anyio.to_thread.run_sync(getattr(plugin, handler), args)
+            response = _checked_tool_success(name, result)
         except Exception as error:
             # The SDK otherwise echoes unexpected exception text over STDIO.
             return _tool_error(plugin, name, arguments, error)
@@ -6167,9 +6269,7 @@ def build_server(
             opened_studio = _open_studio_handoff(
                 plugin.jobs.workspace, result, opened_studio
             )
-        # The SDK validates this dict before encoding the JSON-RPC response.
-        payload = canonical(result).decode()
-        return [TextContent(type="text", text=payload)], json.loads(payload)
+        return response
 
     return server
 

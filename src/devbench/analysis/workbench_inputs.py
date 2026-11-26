@@ -99,6 +99,23 @@ def _h5ad_text(value):
     return value
 
 
+def _h5ad_encoding(group, name="encoding-type"):
+    import h5py
+    import numpy as np
+
+    if name not in group.attrs:
+        return None
+    attr = group.attrs.get_id(name)
+    text = h5py.check_string_dtype(attr.dtype)
+    if attr.shape != () or text is None:
+        raise ValueError("AnnData encoding metadata must be a scalar string")
+    # Bound HDF5's conversion of variable-length attributes before decoding.
+    # One extra byte lets a truncated UTF-8 value exceed the 200-character limit.
+    target = np.empty((), dtype=h5py.string_dtype(text.encoding, length=4 * 200 + 1))
+    attr.read(target)
+    return _h5ad_text(target[()])
+
+
 def _h5ad_sparse_layout(group) -> tuple[str | None, tuple[int, int]]:
     """Read only sparse metadata, including the pre-0.7 AnnData encoding."""
     shape = None
@@ -118,11 +135,10 @@ def _h5ad_sparse_layout(group) -> tuple[str | None, tuple[int, int]]:
     if shape is None:
         raise ValueError("Sparse AnnData matrix shape header is missing")
 
-    modern = _h5ad_attribute(group, "encoding-type", 1)
-    legacy = _h5ad_attribute(group, "h5sparse_format", 1)
-    encoding = _h5ad_text(modern) if modern is not None else None
+    encoding = _h5ad_encoding(group)
+    legacy = _h5ad_encoding(group, "h5sparse_format")
     if legacy is not None:
-        legacy_encoding = _h5ad_text(legacy) + "_matrix"
+        legacy_encoding = legacy + "_matrix"
         if encoding is not None and encoding != legacy_encoding:
             raise ValueError("Sparse AnnData layout headers conflict")
         encoding = legacy_encoding
@@ -165,7 +181,7 @@ def _h5ad_axis_header(handle, name, maximum):
     index_name = _h5ad_index_name(group)
     index = _h5ad_node(group, index_name)
     if isinstance(index, h5py.Group):
-        if _h5ad_attribute(index, "encoding-type", 1) != "categorical":
+        if _h5ad_encoding(index) != "categorical":
             raise ValueError("Unsupported AnnData identity encoding")
         levels = _h5ad_node(index, "categories")
         if (
