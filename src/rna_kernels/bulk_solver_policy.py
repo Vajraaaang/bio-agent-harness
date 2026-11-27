@@ -53,6 +53,7 @@ def _route_counts(units, comparison, sizes, n_eligible_genes, heterogeneous):
     # evaluates it on the *actual* expression-filtered family before fitting.
     trend = None if n_eligible_genes is None else n_eligible_genes >= 500
     large = sizes is not None and min(sizes) >= 15
+    unbalanced = sizes is not None and len(set(sizes)) > 1
     rank = units == "independent" and sizes is not None and min(sizes) >= 20
     if units == "mixed":
         solver, test, route, comparator = (
@@ -61,19 +62,19 @@ def _route_counts(units, comparison, sizes, n_eligible_genes, heterogeneous):
             "repeated_donor",
             None,
         )
-    elif units == "independent" and sizes is not None and len(set(sizes)) > 1:
-        solver, test, route, comparator = (
-            "dream",
-            "moderated_t",
-            "unbalanced_independent",
-            None,
-        )
-    elif units == "independent" and (heterogeneous or large):
+    elif units == "independent" and (heterogeneous or (large and not unbalanced)):
         solver, test, route, comparator = (
             "limma_voom_qw",
             "moderated_t",
             "large_or_heterogeneous_independent",
             "edger_v4",
+        )
+    elif units == "independent" and unbalanced:
+        solver, test, route, comparator = (
+            "dream",
+            "moderated_t",
+            "unbalanced_independent",
+            None,
         )
     else:
         solver, test, route, comparator = (

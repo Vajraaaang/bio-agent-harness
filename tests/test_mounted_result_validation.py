@@ -63,6 +63,25 @@ def test_rank_agreement_with_zero_comparable_effects_requires_review():
     assert summary["hold"] == "Q-DESIGN"
 
 
+def test_heterogeneous_primary_requires_a_routed_receipt():
+    from devbench.core.contrast_design import MountedModelSpec
+    from devbench.engine.mounted_result_validation import verify_mounted_solver
+
+    spec = SimpleNamespace(
+        mounted_model=MountedModelSpec(
+            comparison="coefficient",
+            units="independent",
+            heterogeneous_independent=True,
+        ),
+        family=SimpleNamespace(primary=True),
+        measurement="raw_counts",
+        design=SimpleNamespace(technical_factors=()),
+        continuous_covariates=(),
+    )
+    with pytest.raises(ValueError, match="regime route"):
+        verify_mounted_solver({"solver": "edger_v4", "test": "qlf", "test_df": 1}, spec)
+
+
 @pytest.mark.parametrize("implicit", [False, True])
 def test_routed_admission_recomputes_design_and_refuses_unearned_calibration(
     workspace_tmp_path,

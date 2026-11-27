@@ -142,6 +142,15 @@ def verify_mounted_solver(summary, spec, *, inputs=None):
     elif model is None:
         return
     else:
+        heterogeneous = getattr(model, "heterogeneous_independent", False)
+        if (
+            heterogeneous
+            and spec.family.primary
+            and getattr(model, "sensitivity_method", None) is None
+        ):
+            raise ValueError(
+                "Heterogeneous primary receipt requires a frozen regime route"
+            )
         choice = freeze_bulk_solver(
             measurement=spec.measurement,
             runtime="bioconductor",
@@ -152,6 +161,7 @@ def verify_mounted_solver(summary, spec, *, inputs=None):
                 spec.design.technical_factors or spec.continuous_covariates
             ),
             sensitivity_method=model.sensitivity_method,
+            heterogeneous_independent=heterogeneous,
         )
     degrees = summary.get("test_df")
     if (

@@ -406,7 +406,9 @@ class PipelineSpec(BaseModel):
         model = self.mounted_model
         if (
             model is not None
-            and model.sensitivity_method is not None
+            and (
+                model.sensitivity_method is not None or model.heterogeneous_independent
+            )
             and image_id not in approved_voom_image_ids
         ):
             raise ValueError("Use the pinned limma-voom runtime")
@@ -445,6 +447,9 @@ class PipelineSpec(BaseModel):
                     self.design.technical_factors or self.continuous_covariates
                 ),
                 sensitivity_method=model.sensitivity_method if model else None,
+                heterogeneous_independent=bool(
+                    model and model.heterogeneous_independent
+                ),
             )
 
     def tool_request(self):

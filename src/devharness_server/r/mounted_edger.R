@@ -66,6 +66,10 @@ writeBin(as.double(unlist(quantities, use.names = FALSE)), file.path(directory, 
          endian = "little")
 method <- result$method
 method$regime_route <- if (length(args) == 8L) "explicit_count_settings" else "legacy_count_driver"
+if (inherits(method$group_observation_counts, "table")) {
+    group_counts <- method$group_observation_counts
+    method$group_observation_counts <- as.list(setNames(as.integer(group_counts), names(group_counts)))
+}
 evidence <- list(solver = solver, solver_version = method$version, solver_details = method,
                  regime_route = method$regime_route, calibration_status = "uncalibrated_L1",
                  model_columns = as.list(names(quantities)))

@@ -71,6 +71,38 @@ def test_paired_heterogeneous_and_unbalanced_hypotheses_keep_their_design():
     )
 
 
+@pytest.mark.parametrize(("sizes", "rank"), [((10, 11), False), ((20, 25), True)])
+def test_declared_heterogeneity_precedes_unequal_arm_routing(sizes, rank):
+    choice = _choice(units_per_arm=sizes, heterogeneous_independent=True)
+    assert choice.regime_route == "large_or_heterogeneous_independent"
+    assert choice.solver == "limma_voom_qw" and choice.sensitivity_solver == "edger_v4"
+    assert choice.rank_sensitivity_planned is rank
+
+
+def test_heterogeneous_primary_requires_an_approved_voom_image(workspace_tmp_path):
+    from devharness_controlled.native_contracts import LIMMA_VOOM_KERNEL_IMAGES
+    from tests.test_thesis_bulk_acceptance import _make_cohort, _pipeline
+
+    plan = _pipeline(_make_cohort(workspace_tmp_path, 12), family_id="heterogeneous")
+    plan = plan.model_copy(
+        update={
+            "mounted_model": MountedModelSpec(
+                comparison="coefficient",
+                units="independent",
+                heterogeneous_independent=True,
+            )
+        }
+    )
+    approved = frozenset(LIMMA_VOOM_KERNEL_IMAGES.values())
+    with pytest.raises(ValueError, match="pinned limma-voom runtime"):
+        plan.require_mounted_runtime(
+            "sha256:" + "f" * 64, approved_voom_image_ids=approved
+        )
+    plan.require_mounted_runtime(
+        LIMMA_VOOM_KERNEL_IMAGES["linux/arm64"], approved_voom_image_ids=approved
+    )
+
+
 def test_explicit_comparators_and_omnibus_are_preserved():
     for sizes in ((12, 8, 10), (52, 52, 52)):
         frozen = _choice(comparison="contrast", units_per_arm=sizes)
@@ -86,6 +118,7 @@ def test_explicit_comparators_and_omnibus_are_preserved():
     ("sizes", "heterogeneous", "solver"),
     [
         ((9, 10), False, "dream"),
+        ((20, 25), False, "dream"),
         ((10, 10), False, "edger_v4"),
         ((10, 10), True, "limma_voom_qw"),
         ((15, 15), False, "limma_voom_qw"),
