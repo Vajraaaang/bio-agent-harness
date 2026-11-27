@@ -158,10 +158,10 @@ class ControlPlane:
         )
         return revision
 
-    def artifact(self, sid, aid, sha=None, db=None):
+    def artifact(self, sid, aid, sha=None, db=None, *, allow_stale=False):
         if db is None:
             return self.authority.daemon_read(
-                lambda conn: self.artifact(sid, aid, sha, conn)
+                lambda conn: self.artifact(sid, aid, sha, conn, allow_stale=allow_stale)
             )
         record = artifact_record(
             db.execute(
@@ -171,7 +171,9 @@ class ControlPlane:
         )
         if sha is not None and sha != record["ref"]["sha256"]:
             raise OperationBlocked("plan_identity_mismatch")
-        if record["status"] != "current":
+        if record["status"] != "current" and not (
+            allow_stale and record["status"] == "stale"
+        ):
             raise OperationBlocked("input_scope_violation")
         self.check_embargo(
             [

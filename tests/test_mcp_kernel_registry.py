@@ -1,5 +1,6 @@
 """Exercise schema discovery and the live mounted CAMERA input/custody adapter."""
 
+import gzip
 import hashlib
 import json
 import os
@@ -10,7 +11,7 @@ import pytest
 
 from devbench.engine.workflow_operations import OperationBlocked
 from devbench.mcp import registry, runtime
-from devbench.mcp.registry_execution import _camera, execute_mounted_kernel
+from devbench.mcp.registry_execution import _camera, _table_rows, execute_mounted_kernel
 from devbench.mcp.schemas import validator
 
 
@@ -63,6 +64,34 @@ def _bind(path, representation):
         },
         "path": path,
     }
+
+
+@pytest.mark.wal
+@pytest.mark.parametrize(("fmt", "delimiter"), [("csv", ","), ("tsv", "\t")])
+def test_table_rows_reads_registered_gzip_with_decompressed_limit(
+    workspace_tmp_path, fmt, delimiter
+):
+    from devbench.mcp.context import ControlPlane
+    from devbench.platform.plugin_jobs import JobStore
+    from tests.test_mcp_intake_query import register
+
+    inputs = workspace_tmp_path / "inputs"
+    inputs.mkdir()
+    ctx = ControlPlane(
+        SimpleNamespace(input_root=inputs, jobs=JobStore(workspace_tmp_path / "work"))
+    )
+    path = inputs / f"metadata.{fmt}.gz"
+    rows = [["group", "label"], *([["A", "α" * 20]] * 50)]
+    raw = "".join(delimiter.join(row) + "\r\n" for row in rows).encode("utf-8-sig")
+    path.write_bytes(gzip.compress(raw))
+    admitted = register(ctx, path)
+    ref = admitted["artifact"]
+    assert ref["format"] == fmt
+    binding = ctx.artifact(admitted["session_id"], ref["artifact_id"], ref["sha256"])
+    assert list(_table_rows(binding, len(raw))) == rows
+    assert path.stat().st_size < len(raw) - 1
+    with pytest.raises(OperationBlocked, match="resource_quota_exceeded"):
+        list(_table_rows(binding, len(raw) - 1))
 
 
 def _inputs(root):

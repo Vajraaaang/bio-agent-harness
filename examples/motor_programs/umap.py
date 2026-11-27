@@ -17,7 +17,13 @@ from devbench.analysis.evidence_access import EvidenceBroker
 from devbench.analysis.workbench_inputs import InputDiscovery
 from devbench.core._files import hash_bounded_file, read_bounded_file
 from devbench.engine.workflow_operations import OperationBlocked
-from devbench.platform.plugin_jobs import ACTIVE, JobStore, _worker_alive, digest
+from devbench.platform.plugin_jobs import (
+    ACTIVE,
+    JobStore,
+    _orphaned_worker,
+    _worker_alive,
+    digest,
+)
 
 from .code import SOURCE_LIMIT, code_view, implementation_path, read_code
 
@@ -303,10 +309,16 @@ def studio_view(app, session_id: str):
     view.update(
         run_id=run["run_id"], progress=stage.get("step"), error=run["error_text"]
     )
-    if run["status"] in ACTIVE and not _worker_alive(
-        run["pid"], stage.get("process_created_at")
-    ):
-        view.update(status="interrupted", error="worker_not_running")
+    if run["status"] in ACTIVE:
+        created = stage.get("process_created_at")
+        interrupted = (
+            run["status"] == "running"
+            and _orphaned_worker(app.workspace, run["pid"], created)
+            if stage.get("daemon_managed")
+            else not _worker_alive(run["pid"], created)
+        )
+        if interrupted:
+            view.update(status="interrupted", error="worker_not_running")
     if run["status"] == "completed":
         receipt = _studio_receipt(app.workspace, plan, plan_sha, run)
         if "graph_execution" in receipt:

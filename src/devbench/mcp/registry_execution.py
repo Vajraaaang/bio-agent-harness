@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import io
 import json
 import math
 from collections import Counter
@@ -36,7 +35,7 @@ from rna_kernels.canonical import canonical_json
 from rna_kernels.pathways import MAX_MATRIX_BYTES, MAX_RESULT_BYTES
 from rna_kernels.scrna_composition import CompositionRequest
 
-from ._sources import pinned_file
+from ._sources import pinned_file, text_input
 from .registry import catalog
 
 _PATHWAY_WORKER = "devharness_server.tools_rna_pathways"
@@ -66,20 +65,34 @@ def _write(path, data):
     return sha256(data).hexdigest()
 
 
+def _bounded_table_lines(reader, limit):
+    remaining_chars = limit
+    while line := reader.readline(remaining_chars + 1):
+        # The decoder's binary offset includes the BOM and multibyte characters.
+        # For gzip this is the uncompressed offset, including buffered read-ahead.
+        if reader.buffer.tell() > limit:
+            raise OperationBlocked("resource_quota_exceeded")
+        remaining_chars -= len(line)
+        yield line
+
+
 def _table_rows(binding, limit):
     fmt = binding["ref"]["format"]
     if fmt not in ("csv", "tsv"):
         raise OperationBlocked("scientific_refusal")
-    with pinned_file(
-        Path(binding["path"]), math.inf, expected=binding["ref"]["sha256"]
-    ) as (stream, _, size):
+    path = Path(binding["path"])
+    with pinned_file(path, math.inf, expected=binding["ref"]["sha256"]) as (
+        stream,
+        _,
+        size,
+    ):
         if size > limit:
             raise OperationBlocked("resource_quota_exceeded")
-        reader = io.TextIOWrapper(stream, encoding="utf-8-sig", newline="")
-        try:
-            yield from csv.reader(reader, delimiter="," if fmt == "csv" else "\t")
-        finally:
-            reader.detach()
+        with text_input(stream, path.suffix == ".gz") as reader:
+            yield from csv.reader(
+                _bounded_table_lines(reader, limit),
+                delimiter="," if fmt == "csv" else "\t",
+            )
 
 
 def _camera_expression(binding, inputs):

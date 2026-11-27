@@ -250,7 +250,9 @@ def _package(ctx, args, db):
         "status IN ('completed','failed','cancelled') ORDER BY run_id",
         (sid,),
     )
-    receipts = [verified_receipt(ctx, sid, row[0], db) for row in runs]
+    receipts = [
+        verified_receipt(ctx, sid, row[0], db, allow_stale=True) for row in runs
+    ]
     if not receipts:
         raise OperationBlocked("awaiting_information")
     manifest = {

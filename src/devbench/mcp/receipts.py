@@ -256,7 +256,7 @@ def _terminal_body(ctx, row, plan, record):
     return receipt
 
 
-def verified_receipt(ctx, sid, rid, db, *, local_offline=False):
+def verified_receipt(ctx, sid, rid, db, *, local_offline=False, allow_stale=False):
     if ctx.protected(sid, db=db) and not (local_offline and ctx.offline_only):
         raise OperationBlocked(PRIVATE)
     row = db.execute(
@@ -290,7 +290,9 @@ def verified_receipt(ctx, sid, rid, db, *, local_offline=False):
     ):
         raise OperationBlocked("plan_identity_mismatch")
     for ref in receipt["outputs"].values():
-        artifact = ctx.artifact(sid, ref["artifact_id"], ref["sha256"], db)
+        artifact = ctx.artifact(
+            sid, ref["artifact_id"], ref["sha256"], db, allow_stale=allow_stale
+        )
         ctx.check_source(db, sid, ref["sha256"])
         if (
             hash_bounded_file(Path(artifact["path"]), ref["size_bytes"])

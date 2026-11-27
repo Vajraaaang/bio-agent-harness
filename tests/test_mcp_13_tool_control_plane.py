@@ -475,3 +475,132 @@ def test_verified_sweep_resumes_only_unfinished_units(control):
         assert set(receipt["outputs"]) == {"0-root.info", "1-root.info"}
     finally:
         _stop_when_idle(ctx.workspace)
+
+
+@pytest.mark.parametrize("pin_matches", [True, False])
+def test_resume_saved_matrix_audit(tmp_path, pin_matches):
+    import hashlib
+    from pathlib import Path
+
+    from devbench.engine.workflow_operations import OperationBlocked
+    from devbench.mcp import execution
+
+    source = tmp_path / "checkpoint"
+    target = tmp_path / "restored"
+    source.mkdir()
+    target.mkdir()
+    summary = source / "summary.json"
+    summary.write_bytes(b'{"genes":2}')
+    driver = Path(execution.__file__).with_name("matrix_audit.py")
+    pin = hashlib.sha256(driver.read_bytes()).hexdigest() if pin_matches else "0" * 64
+    unit = {
+        "kernel": {"kernel_id": "matrix_audit"},
+        "runtime_pin": {"script_sha256": pin},
+    }
+    saved = execution._save_unit(
+        source, "root", unit, {"files": {"summary": {"path": summary}}}
+    )
+    if pin_matches:
+        resumed = execution._resume_unit(None, {}, source, target, unit, saved)
+        restored = resumed["files"]["summary"]["path"]
+        assert restored == target / "verified-summary"
+        assert restored.read_bytes() == summary.read_bytes()
+    else:
+        with pytest.raises(OperationBlocked, match="plan_identity_mismatch"):
+            execution._resume_unit(None, {}, source, target, unit, saved)
+        assert not list(target.iterdir())
+
+
+def test_package_preserves_receipt_after_aim_revision(control):
+    from devbench.daemon import ipc
+    from tests.test_research_daemon import _stop_when_idle, _until
+
+    ctx = control
+    matrix = ctx.input_root / "counts.csv"
+    matrix.write_text("gene,one,two\na,1,2\n")
+    reg = _ok(ctx, NAMES[2], _admission(matrix))
+    sid = reg["session_id"]
+    aim = {
+        "aim_id": "audit",
+        "kind": "exploratory",
+        "question": "How many genes?",
+        "estimand": "Gene count",
+    }
+    _ok(
+        ctx,
+        NAMES[9],
+        {
+            "action": "propose_aim",
+            "session_id": sid,
+            "expected_revision": reg["revision"],
+            "definition": aim,
+        },
+    )
+    try:
+        ipc.start_daemon(ctx.workspace, input_root=ctx.input_root, offline_only=True)
+        frozen = _ok(ctx, NAMES[10], {**_audit_plan(reg), "aim_id": "audit"})
+        keys = {k: frozen[k] for k in ("session_id", "plan_id", "plan_sha256")}
+        rid = ipc.request(ctx.workspace, "submit", **keys)["run_id"]
+        _until(
+            lambda: ctx.jobs.managed_run(rid)["cleanup_state"] == "confirmed",
+            timeout=45,
+        )
+        assert ctx.jobs.managed_run(rid)["status"] == "completed"
+        receipt = _ok(ctx, NAMES[8], {"session_id": sid, "run_id": rid})
+        (ref,) = receipt["outputs"].values()
+        revised = _ok(
+            ctx,
+            NAMES[9],
+            {
+                "action": "revise_aim",
+                "session_id": sid,
+                "expected_revision": ctx.session(sid)["revision"],
+                "aim_id": "audit",
+                "definition": {**aim, "question": "How many observations?"},
+            },
+        )
+        assert rid in revised["invalidated_steps"]
+        pkg = _ok(
+            ctx,
+            NAMES[9],
+            {
+                "action": "build_research_package",
+                "session_id": sid,
+                "expected_revision": revised["revision"],
+            },
+        )
+        manifest = json.loads(
+            (
+                ctx.workspace
+                / "research-packages"
+                / sid
+                / (pkg["package_root_sha256"] + ".json")
+            ).read_bytes()
+        )
+        assert manifest["receipts"] == [receipt]
+        assert any(
+            row["artifact"] == ref and row["status"] == "stale"
+            for row in manifest["inputs_and_outputs"]
+        )
+        binding = {k: ref[k] for k in ("artifact_id", "sha256")}
+        for name, args in (
+            (
+                NAMES[10],
+                {**_audit_plan(reg), "input_bindings": {"expression": binding}},
+            ),
+            (
+                NAMES[6],
+                {
+                    "session_id": sid,
+                    "artifact_id": ref["artifact_id"],
+                    "artifact_sha256": ref["sha256"],
+                },
+            ),
+        ):
+            denied = dispatch(ctx, name, args)
+            assert (
+                denied.isError
+                and denied.structuredContent["category"] == "input_scope_violation"
+            )
+    finally:
+        _stop_when_idle(ctx.workspace)

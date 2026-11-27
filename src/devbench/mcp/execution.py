@@ -247,9 +247,9 @@ def _resume_unit(ctx, bindings, source, directory, unit, saved):
     if current.pop("unit_sha256") != digest(unit):
         raise OperationBlocked("plan_identity_mismatch")
     if (unit.get("kernel") or {}).get("kernel_id") == "matrix_audit":
-        source = Path(__file__).with_name("matrix_audit.py")
+        driver = Path(__file__).with_name("matrix_audit.py")
         if (
-            hash_bounded_file(source, 512 * 1024)
+            hash_bounded_file(driver, 512 * 1024)
             != unit["runtime_pin"]["script_sha256"]
         ):
             raise OperationBlocked("plan_identity_mismatch")
