@@ -57,7 +57,9 @@ jobs:
             tests/test_bulk_dtu.py \
             tests/test_spatial_analysis.py \
             tests/test_perturbation_analysis.py \
-            tests/test_phenotype_prediction.py
+            tests/test_phenotype_prediction.py \
+            tests/test_cross_arch_equivalence.py \
+            tests/test_bulk_solver_routing.py
       # Configured plugin execution requires a separately verified patched SQLite runtime.
       - name: Verify plugin packaging and admission guards
         run: |
@@ -67,4 +69,6 @@ jobs:
             integrations/codex/tests/test_plugin.py::test_missing_runtime_preserves_destination \
             integrations/codex/tests/test_plugin.py::test_package_rejects_symlink_references \
             integrations/codex/tests/test_plugin.py::test_existing_destination_is_preserved \
-            integrations/codex/tests/test_plugin.py::test_unpatched_runtime_is_refused_and_darwin_can_retry
+            integrations/codex/tests/test_plugin.py::test_unpatched_runtime_is_refused_and_darwin_can_retry \
+            integrations/codex/tests/test_plugin.py::test_pathway_and_spatial_payload_contracts \
+            integrations/codex/tests/test_plugin.py::test_retired_codex_package_is_absent

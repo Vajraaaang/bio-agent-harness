@@ -544,3 +544,25 @@ def test_secondary_family_recomputes_bh_and_uses_the_same_continuous_bounds():
     invalid = {**a, "sensitivity_q_value": 0.04}
     _failed(_verify([invalid, b], [invalid, b]), "bh_sensitivity_source")
     _failed(_verify([a, b], [{**a, "sensitivity_effect": 1.1}, b]), "continuous")
+
+
+def test_continuous_condition_number_uses_continuous_tolerance():
+    rows = [_row()]
+    passed = _verify(
+        rows,
+        rows,
+        source_summary={**RANK, "solver_details": {"condition_number": 12.5}},
+        target_summary={**RANK, "solver_details": {"condition_number": 12.5 + 1e-6}},
+    )
+    assert passed["passed"]
+    failed = _verify(
+        rows,
+        rows,
+        source_summary={**RANK, "solver_details": {"condition_number": 12.5}},
+        target_summary={**RANK, "solver_details": {"condition_number": 12.5 + 1e-3}},
+    )
+    _failed(failed, "continuous")
+    assert any(
+        item.get("field") == "summary.solver_details.condition_number"
+        for item in failed["violations"]
+    )

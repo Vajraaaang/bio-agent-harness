@@ -247,7 +247,13 @@ def _insert_fit(flow, executor, spec, artifacts, *, step_id="fit"):
 
 
 def _research_actions(
-    flow, executor, artifacts, preflight, *, step_ids=("fit",), suffix="",
+    flow,
+    executor,
+    artifacts,
+    preflight,
+    *,
+    step_ids=("fit",),
+    suffix="",
 ):
     broker = EvidenceBroker(flow.authority)
     policy = broker.register_policy(AccessPolicy("thesis-synthetic", 1))
@@ -279,7 +285,12 @@ def _research_actions(
     )
     for touchpoint in ("design", "publication"):
         _cycle(
-            lifecycle, broker, touchpoint, policy, entity_ids=step_ids, suffix=suffix,
+            lifecycle,
+            broker,
+            touchpoint,
+            policy,
+            entity_ids=step_ids,
+            suffix=suffix,
         )
 
     def verify_fixture(subject):
@@ -358,9 +369,11 @@ def _assert_family(fit, gene_ids):
 
 
 def _public_answer(fit):
+    from devbench.study.biology_answers import HypothesisEstimate
+
+    fields = HypothesisEstimate.model_fields
     rows = [
-        {key: value for key, value in row.items() if key != "effect"}
-        for row in fit.rows
+        {key: value for key, value in row.items() if key in fields} for row in fit.rows
     ]
     for row in rows:
         if row["estimate_status"] == "filtered":

@@ -44,7 +44,10 @@ import sys
 if sys.version_info < (3, 13):
     raise SystemExit("Python 3.13+ is required")
 from devbench.engine.scientific_authority import require_patched_wal
-from devharness_controlled.native_contracts import limma_voom_kernel_images
+from devharness_controlled.native_contracts import (
+    limma_voom_kernel_images,
+    routed_de_kernel_images,
+)
 require_patched_wal()
 packages = (
     "devbench", "devharness_core", "devharness_server",
@@ -56,7 +59,8 @@ print(json.dumps({
     "backend_origins": [importlib.util.find_spec(name).origin for name in packages],
     "python_version": sys.version.split()[0],
     "sqlite_version": sqlite3.sqlite_version,
-    "pinned_images": sorted(limma_voom_kernel_images())
+    "pinned_images": sorted(limma_voom_kernel_images()),
+    "preferred_images": sorted(routed_de_kernel_images()),
 }))
 """
 
@@ -106,7 +110,7 @@ def _runtime(python, workspace, expected_version):
     return info, server_env
 
 
-def _detect_image(images, workspace):
+def _detect_image(images, workspace, preferred=()):
     docker = shutil.which("docker")
     if docker is None or not images:
         return None
@@ -141,6 +145,9 @@ def _detect_image(images, workspace):
         and fields[0] in images
         and fields[1] == native
     }
+    preferred_visible = visible & set(preferred)
+    if len(preferred_visible) == 1:
+        return next(iter(preferred_visible))
     return next(iter(visible)) if len(visible) == 1 else None
 
 
@@ -313,7 +320,10 @@ def configure(
     ):
         raise ValueError("Mounted image ID must be a complete SHA-256 image digest")
     pinned_images = info.pop("pinned_images")
-    image = mounted_image_id or _detect_image(pinned_images, workspace)
+    preferred_images = info.pop("preferred_images", ())
+    image = mounted_image_id or _detect_image(
+        pinned_images, workspace, preferred=preferred_images
+    )
     marketplace = None
     if write_marketplace is not None:
         marketplace = _marketplace(
