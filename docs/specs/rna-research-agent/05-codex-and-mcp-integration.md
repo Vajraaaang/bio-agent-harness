@@ -79,7 +79,7 @@ The following MCP/Codex features exhibit **unverified, partial, or surface-depen
 
 ### 3.1 Portable Agent Plugin Layout (`integrations/codex/devharness/`)
 
-Upgrade the plugin template from the legacy `.codex-plugin/plugin.json` fallback to the portable **Agent Plugins** root layout (keeping `.codex-plugin/plugin.json` only as a generated compatibility mirror if targeting older Codex builds):
+Upgrade the plugin template to a single canonical root manifest at `integrations/codex/devharness/plugin.json` validating against `https://agent-plugins.org/schemas/1.0.0/plugin.schema.json` (**`ADR-23` / `UD-08`**). By default, `configure.py` emits root `plugin.json` AND deterministically generates `.codex-plugin/plugin.json` as a compatibility mirror (`--no-legacy-codex-manifest` opt-out), guarded by a unit test enforcing field parity (`name`, `version`, `skills`, `mcpServers`) and a sunset trigger to drop the legacy mirror once the pinned minimum Codex CLI/App build resolves root `plugin.json` across 2 consecutive releases:
 
 ```text
 integrations/codex/devharness/
@@ -155,8 +155,9 @@ integrations/codex/devharness/
    VECLIB_MAXIMUM_THREADS = "1"
    NUMEXPR_NUM_THREADS = "1"
    NUMBA_NUM_THREADS = "1"
-   # macOS Homebrew patched SQLite WAL override (auto-populated by configure.py when needed):
-   DYLD_LIBRARY_PATH = "/opt/homebrew/opt/sqlite/lib"
+   # Primary runtime uses uv-managed python-build-standalone (patched sqlite3 >= 3.51.3 built in);
+   # macOS secondary Homebrew fallback only when using a non-uv system/Conda Python (populated by configure.py when needed):
+   # DYLD_LIBRARY_PATH = "/opt/homebrew/opt/sqlite/lib"
 
    # Optional stricter client-side prompt on every run submission (interactive TUI/App only;
    # note that approval_mode = "prompt" is rejected under headless approval_policy = "never"):
@@ -179,24 +180,24 @@ integrations/codex/devharness/
    ```
 2. **Clean-Machine CLI & Daemon Bootstrap (`devbench` Subcommands):**
    - `devbench mcp --input-root <dir> --workspace <dir> [--no-auto-browser]`: thin STDIO shim launched by Codex/Claude/Cursor; acquires `<workspace>/.devbench-daemon/daemon.lock` (`flock`), checks `daemon.json` PID + `create_time` (reaping stale sockets/files if dead), auto-spawns `devbench daemon start` detached (`start_new_session=True`) if absent, and proxies JSON-RPC over a `0o600` Unix domain socket.
-   - `devbench daemon start|status|stop --workspace <dir> [--input-root <dir>] [--http-port <port>] [--offline-only]`: explicit daemon management; creates `0o700` `<workspace>/.devbench-daemon/` with `daemon.lock`, `daemon.json`, and `0o600` `daemon.token` (256-bit bearer secret).
+   - `devbench daemon start|status|stop --workspace <dir> [--input-root <dir>] [--http-port <port>] [--offline-only] [--enable-streamable-http] [--idle-timeout-sec <sec>] [--auto-approve-tier2-public]`: explicit daemon management (`M1-1` landed `4b90e76` / `292d16f`, **`ADR-22`**); creates `0o700` `<workspace>/.devbench-daemon/` with `daemon.lock`, `daemon.json`, `0o600` `daemon.token` (256-bit bearer secret), configurable idle auto-shutdown (defaulting to 30 min idle after last active job and client disconnect; `0` disables), and optional out-of-band `auto_approve_tier2_public` flag (**`ADR-19`**).
    - **macOS `AF_UNIX` 104-Byte Limit Mitigation:** Whenever `<workspace>/.devbench-daemon/daemon.sock` would exceed 96 bytes (macOS `sockaddr_un.sun_path` cap is 104 bytes), the daemon binds a short hashed socket at `$XDG_RUNTIME_DIR/devbench-ipc-<uid>/s-<sha256(workspace)[:16]>.sock` (or `$TMPDIR/devbench-ipc-<uid>/s-<sha256(workspace)[:16]>.sock` on macOS, verifying `0o700` owner-only parent dir with `O_NOFOLLOW` and `0o600` socket permissions) and writes its canonical `socket_path` into `<workspace>/.devbench-daemon/daemon.json`.
    - `devbench approve --workspace <dir> --session-id <id> --plan-id <id> --plan-sha256 <sha> [--rationale <text>]`: records actor-attributed approval directly into `ScientificAuthority` from any local terminal.
    - `devbench workbench --workspace <dir> --input-root <dir> [--offline-only] [--port <port>]`: opens/exposes the daemon's authenticated loopback Companion Studio UI.
 3. **User-Scoped Plugin / CLI Registration:**
    - Via portable plugin marketplace: `configure.py --python ... --input-root ... --workspace ... --output <marketplace>/devharness --write-marketplace <marketplace>` → `codex plugin marketplace add <marketplace> --json` → install via `/plugins` or `codex plugin add devharness@devharness-local`.
    - Direct CLI registration:
-     - **Codex:** `codex mcp add devharness --env "DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH" -- "$repo/.venv/bin/devbench" mcp --input-root "$input_root" --workspace "$workspace" --no-auto-browser`
-     - **Claude Code:** `claude mcp add --transport stdio --scope local --env "DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH" devharness -- "$repo/.venv/bin/devbench" mcp --input-root "$input_root" --workspace "$workspace" --no-auto-browser`
-     - **Cursor:** identical `command`/`args`/`env` entry in `.cursor/mcp.json`.
-4. **macOS SQLite WAL Handling:** `configure.py` retains the `require_patched_wal()` (`sqlite3 >= 3.51.3` or documented backport) probe and Darwin Homebrew retry (`DYLD_LIBRARY_PATH=/opt/homebrew/opt/sqlite/lib`), while `M1` tracks bundling a patched SQLite wheel (`Q4.3`) so non-Homebrew installs work out of the box.
+     - **Codex:** `codex mcp add devharness -- "$repo/.venv/bin/devbench" mcp --input-root "$input_root" --workspace "$workspace" --no-auto-browser` *(add `--env "DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"` only when using secondary non-`uv` Homebrew SQLite fallback)*
+     - **Claude Code:** `claude mcp add --transport stdio --scope local devharness -- "$repo/.venv/bin/devbench" mcp --input-root "$input_root" --workspace "$workspace" --no-auto-browser`
+     - **Cursor:** identical `command`/`args` entry in `.cursor/mcp.json`.
+4. **Patched SQLite WAL (`>= 3.51.3`) via `uv`-Managed Python (`ADR-21` / `UD-06`):** Do **NOT** bundle `pysqlite3` or `pysqlite3-binary` (no macOS `arm64` wheels exist on PyPI, and mixing `pysqlite3` with stdlib `sqlite3` used by `langgraph-checkpoint-sqlite` risks mixed-library WAL corruption). Standardize dev, user, and CI setups on a `uv`-managed `python-build-standalone` runtime (`.python-version` + `uv.toml` `python-preference = "only-managed"` + `uv sync --locked --python-preference only-managed`) bundling patched stdlib `sqlite3 >= 3.51.3` identically across macOS `arm64`, Linux `x86_64`/`arm64`, and Windows — eliminating `DYLD_LIBRARY_PATH` and macOS SIP issues. Retain `configure.py`'s macOS Homebrew probe (`/opt/homebrew/opt/sqlite/lib` and Intel `/usr/local/opt/sqlite/lib`) plus optional Linux `DEVBENCH_SQLITE_LIB` strictly as secondary fallback for non-`uv` system/Conda installs, emitting an explicit `uv python install` remediation message if a SIP-protected macOS binary strips `DYLD_LIBRARY_PATH`.
 
 ### 3.3 Dynamic Runtime Discovery (`inspect_runtime_capabilities`)
 
 Instead of relying solely on static probe results frozen when `configure.py` ran (which misses newly pulled images, GPU attachment, or R/conda updates), the agent calls `inspect_runtime_capabilities` at session start (or before planning). It reports live availability of:
 - Python/uv environment + installed scverse/stats packages (`anndata`, `scanpy`, `scvi-tools`, `mudata`, `spatialdata`, `tiledbsoma`, `pyarrow`, `pydeseq2`),
 - R / Bioconductor runtime (`Rscript` version + installed packages when local R is configured),
-- Container engines (`docker`, `podman`, `apptainer`), daemon health, host architecture (`arm64`/`amd64`), and locally present digest-pinned Tier 1 & Tier 2 images,
+- Container engines (`DockerBackend`, rootless `PodmanBackend` with cgroups v2 delegation probe status, HPC `ApptainerBackend` with user/net namespace isolation probe status, and opt-in OS fallback `isolation_backend` / `oci_isolated` capability flags per **`ADR-20`**), daemon health, host architecture (`arm64`/`amd64`), and locally present digest-pinned Tier 1 & Tier 2 images,
 - Hardware budgets (CPU cores, available RAM, CUDA/MPS GPU availability, free workspace disk),
 - Patched SQLite WAL status, Nextflow availability, and running Companion Workbench status.
 
@@ -214,6 +215,11 @@ To keep `AGENTS.md` strictly `< 8 KiB` target (`< 16 KiB` CI warning, `< 32 KiB`
 | `spatial-and-ccc` | `SpatialData` coordinate frames/units, NB-aware SVG (`SPARK-X`), multi-donor spatial inference, curated LR references (`LIANA`/`CellChat`), coexpression vs physical signaling. |
 | `method-benchmarking-and-critic` | Freezing comparison criteria before results (`E4`), Tier 2 exploratory code authoring best practices, scFM vs classical baseline discipline, Independent Critic invocation & Tier 2 → Tier 1 promotion. |
 | `private-data-studio` | Sticky private/clinical handling, `--offline-only` Companion Studio handoffs, zero-leakage verification, clinical release hold (`L4`). |
+
+**Single-Source Skill Distribution & Legacy-Tool Lint (`ADR-24`, `ADR-18`):**
+- **Source of truth:** Commit the 8 modular skills once under `.agents/skills/<skill-name>/SKILL.md` (natively discovered by Codex CLI/App and modern Cursor).
+- **Symlink-free client mirroring (`ADR-24`):** `configure.py --mirror-clients <claude|cursor|all>` (off by default for pure Codex installs) materializes **copies — never symlinks** (preserving `configure.py`'s no-symlink security rule and zip/Windows portability) along with `.devharness-mirror-manifest.json` SHA-256 checksums checked in CI via `configure.py --check-mirrors`: `claude` copies `.agents/skills/*` into `.claude/skills/` (or `~/.claude/skills/`); `cursor` verifies native `.agents/skills/` discovery (copying to `.cursor/skills/` only when targeting legacy Cursor, with zero lossy `.cursor/rules/` translation). Never commit mirrored outputs to git.
+- **Legacy-tool CI lint (`ADR-18`):** CI enforces a lint check failing if any file under `.agents/skills/` or general-research `AGENTS.md` cites legacy `devharness_server` tool names (`audit_expression_quality`, `fit_temporal_trajectory`, `infer_lineage`, `infer_regulatory_network`, etc.).
 
 ---
 
@@ -409,7 +415,7 @@ Every tool enforces `additionalProperties: false` on `inputSchema`, declares an 
 2. **Plot-Data Sidecar Contract:** Every Tier 1 or Tier 2 figure (`png`/`svg`/`plotly_json`) MUST emit a companion structured `plot_sidecar` JSON/Parquet artifact containing the exact underlying plotted summary statistics, sample/donor counts, axis labels, and transformations. The agent and Critic inspect the sidecar via `query_artifact_table` rather than guessing from compressed thumbnails; visual inspection happens in Companion Workbench (or optional `ui://` preview on public data only) and promotes `verification_state` from `produced_unverified` to `visually_verified`.
 3. **Private-Data & Clinical Handoff Protocol:**
    - Any input marked `private`, `clinical`, or `unclassified` (default), or matching `_clinical_name()` column/path patterns, or derived from a previously tainted SHA-256 (`has_private_input`), triggers `category: "private_data_local_studio_only"` on MCP read/receipt tools and redacts `register_investigation_input` / `list_investigation_state` to opaque `{artifact_id, sha256}` / `{session_id, revision, redacted: true}` handles only.
-   - **Tier 2 Exploratory Code on Private Data:** Supported strictly offline via (a) local authoring/review/approval inside `--offline-only` Studio or (b) schema-blind synthetic-tested templates frozen via MCP and bound/reviewed/executed strictly inside `--offline-only` Studio with **zero MCP output readback** ([04-system-architecture-and-governance.md §4.2](04-system-architecture-and-governance.md#42-tier-2--governed-exploratory-code-sandbox)).
+   - **Tier 2 Exploratory Code on Private Data:** Supported strictly offline via (a) local authoring/review/approval inside `--offline-only` Studio or (b) schema-blind synthetic-tested templates frozen via MCP and bound/reviewed/executed strictly inside `--offline-only` Studio with **zero MCP output readback** ([04-system-architecture-and-governance.md §4.2](04-system-architecture-and-governance.md#42-tier-2-governed-exploratory-code-sandbox)).
    - The daemon ensures an `--offline-only` loopback Workbench listener is reachable (authenticated via the `0o600` `daemon.token`) and returns `{studio_url, launch_hint}` without leaking any filenames/columns/values.
    - **No Surprise Browser Popups:** Unlike `plugin_mcp.py:5636` (`auto_studio=True` opening the desktop browser on the first tool call), **browser auto-open defaults to OFF (`--no-auto-browser`)** so headless SSH, CI, and CLI-first sessions are never interrupted; users open the printed/card `studio_url` explicitly or opt in via `--auto-open-browser`.
 
@@ -440,7 +446,7 @@ Protocol and integration verification (`L1`) is reported strictly separately fro
    - Adds a forward-compatibility matrix test lane when upgrading to `mcp` 2.x (`2026-07-28` + `server/discover` + `io.modelcontextprotocol/tasks`).
 2. **Layer 2 — Live Codex CLI & Desktop App Smoke Suite (Isolated `CODEX_HOME`):**
    - Runs in a dedicated temp `CODEX_HOME` against the real `codex` binary (without mutating user `~/.codex`): validates portable root `plugin.json` schema, `configure.py` generation, `codex plugin marketplace add`, `codex plugin add` (when supported by installed Codex build), `codex mcp list`, non-interactive `codex exec` tool discovery & read-only `inspect_runtime_capabilities` / `inspect_inputs`, Skill (`$rna-research-core`) discovery, `AGENTS.md` byte-size assertion (`< 16 KiB` warning / `< 32 KiB` hard fail), and `codex sandbox --permission-profile` boundary probes (`probe_boundary()`).
-   - **CI fix:** Upgrade [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml#L61-L69) (currently running only 6 unit tests and skipping STDIO/marketplace checks due to SQLite gating) to run full Layer 1 + patched-SQLite STDIO tests on every PR, and record live Codex Desktop App picker checks as explicit release-evidence receipts rather than conflating them with CLI unit tests.
+   - **Three-Tier CI Integration (`ADR-25` / `UD-11`):** Upgrade [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml#L61-L69) into: **Tier 1 (PR-blocking fast `L1`, `ubuntu-latest` + `macos-latest`, `< 15 min`)** provisioning Python via `uv sync --locked --extra dev --python-preference only-managed` (`ADR-21`, ending the SQLite skip) to run `ruff`, `mypy`, `AGENTS.md` size gate, plugin/mirror parity & legacy-tool lint, full pure-Python + daemon (`test_research_daemon.py`), Layer 1 STDIO MCP, Layer 3 non-Docker refusal/crash, Layer 4 leakage, and full `integrations/codex/tests/test_plugin.py`; **Tier 2 (Nightly / `workflow_dispatch`, `ubuntu-latest` `amd64` + `ubuntu-24.04-arm` `arm64`, `~30–45 min`)** running native Docker + rootless `PodmanBackend` mounted OCI tests, live `arm64` vs `amd64` `ADR-16` parity checks, and isolated `CODEX_HOME` smoke (recording live Codex Desktop App picker checks as explicit release-evidence receipts rather than conflating them with CLI tests); and **Tier 3 (Release-gated / manual)** running `L2`/`L3` calibration and `M5` Scorecards 2–6.
 3. **Layer 3 — Refusal, Concurrency, Crash & Recovery Suite:**
    - Tests out-of-root/symlink/hardlink path refusal, confounded design & pseudoreplication refusal, `plan_sha256` tampering refusal, concurrent multi-job pool execution (verifying 2+ jobs run simultaneously while honoring slot caps), mid-run `SIGKILL` of both the STDIO shim (verifying daemon job survival & reconnection) and the worker (verifying checkpoint recovery and zero orphaned Docker containers via `recover_mounted_container()`).
 4. **Layer 4 — Privacy, Custody & Leakage Suite:**
@@ -448,10 +454,10 @@ Protocol and integration verification (`L1`) is reported strictly separately fro
 
 ### 8.2 Retirement Plan for Stale v0.1.0 Codex Artifacts (`M0`)
 
-Per [01-baseline-audit-and-gaps.md](01-baseline-audit-and-gaps.md), the following drifted v0.1.0 files under [`integrations/codex/`](../../../integrations/codex/) contradict the live server and MUST be removed or replaced in `M0`:
-- **Remove** [`integrations/codex/devharness-0.1.0.zip`](../../../integrations/codex/devharness-0.1.0.zip) (stale pre-built archive targeting old 10-tool `devharness_server`).
-- **Remove** stale v0.1.0 snapshot trees under `integrations/codex/validation/`, [`package-evidence.json`](../../../integrations/codex/package-evidence.json), and `package-evidence.sha256` (from `2026-09-21`, Python 3.12.1, 10 tools).
-- **Replace** [`integrations/codex/tests/verify_rna_runtime.py`](../../../integrations/codex/tests/verify_rna_runtime.py) (broken 3-arg `configure()` call & `len(tools) == 10` assertion) with the Layer 1–4 conformance & smoke harness.
+Per [01-baseline-audit-and-gaps.md](01-baseline-audit-and-gaps.md), the following drifted v0.1.0 files under [`integrations/codex/`](../../../integrations/codex/) contradicted the live server at `18161fd` and were retired/rewritten in `M0` (`M0-1` `970069c`):
+- **Remove** `integrations/codex/devharness-0.1.0.zip` *(retired in `M0-1`)* (stale pre-built archive targeting old 10-tool `devharness_server`).
+- **Remove** stale v0.1.0 snapshot trees under `integrations/codex/validation/`, `integrations/codex/package-evidence.json`, and `integrations/codex/package-evidence.sha256` *(retired in `M0-1`)* (from `2026-09-21`, Python 3.12.1, 10 tools).
+- **Replace** `integrations/codex/tests/verify_rna_runtime.py` *(retired in `M0-1`)* (broken 3-arg `configure()` call & `len(tools) == 10` assertion) with the Layer 1–4 conformance & smoke harness.
 - **Rewrite** [`integrations/codex/README.md`](../../../integrations/codex/README.md) and fix `mcp-payload-contracts.md` drift (`L301` pathway ranking formula, `L519` optional `cell_type`) as part of decomposing into modular `.agents/skills/`.
 
 ---
@@ -471,8 +477,8 @@ Per [01-baseline-audit-and-gaps.md](01-baseline-audit-and-gaps.md), the followin
 
 | # | Open Decision | Options & Tradeoff | Blocking Milestone |
 |---|---|---|---|
-| **Q5.1** | **Dual-Manifest Compatibility Window** | Emit both root `plugin.json` (`agent-plugins.org` 1.0.0) and legacy `.codex-plugin/plugin.json` in `configure.py` output during a deprecation window, or drop `.codex-plugin/plugin.json` once target Codex CLI/App version floor is pinned? | `M1` |
-| **Q5.2** | **Default Transport for Multi-Client Local Use** | Keep STDIO shim (`devbench mcp`) as the sole default in `configure.py` (simplest zero-port UX) and document Loopback Streamable HTTP (`127.0.0.1` + `DEVHARNESS_DAEMON_TOKEN`) as opt-in, or enable Streamable HTTP on the daemon by default whenever Workbench is running? | `M1` |
+| **Q5.1** | **RATIFIED (`ADR-23` / `UD-08`) — Dual-Manifest Compatibility Window** | **Settled (`ADR-23`):** Maintain one canonical template `integrations/codex/devharness/plugin.json` (`agent-plugins.org/schemas/1.0.0` + `extensions["com.openai"]`); `configure.py` emits root `plugin.json` and deterministically generates `.codex-plugin/plugin.json` mirror by default (`--no-legacy-codex-manifest` opt-out), with a field-parity unit test (`name`, `version`, `skills`, `mcpServers`) and a 2-consecutive-release Codex build sunset trigger. | `M1` *(Ratified)* |
+| **Q5.2** | **RATIFIED & IMPLEMENTED (`ADR-22` / `UD-09`, `M1-1` `4b90e76` / `292d16f`) — Default Transport** | **Settled & Implemented (`ADR-22`):** `devbench mcp` STDIO shim is the sole default transport; `--enable-streamable-http` is opt-in, protected by per-launch 256-bit `0o600` bearer token and loopback/Origin validation. | `M1` *(Implemented)* |
 | **Q5.3** | **`mcp` Python SDK 2.x (`2026-07-28`) Cutover Timing** | Pin exact client-readiness exit criteria (Codex CLI/App + Claude Code + Cursor GA support for `2026-07-28` `server/discover` and `io.modelcontextprotocol/tasks`) before upgrading `pyproject.toml` from `mcp>=1.29.1,<2` to `mcp>=2.0`. | `M3` / `M4` |
 | **Q5.4** | **MCP URL-Mode Elicitation for Private-Data Studio Handoffs** | When a client advertises `elicitation.url`, should `freeze_analysis_plan` on private data issue an `elicitation/create` URL redirect to `studio_url`, or stay on the uniform `awaiting_review` / `private_data_local_studio_only` structured return across all clients for predictability? | `M2` / `M3` |
-| **Q5.5** | **Skill Distribution Across Non-Codex Clients** | Mirror `.agents/skills/` into `.claude/skills/` / `.cursor/rules/` via a thin generator in `configure.py`, or standardize solely on `.agents/skills/` as Claude Code and Cursor adopt the open Agent Skills directory? | `M1` |
+| **Q5.5** | **RATIFIED (`ADR-24` / `UD-10`) — Skill Distribution Across Non-Codex Clients** | **Settled (`ADR-24`):** Commit 8 modular skills once in `.agents/skills/<name>/SKILL.md`; add symlink-free `configure.py --mirror-clients <claude, cursor, all>` (off by default) emitting copies + `.devharness-mirror-manifest.json` (`--check-mirrors` in CI) — `claude` copies to `.claude/skills/`, `cursor` verifies `.agents/skills/` (optional legacy `.cursor/skills/`, no `.cursor/rules/`), never committed to git. | `M1` *(Ratified)* |
