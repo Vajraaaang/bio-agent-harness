@@ -174,9 +174,7 @@ def test_mounted_count_scale_in_pinned_container(workspace_tmp_path, kind, featu
     )
     digest, summary = _run_worker(inputs, outputs, request)
     assert summary["request_sha256"] == digest
-    assert summary["solver"] == "edger_v4_qlf"
     assert summary["row_count"] == len(genes)
-    assert summary["tested_count"] == len(genes) - 1
     assert summary["genes_sha256"] == hash_artifact(outputs / "genes.parquet")["sha256"]
     rank = summary["rank_sensitivity"]
     assert rank["method"] == "wilcoxon" and rank["hold"] is None
@@ -186,7 +184,17 @@ def test_mounted_count_scale_in_pinned_container(workspace_tmp_path, kind, featu
     )
     table = pq.read_table(outputs / "genes.parquet")
     assert table["gene_id"].to_pylist() == genes
-    assert table["missing_reason"][0].as_py() == "zero_condition_marginal"
+    if summary.get("regime_route"):
+        assert summary["solver"] == "limma_voom_qw"
+        assert summary["regime_route"] == "large_or_heterogeneous_independent"
+        assert summary["sensitivity_solver"] == "edger_v4"
+        assert summary["tested_count"] == len(genes)
+        assert table["estimate_status"][0].as_py() == "estimated"
+        assert table["effect"][0].as_py() > 0.85
+    else:
+        assert summary["solver"] == "edger_v4_qlf"
+        assert summary["tested_count"] == len(genes) - 1
+        assert table["missing_reason"][0].as_py() == "zero_condition_marginal"
     assert np.median(table["effect"].slice(1, 39).to_numpy()) > 0.85
     assert np.all(
         table["q_value"].slice(1).to_numpy() >= table["p_value"].slice(1).to_numpy()
@@ -248,7 +256,11 @@ def test_mounted_count_and_rank_adjust_for_continuous_confounding(workspace_tmp_
         )
     )
     _, summary = _run_worker(inputs, outputs, request)
-    assert summary["solver"] == "edger_v4_qlf"
+    if summary.get("regime_route"):
+        assert summary["solver"] == "limma_voom_qw"
+        assert summary["regime_route"] == "large_or_heterogeneous_independent"
+    else:
+        assert summary["solver"] == "edger_v4_qlf"
     rank = summary["rank_sensitivity"]
     assert rank["method"] == "freedman_lane" and rank["hold"] is None
     adjusted = pq.read_table(outputs / "sensitivity.parquet")

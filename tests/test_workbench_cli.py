@@ -126,6 +126,8 @@ def test_first_class_workbench_only_detects_registered_local_image(
 
 
 def test_local_image_detection_prefers_native_architecture(monkeypatch):
+    from devharness_controlled.native_contracts import ROUTED_DE_KERNEL_IMAGES
+
     class Docker:
         def _call(self, command, **_):
             return command[2]
@@ -134,6 +136,7 @@ def test_local_image_detection_prefers_native_architecture(monkeypatch):
     monkeypatch.setattr(platform, "machine", lambda: "arm64")
     image_id = workbench_ui._detect_mounted_image()
     assert kernel_test_platform(image_id) == "linux/arm64"
+    assert image_id == ROUTED_DE_KERNEL_IMAGES["linux/arm64"]
 
 
 def test_cli_rejects_unscoped_model_permission_before_starting(

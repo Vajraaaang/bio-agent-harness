@@ -59,6 +59,7 @@ NB_FIT_KERNEL_IMAGES = _KERNEL.get("nb_fit_image_ids", {})
 TRAJECTORY_KERNEL_IMAGES = _KERNEL.get("trajectory_image_ids", {})
 REVIEWED_TRAJECTORY_KERNEL_IMAGES = _KERNEL.get("reviewed_trajectory_image_ids", {})
 LIMMA_VOOM_KERNEL_IMAGES = _KERNEL.get("limma_voom_image_ids", {})
+ROUTED_DE_KERNEL_IMAGES = _KERNEL.get("routed_de_image_ids", {})
 KERNEL_VERSIONS = _KERNEL["versions"]
 
 
@@ -67,9 +68,10 @@ def sccoda_kernel_images() -> frozenset[str]:
 
 
 def pathway_kernel_images() -> frozenset[str]:
-    return frozenset(
-        (*PATHWAY_KERNEL_IMAGES.values(), *THESIS_KERNEL_IMAGES.values())
-    ) | nb_countsplit_kernel_images()
+    return (
+        frozenset((*PATHWAY_KERNEL_IMAGES.values(), *THESIS_KERNEL_IMAGES.values()))
+        | nb_countsplit_kernel_images()
+    )
 
 
 def nb_countsplit_kernel_images() -> frozenset[str]:
@@ -99,7 +101,11 @@ def reviewed_trajectory_kernel_images() -> frozenset[str]:
 
 
 def limma_voom_kernel_images() -> frozenset[str]:
-    return frozenset(LIMMA_VOOM_KERNEL_IMAGES.values())
+    return frozenset(LIMMA_VOOM_KERNEL_IMAGES.values()) | routed_de_kernel_images()
+
+
+def routed_de_kernel_images() -> frozenset[str]:
+    return frozenset(ROUTED_DE_KERNEL_IMAGES.values())
 
 
 def single_cell_kernel_images() -> frozenset[str]:
@@ -109,6 +115,7 @@ def single_cell_kernel_images() -> frozenset[str]:
 def kernel_test_platform(image_id: str) -> str | None:
     """Resolve a verified local bulk or additive RNA kernel for OCI tests."""
     profiles = (
+        ROUTED_DE_KERNEL_IMAGES,
         LIMMA_VOOM_KERNEL_IMAGES,
         REVIEWED_TRAJECTORY_KERNEL_IMAGES,
         TRAJECTORY_KERNEL_IMAGES,

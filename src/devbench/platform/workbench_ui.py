@@ -2745,6 +2745,7 @@ def _detect_mounted_image() -> str | None:
     from devharness_controlled.native_contracts import (
         kernel_test_platform,
         limma_voom_kernel_images,
+        routed_de_kernel_images,
     )
     from devharness_controlled.native_runtime import LocalDocker
 
@@ -2757,9 +2758,14 @@ def _detect_mounted_image() -> str | None:
         architecture, architecture
     )
     host_platform = "linux/" + architecture
+    preferred = routed_de_kernel_images()
     candidates = sorted(
         limma_voom_kernel_images(),
-        key=lambda image: (kernel_test_platform(image) != host_platform, image),
+        key=lambda image: (
+            image not in preferred,
+            kernel_test_platform(image) != host_platform,
+            image,
+        ),
     )
     for image_id in candidates:
         try:

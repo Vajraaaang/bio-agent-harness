@@ -79,7 +79,7 @@ def _verify_routed_method(solver, details, eligible, columns):
         raise ValueError("Mounted model evidence differs from the frozen count route")
 
 
-def _verify_route(summary, spec, inputs):
+def _freeze_from_inputs(summary, spec, inputs, runtime):
     """Recompute arbitration from the original digest-bound design."""
     import csv
     import io
@@ -99,7 +99,12 @@ def _verify_route(summary, spec, inputs):
             design, condition, units, labels, strata, covariates, None, None
         )
         request["model"] = {"units": "independent", "comparison": "coefficient"}
-    choice = freeze_mounted_solver(cohort, request, spec.family.primary, "bioconductor")
+    choice = freeze_mounted_solver(cohort, request, spec.family.primary, runtime)
+    return cohort, choice
+
+
+def _verify_route(summary, spec, inputs, runtime):
+    cohort, choice = _freeze_from_inputs(summary, spec, inputs, runtime)
     details = summary.get("solver_details", {})
     companion = summary.get("sensitivity_details") or {}
     if (
@@ -129,40 +134,74 @@ def _verify_route(summary, spec, inputs):
     return choice
 
 
-def verify_mounted_solver(summary, spec, *, inputs=None):
+def _freeze_unrouted_solver(summary, spec, inputs, runtime):
     from rna_kernels.bulk_solver_policy import freeze_bulk_solver
 
+    model = spec.mounted_model
+    measurement = getattr(spec, "measurement", None)
+    primary_raw_bioc = (
+        runtime == "bioconductor"
+        and measurement == "raw_counts"
+        and spec.family.primary
+    )
+    if model is None:
+        if primary_raw_bioc:
+            raise ValueError(
+                "Primary raw-count Bioconductor receipt requires a frozen regime route"
+            )
+        return None
+    heterogeneous = getattr(model, "heterogeneous_independent", False)
+    sensitivity = getattr(model, "sensitivity_method", None)
+    if primary_raw_bioc and sensitivity is None and model.comparison == "coefficient":
+        raise ValueError(
+            "Primary raw-count Bioconductor receipt requires a frozen regime route"
+        )
+    units_per_arm = None
+    if primary_raw_bioc and sensitivity is None and model.comparison == "contrast":
+        if inputs is not None:
+            _, choice = _freeze_from_inputs(summary, spec, inputs, runtime)
+            if choice.regime_route:
+                raise ValueError(
+                    "Primary raw-count Bioconductor receipt requires a frozen "
+                    "regime route"
+                )
+            return choice
+        weights = getattr(model, "condition_weights", ())
+        if len(weights) < 3:
+            raise ValueError(
+                "Primary raw-count Bioconductor receipt requires a frozen regime route"
+            )
+        units_per_arm = tuple(3 for _ in weights)
+    choice = freeze_bulk_solver(
+        measurement=measurement,
+        runtime=runtime,
+        comparison=model.comparison,
+        units=model.units,
+        primary=spec.family.primary,
+        single_factor=not (spec.design.technical_factors or spec.continuous_covariates),
+        sensitivity_method=sensitivity,
+        units_per_arm=units_per_arm,
+        heterogeneous_independent=heterogeneous,
+    )
+    if choice.regime_route:
+        raise ValueError(
+            "Primary raw-count Bioconductor receipt requires a frozen regime route"
+        )
+    return choice
+
+
+def verify_mounted_solver(summary, spec, *, inputs=None, runtime="bioconductor"):
     model = spec.mounted_model
     if "calibration_status" in summary and not summary.get("regime_route"):
         raise ValueError("Calibration receipt requires a frozen regime route")
     if summary.get("regime_route"):
         if inputs is None:
             raise ValueError("Routed receipt requires the original staged design")
-        choice = _verify_route(summary, spec, inputs)
-    elif model is None:
-        return
+        choice = _verify_route(summary, spec, inputs, runtime)
     else:
-        heterogeneous = getattr(model, "heterogeneous_independent", False)
-        if (
-            heterogeneous
-            and spec.family.primary
-            and getattr(model, "sensitivity_method", None) is None
-        ):
-            raise ValueError(
-                "Heterogeneous primary receipt requires a frozen regime route"
-            )
-        choice = freeze_bulk_solver(
-            measurement=spec.measurement,
-            runtime="bioconductor",
-            comparison=model.comparison,
-            units=model.units,
-            primary=spec.family.primary,
-            single_factor=not (
-                spec.design.technical_factors or spec.continuous_covariates
-            ),
-            sensitivity_method=model.sensitivity_method,
-            heterogeneous_independent=heterogeneous,
-        )
+        choice = _freeze_unrouted_solver(summary, spec, inputs, runtime)
+        if choice is None:
+            return
     degrees = summary.get("test_df")
     if (
         (summary.get("solver"), summary.get("test"), summary.get("shrinkage"))

@@ -1207,7 +1207,12 @@ class TierAExecutor:
             raise ValueError(
                 "Mounted Tier A result differs from the frozen specification"
             )
-        verify_mounted_solver(result, spec, inputs=directory.parent / "inputs")
+        verify_mounted_solver(
+            result,
+            spec,
+            inputs=directory.parent / "inputs",
+            runtime="bioconductor" if self.mounted_image_id else "python_only",
+        )
         digest = self._outputs.put_file(directory / "genes.parquet")
         if digest != result["genes_sha256"]:
             raise ValueError("Mounted Tier A Parquet hash mismatch")

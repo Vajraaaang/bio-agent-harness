@@ -326,3 +326,39 @@ def test_configured_server_round_trips_over_real_stdio(paths):
                 assert card.contents[0].mimeType == "text/html;profile=mcp-app"
 
     asyncio.run(exercise())
+
+
+def test_detect_image_prefers_routed_de_over_older_voom(tmp_path, monkeypatch):
+    import platform as sys_platform
+
+    from devharness_controlled.native_contracts import (
+        LIMMA_VOOM_KERNEL_IMAGES,
+        ROUTED_DE_KERNEL_IMAGES,
+        limma_voom_kernel_images,
+        routed_de_kernel_images,
+    )
+
+    configure = api()
+    pinned = sorted(limma_voom_kernel_images())
+    preferred = sorted(routed_de_kernel_images())
+    routed_arm = ROUTED_DE_KERNEL_IMAGES["linux/arm64"]
+    legacy_arm = LIMMA_VOOM_KERNEL_IMAGES["linux/arm64"]
+
+    monkeypatch.setattr(sys_platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(configure.shutil, "which", lambda _name: "/usr/bin/docker")
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_k: SimpleNamespace(
+            stdout=f"{routed_arm} arm64\n{legacy_arm} arm64\n"
+        ),
+    )
+    assert configure._detect_image(pinned, tmp_path, preferred=preferred) == routed_arm
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_k: SimpleNamespace(stdout=f"{legacy_arm} arm64\n"),
+    )
+    assert configure._detect_image(pinned, tmp_path, preferred=preferred) == legacy_arm

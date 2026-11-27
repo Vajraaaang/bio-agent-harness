@@ -44,6 +44,7 @@ _CONTINUOUS = _EFFECTS | {
     "df_residual_adj",
     "df_total",
     "s2_post",
+    "condition_number",
     "values",
     "lower",
     "upper",
