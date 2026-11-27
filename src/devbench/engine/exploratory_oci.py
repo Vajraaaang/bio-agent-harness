@@ -14,7 +14,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from devbench.adaptive.models import FigureRecord
+from devbench.engine.exploratory_images import exploratory_image
 from devbench.engine.provenance import canonical_json, hash_artifact
+
+from .tier2_artifacts import (
+    LANE_TAGS,
+    VAULT_BYTES,
+    preflight_source,
+    validate_ports,
+)
+from .tier2_input_custody import (
+    artifact_digests,
+    check_stage,
+    guard_digests,
+    stage_identity,
+)
 
 if TYPE_CHECKING:
     from devbench.platform.adaptive_workflow import (
@@ -89,20 +103,51 @@ class ExploratoryOCI:
         }
         self.root = methods.root / "adaptive-oci"
         self.root.mkdir(mode=0o700, exist_ok=True)
+        from .mounted_matrix_vault import MountedZarrVault
+
+        # Historical callers read small inline JSON via training; governed
+        # tables and matrix ports stream from the same content-addressed objects.
         self.training = PartitionVault(self.root / "training")
+        self.artifacts = PartitionVault(self.training.root, max_bytes=VAULT_BYTES)
+        self.zarr_vault = MountedZarrVault(self.root / "training-zarr")
+        self.private = False
+        self._member_cache = {}
+        self.plugin_plan = None
+        self.session_id = None
         self.binary_training = PartitionVault(self.training.root, max_bytes=100_000_000)
         self.evaluation = PartitionVault(self.root / "evaluation")
         self.runs = self.root / "runs"
         self.runs.mkdir(mode=0o700, exist_ok=True)
+
+    def approve_step(
+        self,
+        flow,
+        step_id,
+        *,
+        actor_id,
+        data_classification,
+        surface="cli",
+        auth_method="local_os_user",
+    ):
+        """Operator API for explicit, per-plan public or synthetic script approval."""
+        from .tier2_approval import approve
+
+        return approve(
+            self,
+            flow,
+            step_id,
+            actor_id=actor_id,
+            data_classification=data_classification,
+            surface=surface,
+            auth_method=auth_method,
+        )
 
     @staticmethod
     def _identity(value: Any) -> str:
         return hashlib.sha256(canonical_json(value)).hexdigest()
 
     def validate(self, envelope: Document) -> tuple[AdaptiveStep, Document, Document]:
-        from devbench.engine.method_executor import EXPLORATORY_IMAGE_ID
         from devbench.engine.methods import exploratory_method
-        from devbench.engine.partition_authority import embargoed
         from devbench.platform.adaptive_workflow import AdaptiveStep
         from devharness_core.methods import binary_oci_transport
 
@@ -156,18 +201,18 @@ class ExploratoryOCI:
             and self.partition is None
             or limits["memory_mb"] > capability.max_memory_mb
             or limits["timeout_seconds"] > capability.timeout_seconds
-            or not binary
-            and limits["max_output_bytes"] > 16_000_000
-            or set(parameters)
-            & {"batch_size", "chunk_size", "batch", "chunks", "shard"}
             or envelope["environment_sha256"]
             != self._identity(
-                {**contract["environment"], "image_id": EXPLORATORY_IMAGE_ID}
+                {
+                    **contract["environment"],
+                    "image_id": exploratory_image(
+                        contract["environment"]["image"]
+                    ).image_id,
+                }
             )
         ):
             raise PermissionError(
-                "Unsupported exploratory purpose, effects, limits, batching or "
-                "environment"
+                "Unsupported exploratory purpose, effects, limits or environment"
             )
         if (
             set(envelope["inputs"]) - contract["inputs"].keys()
@@ -176,30 +221,116 @@ class ExploratoryOCI:
                 for name, spec in contract["inputs"].items()
             )
             or any(
-                spec["artifact_type"] not in {"json", "file"}
+                spec["artifact_type"] not in {"json", "file", "table", "anndata"}
                 for spec in contract["inputs"].values()
             )
             or {item.name: item.required for item in step.outputs}
             != {name: item["required"] for name, item in contract["outputs"].items()}
             or any(item.artifact_kind == "counts" for item in step.outputs)
             or any(
-                item["artifact_type"] not in {"json", "file"}
+                item["artifact_type"] not in {"json", "file", "table", "anndata"}
                 for item in contract["outputs"].values()
             )
         ):
             raise ValueError("Exploratory I/O ports differ from the frozen typed step")
         with self.ledger._database() as db:
-            if any(
-                embargoed(db, identity)
-                for identity in (
-                    contract["implementation"]["source_sha256"],
-                    contract["environment"]["lock_sha256"],
-                )
-            ):
-                raise PermissionError(
-                    "Protected bytes cannot be used as executable code or a lock"
-                )
+            self._guard_input_scope(db, envelope)
+        source = self.methods.artifact_path(method["source_artifact"])
+        pin = exploratory_image(contract["environment"]["image"])
+        preflight_source(
+            source,
+            pin.language,
+            (a["representation"] for a in envelope["inputs"].values()),
+        )
         return step, method, parameters
+
+    def validate_dispatch(self, envelope):
+        from .tier2_approval import require_approval
+
+        validated = self.validate(envelope)
+        if validated is not None:
+            require_approval(self, envelope, validated[1]["contract"])
+        return validated
+
+    def _guard_input_scope(self, db, envelope):
+        from devbench.analysis.evidence_access import EvidenceBroker
+
+        from .partition_authority import embargoed
+
+        step = envelope["step"]
+        method = self.methods.method(step["oci_method_version_id"])["contract"]
+        code = (
+            method["implementation"]["source_sha256"],
+            method["environment"]["lock_sha256"],
+        )
+        if any(embargoed(db, checksum) for checksum in code):
+            raise PermissionError(
+                "Protected bytes cannot be used as executable code or a lock"
+            )
+        inputs = tuple(row["sha256"] for row in envelope["inputs"].values())
+        if not step.get("held_out"):
+            for row in envelope["inputs"].values():
+                self.guard_artifact(db, row)
+        if not self.private and EvidenceBroker.has_private_content(
+            db, (*code, *inputs)
+        ):
+            raise PermissionError("private_data_local_studio_only")
+
+    def _matrix_object(self, row):
+        return row["representation"] in {"exploratory_zarr", "exploratory_h5ad"} and (
+            self.zarr_vault.contains(row["sha256"])
+        )
+
+    def guard_artifact(self, db, row, *, record=None):
+        identity = row["sha256"]
+        if not self._matrix_object(row):
+            guard_digests(db, (identity,), private=self.private)
+            return
+        if identity not in self._member_cache or record is not None:
+            if len(self._member_cache) >= 16:
+                self._member_cache.clear()
+            self._member_cache[identity] = self.zarr_vault.member_digests(
+                identity, record
+            )
+        guard_digests(db, self._member_cache[identity], private=self.private)
+
+    def admit_input(self, path, *, expected_sha256, artifact_type):
+        """Bind operator-declared local bytes to training custody before a plan."""
+        from .method_executor import _path
+        from .tier2_staging import ENTRY_LIMIT
+
+        path = _path(path)
+        if "evaluation" in path.parts:
+            raise PermissionError("An evaluation vault cannot be an exploratory input")
+        record = hash_artifact(path, max_bytes=VAULT_BYTES, max_entries=ENTRY_LIMIT)
+        with self.ledger._database() as db:
+            guard_digests(db, artifact_digests(record), private=self.private)
+        if record["sha256"] != expected_sha256:
+            raise ValueError("Exploratory input differs from the declared bytes")
+        if self.private:
+            from devbench.analysis.evidence_access import EvidenceBroker
+
+            broker = EvidenceBroker.open_existing(self.ledger.scientific)
+            broker.taint_private_content(
+                artifact_digests(record, marking_private=True),
+                lineage_id=self.session_id,
+            )
+        if path.suffix in {".zarr", ".h5ad"}:
+            if path.suffix == ".h5ad":
+                from devbench.core.hdf5_custody import validate_h5ad_custody
+
+                validate_h5ad_custody(path, expected_sha256=expected_sha256)
+            stored = self.zarr_vault.put(path, expected_sha256=expected_sha256)
+            rep = "exploratory_" + path.suffix[1:]
+
+        elif path.is_file() and artifact_type in {"file", "anndata", "table", "json"}:
+            stored = self.artifacts.put_file(path, expected_sha256=expected_sha256)
+            rep = "exploratory_" + ("h5ad" if path.suffix == ".h5ad" else artifact_type)
+        else:
+            raise ValueError("Unsupported exploratory input")
+        if stored != expected_sha256:
+            raise ValueError("Exploratory input changed during vault admission")
+        return rep
 
     @staticmethod
     def _validate_binary_ports(step, contract, inputs, binary):
@@ -216,8 +347,7 @@ class ExploratoryOCI:
             )
         for name, value in inputs.items():
             if value["representation"] == "exploratory_parquet" and (
-                not binary
-                or contract["inputs"].get(name, {}).get("artifact_type") != "file"
+                contract["inputs"].get(name, {}).get("artifact_type") != "file"
             ):
                 raise ValueError(
                     "Exploratory Parquet input requires a frozen binary file port"
@@ -256,6 +386,13 @@ class ExploratoryOCI:
                 token, envelope = dispatch["token"], dispatch["envelope"]
                 if token["backend_id"] != self.backend_id:
                     continue
+                if any(
+                    item.get("data_classification") == "private"
+                    for item in outcome.get("outputs", {}).values()
+                ):
+                    raise PermissionError(
+                        "Private replay materials remain in offline Studio"
+                    )
                 if (
                     envelope["step"]["held_out"]
                     or envelope["step"]["purpose"] == "protected_evaluation"
@@ -298,7 +435,13 @@ class ExploratoryOCI:
                                 "role": role,
                                 "artifact_version_id": artifact["version_id"],
                                 "port": port,
-                                "path": str(self.training.root / artifact["sha256"]),
+                                "path": (
+                                    self.zarr_vault.attestation(artifact["sha256"])[
+                                        "canonical_path"
+                                    ]
+                                    if artifact["representation"] == "exploratory_zarr"
+                                    else str(self.training.root / artifact["sha256"])
+                                ),
                                 "sha256": artifact["sha256"],
                             }
                         )
@@ -335,7 +478,11 @@ class ExploratoryOCI:
             for name, artifact in outputs.items()
             if artifact["kind"] == "figure"
         }
+        tags = {} if envelope["step"].get("held_out") else dict(LANE_TAGS)
+        if self.private:
+            tags["data_classification"] = "private"
         evidence = {
+            **tags,
             "frozen": self._load(directory / "frozen.json"),
             "runtime": runtime,
             "inputs": envelope["pins"],
@@ -345,6 +492,7 @@ class ExploratoryOCI:
         }
         self._write(directory / "io.json", evidence)
         receipt = StepReceipt(
+            **tags,
             job_id=token["attempt_id"],
             request_sha256=request_digest(envelope),
             consumed=envelope["pins"],
@@ -356,6 +504,15 @@ class ExploratoryOCI:
             wall_millis=elapsed,
         )
         self._write(directory / "receipt.json", receipt.model_dump(mode="json"))
+        if cleanup == "confirmed":
+            for name in ("verified-inputs", "inputs", "method", "outputs"):
+                stage = directory / name
+                if stage.is_dir():
+                    # Staged input files may be immutable vault links. Only the
+                    # private directory nodes need write permission for unlink.
+                    for parent, _, _ in os.walk(stage):
+                        Path(parent).chmod(0o700)
+                    shutil.rmtree(stage)
         return receipt
 
     @staticmethod
@@ -364,7 +521,6 @@ class ExploratoryOCI:
         return json.loads(path.read_bytes())
 
     def _invocation(self, envelope: Document, token: Document) -> Document:
-        from devbench.engine.method_executor import EXPLORATORY_IMAGE_ID
         from devbench.engine.scientific_authority import _lookup
         from devbench.platform.adaptive_workflow import AdaptiveWorkflow, request_digest
 
@@ -391,14 +547,28 @@ class ExploratoryOCI:
                 token,
             )
             flow._guard(db, envelope, token=token)
+            self._guard_input_scope(db, envelope)
             grant = _lookup(db, token["lineage_id"], attempt["grant_id"])
+        from .tier2_approval import require_approval
+
+        contract = self.methods.method(envelope["step"]["oci_method_version_id"])[
+            "contract"
+        ]
+        require_approval(self, envelope, contract)
         return {
             "token": token,
             "grant_id": attempt["grant_id"],
             "grant_sha256": grant["sha256"],
             "method_version_id": envelope["step"]["oci_method_version_id"],
-            "image_id": EXPLORATORY_IMAGE_ID,
+            "image_id": exploratory_image(
+                self.methods.method(envelope["step"]["oci_method_version_id"])[
+                    "contract"
+                ]["environment"]["image"]
+            ).image_id,
             "parameters_sha256": envelope["step"]["parameters_sha256"],
+            "parameters": json.loads(
+                self.parameters[envelope["step"]["parameters_sha256"]]
+            ),
             "input_sha256": {pin["port"]: pin["sha256"] for pin in envelope["pins"]},
         }
 
@@ -428,12 +598,20 @@ class ExploratoryOCI:
         output_dir.mkdir(mode=0o700)
         start = time.monotonic()
         executor = LocalDockerExecutor()
+        matrix_pins = {}
 
         def observe(event):
             from devbench.engine.workflow_operations import OperationBlocked
 
             self._write(directory / "binding.json", event)
             try:
+                if event["event"] in {"container_create_intent", "worker_exec_intent"}:
+                    check_stage(
+                        self.zarr_vault,
+                        directory,
+                        matrix_pins,
+                        capture_mount=event["event"] == "container_create_intent",
+                    )
                 return self._invocation(envelope, token) == frozen
             except OperationBlocked:
                 return False
@@ -441,8 +619,19 @@ class ExploratoryOCI:
         executor.set_observer(observe)
         runtime = {}
         try:
-            inputs = self._stage_oci_inputs(envelope, step, directory)
+            inputs = self._stage_oci_inputs(
+                envelope, step, directory, matrix_pins=matrix_pins
+            )
             contract = method["contract"]
+            lint = (
+                {}
+                if step.held_out
+                else preflight_source(
+                    self.methods.artifact_path(method["source_artifact"]),
+                    exploratory_image(contract["environment"]["image"]).language,
+                    (a["representation"] for a in envelope["inputs"].values()),
+                )
+            )
             runtime = executor.execute(
                 contract,
                 inputs,
@@ -451,7 +640,18 @@ class ExploratoryOCI:
                 self.methods.artifact_path(method["environment_artifact"]),
                 output_dir,
                 frozen=frozen,
+                **(
+                    {"matrix_mounts": (self.zarr_vault, matrix_pins)}
+                    if matrix_pins
+                    else {}
+                ),
             )
+            runtime["preflight"] = lint
+            check_stage(self.zarr_vault, directory, matrix_pins)
+            runtime["matrix_attestations"] = matrix_pins
+            if matrix_pins:
+                with self.ledger._database() as db:
+                    self._guard_input_scope(db, envelope)
             files, hashes, binary_references = self._check_collected_outputs(
                 runtime,
                 contract,
@@ -496,7 +696,9 @@ class ExploratoryOCI:
             elapsed=int((time.monotonic() - start) * 1000),
         )
 
-    def _stage_oci_inputs(self, envelope, step, directory):
+    def _stage_oci_inputs(
+        self, envelope, step, directory, *, matrix_pins=None, source_records=None
+    ):
         from devbench.core.binary_artifacts import check_flat_parquet
         from devbench.engine.partition_authority import embargoed
 
@@ -513,13 +715,39 @@ class ExploratoryOCI:
         staging = directory / "verified-inputs"
         staging.mkdir(mode=0o700)
         for name, artifact in envelope["inputs"].items():
+            if self._matrix_object(artifact):
+                if name in held or step.held_out:
+                    raise PermissionError(
+                        "A training matrix cannot enter this evaluator"
+                    )
+                target = staging / name
+                expected = (
+                    (self.plugin_plan or {})
+                    .get("registered_method", {})
+                    .get("matrix_attestations", {})
+                    .get(name)
+                )
+                record = self.zarr_vault.stage(
+                    artifact["sha256"],
+                    target,
+                    record=(source_records or {}).get(name, expected),
+                )
+                with self.ledger._database() as db:
+                    self.guard_artifact(db, artifact, record=record)
+                if matrix_pins is not None:
+                    matrix_pins[name] = {
+                        "source": record,
+                        "stage_stat": stage_identity(target),
+                    }
+                inputs[name] = target
+                continue
             binary_input = artifact["representation"] == "exploratory_parquet"
             vault = (
                 self.evaluation
                 if name in held
                 else self.binary_training
                 if binary_input
-                else self.training
+                else self.artifacts
             )
             with vault.open(artifact["sha256"]) as stream:
                 target = staging / name
@@ -540,27 +768,48 @@ class ExploratoryOCI:
             Path(spec["path"]).name: name for name, spec in contract["outputs"].items()
         }
         files = {declared[path.name]: path for path in output_dir.iterdir()}
-        validation = validate_outputs(contract, inputs, files)
-        if (
-            not files
-            or any(port.required and port.name not in files for port in step.outputs)
-            or not validation["passed"]
-        ):
-            raise ValueError("Exploratory outputs failed the frozen interface")
-        hashes = runtime["diagnostic_collection"]["files"]
-        if hashes != {
-            path.name: hash_artifact(
-                path,
-                max_bytes=contract["execution"]["max_output_bytes"],
-                max_entries=1,
-            )["sha256"]
-            for path in files.values()
-        }:
+        from devharness_core.methods import binary_oci_transport
+
+        hashes = validate_ports(contract, step, files)
+        if hashes != runtime["diagnostic_collection"]["files"]:
             raise ValueError("Exploratory outputs differ from trusted collection")
+        validation = (
+            validate_outputs(contract, inputs, files)
+            if binary_oci_transport(contract)
+            else {}
+        )
         binary_references = validation.get("binary_artifacts", {})
         if binary_references:
             runtime["binary_artifacts"] = binary_references
         return files, hashes, binary_references
+
+    def _authorize_output_custody(self, envelope, files, hashes, *, held_out):
+        from devbench.analysis.evidence_access import EvidenceBroker
+
+        from .tier2_staging import ENTRY_LIMIT
+
+        if held_out:
+            return
+        identities = []
+        private_digests = []
+        for path in files.values():
+            inventory = hash_artifact(
+                path, max_bytes=VAULT_BYTES, max_entries=ENTRY_LIMIT
+            )
+            if inventory["sha256"] != hashes[path.name]:
+                raise ValueError("Exploratory output changed before custody")
+            identities.extend(artifact_digests(inventory))
+            if self.private:
+                private_digests.extend(
+                    artifact_digests(inventory, marking_private=True)
+                )
+        with self.ledger._database() as db:
+            guard_digests(db, identities, private=self.private)
+        if self.private:
+            broker = EvidenceBroker.open_existing(self.ledger.scientific)
+            broker.taint_private_content(
+                private_digests, lineage_id=envelope["lineage_id"]
+            )
 
     def _retain_oci_outputs(
         self,
@@ -574,7 +823,7 @@ class ExploratoryOCI:
         from devbench.platform.adaptive_workflow import ArtifactVersion
 
         outputs = {}
-        vault = self.evaluation if step.held_out else self.training
+        vault = self.evaluation if step.held_out else self.artifacts
         parents = tuple(envelope["inputs"].values())
         membership = {
             (item["biological_unit"], item["unit_membership_sha256"])
@@ -603,6 +852,7 @@ class ExploratoryOCI:
         labels = {item["label_origin"] for item in parents} - {"none"}
         if step.held_out:
             self.partition.protect_outputs(hashes.values())
+        self._authorize_output_custody(envelope, files, hashes, held_out=step.held_out)
         for port in step.outputs:
             if port.name in files:
                 path = files[port.name]
@@ -610,7 +860,13 @@ class ExploratoryOCI:
                 output_vault = (
                     self.binary_training if binary_reference is not None else vault
                 )
-                identity = output_vault.put_file(path)
+                identity = (
+                    self.zarr_vault.put(
+                        path, immutable_copy=True, expected_sha256=hashes[path.name]
+                    )
+                    if path.is_dir()
+                    else output_vault.put_file(path, expected_sha256=hashes[path.name])
+                )
                 if identity != hashes[path.name] or (
                     binary_reference is not None
                     and identity != binary_reference["sha256"]
@@ -618,14 +874,38 @@ class ExploratoryOCI:
                     raise ValueError(
                         "Exploratory artifact changed before vault publication"
                     )
+                tags = {} if step.held_out else dict(LANE_TAGS)
+                if not step.held_out and port.artifact_kind == "figure":
+                    contract = self.methods.method(step.oci_method_version_id)[
+                        "contract"
+                    ]
+                    sidecar = contract["outputs"][port.name].get(
+                        "plot_sidecar", "plot_sidecar"
+                    )
+                    tags["plot_sidecar_sha256"] = hashes[files[sidecar].name]
+                if self.private:
+                    tags["data_classification"] = "private"
                 outputs[port.name] = ArtifactVersion(
+                    **tags,
+                    representation_class="derived_summary"
+                    if not step.held_out
+                    else None,
+                    parent_sha256=tuple(sorted({item["sha256"] for item in parents}))
+                    if not step.held_out
+                    else None,
                     version_id=token["attempt_id"] + "-" + str(len(outputs)),
                     sha256=identity,
                     kind=port.artifact_kind,
                     representation=(
                         "exploratory_parquet"
                         if binary_reference is not None
-                        else port.artifact_kind
+                        else (
+                            "exploratory_zarr"
+                            if path.is_dir()
+                            else "exploratory_h5ad"
+                            if path.suffix == ".h5ad"
+                            else port.artifact_kind
+                        )
                     ),
                     biological_unit=unit,
                     unit_membership_sha256=members,
@@ -933,6 +1213,20 @@ class ExploratoryOCI:
             raise OperationConflict("Retained Tier B receipt evidence changed")
         return envelope, receipt
 
+    def _verify_matrix_scope(self, envelope, receipt, io):
+        if not envelope["step"]["held_out"]:
+            with self.ledger._database() as db:
+                for port, source in envelope["inputs"].items():
+                    if self._matrix_object(source):
+                        pin = io["runtime"].get("matrix_attestations", {}).get(port)
+                        if pin is None and receipt.status == "succeeded":
+                            return False
+                        if pin:
+                            self.guard_artifact(db, source, record=pin["source"])
+                for item in receipt.outputs.values():
+                    self.guard_artifact(db, item.model_dump(mode="json"))
+        return True
+
     def verify(self, envelope: Document, receipt: StepReceipt) -> bool:
         from devbench.engine.method_executor import _path
         from devbench.platform.adaptive_workflow import request_digest
@@ -952,12 +1246,16 @@ class ExploratoryOCI:
             or io["frozen"]["token"]["request_sha256"] != receipt.request_sha256
         ):
             return False
-        vault = self.evaluation if envelope["step"]["held_out"] else self.training
+        if not self._verify_matrix_scope(envelope, receipt, io):
+            return False
+        vault = self.evaluation if envelope["step"]["held_out"] else self.artifacts
         for artifact in receipt.outputs.values():
             if artifact.representation == "exploratory_parquet":
                 if envelope["step"]["held_out"]:
                     return False
                 self.binary_descriptor(artifact)
+            elif artifact.representation == "exploratory_zarr":
+                self.zarr_vault.verify(artifact.sha256)
             else:
                 with vault.open(artifact.sha256):
                     pass

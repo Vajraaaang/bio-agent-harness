@@ -173,6 +173,9 @@ Path('/outputs/manifest.json').write_text(json.dumps({
         }
     )
     flow.insert(bound_step(method, node))
+    executor.approve_step(
+        flow, "binary", actor_id="test-operator", data_classification="synthetic"
+    )
     outcome = flow.dispatch("binary", executor, actor="tester")
     assert outcome["status"] == "succeeded", outcome
     retained = flow.current_use("binary", "out", purpose="cache")

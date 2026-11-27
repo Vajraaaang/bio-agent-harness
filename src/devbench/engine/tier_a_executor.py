@@ -8,6 +8,7 @@ import os
 import platform
 import re
 import shutil
+import sys
 import tempfile
 import time
 from collections import Counter
@@ -46,7 +47,7 @@ from devharness_core.watchdog import run_sandboxed, worker_limits
 from devharness_server.dispatcher import ToolDispatcher, capture_tool_events
 
 from .method_executor import _path
-from .mounted_matrix_vault import MountedZarrVault
+from .mounted_matrix_vault import MountedTrainingVault, MountedZarrVault
 from .scientific_authority import _lookup
 from .tier_a_pathways import (
     NB_MARKER_ORA,
@@ -73,7 +74,6 @@ _OPERATION = TIER_A_BULK_OPERATION
 _REQUEST_FORMAT = "devbench.tier-a-io/1"
 _RESULT_FORMAT = "devbench.tier-a-result/1"
 _RESEARCH = ADMITTED_RESEARCH
-_PARQUET_LIMIT = 16_000_000
 _RECORD_LIMIT = 32 * 1024
 _RECEIPT_UNVERIFIED = "adaptive_tier_a_receipt_unverified"
 _CUSTODY_UNVERIFIED = "adaptive_tier_a_custody_unverified"
@@ -89,6 +89,13 @@ _SOURCE_MODULES = (
     "devbench.analysis.episode_evidence_queries",
     "devbench.core._files",
     "devbench.core._hashing",
+    "devbench.core.execution_contracts",
+    "devbench.core.expression_io",
+    "devbench.core.expression_inventory",
+    "devbench.core.h5ad_gene_blocks",
+    "devbench.core.hdf5_custody",
+    "devbench.core.sparse_expression_blocks",
+    "devbench.core.zarr_expression_store",
     "devbench.core.bulk_fit_evidence",
     "devbench.core.contrast_design",
     "devbench.core.count_profiles",
@@ -111,6 +118,8 @@ _SOURCE_MODULES = (
     "devbench.engine.method_executor",
     "devbench.engine.nb_marker_confirmation",
     "devbench.engine.joint_bh_parquet",
+    "devbench.engine.container_backend",
+    "devbench.engine.mounted_worker_registry",
     "devbench.engine.mounted_kernel_oci",
     "devbench.engine.mounted_matrix_vault",
     "devbench.engine.mounted_result_validation",
@@ -291,6 +300,30 @@ def _source_suffix(source, port):
     return ".csv"
 
 
+def _local_result_digest(value):
+    """Canonical JSON of a local tool result, streamed directly into SHA-256.
+
+    ToolDispatcher has already validated JSON values. Its gene table and event
+    can exceed the size limit for an inline receipt; only the digest is retained.
+    """
+    digest = hashlib.sha256()
+    encoder = json.JSONEncoder(
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
+    for fragment in encoder.iterencode(value):
+        digest.update(fragment.encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _strict_json_arrays(value):
+    # Strict Python-mode Pydantic models use tuples for the JSON arrays.
+    if type(value) is list:
+        return tuple(_strict_json_arrays(item) for item in value)
+    if type(value) is dict:
+        return {key: _strict_json_arrays(item) for key, item in value.items()}
+    return value
+
+
 def _execute_registered_bulk(stage, request, identity):
     if _runtime_identity(TierAExecutor.backend_id, *identity[2:]) != identity[:2]:
         raise PermissionError("Tier A code or runtime identity changed")
@@ -298,61 +331,44 @@ def _execute_registered_bulk(stage, request, identity):
     with capture_tool_events() as events:
         try:
             result = json.loads(dispatcher.execute(_OPERATION, request))
-            tool = {"tool": _OPERATION, "result_sha256": _sha(canonical_json(result))}
+            tool = {"tool": _OPERATION, "result_sha256": _local_result_digest(result)}
         except (ArithmeticError, ValueError) as error:
             result = None
             tool = {"tool": _OPERATION, "error_type": type(error).__name__}
-    tool["event_sha256"] = _sha(canonical_json(events[-1]))
+    tool["event_sha256"] = _local_result_digest(events[-1])
     return result, tool
 
 
 def _execute_mounted_bulk(stage, request, identity):
-    from rna_kernels.mounted_bulk import MAX_SUMMARY_BYTES, run_mounted_bulk
+    from rna_kernels.mounted_bulk import MAX_SUMMARY_BYTES
+
+    from .mounted_kernel_oci import run_mounted_container
 
     if _runtime_identity(TierAExecutor.backend_id, *identity[2:]) != identity[:2]:
         raise PermissionError("Tier A code or runtime identity changed")
+    if identity[2] is None:
+        raise PermissionError("Mounted research inference requires a pinned OCI image")
     request_sha = request["request_sha256"]
-    if identity[2] is not None:
-        from .mounted_kernel_oci import run_mounted_container
-
-        transport = run_mounted_container(
-            stage,
-            request_sha=request_sha,
-            image_id=identity[2],
-            attempt_id=request["attempt_id"],
-            timeout=request["timeout"],
-            memory_mb=request["memory_mb"],
-        )
-        tool = {"tool": "mounted_bulk", "request_sha256": request_sha, "oci": transport}
-        if transport["error_type"] is not None:
-            return None, tool
-        try:
-            summary = _read_record(stage / "outputs/summary.json", MAX_SUMMARY_BYTES)
-        except (OSError, ValueError) as error:
-            return None, {**tool, "error_type": type(error).__name__}
-        return summary, {**tool, "result_sha256": _sha(canonical_json(summary))}
+    transport = run_mounted_container(
+        stage,
+        request_sha=request_sha,
+        image_id=identity[2],
+        attempt_id=request["attempt_id"],
+        timeout=request["timeout"],
+        memory_mb=request["memory_mb"],
+        epistemic_purpose="confirmatory",
+    )
+    tool = {"tool": "mounted_bulk", "request_sha256": request_sha, "oci": transport}
+    if transport["error_type"] is not None:
+        return None, tool
     try:
-        summary = run_mounted_bulk(
-            stage / "inputs",
-            stage / "outputs",
-            request_sha,
-            runtime="python_only",
-        )
-    except (ArithmeticError, ValueError, OSError) as error:
-        return None, {
-            "tool": "mounted_bulk",
-            "error_type": type(error).__name__,
-            "request_sha256": request_sha,
-            "reason": str(error)[:500],
-        }
-    return summary, {
-        "tool": "mounted_bulk",
-        "request_sha256": request_sha,
-        "result_sha256": _sha(canonical_json(summary)),
-    }
+        summary = _read_record(stage / "outputs/summary.json", MAX_SUMMARY_BYTES)
+    except (OSError, ValueError) as error:
+        return None, {**tool, "error_type": type(error).__name__}
+    return summary, {**tool, "result_sha256": _sha(canonical_json(summary))}
 
 
-def _result_table(spec, result, request_sha):
+def _result_table(spec, result, request_sha, *, destination):
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -363,7 +379,7 @@ def _result_table(spec, result, request_sha):
     if target["estimate_status"] != "estimated":
         codes = target.get("limitation_codes", [])
         return None, (codes[0] if codes else "contrast_unavailable")
-    payload = EffectsPayload.model_validate_json(canonical_json(target["payload"]))
+    payload = EffectsPayload.model_validate(_strict_json_arrays(target["payload"]))
     if (
         payload.biological_unit != spec.biological_unit
         or payload.analysis_layer != spec.measurement
@@ -383,23 +399,25 @@ def _result_table(spec, result, request_sha):
         raise ValueError(
             "Registered result must retain the complete measured feature family"
         )
-    rows = []
-    for gene in spec.family.feature_ids:
-        row = by_gene[gene]
-        if row.p_value is not None and (
-            row.q_value is None or row.q_value < row.p_value
-        ):
-            raise ValueError("Registered result violates the retained BH family")
-        value = row.model_dump(mode="json")
-        value["effect"] = row.values[0] if len(row.values) == 1 else None
-        rows.append(value)
+
+    def rows():
+        for gene in spec.family.feature_ids:
+            row = by_gene[gene]
+            if row.p_value is not None and (
+                row.q_value is None or row.q_value < row.p_value
+            ):
+                raise ValueError("Registered result violates the retained BH family")
+            value = row.model_dump(mode="json")
+            value["effect"] = row.values[0] if len(row.values) == 1 else None
+            yield value
+
     metadata = {
         "format": _RESULT_FORMAT,
         "target_id": "mean_contrast",
         "family_id": spec.family.family_id,
-        "row_count": len(rows),
+        "row_count": len(by_gene),
         "tested_count": len(payload.multiplicity_scope),
-        "status_counts": dict(Counter(row["estimate_status"] for row in rows)),
+        "status_counts": dict(Counter(row.estimate_status for row in by_gene.values())),
         "request_sha256": request_sha,
         "family_sha256": spec.family_sha256,
         "measurement": payload.analysis_layer,
@@ -433,14 +451,12 @@ def _result_table(spec, result, request_sha):
         ],
         metadata={b"devbench.result": canonical_json(metadata)},
     )
-    sink = pa.BufferOutputStream()
-    pq.write_table(
-        pa.Table.from_pylist(rows, schema=schema), sink, compression="snappy"
-    )
-    buffer = sink.getvalue()
-    if buffer.size > _PARQUET_LIMIT:
-        raise ValueError("Tier A Parquet output exceeds its bounded local vault")
-    return buffer.to_pybytes(), None
+    from itertools import batched
+
+    with pq.ParquetWriter(destination, schema, compression="snappy") as writer:
+        for group in batched(rows(), 2048):
+            writer.write_table(pa.Table.from_pylist(list(group), schema=schema))
+    return destination, None
 
 
 class TierAExecutor:
@@ -461,8 +477,6 @@ class TierAExecutor:
         allow_python_wald=False,
         marker_review_verifier=None,
     ):
-        from rna_kernels.mounted_bulk import MAX_MATRIX_BYTES, MAX_PARQUET_BYTES
-
         self.ledger = ledger
         if mounted_image_id is not None and not re.fullmatch(
             r"sha256:[a-f0-9]{64}", mounted_image_id
@@ -483,10 +497,12 @@ class TierAExecutor:
             path.is_dir() for path in (self.runs, training, parameters, outputs)
         ):
             raise PermissionError("Read-only Tier A access requires retained storage")
-        self.training = PartitionVault(training, max_bytes=MAX_MATRIX_BYTES)
         self.mounted_zarr = MountedZarrVault(self.root / "mounted-zarr")
+        self.training = MountedTrainingVault(
+            training, self.mounted_zarr, max_bytes=sys.maxsize
+        )
         self._parameters = PartitionVault(parameters)
-        self._outputs = PartitionVault(outputs, max_bytes=MAX_PARQUET_BYTES)
+        self._outputs = PartitionVault(outputs, max_bytes=sys.maxsize)
         self.runs.mkdir(mode=0o700, exist_ok=True)
         if self.runs.stat().st_mode & 0o077:
             raise PermissionError("Tier A receipts require private storage")
@@ -558,6 +574,25 @@ class TierAExecutor:
                 raise ValueError("Tier A family differs from its pinned manifest")
         return spec
 
+    @staticmethod
+    def _check_resources(capability, representation):
+        if representation in TIER_A_MOUNTED_REPRESENTATIONS:
+            from .mounted_worker_registry import BUILTIN_WORKERS
+
+            ceiling = BUILTIN_WORKERS.worker("rna_kernels.mounted_bulk").ceiling
+            memory_mb, timeout = ceiling.memory_mb, ceiling.timeout_sec
+        else:
+            # The historical non-mounted CSV procedure has its own contract.
+            memory_mb, timeout = 2048, 300
+        if (
+            capability.effects
+            or capability.max_memory_mb > memory_mb
+            or capability.timeout_seconds > timeout
+        ):
+            raise PermissionError(
+                "The Tier A step exceeds the registered local resource bounds"
+            )
+
     def validate(self, envelope):
         step = AdaptiveStep.model_validate(envelope["step"])
         if is_single_cell_operation(step.operation_id):
@@ -585,14 +620,6 @@ class TierAExecutor:
         capability = next(
             item for item in step.profile.operations if item.operation_id == _OPERATION
         )
-        if (
-            capability.effects
-            or capability.max_memory_mb > 2048
-            or capability.timeout_seconds > 300
-        ):
-            raise PermissionError(
-                "The Tier A step exceeds the registered local resource bounds"
-            )
         spec = self._pipeline(envelope)
         auxiliary = spec.mounted_model.artifact_digests() if spec.mounted_model else {}
         if [
@@ -607,6 +634,7 @@ class TierAExecutor:
             port: ArtifactVersion.model_validate(row)
             for port, row in envelope["inputs"].items()
         }
+        self._check_resources(capability, inputs["expression"].representation)
         expression_kind = (
             "continuous_matrix" if spec.measurement == "continuous" else "counts"
         )
@@ -864,14 +892,17 @@ class TierAExecutor:
         model = spec.mounted_model
         if model is not None and model.lengths_sha256:
             staged.append(("lengths.h5", model.lengths_sha256))
+        attestations = {}
         for name, digest in staged:
             path = mount / name
-            if path.suffix == ".zarr":
-                self.mounted_zarr.stage(digest, path)
+            if path.suffix == ".zarr" or self.mounted_zarr.contains(digest):
+                attestations[name] = self.mounted_zarr.stage(digest, path)
                 continue
             with self.training.open(digest) as source, path.open("xb") as target:
                 shutil.copyfileobj(source, target, length=1024 * 1024)
             path.chmod(0o400)
+        if attestations:
+            _write_record(stage.parent / "matrix-attestations.json", attestations)
         document = {
             "format": REQUEST_FORMAT,
             "expression": expression,
@@ -905,6 +936,16 @@ class TierAExecutor:
             document["model"] = model.request(controls)
         _write_record(mount / "request.json", document)
         return {"request_sha256": _sha(canonical_json(document))}
+
+    def _verify_staged_matrices(self, stage, tool):
+        proof = stage.parent / "matrix-attestations.json"
+        if proof.exists():
+            attestations = _read_record(proof, _RECORD_LIMIT)
+            for name, record in attestations.items():
+                self.mounted_zarr.verify_staged(
+                    record["full_or_merkle_sha256"], stage / "inputs" / name, record
+                )
+            tool["matrix_attestations_sha256"] = _sha(canonical_json(attestations))
 
     def _supervised_bulk(
         self,
@@ -1046,6 +1087,7 @@ class TierAExecutor:
                 worker=_execute_mounted_bulk if mounted else _execute_registered_bulk,
             )
             if mounted:
+                self._verify_staged_matrices(stage, tool_record)
                 outputs, failure, evidence = self._mounted_artifacts(
                     token,
                     spec,
@@ -1101,6 +1143,7 @@ class TierAExecutor:
                 family_sha256=None,
                 worker=execute_mounted_scrna,
             )
+            self._verify_staged_matrices(stage, tool)
             outputs, failure, evidence = collect_single_cell_outputs(
                 self,
                 spec,
@@ -1176,12 +1219,17 @@ class TierAExecutor:
     def _artifacts(self, token, spec, inputs, result):
         if result is None:
             return {}, "registered_contrast_failed"
-        artifact_bytes, failure = _result_table(spec, result, token["request_sha256"])
-        if artifact_bytes is None:
-            return {}, failure
-        return self._output(
-            token, spec, inputs, self._outputs.put(artifact_bytes)
-        ), failure
+        with tempfile.TemporaryDirectory(dir=self.runs) as temp:
+            artifact, failure = _result_table(
+                spec,
+                result,
+                token["request_sha256"],
+                destination=Path(temp) / "genes.parquet",
+            )
+            if artifact is None:
+                return {}, failure
+            digest = self._outputs.put_file(artifact)
+        return self._output(token, spec, inputs, digest), failure
 
     def _mounted_artifacts(self, token, spec, inputs, directory, result, request_sha):
         from rna_kernels.mounted_bulk import MAX_SUMMARY_BYTES, SUMMARY_FORMAT
@@ -1211,7 +1259,7 @@ class TierAExecutor:
             result,
             spec,
             inputs=directory.parent / "inputs",
-            runtime="bioconductor" if self.mounted_image_id else "python_only",
+            runtime="bioconductor",
         )
         digest = self._outputs.put_file(directory / "genes.parquet")
         if digest != result["genes_sha256"]:
@@ -1585,6 +1633,19 @@ class TierAExecutor:
             )
         ):
             return False
+        proof = directory / "matrix-attestations.json"
+        digest = manifest["tool"].get("matrix_attestations_sha256")
+        if proof.exists() or digest is not None:
+            records = _read_record(proof, _RECORD_LIMIT)
+            if _sha(canonical_json(records)) != digest:
+                return False
+            inputs = {pin.sha256 for pin in receipt.consumed}
+            for record in records.values():
+                identity = record["full_or_merkle_sha256"]
+                if identity not in inputs:
+                    return False
+                self._require_unprotected((identity,))
+                self.mounted_zarr.verify_attestation(identity, record)
         if is_single_cell_operation(envelope["step"]["operation_id"]):
             return self._check_retained_single_cell(envelope, receipt, manifest)
         return self._check_retained_pipeline(envelope, receipt, manifest)

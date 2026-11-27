@@ -422,6 +422,65 @@ class EvidenceBroker:
                 _guard(db)
         return source_id
 
+    def taint_private_content(self, digests, *, lineage_id):
+        """Seal local content taint before publishing bytes under reusable hashes."""
+        if not _matches(_ID, lineage_id):
+            raise ValueError("Private custody requires a bound local lineage")
+        with self._transaction() as db:
+            session = self._get(db, "source", "plugin-session-" + lineage_id)
+            context = self._get(db, "context", "plugin-scientist-" + lineage_id)
+            if context["lineage_id"] != lineage_id or not session["roots"]:
+                raise AccessDenied(
+                    "Private custody requires the retained session roots"
+                )
+            root = _digest(_json(sorted(session["roots"])))
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS devbench_private_content("
+                "sha256 TEXT NOT NULL, lineage_id TEXT NOT NULL, "
+                "roots_sha256 TEXT NOT NULL,"
+                "PRIMARY KEY(sha256,lineage_id,roots_sha256)) WITHOUT ROWID"
+            )
+
+            def rows():
+                for identity in digests:
+                    if not _matches(_SHA, identity):
+                        raise ValueError("Invalid private content digest")
+                    yield identity, lineage_id, root
+
+            db.executemany(
+                "INSERT OR IGNORE INTO devbench_private_content VALUES (?,?,?)", rows()
+            )
+
+    @staticmethod
+    def has_private_content(db, digests):
+        encoded = json.dumps(sorted(set(digests)))
+        if (
+            db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='devbench_private_content'"
+            ).fetchone()
+            and db.execute(
+                "SELECT 1 FROM devbench_private_content "
+                "WHERE sha256 IN (SELECT value FROM json_each(?)) LIMIT 1",
+                (encoded,),
+            ).fetchone()
+        ):
+            return True
+        if not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='scientific_access_sources'"
+        ).fetchone():
+            return False
+        return bool(
+            db.execute(
+                "SELECT 1 FROM scientific_access_sources s, "
+                "json_each(s.payload,'$.tags') tag WHERE tag.value='private' "
+                "AND json_extract(s.payload,'$.content_sha256') "
+                "IN (SELECT value FROM json_each(?)) LIMIT 1",
+                (encoded,),
+            ).fetchone()
+        )
+
     def _source_peers(self, db, content_sha256):
         peers = db.execute(
             "SELECT identity FROM scientific_access_sources WHERE "
@@ -456,6 +515,8 @@ class EvidenceBroker:
         source.update(
             self._copied_source_scope(self._source_peers(db, source["content_sha256"]))
         )
+        if self.has_private_content(db, (source["content_sha256"],)):
+            source["tags"] = sorted(set(source["tags"]) | {"private"})
         if any(
             embargoed(db, identity)
             for identity in (source["content_sha256"], *source["roots"])
@@ -565,6 +626,8 @@ class EvidenceBroker:
                     "Evidence source exceeds its registered " + name + " entitlement"
                 )
         tags = set(source["tags"])
+        if "private" in tags:
+            raise AccessDenied("private_data_local_studio_only")
         if (
             context["role"] == "challenger"
             and context["phase"] in {"design_initial", "publication_initial"}
@@ -872,6 +935,11 @@ class EvidenceBroker:
         with self._transaction() as db:
             context, policy = self._context_policy(db, context_id)
             source = self._source(db, source_id)
+            if self.has_private_content(
+                db, (source["content_sha256"], *source["roots"])
+            ):
+                raise AccessDenied("private_data_local_studio_only")
+
             if _controller_context and (
                 context["role"] != "controller"
                 or context["phase"] != "analysis"

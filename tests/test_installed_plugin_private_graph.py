@@ -79,6 +79,30 @@ def _install_configured_plugin(root, inputs, workspace):
 
 
 @contextmanager
+def _studio_client(workspace, port):
+    import http.client
+    from unittest.mock import patch
+
+    from devbench.daemon.auth import read_token
+
+    authorization = "Bearer " + read_token(workspace)
+    request = http.client.HTTPConnection.request
+
+    def authenticated(
+        connection, method, url, body=None, headers=None, *, encode_chunked=False
+    ):
+        headers = dict(headers or {})
+        if connection.host == "127.0.0.1" and connection.port == port:
+            headers.setdefault("Authorization", authorization)
+        return request(
+            connection, method, url, body, headers, encode_chunked=encode_chunked
+        )
+
+    with patch.object(http.client.HTTPConnection, "request", authenticated):
+        yield
+
+
+@contextmanager
 def _offline_studio(settings, inputs, workspace):
     marker = workspace / "studio-server.json"
     env = {**os.environ, **settings.get("env", {})}
@@ -108,7 +132,8 @@ def _offline_studio(settings, inputs, workspace):
         )
         try:
             deadline = time.monotonic() + 60
-            while time.monotonic() < deadline and process.poll() is None:
+            # A successful CLI may already have handed off to the daemon.
+            while time.monotonic() < deadline and process.poll() in (None, 0):
                 if marker.is_file():
                     state = json.loads(marker.read_text())
                     assert state["workspace"] == str(workspace)
@@ -119,12 +144,17 @@ def _offline_studio(settings, inputs, workspace):
                         and url.hostname == "127.0.0.1"
                         and url.port
                     )
-                    yield url.port
+                    with _studio_client(workspace, url.port):
+                        yield url.port
                     return
                 time.sleep(0.1)
             log.seek(0)
             pytest.fail(f"Offline Studio did not start: {log.read(3000)}")
         finally:
+            from devbench.daemon.ipc import stop_daemon
+
+            if marker.exists():
+                stop_daemon(workspace)
             if process.poll() is None:
                 process.terminate()
                 try:

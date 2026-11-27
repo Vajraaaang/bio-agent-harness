@@ -1,8 +1,7 @@
 """Local single-user OCI execution; never a fallback to unsandboxed custom code.
 
-Custom code has no writable host mount. Outputs and scratch live on bounded
-tmpfs mounts and are copied out while the container is alive, then validated.
-Shared-service hostile workloads require a stronger runtime boundary.
+Tier 2 workers write to a private, monitored disk mount on the local daemon.
+Collection starts after the worker namespace has stopped.
 """
 
 from __future__ import annotations
@@ -24,7 +23,12 @@ from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from pathlib import Path, PurePosixPath
 
+from . import tier2_staging
+from .exploratory_images import EXPLORATORY_IMAGE as EXPLORATORY_IMAGE
+from .exploratory_images import EXPLORATORY_IMAGE_ID as EXPLORATORY_IMAGE_ID
+from .exploratory_images import exploratory_image
 from .provenance import canonical_json, copy_artifact, hash_artifact
+from .tier2_artifacts import SOURCE_BYTES, VAULT_BYTES, preflight_source
 
 
 def _path(value):
@@ -40,12 +44,6 @@ def _path(value):
     return path
 
 
-EXPLORATORY_IMAGE = (
-    "python@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159"
-)
-EXPLORATORY_IMAGE_ID = (
-    "sha256:ff710677e697054c516f12c53c92166f1aef075f21b2a593f4c615e522112b4e"
-)
 _LIFECYCLE_KEYS = (
     "run_id",
     "container_name",
@@ -65,13 +63,45 @@ def _container_ids():
 
 def _tmpfs_sizes(limits):
     return {
-        "/tmp": min(limits["memory_mb"] * 1024**2 // 4, 64 * 1024**2),
+        "/tmp": (
+            limits["scratch_mb"] * 1024**2
+            if "scratch_mb" in limits
+            else min(limits["memory_mb"] * 1024**2 // 4, 64 * 1024**2)
+        ),
         "/outputs": limits["max_output_bytes"],
     }
 
 
 def _tmpfs_options(size, uid, gid):
     return f"rw,nosuid,nodev,noexec,size={size},uid={uid},gid={gid},mode=0700"
+
+
+def _writable_mounts(limits, name, image_volumes, exploratory, uid, gid):
+    command = []
+    mounts = _tmpfs_sizes(limits)
+    if exploratory:
+        del mounts["/outputs"]
+        volume = tier2_staging.output_volume(name)
+        command.extend(
+            ["--mount", f"type=volume,src={volume},dst=/outputs,volume-nocopy"]
+        )
+    for target in image_volumes:
+        path = PurePosixPath(target)
+        if (
+            not path.is_absolute()
+            or str(path) != target
+            or ".." in path.parts
+            or target in {"/", "/inputs", "/method", "/proc", "/sys", "/dev"}
+            or any(
+                target.startswith(prefix + "/")
+                for prefix in ("/inputs", "/method", "/proc", "/sys", "/dev")
+            )
+        ):
+            raise ValueError("Unsupported image volume")
+        mounts.setdefault(target, 1024**2)
+    for target, size in mounts.items():
+        command.append(f"--tmpfs={target}:{_tmpfs_options(size, uid, gid)}")
+    return command
 
 
 def container_command(
@@ -113,23 +143,7 @@ def container_command(
             "--restart=no",
             f"--ulimit=fsize={maximum}:{maximum}",
         ]
-    mounts = _tmpfs_sizes(limits)
-    for target in image_volumes:
-        path = PurePosixPath(target)
-        if (
-            not path.is_absolute()
-            or str(path) != target
-            or ".." in path.parts
-            or target in {"/", "/inputs", "/method", "/proc", "/sys", "/dev"}
-            or any(
-                target.startswith(prefix + "/")
-                for prefix in ("/inputs", "/method", "/proc", "/sys", "/dev")
-            )
-        ):
-            raise ValueError("Unsupported image volume")
-        mounts.setdefault(target, 1024**2)
-    for target, size in mounts.items():
-        command.append(f"--tmpfs={target}:{_tmpfs_options(size, uid, gid)}")
+    command.extend(_writable_mounts(limits, name, image_volumes, exploratory, uid, gid))
     if labels:
         command += [
             "--label=" + key + "=" + value for key, value in sorted(labels.items())
@@ -162,18 +176,79 @@ def container_command(
             "import time; time.sleep(" + str(limits["timeout_seconds"]) + ")",
         ]
     elif exploratory:
-        # A small bounded grace period allows trusted collection after exec.
-        # This PID-namespace lifetime survives the loss of the coordinator.
+        pin = exploratory_image(contract["environment"]["image"])
         command.remove("--entrypoint=/bin/sh")
         command += [
-            "--entrypoint=/bin/sleep",
-            contract["environment"]["image"],
-            str(limits["timeout_seconds"] + 8),
+            "--entrypoint=python3",
+            pin.reference if pin.legacy else pin.image_id,
+            *tier2_staging.supervisor_argv(limits),
         ]
     else:
         # Historical generic-method lifetime remains host-supervised.
         command += [contract["environment"]["image"], "-c", "while :; do sleep 1; done"]
     return command
+
+
+def _script_command(pin, contract):
+    if pin is None:
+        return contract["implementation"]["entrypoint"]
+    if pin.language == "r":
+        return ["Rscript", "--vanilla", "/method/main.R"]
+    if pin.legacy:
+        return ["/usr/local/bin/python3", "-I", "-B", "/method/main.py"]
+    return ["python3.13", "-P", "-s", "-B", "/method/main.py"]
+
+
+def _readonly_stage(workspace):
+    for directory in (workspace / "inputs", workspace / "method"):
+        directory.chmod(0o755)
+        for path in directory.rglob("*"):
+            if path.is_dir():
+                path.chmod(0o555)
+            elif path.lstat().st_nlink == 1:
+                # Never change the permissions on a source-linked inode.
+                path.chmod(0o444)
+
+
+def _bind_daemon(runtime, binding):
+    daemon_id = runtime._call(["info", "--format", "{{.ID}}"])
+    if not daemon_id:
+        raise PermissionError("Missing local Docker daemon identity")
+    binding.update(daemon_id=daemon_id, daemon_endpoint=runtime.endpoint)
+
+
+def _configured_mounts(reported, expected, volume):
+    if not isinstance(reported, list) or len(reported) != len(expected) + 1:
+        return False
+    binds = set()
+    outputs = 0
+    for item in reported:
+        if item.get("Type") == "volume":
+            if (
+                item.get("Source") != volume
+                or item.get("Target") != "/outputs"
+                or item.get("ReadOnly", False)
+                or item.get("VolumeOptions", {}).get("NoCopy") is not True
+            ):
+                return False
+            outputs += 1
+        else:
+            options = item.get("BindOptions")
+            if (
+                item.get("Type") != "bind"
+                or item.get("ReadOnly") is not True
+                or (
+                    options is not None
+                    and (
+                        options.get("NonRecursive") is not True
+                        or options.get("Propagation", "rprivate")
+                        not in ("", "rprivate")
+                    )
+                )
+            ):
+                return False
+            binds.add((item["Target"], item["Source"]))
+    return outputs == 1 and binds == expected
 
 
 def _bounded(command, env, timeout, maximum, *, stdout_sink=None):
@@ -236,33 +311,42 @@ def _bounded(command, env, timeout, maximum, *, stdout_sink=None):
         process.stderr.close()
 
 
-def _extract(data, output_dir, maximum):
-    total, count, names = 0, 0, set()
+def _extract(data, output_dir, maximum, *, tree=False):
+    total, names = 0, set()
     with tarfile.open(
         fileobj=io.BytesIO(data) if isinstance(data, bytes) else data, mode="r:"
     ) as archive:
         for member in archive:
-            count += 1
-            if count > 64:
-                raise ValueError("Too many output archive members")
-            name = member.name.removeprefix("./")
+            name = member.name.removeprefix("./").rstrip("/")
             if member.isdir() and name in {"", "."}:
                 continue
             path = PurePosixPath(name)
             if (
-                not member.isfile()
-                or len(path.parts) != 1
-                or name in {"", ".", ".."}
+                str(path) != name
+                or path.is_absolute()
+                or ".." in path.parts
+                or not path.parts
                 or name in names
+                or (not tree and len(path.parts) != 1)
+                or not (member.isfile() or tree and member.isdir())
             ):
-                raise ValueError("Only distinct regular output files are supported")
+                raise ValueError(
+                    "Only distinct regular output files and directories are supported"
+                )
             names.add(name)
+            if len(names) > (tier2_staging.ENTRY_LIMIT if tree else 64):
+                raise ValueError("Too many output archive members")
+            destination = output_dir.joinpath(*path.parts)
+            if member.isdir():
+                destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+                continue
             total += member.size
             if total > maximum:
                 raise ValueError("Method outputs exceeded the byte limit")
+            destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             with (
                 archive.extractfile(member) as source,
-                (output_dir / name).open("xb") as target,
+                destination.open("xb") as target,
             ):
                 shutil.copyfileobj(source, target, 1024**2)
 
@@ -328,6 +412,13 @@ class LocalDockerExecutor:
 
     @staticmethod
     def _inspect_owned(runtime, binding):
+        if binding.get("disk_staging") and (
+            runtime.endpoint != binding["daemon_endpoint"]
+            or runtime._call(["info", "--format", "{{.ID}}"]) != binding["daemon_id"]
+        ):
+            raise PermissionError(
+                "Exploratory worker belongs to a different local daemon"
+            )
         identity = binding.get("container_id")
         selection = (
             "id=" + identity
@@ -387,7 +478,13 @@ class LocalDockerExecutor:
     def inspect_run(self, binding):
         from devharness_controlled.native_runtime import LocalDocker
 
-        runtime = LocalDocker()
+        runtime = LocalDocker(
+            **(
+                {"endpoint": binding["daemon_endpoint"]}
+                if binding.get("daemon_endpoint")
+                else {}
+            )
+        )
         if "output_dir" not in binding:
             return self._inspect_owned(runtime, binding)
         try:
@@ -529,7 +626,11 @@ class LocalDockerExecutor:
             if len(PurePosixPath(name).parts) != 1 or name in {".", ".."}:
                 raise ValueError("Invalid retained diagnostic path")
             actual = hash_artifact(
-                _path(output / name), max_bytes=maximum, max_entries=1
+                _path(output / name),
+                max_bytes=maximum,
+                max_entries=tier2_staging.ENTRY_LIMIT
+                if binding.get("disk_staging")
+                else 1,
             )
             total += actual["size_bytes"]
             if actual["sha256"] != expected or total > maximum:
@@ -538,6 +639,8 @@ class LocalDockerExecutor:
 
     def _collect(self, runtime, binding, maximum):
         output = _path(binding["output_dir"])
+        if binding.get("disk_staging"):
+            return self._collect_disk(runtime, binding, maximum)
         with self._control_lock(
             binding, LocalDockerExecutor._lifecycle_file(binding, "output-copy.lock")
         ):
@@ -602,6 +705,71 @@ class LocalDockerExecutor:
             finally:
                 shutil.rmtree(temporary)
 
+    def _collect_disk(self, runtime, binding, maximum, *, allow_incomplete=False):
+        output = _path(binding["output_dir"])
+        with self._control_lock(
+            binding, self._lifecycle_file(binding, "output-copy.lock")
+        ):
+            retained = self._collection_receipt(binding, maximum)
+            if retained is not None:
+                if not allow_incomplete and retained.get("supervisor_exit_code") != 0:
+                    raise ValueError("Incomplete exploratory outputs remain diagnostic")
+                return retained
+            cid = binding["container_id"]
+            if self._inspect_owned(runtime, binding)["state"] == "running":
+                runtime._call(["stop", "--time=1", cid], timeout=5)
+            if self._inspect_owned(runtime, binding)["state"] != "exited":
+                raise ValueError("Exploratory namespace has not stopped")
+            status = runtime._call(["inspect", cid, "--format", "{{.State.ExitCode}}"])
+            if status == "74":
+                raise ValueError("Only regular output files can enter staging")
+            if status != "0" and not (allow_incomplete and status == "124"):
+                raise ValueError(
+                    "Exploratory staging quota, deadline or isolation failure"
+                )
+            command = runtime.command(["cp", cid + ":/outputs/.", "-"])
+            with (
+                tempfile.TemporaryDirectory(dir=output.parent) as raw,
+                tempfile.TemporaryFile(dir=raw) as spool,
+            ):
+                work = Path(raw)
+                code, _, _ = _bounded(
+                    command,
+                    runtime.env,
+                    max(30, maximum // 10**6),
+                    maximum + 2048 * tier2_staging.ENTRY_LIMIT,
+                    stdout_sink=spool,
+                )
+                if code:
+                    raise ValueError("Stopped exploratory staging could not be read")
+                spool.seek(0)
+                _extract(spool, work, maximum, tree=True)
+                files = {}
+                for path in work.iterdir():
+                    artifact = hash_artifact(
+                        path, max_bytes=maximum, max_entries=tier2_staging.ENTRY_LIMIT
+                    )
+                    if (output / path.name).exists():
+                        raise ValueError("Conflicting exploratory output capture")
+                    path.rename(output / path.name)
+                    files[path.name] = artifact["sha256"]
+            keys = (*_COLLECTION_KEYS, "inventory_sha256", "profile")
+            record = {key: binding[key] for key in keys}
+            record.update(
+                status="collected_after_namespace_exit",
+                supervisor_exit_code=int(status),
+                files=files,
+                reused_previously_collected_bytes=False,
+            )
+            receipt = output.parent / self._lifecycle_file(
+                binding, "diagnostic-collection.json"
+            )
+            with receipt.open("xb") as stream:
+                stream.write(canonical_json(record))
+                stream.flush()
+                os.fsync(stream.fileno())
+            return record
+
     @staticmethod
     def _collect_archive(runtime, binding, command, temporary, maximum):
         if binding.get("profile") == "exploratory-oci-1" and maximum > 16_000_000:
@@ -628,7 +796,13 @@ class LocalDockerExecutor:
     def cancel_run(self, binding):
         from devharness_controlled.native_runtime import LocalDocker
 
-        runtime = LocalDocker()
+        runtime = LocalDocker(
+            **(
+                {"endpoint": binding["daemon_endpoint"]}
+                if binding.get("daemon_endpoint")
+                else {}
+            )
+        )
         observed = self._inspect_owned(runtime, binding)
         binding = {**binding, **observed}
         # Intent can be recorded while an RPC owns the effect lock, but such a
@@ -640,7 +814,10 @@ class LocalDockerExecutor:
                 LocalDockerExecutor._lifecycle_file(binding, "runtime-control.lock"),
                 blocking=False,
             ):
-                return self._cancel_settled(runtime, binding)
+                settled = self._cancel_settled(runtime, binding)
+                if binding.get("disk_staging") and settled["state"] == "cancelled":
+                    tier2_staging.remove_storage(runtime, binding)
+                return settled
         except BlockingIOError:
             return {
                 **observed,
@@ -762,6 +939,19 @@ else:print(json.dumps({'state':'cancellation_pending'}))
 
     def _cancel_stopped(self, runtime, binding, observed):
         retained = self._collection_receipt(binding, binding["max_output_bytes"])
+        loss = None
+        if retained is None and binding.get("disk_staging"):
+            try:
+                retained = self._collect_disk(
+                    runtime, binding, binding["max_output_bytes"], allow_incomplete=True
+                )
+            except (
+                OSError,
+                ValueError,
+                TimeoutError,
+                subprocess.TimeoutExpired,
+            ) as error:
+                loss = type(error).__name__
         removed = False
         if binding.get("profile") == "exploratory-oci-1":
             runtime._call(
@@ -785,7 +975,7 @@ else:print(json.dumps({'state':'cancellation_pending'}))
             "diagnostic_collection": retained,
             "diagnostic_loss": None
             if retained is not None
-            else "stopped_container_tmpfs_unavailable",
+            else loss or "stopped_container_tmpfs_unavailable",
         }
 
     def _cancel_live_exploratory(self, runtime, binding):
@@ -830,6 +1020,7 @@ else:print(json.dumps({'state':'cancellation_pending'}))
         expected_tmpfs = {
             target: sorted(_tmpfs_options(size, uid, gid).split(","))
             for target, size in _tmpfs_sizes(limits).items()
+            if target == "/tmp"
         }
         observed_tmpfs = host.get("Tmpfs")
         tmpfs_matches = (
@@ -874,37 +1065,24 @@ else:print(json.dumps({'state':'cancellation_pending'}))
             and item["RW"] is False
             and item.get("Propagation") == "rprivate"
         }
-        # Older inspect responses can omit configured bind options. An
-        # options object, when present, must retain the requested nonrecursive
-        # setting (Docker omits false from the JSON representation).
+        volume = tier2_staging.output_volume(binding["container_name"])
+        disk_mounts = [m for m in value["Mounts"] if m.get("Destination") == "/outputs"]
+        disk_ok = (
+            len(disk_mounts) == 1
+            and disk_mounts[0].get("Type") == "volume"
+            and disk_mounts[0].get("RW") is True
+            and disk_mounts[0].get("Name") == volume
+            and disk_mounts[0].get("Driver") == "local"
+        )
         configured_mounts = host.get("Mounts")
-        configured_mounts_match = configured_mounts is None or (
-            isinstance(configured_mounts, list)
-            and len(configured_mounts) == len(expected_mounts)
-            and all(
-                isinstance(item, dict)
-                and item.get("Type") == "bind"
-                and item.get("ReadOnly") is True
-                and isinstance(item.get("Target"), str)
-                and isinstance(item.get("Source"), str)
-                and (
-                    item.get("BindOptions") is None
-                    or (
-                        isinstance(item["BindOptions"], dict)
-                        and item["BindOptions"].get("Propagation", "rprivate")
-                        in {"", "rprivate"}
-                        and item["BindOptions"].get("NonRecursive") is True
-                    )
-                )
-                for item in configured_mounts
-            )
-            and {(item["Target"], item["Source"]) for item in configured_mounts}
-            == expected_mounts
+        configured_mounts_match = _configured_mounts(
+            configured_mounts, expected_mounts, volume
         )
         if (
-            value["Image"] != EXPLORATORY_IMAGE_ID
-            or config["Entrypoint"] != ["/bin/sleep"]
-            or config["Cmd"] != [str(limits["timeout_seconds"] + 8)]
+            value["Image"] != binding["image_id"]
+            or config["Entrypoint"] != ["python3"]
+            or config["Cmd"] != tier2_staging.supervisor_argv(limits)
+            or not disk_ok
             or config["User"] != f"{uid}:{gid}"
             or host["NetworkMode"] != "none"
             or not host["ReadonlyRootfs"]
@@ -924,7 +1102,7 @@ else:print(json.dumps({'state':'cancellation_pending'}))
             or not restart_disabled
             or not configured_mounts_match
             or mounts != expected_mounts
-            or len(value["Mounts"]) != len(expected_mounts)
+            or len(value["Mounts"]) != len(expected_mounts) + 1
         ):
             raise PermissionError(
                 "Docker did not retain the frozen exploratory isolation controls"
@@ -948,19 +1126,29 @@ else:print(json.dumps({'state':'cancellation_pending'}))
         ).hexdigest()
 
     def execute(
-        self, contract, inputs, parameters, source, lock, output_dir, *, frozen=None
+        self,
+        contract,
+        inputs,
+        parameters,
+        source,
+        lock,
+        output_dir,
+        *,
+        frozen=None,
+        matrix_mounts=None,
     ):
         # Registration and consumption are local to the caller's context. The
         # captured callback stays stable across threads and nested calls.
         observer = self._observer_context.get()
         self._observer_context.set(None)
+        self._check_submission(contract, source, lock, frozen, observer)
         output_dir = _path(output_dir)
         workspace = output_dir.parent
         runtime, identity = self._prepare_runtime(
             contract, inputs, parameters, workspace, frozen
         )
         self._stage_method(
-            workspace, inputs, parameters, source, lock, contract, frozen
+            workspace, inputs, parameters, source, lock, contract, frozen, matrix_mounts
         )
         exploratory = frozen is not None
         community = (
@@ -970,6 +1158,9 @@ else:print(json.dumps({'state':'cancellation_pending'}))
         binding, labels = self._runtime_binding(
             contract, output_dir, lock, frozen, community
         )
+
+        if exploratory:
+            _bind_daemon(runtime, binding)
 
         def emit(event):
             if (
@@ -1003,6 +1194,8 @@ else:print(json.dumps({'state':'cancellation_pending'}))
             emit("container_created")
             if not self._start_worker(runtime, binding, emit, durable):
                 return self._cancelled_before_worker(binding)
+            if exploratory:
+                tier2_staging.verify_live_mount(runtime, binding["container_id"])
             return self._run_worker(
                 runtime,
                 identity,
@@ -1020,9 +1213,54 @@ else:print(json.dumps({'state':'cancellation_pending'}))
         finally:
             if binding.get("container_id"):
                 self._cleanup_container(runtime, binding, durable, exploratory, primary)
+            if exploratory:
+                tier2_staging.remove_storage(runtime, binding)
+
+    def _check_submission(self, contract, source, lock, frozen, observer):
+        from devbench.analysis import community_workflow
+        from devbench.core._files import read_bounded_json
+
+        from .workflow_operations import OperationBlocked
+
+        if frozen is not None:
+            if observer is None:
+                raise OperationBlocked("explicit_script_plan_approval_required")
+            return
+        if (
+            contract.get("lifecycle") != "custom"
+            or contract.get("implementation_trust") != "unreviewed"
+        ):
+            return
+        if (
+            contract.get("method_id") != "community.nfcore.differentialabundance.2"
+            or observer is None
+        ):
+            raise OperationBlocked("explicit_script_plan_approval_required")
+        # The fixed community workflow already uses its own operator-approved
+        # launch record. Its historical 'custom' contract cannot admit other code.
+        trusted = (
+            Path(community_workflow.__file__).resolve().with_name("community_worker.py")
+        )
+        expected = hash_artifact(trusted, max_bytes=1_000_000)["sha256"]
+        if (
+            contract["implementation"]["entrypoint"] != ["python3", "/method/main.py"]
+            or contract["implementation"]["source_sha256"] != expected
+            or hash_artifact(_path(source), max_bytes=1_000_000)["sha256"] != expected
+        ):
+            raise OperationBlocked("explicit_script_plan_approval_required")
+        ref = contract["environment"]["image"]
+        inventory = community_workflow._inventory(read_bounded_json(lock, 1_000_000))
+        # CommunityWorkflowService already verifies the installed label inventory
+        # at admission; _prepare_runtime independently checks the actual OCI digest.
+        if inventory["image"] != ref:
+            raise ValueError(
+                "Installed community inventory differs from its reviewed lock"
+            )
 
     def _prepare_runtime(self, contract, inputs, parameters, workspace, frozen):
         exploratory = frozen is not None
+        if not exploratory and contract["execution"]["max_output_bytes"] > 100_000_000:
+            raise ValueError("Large custom outputs require frozen disk-backed staging")
         if exploratory:
             from .methods import exploratory_method
 
@@ -1037,11 +1275,14 @@ else:print(json.dumps({'state':'cancellation_pending'}))
                     "Exploratory inputs differ from the frozen invocation"
                 )
         runtime = self._runtime(workspace)
+        reference = contract["environment"]["image"]
+        pin = exploratory_image(reference) if exploratory else None
+        target = pin.image_id if pin is not None and not pin.legacy else reference
         identity = runtime._call(
             [
                 "image",
                 "inspect",
-                contract["environment"]["image"],
+                target,
                 "--format",
                 '{"id":{{json .Id}},"digests":{{json .RepoDigests}},'
                 '"volumes":{{json (index .Config "Volumes")}},"os":{{json .Os}}}',
@@ -1049,13 +1290,16 @@ else:print(json.dumps({'state':'cancellation_pending'}))
             json_result=True,
         )
         if (
-            contract["environment"]["image"] not in (identity["digests"] or [])
+            (pin is None or pin.legacy)
+            and reference not in (identity["digests"] or [])
             or identity["os"] != "linux"
             or len(identity["volumes"] or {}) > 16
         ):
             raise ValueError("Installed image identity is unsupported or mismatched")
         if exploratory and (
-            identity["id"] != EXPLORATORY_IMAGE_ID or identity["volumes"]
+            identity["id"] != pin.image_id
+            or identity["volumes"]
+            or frozen["image_id"] != pin.image_id
         ):
             raise PermissionError(
                 "Exploratory supervisor requires the admitted image ID without "
@@ -1064,31 +1308,64 @@ else:print(json.dumps({'state':'cancellation_pending'}))
         return runtime, identity
 
     @staticmethod
-    def _stage_method(workspace, inputs, parameters, source, lock, contract, frozen):
+    def _stage_method(
+        workspace,
+        inputs,
+        parameters,
+        source,
+        lock,
+        contract,
+        frozen,
+        matrix_mounts=None,
+    ):
         exploratory = frozen is not None
+        pin = (
+            exploratory_image(contract["environment"]["image"]) if exploratory else None
+        )
         (workspace / "inputs").mkdir(mode=0o755)
         (workspace / "method").mkdir(mode=0o755)
         for name, path in inputs.items():
+            if exploratory and "evaluation" in _path(path).parts:
+                raise PermissionError("An evaluation vault cannot be mounted")
+            if matrix_mounts and name in matrix_mounts[1]:
+                vault, pins = matrix_mounts
+                vault.stage(
+                    frozen["input_sha256"][name],
+                    workspace / "inputs" / name,
+                    record=pins[name]["source"],
+                )
+                continue
             captured = copy_artifact(
-                path, workspace / "inputs" / name, max_bytes=100_000_000, max_entries=1
+                path,
+                workspace / "inputs" / name,
+                max_bytes=VAULT_BYTES if exploratory else 100_000_000,
+                max_entries=tier2_staging.ENTRY_LIMIT if exploratory else 1,
             )
-            if exploratory and (
-                captured["kind"] != "file"
-                or captured["sha256"] != frozen["input_sha256"][name]
-            ):
+            if exploratory and (captured["sha256"] != frozen["input_sha256"][name]):
                 raise PermissionError(
                     "Staged exploratory input differs from the frozen artifact"
                 )
-        method = copy_artifact(
-            source, workspace / "method" / "main.py", max_bytes=1_000_000, max_entries=1
+        script = (
+            workspace
+            / "method"
+            / ("main.R" if pin and pin.language == "r" else "main.py")
         )
+        method = copy_artifact(
+            source, script, max_bytes=SOURCE_BYTES if pin else 1_000_000, max_entries=1
+        )
+        if pin:
+            preflight_source(script, pin.language)
+
         environment = copy_artifact(
             lock,
             workspace / "method" / "environment.lock",
             max_bytes=1_000_000,
             max_entries=1,
         )
-        if exploratory and (
+        if (
+            exploratory
+            or contract.get("method_id") == "community.nfcore.differentialabundance.2"
+        ) and (
             method["kind"] != "file"
             or method["sha256"] != contract["implementation"]["source_sha256"]
             or environment["kind"] != "file"
@@ -1100,10 +1377,7 @@ else:print(json.dumps({'state':'cancellation_pending'}))
         (workspace / "method" / "parameters.json").write_bytes(
             canonical_json(parameters)
         )
-        for directory in (workspace / "inputs", workspace / "method"):
-            directory.chmod(0o755)
-            for path in directory.iterdir():
-                path.chmod(0o444)
+        _readonly_stage(workspace)
 
     @staticmethod
     def _runtime_binding(contract, output_dir, lock, frozen, community):
@@ -1129,7 +1403,11 @@ else:print(json.dumps({'state':'cancellation_pending'}))
                 for key in ("run_id", "inventory_sha256", "nextflow_session_id")
             }
         if exploratory:
+            pin = exploratory_image(contract["environment"]["image"])
             binding.update(
+                disk_staging=True,
+                image_id=pin.image_id,
+                image=pin.reference if pin.legacy else pin.image_id,
                 output_dir=str(output_dir),
                 max_output_bytes=contract["execution"]["max_output_bytes"],
                 inventory_sha256=hashlib.sha256(canonical_json(frozen)).hexdigest(),
@@ -1217,6 +1495,10 @@ else:print(json.dumps({'state':'cancellation_pending'}))
             if durable:
                 self._dispatch_phase(binding, "creating", in_flight=True)
             try:
+                if exploratory:
+                    tier2_staging.prepare_storage(
+                        runtime, binding, identity["id"], *_container_ids()
+                    )
                 container_id = runtime._call(
                     container_command(
                         contract,
@@ -1289,6 +1571,10 @@ else:print(json.dumps({'state':'cancellation_pending'}))
         durable = community or exploratory
         result = None
         execution_error = None
+        pin = (
+            exploratory_image(contract["environment"]["image"]) if exploratory else None
+        )
+        entrypoint = _script_command(pin, contract)
         command = runtime.command(
             [
                 "exec",
@@ -1300,16 +1586,25 @@ else:print(json.dumps({'state':'cancellation_pending'}))
                 "TMPDIR=/tmp",
                 "PYTHONDONTWRITEBYTECODE=1",
                 "OMP_NUM_THREADS=1",
+                "OPENBLAS_NUM_THREADS=1",
+                "MKL_NUM_THREADS=1",
+                *(
+                    [
+                        "PYTHONPATH=/opt/exploratory/python:/opt/rna/sccoda-python:"
+                        "/opt/rna/cellbender-python:"
+                        "/opt/rna/scrna-python:/opt/rna/python:/opt/rna/runtime",
+                        "R_LIBS_USER=/opt/exploratory/R-library:/opt/exploratory/R:"
+                        "/opt/rna/pathway-R-library:/opt/rna/scrna-R-library:/opt/rna/R-library",
+                    ]
+                    if pin and not pin.legacy
+                    else []
+                ),
                 *(
                     ["DEVBENCH_NEXTFLOW_SESSION_ID=" + binding["nextflow_session_id"]]
                     if community
                     else []
                 ),
-                *(
-                    ["/usr/local/bin/python3", "-I", "-B", "/method/main.py"]
-                    if exploratory
-                    else contract["implementation"]["entrypoint"]
-                ),
+                *entrypoint,
             ]
         )
         try:
@@ -1364,6 +1659,8 @@ else:print(json.dumps({'state':'cancellation_pending'}))
         )
         if execution_error is not None:
             raise execution_error
+        if exploratory:
+            result.update(oci_isolated=True, isolation_backend="docker")
         if exploratory and self._latched(binding):
             result.update(exit_code=143, cancelled=True)
         return result

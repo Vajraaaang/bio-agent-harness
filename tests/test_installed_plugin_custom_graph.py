@@ -103,7 +103,17 @@ Path("/outputs/out.json").write_text(
             assert custom["session_id"] == sid
             with executor.training.open(artifact["sha256"]):
                 pass
+            from devbench.platform.plugin_jobs import JobStore
+
             approval = _approved_plan(custom)
+            JobStore(workspace).approve(
+                sid,
+                custom["plan_id"],
+                custom["plan_sha256"],
+                actor_id="synthetic-test-operator",
+                surface="cli",
+                auth_method="local_os_user",
+            )
             await _rpc(
                 client,
                 "execute_reviewed_plan",
@@ -111,6 +121,11 @@ Path("/outputs/out.json").write_text(
                 blocked="plan_identity_mismatch",
             )
             receipt, _ = await _complete(client, custom)
+            assert receipt["claim_scope"] == "exploratory_only"
+            assert (
+                receipt["registered_method_outputs"]["out"]["claim_tier"]
+                == "L1_execution_verified"
+            )
             proof = receipt["graph_execution"]
             flow = AdaptiveWorkflow(ledger, sid)
             outcome = flow._read_projection(

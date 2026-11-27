@@ -78,7 +78,9 @@ ADAPTIVE_MODE = "adaptive/1"
 _MAX_STEPS = 512
 RESEARCH_INFERENCE = "admitted_research_inference"
 _RECOVERABLE_BACKENDS = {
-    "local_registered_tier_a_1", "local_exploratory_oci_1", "local_registered_plugin_1"
+    "local_registered_tier_a_1",
+    "local_exploratory_oci_1",
+    "local_registered_plugin_1",
 }
 
 
@@ -784,8 +786,13 @@ class AdaptiveWorkflow:
             return deepcopy(state)
 
     def register_artifact(
-        self, artifact, *, basis=(), parents=(),
-        expected_revision=None, connection=None,
+        self,
+        artifact,
+        *,
+        basis=(),
+        parents=(),
+        expected_revision=None,
+        connection=None,
     ):
         from devbench.core.joint_bh import JOINT_BH_INPUT, JOINT_BH_OUTPUT_PREFIX
 
@@ -793,9 +800,8 @@ class AdaptiveWorkflow:
         parents = TypeAdapter(tuple[Identity, ...]).validate_python(parents)
         if len(parents) > 16 or len(set(parents)) != len(parents):
             raise ValueError("Derived artifacts require at most 16 distinct parents")
-        if (
-            artifact.representation == JOINT_BH_INPUT
-            or artifact.version_id.startswith(JOINT_BH_OUTPUT_PREFIX)
+        if artifact.representation == JOINT_BH_INPUT or artifact.version_id.startswith(
+            JOINT_BH_OUTPUT_PREFIX
         ):
             raise PermissionError("Joint BH artifacts require their retained receipts")
 
@@ -809,7 +815,8 @@ class AdaptiveWorkflow:
         if parents:
             record["parents"] = list(parents)
         return self._mutate(
-            "artifact", record,
+            "artifact",
+            record,
             validate,
             expected_revision,
             connection=connection,
@@ -1147,9 +1154,8 @@ class AdaptiveWorkflow:
             )
         ):
             raise OperationBlocked("adaptive_COUNT-1_measurement_history")
-        if (
-            step.purpose not in artifact.permitted_uses
-            and not _sealed_nb_input(step, link, artifact)
+        if step.purpose not in artifact.permitted_uses and not _sealed_nb_input(
+            step, link, artifact
         ):
             raise OperationBlocked("adaptive_input_purpose_not_permitted")
         if (
@@ -1936,7 +1942,7 @@ class AdaptiveWorkflow:
                 raise PermissionError(
                     "Evaluator and scheduler partition authorities differ"
                 )
-            validated = executor.validate(envelope)
+            validated = executor.validate_dispatch(envelope)
             contract = None if validated is None else validated[1]["contract"]
             check_thesis_backend(
                 envelope,

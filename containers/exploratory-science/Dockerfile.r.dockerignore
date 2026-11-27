@@ -1,0 +1,5 @@
+*
+!r-science-arm64.lock.json
+!r-science-amd64.lock.json
+!install-r-science.R
+!verify-r-science.R

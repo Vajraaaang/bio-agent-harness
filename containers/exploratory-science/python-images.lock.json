@@ -1,0 +1,57 @@
+{
+  "claim_tier": "L1_execution_verified",
+  "clinical_release_allowed": false,
+  "format": "devharness.exploratory-python-images/1",
+  "formats": [
+    "H5AD-CSR",
+    "MuData",
+    "SpatialData",
+    "Parquet",
+    "Zarr-v2",
+    "Zarr-v3",
+    "TileDB-SOMA"
+  ],
+  "platforms": {
+    "linux/amd64": {
+      "base_image_id": "sha256:40b02c41197e06dac630f114dbbbcec4af36047c9132c4102e048e1cf45ea377",
+      "image_id": "sha256:4a66b4c2fffc074f7731e98206e3bfd5981d36b59aa136ec6fb2a154ec2ea270",
+      "overlay_diff_id": "sha256:e4aee395ab43a2daf53467b838be2aa648be05871c499957b88f0ef485e7e55a",
+      "requirements_lock": "python-amd64.lock",
+      "requirements_lock_sha256": "bc87ccce907c5328840446a776656958f02cc45bf9c8a18d77e43c785d90a767",
+      "wheel_bytes": 171442580,
+      "wheel_count": 54
+    },
+    "linux/arm64": {
+      "base_image_id": "sha256:5288b9e8e4ba18600ca89ccfd2bbd6ae65ad5fe3c8582ec7bd27978465032f80",
+      "image_id": "sha256:7691a936b4be9151d22c73a2430be21581810ae6baa6e11adb7aba727332e7f7",
+      "overlay_diff_id": "sha256:6ace168dfc4004c9b55550ad4a462fe0437a53d5a31d57c20c0a0a2add93dca9",
+      "requirements_lock": "python-arm64.lock",
+      "requirements_lock_sha256": "e62b7c7a4094e916dc35d0df05aabba171a44f51569d173e3f4e4443020e0db7",
+      "wheel_bytes": 163307057,
+      "wheel_count": 54
+    }
+  },
+  "python": "3.13.18",
+  "smoke_script_sha256": "fe91cc699834a94cfc151f4032cd342fa0fa1cfa853cbf823243fa889baa5b2c",
+  "versions": {
+    "anndata": "0.12.19",
+    "harmonypy": "0.2.0",
+    "igraph": "1.0.0",
+    "leidenalg": "0.12.0",
+    "matplotlib": "3.11.1",
+    "mudata": "0.4.1",
+    "numpy": "2.5.3",
+    "pandas": "2.3.3",
+    "plotly": "7.2.0",
+    "polars": "2.2.0",
+    "pyarrow": "23.0.1",
+    "scanpy": "1.12.4",
+    "scikit-learn": "1.9.0",
+    "scipy": "1.18.1",
+    "seaborn": "0.13.2",
+    "spatialdata": "0.9.0",
+    "statsmodels": "0.14.6",
+    "tiledbsoma": "2.3.0",
+    "umap-learn": "0.5.12"
+  }
+}

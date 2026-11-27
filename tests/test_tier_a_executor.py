@@ -262,20 +262,11 @@ def _require_mounted_image() -> str:
     return image
 
 
-@pytest.mark.parametrize(
-    ("runtime", "file_format"),
-    [
-        ("local", "h5"),
-        ("local", "zarr"),
-        ("oci", "h5"),
-    ],
-)
-def test_mounted_tier_a_artifact_and_ledger_receipt(
-    workspace_tmp_path, runtime, file_format
-):
+@pytest.mark.parametrize("file_format", ["h5", "zarr"])
+def test_mounted_tier_a_artifact_and_ledger_receipt(workspace_tmp_path, file_format):
     import pyarrow.parquet as pq
 
-    image = _require_mounted_image() if runtime == "oci" else None
+    image = _require_mounted_image()
     flow, executor, envelope = _fixture(
         workspace_tmp_path,
         input_format=file_format,
@@ -289,20 +280,23 @@ def test_mounted_tier_a_artifact_and_ledger_receipt(
     assert table["gene_id"].to_pylist() == ["g1", "g2"]
     assert table["effect"].to_pylist() == pytest.approx([2.25, 1.75])
     assert not (executor.runs / token["attempt_id"] / ".work").exists()
-    if runtime == "oci":
-        saved = json.loads(
-            (executor.runs / token["attempt_id"] / "io.json").read_bytes()
-        )
-        assert saved["tool"]["oci"]["cleanup_confirmed"] is True
-        assert saved["tool"]["oci"]["image_id"] == image
+    saved = json.loads((executor.runs / token["attempt_id"] / "io.json").read_bytes())
+    assert saved["tool"]["oci"]["cleanup_confirmed"] is True
+    assert saved["tool"]["oci"]["image_id"] == image
 
 
-@pytest.mark.parametrize("runtime", ["local", "oci"])
-def test_mounted_rank_divergence_seals_evidence_and_holds_step(
-    workspace_tmp_path,
-    runtime,
+@pytest.mark.parametrize("file_format", ["h5", "zarr"])
+def test_mounted_research_requires_oci_before_submission(
+    workspace_tmp_path, file_format
 ):
-    image = _require_mounted_image() if runtime == "oci" else None
+    _, executor, envelope = _fixture(workspace_tmp_path, input_format=file_format)
+    with pytest.raises(PermissionError, match="requires a pinned OCI image"):
+        executor.validate(envelope)
+    assert not list(executor.runs.iterdir())
+
+
+def test_mounted_rank_divergence_seals_evidence_and_holds_step(workspace_tmp_path):
+    image = _require_mounted_image()
     flow, executor, envelope = _fixture(
         workspace_tmp_path,
         input_format="h5",

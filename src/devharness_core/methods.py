@@ -437,7 +437,35 @@ _INPUT = _object(
     ["artifact_type", "required"],
 )
 _OUTPUT = _object(
-    {"artifact_type": _ARTIFACT, "path": _TEXT, "required": {"type": "boolean"}}
+    {
+        "artifact_type": _ARTIFACT,
+        "path": _TEXT,
+        "required": {"type": "boolean"},
+        "format": {
+            "enum": [
+                "h5ad",
+                "zarr",
+                "csv",
+                "tsv",
+                "parquet",
+                "png",
+                "svg",
+                "plotly_json",
+                "json",
+                "plot_sidecar",
+            ]
+        },
+        "max_bytes": {"type": "integer", "minimum": 1, "maximum": 1 << 40},
+        "plot_sidecar": _NAME,
+        "columns": {
+            "type": "array",
+            "uniqueItems": True,
+            "maxItems": 4096,
+            "minItems": 1,
+            "items": _TEXT,
+        },
+    },
+    ["artifact_type", "path", "required"],
 )
 _SCHEMA = _object(
     {
@@ -513,13 +541,13 @@ _SCHEMA = _object(
                 "timeout_seconds": {
                     "type": "number",
                     "exclusiveMinimum": 0,
-                    "maximum": 3600,
+                    "maximum": 86400,
                 },
                 "pids": {"type": "integer", "minimum": 1, "maximum": 1024},
                 "max_output_bytes": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 100_000_000,
+                    "maximum": 1 << 40,
                 },
                 "network": {"enum": ["deny", "allow"]},
             }
@@ -566,6 +594,11 @@ _SCHEMA = _object(
     }
 )
 # Optional metadata must not insert defaults or alter existing version identities.
+_SCHEMA["properties"]["execution"]["properties"]["scratch_mb"] = {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 65536,
+}
 _SCHEMA["properties"]["binary_transport"] = {"const": OCI_BINARY_TRANSPORT}
 _SCHEMA["properties"]["scientific"] = _SCIENTIFIC_SCHEMA
 _SCHEMA["properties"]["action_scope"] = _ACTION_SCOPE

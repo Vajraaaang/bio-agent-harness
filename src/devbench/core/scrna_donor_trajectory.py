@@ -5,10 +5,10 @@ provide a negative-binomial count fit, infer an axis, or test lineage topology.
 """
 
 import csv
-import hashlib
 import io
 import math
 from collections.abc import Callable, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal, NamedTuple, Self, TypedDict
@@ -21,19 +21,13 @@ from scipy.interpolate import BSpline
 from scipy.sparse import csr_array
 from scipy.stats import f, t
 
-from ._files import read_bounded_file
 from ._hashing import canonical_sha256
 from .design import DESIGN_CONDITION_NUMBER_LIMIT, require_design_condition
-from .h5ad_gene_blocks import H5adGeneBlocks
+from .h5ad_gene_blocks import H5adGeneBlocks, ZarrGeneBlocks
 from .population_data import bound_query_file
 from .publication_families import Sha, budgeted_bh
 from .trajectory_evidence import DonorTrajectoryEvidence
 
-_MAX_EXPRESSION_BYTES = 512 * 1024**2
-_MAX_COORDINATE_BYTES = 16 * 1024**2
-_MAX_CELLS = 100_000
-_MAX_GENES = 20_000
-_MAX_DONORS = 256
 _MIN_DONORS_PER_ARM = 3
 _MIN_INFERENCE_RESIDUAL_DF = 2
 _MIN_BIN_COVERAGE = 0.75
@@ -122,7 +116,7 @@ class _Bins:
 
 class _ArmError(NamedTuple):
     donors: slice
-    residual_basis: _Floats
+    design_basis: _Floats
     contrast_variance_scale: float
 
 
@@ -226,22 +220,31 @@ def _coordinate(row: dict[str, str], spec: DonorTrajectorySpec) -> tuple[str, _C
 
 
 def _read_coordinates(path: Path, spec: DonorTrajectorySpec) -> dict[str, _Cell]:
-    content = read_bounded_file(path, _MAX_COORDINATE_BYTES)
-    if hashlib.sha256(content).hexdigest() != spec.coordinates_sha256:
-        raise ValueError("trajectory_coordinates_digest_mismatch")
     expected = {*_COORDINATE_COLUMNS, *spec.technical_factors}
-    reader = csv.DictReader(
-        io.StringIO(content.decode("utf-8"), newline=""), strict=True
-    )
-    columns = reader.fieldnames or []
-    if len(columns) != len(expected) or set(columns) != expected:
-        raise ValueError("trajectory_coordinate_fields_mismatch")
     cells: dict[str, _Cell] = {}
-    for row in reader:
-        barcode, cell = _coordinate(row, spec)
-        if barcode in cells or len(cells) == _MAX_CELLS:
-            raise ValueError("trajectory_coordinate_ids_duplicate_or_over_budget")
-        cells[barcode] = cell
+    try:
+        with bound_query_file(
+            path, spec.coordinates_sha256, path.lstat().st_size
+        ) as binary:
+            stream = io.TextIOWrapper(binary, encoding="utf-8", newline="")
+            try:
+                reader = csv.DictReader(stream, strict=True)
+                columns = reader.fieldnames or []
+                if len(columns) != len(expected) or set(columns) != expected:
+                    raise ValueError("trajectory_coordinate_fields_mismatch")
+                for row in reader:
+                    barcode, cell = _coordinate(row, spec)
+                    if barcode in cells:
+                        raise ValueError(
+                            "trajectory_coordinate_ids_duplicate_or_over_budget"
+                        )
+                    cells[barcode] = cell
+            finally:
+                stream.detach()
+    except ValueError as error:
+        if str(error) == "Evidence input hash mismatch":
+            raise ValueError("trajectory_coordinates_digest_mismatch") from error
+        raise
     return cells
 
 
@@ -253,8 +256,6 @@ def _donor_arms(cells: Sequence[_Cell], spec: DonorTrajectorySpec) -> tuple[_Arm
         and min(len(control), len(treated)) < _MIN_DONORS_PER_ARM
     ):
         raise ValueError("trajectory_needs_at_least_three_donors_per_condition")
-    if len(control | treated) > _MAX_DONORS:
-        raise ValueError("trajectory_donor_budget_exceeded")
     if spec.design == "paired" and control != treated:
         raise ValueError("trajectory_requires_complete_donor_pairs")
     if spec.design == "independent" and control.intersection(treated):
@@ -343,9 +344,10 @@ def _donor_model(
             (spec.numerator, slice(control_count, None)),
         ):
             local_design = matrix[donors]
-            left, _, _ = np.linalg.svd(local_design, full_matrices=True)
-            residual_basis = left[:, np.linalg.matrix_rank(local_design):].T
-            residual_df = len(residual_basis)
+            left, _, _ = np.linalg.svd(local_design, full_matrices=False)
+            rank = int(np.linalg.matrix_rank(local_design))
+            design_basis = left[:, :rank]
+            residual_df = len(local_design) - rank
             if residual_df < _MIN_INFERENCE_RESIDUAL_DF:
                 raise ValueError(
                     "insufficient_within_condition_donor_residual_df"
@@ -354,7 +356,7 @@ def _donor_model(
                 )
             arm_weights = weights[donors]
             arm_errors.append(
-                _ArmError(donors, residual_basis, float(arm_weights @ arm_weights))
+                _ArmError(donors, design_basis, float(arm_weights @ arm_weights))
             )
             arm_dfs[label] = residual_df
         denominator_df = min(arm_dfs.values())
@@ -490,8 +492,10 @@ def _independent_shape_probability(
     shape_df, denominator_df = model.diagnostics["shape_test_df"]
     variance = np.zeros(shape_df)
     for arm in model.arm_errors:
-        residual = arm.residual_basis @ coordinates[arm.donors]
-        variance += arm.contrast_variance_scale * np.square(residual).mean(axis=0)
+        observations = coordinates[arm.donors]
+        residual = observations - arm.design_basis @ (arm.design_basis.T @ observations)
+        df = len(observations) - arm.design_basis.shape[1]
+        variance += arm.contrast_variance_scale * np.square(residual).sum(axis=0) / df
     positive = variance > 0
     if (
         not positive.any()
@@ -610,7 +614,6 @@ def _gene_statistics(
     return statistics
 
 
-
 def _check_trajectory_evidence(
     spec: DonorTrajectorySpec,
     evidence: DonorTrajectoryEvidence,
@@ -633,6 +636,30 @@ def _check_trajectory_evidence(
     ):
         raise ValueError("trajectory_evidence_subject_changed")
 
+
+@contextmanager
+def _gene_store(path, spec):
+    if path.suffix.lower() == ".zarr":
+        from devharness_core.provenance import hash_artifact
+
+        from .expression_io import open_expression
+
+        if hash_artifact(path, max_entries=100_000)["sha256"] != spec.expression_sha256:
+            raise ValueError("Evidence input hash mismatch")
+        with open_expression(path, layer=spec.layer) as source:
+            yield ZarrGeneBlocks(source)
+        if hash_artifact(path, max_entries=100_000)["sha256"] != spec.expression_sha256:
+            raise ValueError("Evidence input changed during trajectory execution")
+    elif path.suffix.lower() == ".h5ad":
+        with bound_query_file(
+            path, spec.expression_sha256, path.lstat().st_size
+        ) as stream:
+            with h5py.File(stream, "r") as handle:
+                yield H5adGeneBlocks(handle, layer=spec.layer)
+    else:
+        raise ValueError("trajectory_requires_bounded_normalized_h5ad_or_zarr")
+
+
 def fit_donor_trajectory(
     expression_path: Path,
     coordinates_path: Path,
@@ -653,24 +680,12 @@ def fit_donor_trajectory(
     inferential = _execution_scope(spec, verify_inference)
     if evidence is not None:
         _check_trajectory_evidence(spec, evidence, inferential)
-    if expression_path.suffix.lower() != ".h5ad":
-        raise ValueError("trajectory_requires_bounded_normalized_h5ad")
     cells_by_id = _read_coordinates(coordinates_path, spec)
-    with (
-        bound_query_file(
-            expression_path, spec.expression_sha256, _MAX_EXPRESSION_BYTES
-        ) as stream,
-        h5py.File(stream, "r") as handle,
-    ):
-        store = H5adGeneBlocks(
-            handle,
-            layer=spec.layer,
-            max_cells=_MAX_CELLS,
-            max_genes=_MAX_GENES,
-        )
-        if evidence is not None and canonical_sha256(
-            store.gene_names
-        ) != evidence.feature_axis_sha256:
+    with _gene_store(expression_path, spec) as store:
+        if (
+            evidence is not None
+            and canonical_sha256(store.gene_names) != evidence.feature_axis_sha256
+        ):
             raise ValueError("trajectory_feature_axis_changed")
         if set(store.sample_names) != set(cells_by_id):
             raise ValueError("trajectory_coordinate_ids_must_match_expression")

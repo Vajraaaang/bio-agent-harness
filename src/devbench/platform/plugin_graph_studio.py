@@ -17,7 +17,14 @@ _ID = re.compile(r"[0-9a-f]{32}")
 _SHA = re.compile(r"[0-9a-f]{64}")
 _ERROR_CODE = re.compile(r"[A-Za-z0-9_.:-]{1,128}")
 _OPERATIONS = tuple(
-    sorted({"motor_program_comparison", "shared_motor_umap", *LOCAL_OPERATIONS})
+    sorted(
+        {
+            "motor_program_comparison",
+            "shared_motor_umap",
+            "registered_exploratory",
+            *LOCAL_OPERATIONS,
+        }
+    )
 )
 _PLAN_LIMIT = 20
 _RESULT_LIMIT = 64 * 1024
@@ -28,7 +35,11 @@ def _supports(plan: dict[str, Any]) -> bool:
         plan.get("format") == "devbench.plugin-plan/1"
         and plan.get("data_classification") == "private"
         and plan.get("operation") in _OPERATIONS
-        and type(plan.get("graph_runtime")) is dict
+        and (
+            type(plan.get("graph_runtime")) is dict
+            or plan["operation"] == "registered_exploratory"
+            and type(plan.get("registered_method")) is dict
+        )
     )
 
 
@@ -63,6 +74,11 @@ def _check_scope(workspace: Path, plan: dict[str, Any]) -> None:
 def _require_ready(workspace: Path, plan: dict[str, Any]) -> None:
     from .plugin_graph import registered_plugin_runtime, require_plugin_dependencies
 
+    if plan["operation"] == "registered_exploratory":
+        from .plugin_registered_method import _bound_plan
+
+        _bound_plan(workspace, plan, readonly=True, offline_studio=True)
+        return
     if registered_plugin_runtime(plan) != plan["graph_runtime"]:
         raise OperationBlocked("plugin_graph_runtime_changed")
     require_plugin_dependencies(workspace, plan)
@@ -76,13 +92,21 @@ def _verified_result(workspace, plan, run):
     from .plugin_graph import verify_registered_plugin_result
     from .plugin_jobs import canonical
 
-    receipt = verify_registered_plugin_result(
-        workspace,
-        run["run_id"],
-        plan,
-        json.loads(run["receipt_json"]),
-    )
+    receipt = json.loads(run["receipt_json"])
+    if plan["operation"] == "registered_exploratory":
+        from .plugin_registered_method import verify_registered_method_result
+
+        graph = verify_registered_method_result(
+            workspace, run["run_id"], plan, receipt, offline_studio=True
+        )
+        receipt = {**receipt, "graph_execution": graph}
+    else:
+        receipt = verify_registered_plugin_result(
+            workspace, run["run_id"], plan, receipt
+        )
     result = {"graph_execution": receipt["graph_execution"]}
+    if plan["operation"] == "registered_exploratory":
+        result["output_ports"] = sorted(receipt["registered_method_outputs"])
     for key in ("metrics", "summary_tables", "limitations"):
         if key in receipt:
             result[key] = receipt[key]
@@ -161,13 +185,30 @@ def studio_view(app, session_id: str) -> dict[str, Any] | None:
     if app.offline_only is not True:
         return None
     views = []
+    authoring = []
     with studio_job_readback(app.workspace) as db:
         if db is None:
             return None
+        current = db.execute(
+            "SELECT * FROM plugin_plans WHERE session_id=? "
+            "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        if current is not None:
+            latest = JobStore._plan(current)
+            if latest.get("data_classification") == "private" and latest.get(
+                "profiles"
+            ):
+                _check_scope(app.workspace, latest)
+                authoring = [
+                    {"name": Path(p["source"]).name, "sha256": p["sha256"]}
+                    for p in latest["profiles"]
+                ]
         plans = db.execute(
             "SELECT * FROM plugin_plans WHERE session_id=? "
             "AND json_extract(plan_json, '$.data_classification')='private' "
-            "AND json_type(plan_json, '$.graph_runtime')='object' "
+            "AND (json_type(plan_json, '$.graph_runtime')='object' OR "
+            "json_type(plan_json, '$.registered_method')='object') "
             "AND json_extract(plan_json, '$.operation') "
             "IN (SELECT value FROM json_each(?)) "
             "ORDER BY created_at DESC, rowid DESC LIMIT ?",
@@ -183,6 +224,8 @@ def studio_view(app, session_id: str) -> dict[str, Any] | None:
                 (session_id, row["plan_id"]),
             ).fetchone()
             views.append(_plan_view(app, plan, row["plan_sha256"], run))
+    if authoring:
+        return {"plans": views, "authoring_inputs": authoring}
     return {"plans": views} if views else None
 
 

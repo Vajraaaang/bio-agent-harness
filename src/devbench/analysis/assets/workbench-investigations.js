@@ -1033,6 +1033,19 @@
       const localWorkflow = root.WorkbenchStudio?.privateWorkflow?.(host, displayedView, {
         readOnly: readOnly && !allowOfflineApproval,
         launch: plan => launchPrivatePlan(plan, displayedView),
+        review: plan => request(endpoint() + '/tier2-review', {
+          plan_id: plan.plan_id, plan_sha256: plan.plan_sha256,
+        }),
+        preview: (plan, port) => request(endpoint() + '/tier2-output', {
+          plan_id: plan.plan_id, plan_sha256: plan.plan_sha256, port,
+        }),
+        freeze: async body => {
+          if ((readOnly && !allowOfflineApproval) || submitting || displayedView !== view)
+            throw new Error('Refresh the private session before freezing a script.');
+          const expected = session, currentScope = scope;
+          await request(endpoint() + '/tier2-freeze', body);
+          if (session === expected && scope === currentScope) await load();
+        },
       });
       if (localWorkflow) {
         liveStatus = make('p', '', 'message');

@@ -11,6 +11,7 @@ import json
 import os
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from devbench.core.population_contract import (
@@ -18,8 +19,6 @@ from devbench.core.population_contract import (
     content_sha256,
     validate_population_spec,
 )
-from devbench.core.population_data import _source, _validate_sparse_storage
-from devbench.core.population_statistics import _statistics
 from devharness_core.provenance import hash_artifact
 
 _MAX_COUNT = 2**53 - 1
@@ -62,6 +61,76 @@ def bounded_result(value, maximum=None):
         if total > maximum:
             raise ValueError("Population result exceeds its byte bound")
     return value
+
+
+@contextmanager
+def _source(path, specification):
+    supplied = Path(path)
+    if supplied.suffix.lower() == ".zarr":
+        from devbench.core.expression_io import open_expression
+        from devharness_core.provenance import hash_artifact
+
+        if not supplied.is_absolute() or supplied.resolve(strict=True) != supplied:
+            raise ValueError(
+                "Population Zarr input requires a canonical local directory"
+            )
+        limits = specification["limits"]
+
+        def verify():
+            artifact = hash_artifact(supplied, max_bytes=limits["max_file_bytes"])
+            if artifact["sha256"] != specification["source_sha256"]:
+                raise ValueError("Population Zarr source digest changed")
+
+        verify()
+        with open_expression(supplied, layer=specification["counts_layer"]) as source:
+            cells, features = source.shape
+            if cells > limits["max_cells"] or features > limits["max_features"]:
+                raise ValueError(
+                    "Selected matrix exceeds the population procedure bounds"
+                )
+            yield source
+        verify()
+        return
+    with _population_h5(supplied, specification) as source:
+        yield source
+
+
+@contextmanager
+def _population_h5(path, specification):
+    import hashlib
+
+    import h5py
+
+    from devbench.core.hdf5_custody import validate_hdf5_tree
+    from devbench.core.population_data import _node, _open_selected, bound_query_file
+
+    if (
+        path.suffix.lower() != ".h5ad"
+        or not path.is_absolute()
+        or path.resolve() != path
+    ):
+        raise ValueError(
+            "Supplied population input requires a canonical absolute H5AD path"
+        )
+    expected = specification["source_sha256"]
+    try:
+        with bound_query_file(
+            path, expected, specification["limits"]["max_file_bytes"]
+        ) as stream:
+            with h5py.File(stream, "r") as handle:
+                layer = _node(_node(handle, "layers"), specification["counts_layer"])
+                for node in (_node(handle, "obs"), _node(handle, "var"), layer):
+                    validate_hdf5_tree(node)
+                yield _open_selected(handle, specification)
+            stream.seek(0)
+            if hashlib.file_digest(stream, "sha256").hexdigest() != expected:
+                raise ValueError("source_sha256 changed during population analysis")
+    except ValueError as error:
+        if str(error) == "Evidence input hash mismatch":
+            raise ValueError(
+                "source_sha256 does not match the supplied immutable input"
+            ) from error
+        raise
 
 
 def _audit(source, specification):
@@ -323,7 +392,10 @@ def _raw_count_blocks(source, limits):
     import numpy as np
     from scipy import sparse
 
-    _validate_sparse_storage(source, limits["block_bytes"])
+    try:
+        source.validate_sparse_storage(limits["block_bytes"])
+    except ValueError as error:
+        raise ValueError(f"Sparse count storage is invalid: {error}") from error
     offset = 0
     for block in source.iter_rows(
         block_rows=limits["block_rows"], max_bytes=limits["block_bytes"]
@@ -626,6 +698,8 @@ def _retain_population_contrast(
         "missing_hypothesis_policy": "internal_p_one_public_p_q_null",
     }
     started = time.monotonic()
+    from devbench.core.population_statistics import _statistics
+
     rows = _statistics(
         source,
         specification,

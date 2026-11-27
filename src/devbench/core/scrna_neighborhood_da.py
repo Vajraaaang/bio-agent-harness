@@ -23,8 +23,8 @@ from rna_kernels.normalization import (
 
 from ._hashing import canonical_sha256
 from ._rna_solver_inputs import (
-    MAX_INPUT_BYTES,
-    MAX_MATRIX_ENTRIES,
+    DENSE_WORK_BYTES,
+    DENSE_WORK_ENTRIES,
     ConditionContrast,
     adjust_probabilities,
     donor_design,
@@ -144,9 +144,9 @@ def _graph(
         raise ValueError("k_requires_at_least_k_plus_one_cells")
     n_centers = math.ceil(spec.prop * n_cells)
     # cKDTree returns both float distances and integer cell indexes.
-    if n_centers * (spec.k + 1) * 16 > MAX_INPUT_BYTES:
+    if n_centers * (spec.k + 1) * 16 > DENSE_WORK_BYTES:
         raise ValueError("neighborhood_graph_over_budget")
-    if n_centers * n_donors > MAX_MATRIX_ENTRIES:
+    if n_centers * n_donors > DENSE_WORK_ENTRIES:
         raise ValueError("neighborhood_by_donor_counts_over_budget")
 
     rng = np.random.default_rng(spec.seed)
@@ -504,7 +504,7 @@ def fit_neighborhood_da(
     metadata = metadata.loc[list(ids)]
     donors, matrix, diagnostics = donor_design(metadata, spec.contrast)
     # DenseDesign caches every cross-product for each donor.
-    if len(donors) * matrix.shape[1] ** 2 > MAX_MATRIX_ENTRIES:
+    if len(donors) * matrix.shape[1] ** 2 > DENSE_WORK_ENTRIES:
         raise ValueError("neighborhood_donor_design_cross_products_over_budget")
     design = pd.DataFrame(
         matrix, index=pd.Index(donors), columns=diagnostics["model_terms"]

@@ -55,7 +55,7 @@ class PartitionVault:
             pass
         return identity
 
-    def put_file(self, source):
+    def put_file(self, source, *, expected_sha256=None):
         """Copy and bind a stable, singly linked staged file under the byte bound."""
         source = _path(source)
         root = source.parent.stat()
@@ -91,6 +91,9 @@ class PartitionVault:
                 ):
                     raise ValueError("Partition staging source changed during copy")
             identity = digest.hexdigest()
+            if expected_sha256 is not None and identity != expected_sha256:
+                raise ValueError("Partition staging differs from the frozen digest")
+
             self._publish(pending, identity)
         with self.open(identity):
             pass

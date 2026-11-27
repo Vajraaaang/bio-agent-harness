@@ -1,0 +1,730 @@
+{
+  "format": "devharness.exploratory-r-packages/1",
+  "platform": "linux/arm64",
+  "r_arch": "aarch64",
+  "base_image_config": "sha256:f48dd0d073e1de9d569c3e13cb4d6e5c42858e7abb7302105f7703b020c1b42d",
+  "r_version": "4.6.1",
+  "bioc_version": "3.23.1",
+  "required_packages": {
+    "SingleCellExperiment": "1.34.0",
+    "Seurat": "6.0.0",
+    "edgeR": "4.10.7",
+    "limma": "3.68.5",
+    "DESeq2": "1.52.0",
+    "scran": "1.40.0",
+    "scuttle": "1.22.0",
+    "miloR": "2.8.1",
+    "satuRn": "1.20.0",
+    "stageR": "1.34.0",
+    "variancePartition": "1.42.0",
+    "dreamlet": "1.10.0",
+    "ggplot2": "4.0.4",
+    "arrow": "26.0.1.1",
+    "zellkonverter": "1.22.0"
+  },
+  "system_packages": [],
+  "r_packages": [
+    {
+      "package": "GO.db",
+      "version": "3.23.1",
+      "file": "r/GO.db_3.23.1.tar.gz",
+      "url": "https://bioconductor.org/packages/3.23/data/annotation/src/contrib/GO.db_3.23.1.tar.gz",
+      "sha256": "1f015449fd1f7cc0f9bd54b78ec73b197bf9905a79f8514fbe2fee288715da2b",
+      "size_bytes": 24217612,
+      "distribution": "source"
+    },
+    {
+      "package": "graph",
+      "version": "1.90.0",
+      "file": "r/graph_1.90.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/graph_1.90.0.tar.gz",
+      "sha256": "e41b6c3c11e962d712a502dfa97310ad00719d9bdbfdeceacf3a976ada1ff908",
+      "size_bytes": 2212598,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "GSEABase",
+      "version": "1.74.0",
+      "file": "r/GSEABase_1.74.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/GSEABase_1.74.0.tar.gz",
+      "sha256": "c25b7ccfdcea087728f50ccf371042ab3469b0949056839e8ee7e0fd44a7e07c",
+      "size_bytes": 1050440,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "Rgraphviz",
+      "version": "2.56.0",
+      "file": "r/Rgraphviz_2.56.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/Rgraphviz_2.56.0.tar.gz",
+      "sha256": "8fccf0c7650cc62a4f460bc2eacfbb116ef6568ff010929cb47f659447956047",
+      "size_bytes": 1782982,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "KEGGgraph",
+      "version": "1.72.0",
+      "file": "r/KEGGgraph_1.72.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/KEGGgraph_1.72.0.tar.gz",
+      "sha256": "5d016dc27c6e7cafc19871b44666fe662d20f7604fbda667ed5744a6e62eda28",
+      "size_bytes": 1704075,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "SPIA",
+      "version": "2.64.0",
+      "file": "r/SPIA_2.64.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/SPIA_2.64.0.tar.gz",
+      "sha256": "a5e8866a1f6162f71293e0a1bf3dcd6a0a62f45ff6fd9ef023116de6b96a0075",
+      "size_bytes": 2657696,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "graphite",
+      "version": "1.58.0",
+      "file": "r/graphite_1.58.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/graphite_1.58.0.tar.gz",
+      "sha256": "26a3567289dda756b78e9626dbfb74358b22d9c0c89283cbef113b7e8408b025",
+      "size_bytes": 935959,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "org.Hs.eg.db",
+      "version": "3.23.1",
+      "file": "r/org.Hs.eg.db_3.23.1.tar.gz",
+      "url": "https://bioconductor.org/packages/3.23/data/annotation/src/contrib/org.Hs.eg.db_3.23.1.tar.gz",
+      "sha256": "470620665cf49d0319422731164f377e3e74253989f1d33a8a1d100cc3d49cfe",
+      "size_bytes": 103790170,
+      "distribution": "source"
+    },
+    {
+      "package": "pathview",
+      "version": "1.52.0",
+      "file": "r/pathview_1.52.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/pathview_1.52.0.tar.gz",
+      "sha256": "d97e9da0841d0005090a60758be35846737cc0d2cef03a64561f4692adfdf7e3",
+      "size_bytes": 3011325,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "SparseM",
+      "version": "1.84-2",
+      "file": "r/SparseM_1.84-2.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/SparseM_1.84-2.tar.gz",
+      "sha256": "dfd48aab5b883b07cd2a6a2465211a2463daa3bab647e6d89eb3081b64656335",
+      "size_bytes": 889495,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "safe",
+      "version": "3.52.1",
+      "file": "r/safe_3.52.1.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/safe_3.52.1.tar.gz",
+      "sha256": "bcae678c35687ccdbd20b70ca9103da208bbc9c6980ba82e305ae669adaa742d",
+      "size_bytes": 922549,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "EnrichmentBrowser",
+      "version": "2.42.0",
+      "file": "r/EnrichmentBrowser_2.42.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/EnrichmentBrowser_2.42.0.tar.gz",
+      "sha256": "0b2ec2cb8a9b531daaeea514dcdc43c1d3e5e9e5970b025d5a4163821e736626",
+      "size_bytes": 1595755,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "FNN",
+      "version": "1.1.4.1",
+      "file": "r/FNN_1.1.4.1.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/FNN_1.1.4.1.tar.gz",
+      "sha256": "83171b7c5a8572799fab9132c59ace2b2e51212b6237ab35a20bc49294f34596",
+      "size_bytes": 128658,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "RANN",
+      "version": "2.6.3",
+      "file": "r/RANN_2.6.3.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/RANN_2.6.3.tar.gz",
+      "sha256": "6d3a7301fb0b78c7f66560cb721e170ced65e43534fec14b9ccaa10d3edd89f5",
+      "size_bytes": 45214,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "RSpectra",
+      "version": "0.16-2",
+      "file": "r/RSpectra_0.16-2.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/RSpectra_0.16-2.tar.gz",
+      "sha256": "72ee47b8aa2d299601fd0c7c225b20163d9c1e56757eaf0ee90a36476420549b",
+      "size_bytes": 500223,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "RcppAnnoy",
+      "version": "0.0.23",
+      "file": "r/RcppAnnoy_0.0.23.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/RcppAnnoy_0.0.23.tar.gz",
+      "sha256": "45e94a7b8568149ef19d80efa05aa072fcff2e6259212fff1b402ad703fd718a",
+      "size_bytes": 302494,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "RcppGSL",
+      "version": "0.3.14",
+      "file": "r/RcppGSL_0.3.14.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/RcppGSL_0.3.14.tar.gz",
+      "sha256": "30951a400f3d6bfb60bc4a3c68ce0d21f1b224d9336e208bd431a5187cdfa2ee",
+      "size_bytes": 393587,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "RcppHNSW",
+      "version": "0.7.0",
+      "file": "r/RcppHNSW_0.7.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/RcppHNSW_0.7.0.tar.gz",
+      "sha256": "b1cbc6614e673d627ac2ab40745f2e06c8f21cc640948ef6fdbc409b1fb8d91b",
+      "size_bytes": 234692,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "RcppParallel",
+      "version": "6.2.1",
+      "file": "r/RcppParallel_6.2.1.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/RcppParallel_6.2.1.tar.gz",
+      "sha256": "1eb0d977737fe48b0388ee30e12bc652a5d605d3ac24106c6c1e894082eea467",
+      "size_bytes": 2939530,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "RcppProgress",
+      "version": "0.4.2",
+      "file": "r/RcppProgress_0.4.2.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/RcppProgress_0.4.2.tar.gz",
+      "sha256": "bf8a58c1adc8ceea11b0b7a534d0f06240207918f74a16ff0c098a31a0278689",
+      "size_bytes": 23546,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "RcppTOML",
+      "version": "0.2.3",
+      "file": "r/RcppTOML_0.2.3.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/RcppTOML_0.2.3.tar.gz",
+      "sha256": "5f0b16ac2bcbbded4831548ad5b95d5bccebb4c4624ed464bf99fafe1eeb43ca",
+      "size_bytes": 246849,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "RcppThread",
+      "version": "2.4.0",
+      "file": "r/RcppThread_2.4.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/RcppThread_2.4.0.tar.gz",
+      "sha256": "fd6e449f58a1d0e5f02973276f13cad8986013033fc528648f9e0b54592689b6",
+      "size_bytes": 347031,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "zigg",
+      "version": "0.0.2",
+      "file": "r/zigg_0.0.2.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/zigg_0.0.2.tar.gz",
+      "sha256": "888f15be3eef766fe08b3d22fb2dd7679c85cf3d8048d1f064d558f01e587325",
+      "size_bytes": 31797,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "Rfast",
+      "version": "2.1.5.2",
+      "file": "r/Rfast_2.1.5.2.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/Rfast_2.1.5.2.tar.gz",
+      "sha256": "a0cf0f1537c2e03c93db879ee237a6bb9e0df1e76b7da5b3e40433f720b97b80",
+      "size_bytes": 2818442,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "Rtsne",
+      "version": "0.17",
+      "file": "r/Rtsne_0.17.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/Rtsne_0.17.tar.gz",
+      "sha256": "f2d9eaac704570a93411d9054c0e8fbb45bde10bb67a9a50055f98056ab85d92",
+      "size_bytes": 115675,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "globals",
+      "version": "0.20.0",
+      "file": "r/globals_0.20.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/globals_0.20.0.tar.gz",
+      "sha256": "3e57d8462dd26e17f08b08e4641fbe4497d900e7a921487e390db19494058a97",
+      "size_bytes": 177487,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "listenv",
+      "version": "1.1.0",
+      "file": "r/listenv_1.1.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/listenv_1.1.0.tar.gz",
+      "sha256": "5e17895e6a5a2f759576eb6b0fe16aaf57315d369587a3bb3868b69bbae4aa57",
+      "size_bytes": 138001,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "future",
+      "version": "1.82.0",
+      "file": "r/future_1.82.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/future_1.82.0.tar.gz",
+      "sha256": "738ac5b19481c3a000bd6567601b1b53f0046d3d0dba77fb62bdd632a48ccb98",
+      "size_bytes": 1052635,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "future.apply",
+      "version": "1.21.0",
+      "file": "r/future.apply_1.21.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/future.apply_1.21.0.tar.gz",
+      "sha256": "0e3b3b0a26f87548ec5e21e1a7041c5ed0039407499b768b5cd4022903aa3f5c",
+      "size_bytes": 203772,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "progressr",
+      "version": "1.1.0",
+      "file": "r/progressr_1.1.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/progressr_1.1.0.tar.gz",
+      "sha256": "c76e05d1ed3ed36b19f682216ab4eb63d641298a6e0ddcacbac9b9ffe4576aed",
+      "size_bytes": 586506,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "sp",
+      "version": "2.2-4",
+      "file": "r/sp_2.2-4.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/sp_2.2-4.tar.gz",
+      "sha256": "8b6f780ed185fe88fb995bb9aea232e6e65031c3f39757c6af94a91f24896711",
+      "size_bytes": 5315299,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "dotCall64",
+      "version": "1.2",
+      "file": "r/dotCall64_1.2.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/dotCall64_1.2.tar.gz",
+      "sha256": "d74001bb2edc3531c6096d85fa81e5f242bdda9ee727d904f10c402c63fdef1c",
+      "size_bytes": 32989,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "spam",
+      "version": "2.11-4",
+      "file": "r/spam_2.11-4.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/spam_2.11-4.tar.gz",
+      "sha256": "67df72fd9f73c0222fc0eefd5359879a32543f2614468df1d555fe31a1be2c8f",
+      "size_bytes": 4159987,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "SeuratObject",
+      "version": "5.4.0",
+      "file": "r/SeuratObject_5.4.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/SeuratObject_5.4.0.tar.gz",
+      "sha256": "d22b285b0bef64417018c518f9265d4b539447080a0de5fc9341e614039e25bb",
+      "size_bytes": 2102579,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "fastDummies",
+      "version": "1.7.6",
+      "file": "r/fastDummies_1.7.6.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/fastDummies_1.7.6.tar.gz",
+      "sha256": "8a85ecd27c9155b16f59afe0e94fcc10885e5679d4bc7bdc6b3d5cf0d165874a",
+      "size_bytes": 45022,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "ggrepel",
+      "version": "0.9.8",
+      "file": "r/ggrepel_0.9.8.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/ggrepel_0.9.8.tar.gz",
+      "sha256": "e5b9ca151181e61b30b712b94baecf8aff35d35830d11df7b48a2831e519ff94",
+      "size_bytes": 364007,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "ggridges",
+      "version": "0.5.7",
+      "file": "r/ggridges_0.5.7.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/ggridges_0.5.7.tar.gz",
+      "sha256": "45b710a83f49f2f19af4a56e48f235c3a6253fe1c7afa4a8851d8e18631ae38a",
+      "size_bytes": 2280869,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "ica",
+      "version": "1.0-3",
+      "file": "r/ica_1.0-3.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/ica_1.0-3.tar.gz",
+      "sha256": "7584855d3f1c65fd92d5a523b5153a70e1cac43d465f1776fea0cb00b66b0554",
+      "size_bytes": 87189,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "patchwork",
+      "version": "1.3.2",
+      "file": "r/patchwork_1.3.2.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/patchwork_1.3.2.tar.gz",
+      "sha256": "befd955796c97835f9b20243642e647851681a12e88b1cdb72ddc5de7ec28120",
+      "size_bytes": 3350325,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "pbapply",
+      "version": "1.7-5",
+      "file": "r/pbapply_1.7-5.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/pbapply_1.7-5.tar.gz",
+      "sha256": "09dc498ea4a4ae37a7d0acca88b17cb20c27586a63434f50f31bcb84b65ff51c",
+      "size_bytes": 102246,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "pls",
+      "version": "2.9-0",
+      "file": "r/pls_2.9-0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/pls_2.9-0.tar.gz",
+      "sha256": "e0828bd04a22b4be58fdea3bcee86a2515e91f4574ed89e93518995a27de19df",
+      "size_bytes": 1195626,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "scattermore",
+      "version": "1.2",
+      "file": "r/scattermore_1.2.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/scattermore_1.2.tar.gz",
+      "sha256": "4736c86be0f577127b7790fde5c121eb83774dac5b442d33864054d4225c7fba",
+      "size_bytes": 341725,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "gridExtra",
+      "version": "2.3.1",
+      "file": "r/gridExtra_2.3.1.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/gridExtra_2.3.1.tar.gz",
+      "sha256": "7f8e4934749aa906353f9d31b97be599e0384985e5f3cbc70e7b83fa83d4e9a1",
+      "size_bytes": 527571,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "sctransform",
+      "version": "0.4.3",
+      "file": "r/sctransform_0.4.3.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/sctransform_0.4.3.tar.gz",
+      "sha256": "10c2699fffeecde2ece67cd63ae38c9dce3defcac74f74c41db1cdab80c484c3",
+      "size_bytes": 562594,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "uwot",
+      "version": "0.2.5",
+      "file": "r/uwot_0.2.5.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/uwot_0.2.5.tar.gz",
+      "sha256": "f99af8bbca7e53b26f98aae81565027be04fddaa675771ef3c0b4d4431b9b072",
+      "size_bytes": 999083,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "Seurat",
+      "version": "6.0.0",
+      "file": "r/Seurat_6.0.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/Seurat_6.0.0.tar.gz",
+      "sha256": "a11896349d93e4860d15c0fd4cc3178541ebac2308d97980a6cc2adcc4a36b73",
+      "size_bytes": 3477546,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "assertthat",
+      "version": "0.2.1",
+      "file": "r/assertthat_0.2.1.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/assertthat_0.2.1.tar.gz",
+      "sha256": "05062ca9f1daf3c4edc3d891bde43f081f34d7b77b8e4aa1ca4d70183aaa442f",
+      "size_bytes": 56955,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "arrow",
+      "version": "26.0.1.1",
+      "file": "r/arrow_26.0.1.1.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/arrow_26.0.1.1.tar.gz",
+      "sha256": "1effab4a7ae8188aa2c0de1d2d07a88795a2035d66310245dc4c176cfa159924",
+      "size_bytes": 22345670,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "babelgene",
+      "version": "22.9",
+      "file": "r/babelgene_22.9.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/babelgene_22.9.tar.gz",
+      "sha256": "58ac17891cd15887a4e707cb171fd93bddb6f14691b66220c857936a945b970e",
+      "size_bytes": 3654066,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "here",
+      "version": "1.0.2",
+      "file": "r/here_1.0.2.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/here_1.0.2.tar.gz",
+      "sha256": "b5a12cb9d1926e8820c68bc4b6f9c6049443530975eb8b672e7d7d62ef68eb4a",
+      "size_bytes": 57419,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "reticulate",
+      "version": "1.47.0",
+      "file": "r/reticulate_1.47.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/reticulate_1.47.0.tar.gz",
+      "sha256": "3d05a750ac4fbd6b73430cc82bcc019c276dec173251e34f9d1ed1421161f7e5",
+      "size_bytes": 1982070,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "basilisk",
+      "version": "1.24.0",
+      "file": "r/basilisk_1.24.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/basilisk_1.24.0.tar.gz",
+      "sha256": "ef86b188182950ce737de85883cbd223680cd5b972529b057bd6d14268040819",
+      "size_bytes": 335414,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "beeswarm",
+      "version": "0.4.0",
+      "file": "r/beeswarm_0.4.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/beeswarm_0.4.0.tar.gz",
+      "sha256": "d6e41772c96d6c746bfee1da33645cae97a3105e3965ad6d8fb0e88bbf652494",
+      "size_bytes": 80691,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "vipor",
+      "version": "0.4.7",
+      "file": "r/vipor_0.4.7.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/vipor_0.4.7.tar.gz",
+      "sha256": "89d63b43f94ea5ce41d8d8474d32b3dcd51f02b2ccd294f81f0d454a0a2eb64c",
+      "size_bytes": 4585436,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "ggbeeswarm",
+      "version": "0.7.3",
+      "file": "r/ggbeeswarm_0.7.3.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/ggbeeswarm_0.7.3.tar.gz",
+      "sha256": "f26a0183326b5c11083bf38c152be9d8ed5feb40b7e9eb1188c0ec5add402567",
+      "size_bytes": 1767535,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "rmeta",
+      "version": "3.0",
+      "file": "r/rmeta_3.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/rmeta_3.0.tar.gz",
+      "sha256": "2d4e168f8bd6cb9af581a27ac05a88691f17dccd86f91156eb9ac9f69f872633",
+      "size_bytes": 113136,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "softImpute",
+      "version": "1.4-3",
+      "file": "r/softImpute_1.4-3.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/softImpute_1.4-3.tar.gz",
+      "sha256": "3e8545575e979928958183576bd330b34e3cf4b39754c93aff59ce03ea0b7897",
+      "size_bytes": 561430,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "mashr",
+      "version": "0.2.79",
+      "file": "r/mashr_0.2.79.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/mashr_0.2.79.tar.gz",
+      "sha256": "0683eea050b2afab9702890f61c58a75b07efb8139f806fee36dc1be59d21d2c",
+      "size_bytes": 659005,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "mathjaxr",
+      "version": "2.0-0",
+      "file": "r/mathjaxr_2.0-0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/mathjaxr_2.0-0.tar.gz",
+      "sha256": "8a749988b9c3bac39aa32406bfd99186a592cf2766b9beb488ec7de119737ad1",
+      "size_bytes": 2975524,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "metadat",
+      "version": "1.6-0",
+      "file": "r/metadat_1.6-0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/metadat_1.6-0.tar.gz",
+      "sha256": "1366650c3c26091afd824994fef970752e6a5b3cd914dd66705971e78b93fc71",
+      "size_bytes": 1092707,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "metafor",
+      "version": "5.2-1",
+      "file": "r/metafor_5.2-1.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/metafor_5.2-1.tar.gz",
+      "sha256": "1a9fa14caef94d365fcb31c3f99cdfe1cdc965c5faca031921e753247470bf25",
+      "size_bytes": 5518383,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "msigdbr",
+      "version": "26.1.1",
+      "file": "r/msigdbr_26.1.1.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/msigdbr_26.1.1.tar.gz",
+      "sha256": "f50c6b44c9b99f37ff8e2c68c181a6b7735ff721bf5d44b2f10bc86970d55d8d",
+      "size_bytes": 34493,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "zenith",
+      "version": "1.14.0",
+      "file": "r/zenith_1.14.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/zenith_1.14.0.tar.gz",
+      "sha256": "62c7f223f69bee26f6fea791239bdfe12b30260c8e79c49ba0ee2441476ab730",
+      "size_bytes": 750417,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "dreamlet",
+      "version": "1.10.0",
+      "file": "r/dreamlet_1.10.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/dreamlet_1.10.0.tar.gz",
+      "sha256": "52a87b25a3d1173dabc1c489134d37824ee13fa3dfa8675f7e881602180c00ad",
+      "size_bytes": 5101370,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "marquee",
+      "version": "1.3.0",
+      "file": "r/marquee_1.3.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/marquee_1.3.0.tar.gz",
+      "sha256": "d4c54f47163cb04c6be474958b2561faaf770f380bf9c7d513a2981a9a1d67ee",
+      "size_bytes": 2578438,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "polyclip",
+      "version": "1.10-7",
+      "file": "r/polyclip_1.10-7.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/polyclip_1.10-7.tar.gz",
+      "sha256": "7f1a4754180927d618528a1cb7f696a6a62034f57028e39128c0ff992c084291",
+      "size_bytes": 122456,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "tweenr",
+      "version": "2.0.3",
+      "file": "r/tweenr_2.0.3.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/tweenr_2.0.3.tar.gz",
+      "sha256": "231309ec8367eb134b9a717c8279d9f61638affd523f67d85e16ea6fe7a83f26",
+      "size_bytes": 456474,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "ggforce",
+      "version": "0.6.0",
+      "file": "r/ggforce_0.6.0.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/ggforce_0.6.0.tar.gz",
+      "sha256": "2464320c5bff2f5916fa6e79b7b77486eeaf854696d7c554dced704a28fe72e5",
+      "size_bytes": 1923789,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "graphlayouts",
+      "version": "1.2.5",
+      "file": "r/graphlayouts_1.2.5.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/graphlayouts_1.2.5.tar.gz",
+      "sha256": "fe4d915533ae494f488f4f6809b1fe9771d09355e29a9aaea7c56c26ce85d918",
+      "size_bytes": 2512543,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "tidygraph",
+      "version": "1.3.1",
+      "file": "r/tidygraph_1.3.1.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/tidygraph_1.3.1.tar.gz",
+      "sha256": "7b5f5ce7778eb8015e0042e5e947ce95647a696c0dbd05084507b0a1fdf1c3bf",
+      "size_bytes": 567276,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "viridis",
+      "version": "0.6.5",
+      "file": "r/viridis_0.6.5.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/viridis_0.6.5.tar.gz",
+      "sha256": "9c4b0e0a51726c18a0ed06a1ae23fadc62487fff316ada36adb891ee9370324c",
+      "size_bytes": 3012986,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "ggraph",
+      "version": "2.2.2",
+      "file": "r/ggraph_2.2.2.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/ggraph_2.2.2.tar.gz",
+      "sha256": "d2813c71ecf39c18b5e209e2533815f2a7dcce950fe4ae1862790101f10cf553",
+      "size_bytes": 4818734,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "locfdr",
+      "version": "1.1-8",
+      "file": "r/locfdr_1.1-8.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/locfdr_1.1-8.tar.gz",
+      "sha256": "e07fc42d8132d35d83e9f7c5941e2a9e2ffb914a6a3a537ff48fc4ff55ee46f2",
+      "size_bytes": 307530,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "pracma",
+      "version": "2.4.6",
+      "file": "r/pracma_2.4.6.tar.gz",
+      "url": "https://p3m.dev/cran/2026-11-26/bin/linux/noble-aarch64/4.6/src/contrib/pracma_2.4.6.tar.gz",
+      "sha256": "e2f9095157573f5ab97af4027b056e2a5f97702ad8b5caebd75a8bb8e6b87f09",
+      "size_bytes": 1774089,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "miloR",
+      "version": "2.8.1",
+      "file": "r/miloR_2.8.1.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/miloR_2.8.1.tar.gz",
+      "sha256": "ea7c909d593135df1c5e8719264b322af6d1e5df310d7d78f4f663210284c0ab",
+      "size_bytes": 6966533,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "satuRn",
+      "version": "1.20.0",
+      "file": "r/satuRn_1.20.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/satuRn_1.20.0.tar.gz",
+      "sha256": "b5388792fc8813cd64cbf53c3c897fde9beb1216e5bce6a3b1a97d30eab1ea9e",
+      "size_bytes": 3824896,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "stageR",
+      "version": "1.34.0",
+      "file": "r/stageR_1.34.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/stageR_1.34.0.tar.gz",
+      "sha256": "8d96c2c2afeaacc3b3d02cb79e12791593982244fe64fe3fae79f96eb69b6491",
+      "size_bytes": 1084630,
+      "distribution": "linux_binary"
+    },
+    {
+      "package": "zellkonverter",
+      "version": "1.22.0",
+      "file": "r/zellkonverter_1.22.0.tar.gz",
+      "url": "https://p3m.dev/bioconductor/latest/bin/linux/noble-aarch64/4.6/packages/3.23/bioc/src/contrib/zellkonverter_1.22.0.tar.gz",
+      "sha256": "c4aa6a3f4af79065da82a1e4498a142fa8ef87a63171b4ada55631951af7da2a",
+      "size_bytes": 1278362,
+      "distribution": "linux_binary"
+    }
+  ]
+}

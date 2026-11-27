@@ -28,6 +28,91 @@ class Docker:
     def isolate_client(self, directory):
         directory.mkdir()
 
+    def _created(self, args):
+        def flag(name):
+            return args[args.index(name) + 1]
+
+        name = flag("--name")
+        request = flag("--label").split("=", 1)[1]
+        uid, gid = flag("--user").split(":")
+        host = {
+            "NetworkMode": flag("--network"),
+            "ReadonlyRootfs": "--read-only" in args,
+            "Privileged": "--privileged" in args,
+            "Memory": int(flag("--memory")[:-1]) * 1024**2,
+            "MemorySwap": int(flag("--memory-swap")[:-1]) * 1024**2,
+            "NanoCpus": round(float(flag("--cpus")) * 1_000_000_000),
+            "PidsLimit": int(flag("--pids-limit")),
+            "CapDrop": [flag("--cap-drop")],
+            "CapAdd": None,
+            "SecurityOpt": [flag("--security-opt")],
+            "PidMode": "",
+            "IpcMode": flag("--ipc"),
+            "LogConfig": {"Type": flag("--log-driver"), "Config": {}},
+            "Tmpfs": dict([flag("--tmpfs").split(":", 1)]),
+            "Devices": [],
+            "DeviceRequests": None,
+        }
+        if "--gpus" in args:
+            assert flag("--gpus") == "all"
+            host["DeviceRequests"] = [
+                {
+                    "Driver": "",
+                    "Count": -1,
+                    "DeviceIDs": None,
+                    "Options": {},
+                    "Capabilities": [["gpu"]],
+                }
+            ]
+        record = {
+            "Name": "/" + name,
+            "Image": IMAGE,
+            "Id": CONTAINER,
+            "Config": {
+                "Labels": {oci._LABEL: request},
+                "User": flag("--user"),
+                "Entrypoint": [flag("--entrypoint")],
+                "Cmd": args[args.index("--entrypoint") + 3 :],
+            },
+            "HostConfig": host,
+            "Mounts": [
+                {
+                    "Type": "bind",
+                    "Source": str(self.stage / source),
+                    "Destination": "/" + source,
+                    "RW": source == "outputs",
+                }
+                for source in ("inputs", "outputs")
+            ],
+            "State": {"ExitCode": 0, "Running": False},
+        }
+        binds = [
+            args[index + 1] for index, value in enumerate(args) if value == "--mount"
+        ]
+        host["Mounts"] = [
+            {
+                "Type": "bind",
+                "Source": mount["Source"],
+                "Target": mount["Destination"],
+                "BindOptions": {
+                    "NonRecursive": "bind-recursive=disabled" in flags.split(",")
+                },
+            }
+            for mount, flags in zip(record["Mounts"], binds, strict=True)
+        ]
+        if "--userns=keep-id" in args:
+            for mount, flags in zip(record["Mounts"], binds, strict=True):
+                mount["Options"] = (
+                    ["bind"] if "bind-nonrecursive" in flags.split(",") else ["rbind"]
+                )
+            host.update(
+                UsernsMode="private",
+                IDMappings={"UidMap": [f"{uid}:0:1"], "GidMap": [f"{gid}:0:1"]},
+                SecurityOpt=["no-new-privileges"],
+            )
+            record.update(EffectiveCaps=[], BoundingCaps=[])
+        return record
+
     def _call(self, args, **options):
         self.calls.append(args)
         if args[0] == "info":
@@ -43,29 +128,7 @@ class Docker:
                 },
             }
         if args[0] == "create":
-            name = args[args.index("--name") + 1]
-            request = args[args.index("--label") + 1].split("=", 1)[1]
-            self.containers[CONTAINER] = {
-                "Name": "/" + name,
-                "Image": IMAGE,
-                "Id": CONTAINER,
-                "Config": {"Labels": {oci._LABEL: request}},
-                "HostConfig": {
-                    "NetworkMode": "none",
-                    "ReadonlyRootfs": True,
-                    "Privileged": False,
-                },
-                "Mounts": [
-                    {
-                        "Type": "bind",
-                        "Source": str(self.stage / source),
-                        "Destination": "/" + source,
-                        "RW": source == "outputs",
-                    }
-                    for source in ("inputs", "outputs")
-                ],
-                "State": {"ExitCode": 0, "Running": False},
-            }
+            self.containers[CONTAINER] = self._created(args)
             if self.interrupt_after_create:
                 raise KeyboardInterrupt
             return CONTAINER

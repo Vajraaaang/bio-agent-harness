@@ -100,6 +100,84 @@ def _legacy_workbench_clients(request):
         request.getfixturevalue("authenticated_workbench_client")
 
 
+@pytest.fixture(autouse=True)
+def _legacy_exploratory_operator(request, monkeypatch):
+    """Supply the human approval in specific historical synthetic lifecycle tests."""
+    scenarios = {
+        "test_rna_v24_replay": {
+            "test_unpublished_intermediate_oci_output_has_owner_resolved_replay",
+            "test_failed_and_partial_oci_attempts_require_receipt_and_io_closure",
+            "test_unfinished_attempts_preserve_unknown_vs_never_launched",
+            "test_shared_output_bytes_preserve_each_original_attempt_use",
+            "test_original_input_alias_is_refused_before_attachment_read_or_object_decode",
+            "test_every_original_output_port_and_use_is_required",
+            "test_original_access_metadata_is_validated_before_classification_and_decoding",
+        },
+        "test_two_agent_investigation_v24": {
+            "test_completion_requires_current_reviews_and_no_pending_work",
+            "test_controller_output_delivery_preserves_authoritative_source_ancestry",
+            "test_mixed_scope_keeps_eligible_computation_and_withholds_other_output",
+            "test_productive_controller_refines_graph_sensitivity_sweep_and_independent_branch",
+            "test_requested_resolving_computation_runs_and_fresh_challenger_resolves_hold",
+        },
+        "test_investigation_metamorphic": {
+            "test_donor_correction_invalidates_actual_oci_dependents",
+            "test_claim_only_basis_hold_preserves_actual_oci_computation",
+            "test_failed_and_omitted_actual_sweep_members_do_not_improve_completeness",
+        },
+        "test_rna_diagnostic_policy_v24": {
+            "test_real_oci_action_binding_survives_reconstructed_staging_and_checks_acceptance",
+            "test_conditional_oci_diagnostic_deadline_at_real_execution_boundaries",
+        },
+    }
+    if request.node.originalname not in scenarios.get(request.node.path.stem, ()):
+        return
+
+    from devbench.engine.exploratory_oci import ExploratoryOCI
+    from devbench.engine.methods import MethodService
+    from devbench.platform.adaptive_workflow import AdaptiveWorkflow
+
+    roots = tuple(
+        request.getfixturevalue(name).resolve()
+        for name in ("tmp_path", "workspace_tmp_path")
+        if name in request.fixturenames
+    )
+    versions = set()
+    register = MethodService.register_method
+    admit = AdaptiveWorkflow._dispatch_code
+
+    def register_synthetic(service, value, *, source, environment_lock=None, actor):
+        method = register(
+            service,
+            value,
+            source=source,
+            environment_lock=environment_lock,
+            actor=actor,
+        )
+        if any(
+            service.root.is_relative_to(root)
+            and Path(source).resolve().is_relative_to(root)
+            for root in roots
+        ):
+            versions.add((service.root, method["version_id"]))
+        return method
+
+    def operator_review(flow, executor, envelope):
+        node = envelope["step"]
+        if type(executor) is ExploratoryOCI and not node["held_out"]:
+            assert (executor.methods.root, node["oci_method_version_id"]) in versions
+            executor.approve_step(
+                flow,
+                node["step_id"],
+                actor_id="synthetic-test-operator",
+                data_classification="synthetic",
+            )
+        return admit(flow, executor, envelope)
+
+    monkeypatch.setattr(MethodService, "register_method", register_synthetic)
+    monkeypatch.setattr(AdaptiveWorkflow, "_dispatch_code", operator_review)
+
+
 @pytest.fixture
 def authenticated_workbench_client(monkeypatch):
     """Supply a bearer for a test-owned listener when the caller omits one."""

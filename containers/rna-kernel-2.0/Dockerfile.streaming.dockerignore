@@ -1,0 +1,12 @@
+**
+!src/devbench/core/expression_inventory.py
+!src/devbench/core/expression_io.py
+!src/devbench/core/sparse_expression_blocks.py
+!src/devbench/core/hdf5_custody.py
+!src/devbench/core/zarr_expression_store.py
+!src/devbench/core/population_data.py
+!src/devbench/core/population_contract.py
+!src/devbench/platform/__init__.py
+!src/devbench/platform/scrna_population_analysis.py
+!src/devbench/engine/mounted_population_qc.py
+!src/rna_kernels/mounted_model.py

@@ -4,7 +4,7 @@ import csv
 import json
 import os
 import re
-import subprocess
+from uuid import uuid4
 
 import h5py
 import numpy as np
@@ -82,33 +82,24 @@ def _pseudobulk_matrix(path, counts, genes, samples):
 
 
 def _run_worker(inputs, outputs, request):
+    from devbench.core.execution_contracts import ResourceProfile
+    from devbench.engine.mounted_kernel_oci import run_mounted_container
+
     digest = hash_artifact(request)["sha256"]
-    subprocess.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--pull=never",
-            "--network=none",
-            "--read-only",
-            "--pids-limit=64",
-            "--memory=2g",
-            "--cpus=2",
-            "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            "--log-driver=none",
-            "--tmpfs=/tmp:rw,nosuid,nodev,noexec,size=64m",
-            f"--user={os.getuid()}:{os.getgid()}",
-            "--mount",
-            f"type=bind,src={inputs},dst=/inputs,readonly",
-            "--mount",
-            f"type=bind,src={outputs},dst=/outputs",
-            _IMAGE,
-            digest,
-        ],
-        check=True,
-        timeout=300,
+    profile = ResourceProfile(
+        cpus=4, memory_mb=4096, pids_limit=128, scratch_mb=256, timeout_sec=450
     )
+    proof = run_mounted_container(
+        inputs.parent,
+        image_id=_IMAGE,
+        request_sha=digest,
+        attempt_id=uuid4().hex,
+        resource_profile=profile,
+        data_classification="synthetic",
+    )
+    assert (
+        proof["cleanup_confirmed"] and proof["oci_isolated"] and not proof["error_type"]
+    ), proof
     return digest, json.loads((outputs / "summary.json").read_bytes())
 
 
@@ -123,9 +114,9 @@ def _run_worker(inputs, outputs, request):
 )
 def test_mounted_count_scale_in_pinned_container(workspace_tmp_path, kind, features):
     assert re.fullmatch(r"sha256:[a-f0-9]{64}", _IMAGE), "Use a local image content ID"
-    inputs = workspace_tmp_path / "inputs"
-    inputs.mkdir()
-    outputs = workspace_tmp_path / "outputs"
+    inputs = workspace_tmp_path / "stage" / "inputs"
+    inputs.mkdir(parents=True)
+    outputs = inputs.parent / "outputs"
     outputs.mkdir()
     counts = np.random.default_rng(913).negative_binomial(14, 0.4, (features, 256))
     counts[:40, 128:] *= 2
@@ -205,8 +196,9 @@ def test_mounted_count_and_rank_adjust_for_continuous_confounding(workspace_tmp_
     from scipy.stats import mannwhitneyu
 
     rng = np.random.default_rng(217)
-    inputs, outputs = workspace_tmp_path / "inputs", workspace_tmp_path / "outputs"
-    inputs.mkdir()
+    inputs = workspace_tmp_path / "stage" / "inputs"
+    inputs.mkdir(parents=True)
+    outputs = inputs.parent / "outputs"
     outputs.mkdir()
     samples = [f"s{i:03}" for i in range(128)]
     genes = [f"g{i:05}" for i in range(400)]
