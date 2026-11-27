@@ -123,6 +123,7 @@ PURPOSE = enum(
 HANDOFF = {"studio_url": nullable(TEXT), "launch_hint": nullable(TEXT)}
 CATEGORIES = enum(
     "scientific_refusal",
+    "missing_raw_droplet_matrix",
     "awaiting_information",
     "awaiting_review",
     "private_data_local_studio_only",
@@ -426,6 +427,7 @@ INPUTS = {
                     "source": string(2000),
                     "biological_unit": nullable(TEXT),
                     "count_provenance": nullable(TEXT),
+                    "raw_unfiltered_droplets": BOOL,
                 },
                 ("origin", "source"),
             ),
@@ -581,6 +583,11 @@ KERNEL_ITEM = obj(
         "parameter_schema": nullable(OBJECT),
     }
 )
+KERNEL_ITEM["properties"].update(
+    optional_representations=array(REPRESENTATIONS),
+    output_representations=array(REPRESENTATIONS),
+    supports_plot_sidecar=BOOL,
+)
 SUCCESS = {
     "inspect_runtime_capabilities": obj(
         {
@@ -637,6 +644,7 @@ SUCCESS = {
                         "size_bytes": integer(),
                         "axes": AXES,
                         "count_1_forensics": FORENSICS,
+                        "donor_forensics": nullable(OBJECT),
                         "data_classification": CLASSIFICATION,
                     }
                 ),

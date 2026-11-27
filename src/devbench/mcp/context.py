@@ -19,6 +19,7 @@ _SCHEMA = (
     """CREATE TABLE IF NOT EXISTS mcp_admissions (
         request_sha256 TEXT PRIMARY KEY, session_id TEXT NOT NULL)""",
     """CREATE TABLE IF NOT EXISTS mcp_private_digests (sha256 TEXT PRIMARY KEY)""",
+    """CREATE TABLE IF NOT EXISTS mcp_donor_conflicts (sha256 TEXT PRIMARY KEY)""",
     """CREATE TABLE IF NOT EXISTS mcp_noncount_roots (sha256 TEXT PRIMARY KEY)""",
     """CREATE TABLE IF NOT EXISTS mcp_artifacts (
         session_id TEXT NOT NULL, artifact_id TEXT NOT NULL, sha256 TEXT NOT NULL,
@@ -192,6 +193,13 @@ class ControlPlane:
             ).fetchone()
         ):
             record["detail"]["count_1_verified"] = False
+        if roots_query(
+            db,
+            None,
+            [record["ref"]["sha256"]],
+            "SELECT 1 FROM ancestry JOIN mcp_donor_conflicts USING(sha256) LIMIT 1",
+        ).fetchone():
+            record["detail"]["donor_conflict_halted"] = True
         return record
 
     def protected(self, sid=None, digests=(), db=None):
@@ -375,6 +383,10 @@ class ControlPlane:
                 floor,
                 roots,
             )
+            if (detail.get("donor_forensics") or {}).get("status") == "conflict_halted":
+                db.execute(
+                    "INSERT OR IGNORE INTO mcp_donor_conflicts VALUES (?)", (sha,)
+                )
             if ref["kind"] == "expression_matrix" and (
                 ref["representation_class"]
                 not in {"count_1_raw_counts", "aggregated_unit_counts"}

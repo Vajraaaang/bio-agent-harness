@@ -28,12 +28,21 @@ _PROBE_LOCK = Lock()
 def _engine_inventory(ctx):
     with _PROBE_LOCK:
         cached = getattr(ctx, "_engine_probe", None)
-        if not cached or (cached[1].done() and monotonic() - cached[0] >= 2):
-            cached = ctx._engine_probe = (monotonic(), _PROBES.submit(_probe_engines))
+        if not cached or (cached[0] is not None and monotonic() - cached[0] >= 2):
+            cached = ctx._engine_probe = (None, _PROBES.submit(_probe_engines))
     try:
-        return cached[1].result(timeout=remaining(2))
+        rows = cached[1].result(timeout=remaining(2))
+        with _PROBE_LOCK:
+            if ctx._engine_probe is cached and cached[0] is None:
+                ctx._engine_probe = (monotonic(), cached[1])
+        return rows
     except TimeoutError:
         raise OperationBlocked("runtime_prerequisite_missing") from None
+    except Exception:
+        with _PROBE_LOCK:
+            if ctx._engine_probe is cached:
+                ctx._engine_probe = None
+        raise
 
 
 def _probe_engines():
@@ -63,6 +72,7 @@ def _normalize_probe(observed):
         "cgroups_v2",
         "cgroups_v2_delegated",
         "rootless",
+        "clinical_release_allowed",
         "local_image_ids",
     }
     return [
@@ -101,14 +111,36 @@ def _docker_probe():
         }
 
 
+def _mounted_images(inventory):
+    engines = {r["name"]: r for r in inventory}
+    engine = engines.get("docker", {})
+    if not engine.get("available"):
+        engine = engines.get("podman", {})
+    found = (
+        set(engine.get("local_image_ids", ())) if engine.get("oci_isolated") else set()
+    )
+    apptainer = engines.get("apptainer", {})
+    if os.environ.get("DEVBENCH_APPTAINER_IMAGES"):
+        from devbench.engine.container_backend import configured_apptainer_ids
+
+        found.difference_update(configured_apptainer_ids())
+    if apptainer.get("oci_isolated"):
+        found.update(apptainer.get("local_image_ids", ()))
+    return found
+
+
 def available_images(ctx, *, backend=None):
     from .registry import registered_image_ids
 
     registered = registered_image_ids()
     found = set()
-    for row in _engine_inventory(ctx):
-        if row.get("available") and (backend is None or row.get("name") == backend):
-            found.update(row.get("local_image_ids", ()))
+    inventory = _engine_inventory(ctx)
+    if backend == "mounted":
+        found.update(_mounted_images(inventory))
+    else:
+        for row in inventory:
+            if row.get("available") and (backend is None or row.get("name") == backend):
+                found.update(row.get("local_image_ids", ()))
     return [registered[sha] for sha in sorted(found & registered.keys())]
 
 

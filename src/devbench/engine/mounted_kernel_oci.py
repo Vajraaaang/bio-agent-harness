@@ -14,10 +14,12 @@ from devharness_controlled.native_contracts import limma_voom_kernel_images
 from devharness_controlled.native_runtime import NativeRuntimeError
 
 from .container_backend import (
+    ApptainerBackend,
     DockerBackend,
     LocalDocker,
     PodmanBackend,
     ResourceProfile,
+    configured_apptainer_ids,
 )
 
 _LABEL = "io.devbench.mounted-request-sha256"
@@ -582,7 +584,10 @@ def _verify_launch_config(document, profile, command, engine):
         )
 
 
-def _default_backend():
+def _default_backend(image_id):
+    apptainer = ApptainerBackend.configured_for(image_id)
+    if apptainer is not None:
+        return apptainer
     docker = DockerBackend(runtime_factory=LocalDocker)
     if (
         sys.platform == "linux"
@@ -617,10 +622,16 @@ def recover_mounted_container(
             or {}
         )
         name = intent.get("isolation_backend", "docker")
+        if not intent and image_id in configured_apptainer_ids():
+            # No guest exists yet. Fence the attempt on its selected backend
+            # even if the registered SIF is now unavailable or invalid.
+            name = "apptainer"
         if name == "docker":
             backend = DockerBackend(runtime_factory=LocalDocker)
         elif name == "podman":
             backend = PodmanBackend()
+        elif name in {"apptainer", "apptainer_no_netns"}:
+            backend = ApptainerBackend(images={}, gpu_backend="cuda")
         elif name in {"bwrap", "sandbox-exec", "isolated_subprocess"}:
             from .container_backend import NonOciPublicFallbackBackend
 
@@ -677,7 +688,7 @@ def run_mounted_container(
         raise NativeRuntimeError(
             "Mounted OCI worker has already launched or was disarmed"
         )
-    selected = backend or _default_backend()
+    selected = backend or _default_backend(image_id)
     resource_profile = _resources(
         selected, worker_module, resource_profile, timeout, memory_mb
     )

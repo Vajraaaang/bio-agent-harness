@@ -141,6 +141,51 @@ def _probability_bounds(files):
     return "verified" if observed else "not_evaluated"
 
 
+def _publish_forensic_holds(db, plan, files):
+    # Bind forensic holds to the verified input digest in the frozen unit.
+    # Arbitrary Tier 2 output declarations never grant forensic authority.
+    from .execution import _units
+
+    units = list(_units(plan))
+    for key, unit in units:
+        if (
+            unit["plan_kind"] == "tier1_kernel"
+            and unit["kernel"]["kernel_id"] == "donor_forensics"
+        ):
+            port = "result" if len(units) == 1 else key + ".result"
+            observed = files[port][2].get("forensic_conflict_sha256")
+            if observed is not None:
+                if observed != unit["input_bindings"]["expression"]["sha256"]:
+                    raise OperationBlocked("plan_identity_mismatch")
+                db.execute(
+                    "INSERT OR IGNORE INTO mcp_donor_conflicts VALUES (?)", (observed,)
+                )
+    if plan["epistemic_purpose"] == "confirmatory":
+        from .context import roots_query
+
+        if roots_query(
+            db,
+            None,
+            plan["session_roots"],
+            "SELECT 1 FROM ancestry JOIN mcp_donor_conflicts USING(sha256) LIMIT 1",
+        ).fetchone():
+            raise OperationBlocked("scientific_refusal")
+
+
+def _qc_products(plan):
+    from .execution import _units
+
+    units = list(_units(plan))
+    return {
+        ("metrics" if len(units) == 1 else key + ".metrics"): {
+            "qc_expression_sha256": unit["input_bindings"]["expression"]["sha256"],
+        }
+        for key, unit in units
+        if unit["plan_kind"] == "tier1_kernel"
+        and unit["kernel"]["kernel_id"] == "snrna_droplet_qc"
+    }
+
+
 def publish(ctx, db, row, files, result, directory):
     from .context import store_artifact
 
@@ -177,7 +222,13 @@ def publish(ctx, db, row, files, result, directory):
         if ctx.protected(sid, plan["session_roots"], db)
         else plan["data_classification"]
     )
+    _publish_forensic_holds(db, plan, files)
+    qc_products = _qc_products(plan)
     for port, (ref, path, spec) in files.items():
+        if ref["representation_class"] == "ambient_adjusted_counts":
+            db.execute(
+                "INSERT OR IGNORE INTO mcp_noncount_roots VALUES (?)", (ref["sha256"],)
+            )
         ctx._enroll_source(db, sid, ref, classification, parents=plan["session_roots"])
         store_artifact(
             db,
@@ -188,6 +239,7 @@ def publish(ctx, db, row, files, result, directory):
             {
                 "source_sha256": ref["sha256"],
                 "parent_sha256s": plan["session_roots"],
+                **qc_products.get(port, {}),
                 "execution_lane": plan["execution_lane"],
                 "exploratory_only": plan["exploratory_only"],
                 "clinical_release_allowed": False,

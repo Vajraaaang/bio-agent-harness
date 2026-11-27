@@ -738,7 +738,7 @@ def _table_axes(
         observations = header[1:]
         if len(set(observations)) != len(observations):
             return {}
-        features = []
+        features: list[str] = []
         distribution = (
             CountDistribution(major_width=len(observations), libraries_in_rows=False)
             if verify_counts

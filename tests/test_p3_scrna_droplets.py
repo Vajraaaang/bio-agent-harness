@@ -257,7 +257,9 @@ def test_cellbender_corrected_output_is_bound_and_quarantined(
         output,
         provenance,
         expected_provenance_sha256=provenance.sha256(),
-        action=droplets.CellBenderAction(expected_cells=1, total_droplets_included=2),
+        action=droplets.CellBenderAction(
+            expected_cells=1, total_droplets_included=2, allow_cellbender_cpu=True
+        ),
         runtime=droplets.DropletRuntime("cellbender", "sha256:" + "1" * 64, "0.4.0"),
     )
     assert result["status"] == "completed"
@@ -380,7 +382,7 @@ def _run_oci_adapter(base, image, *, method, version, options):
         "rna_kernels/__init__.py",
         "rna_kernels/canonical.py",
         "rna_kernels/scrna_droplets.py",
-        "devharness_server/r/scrna_emptydrops.R",
+        "rna_kernels/r/scrna_emptydrops.R",
     ):
         target = drivers / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -470,7 +472,12 @@ def test_cellbender_actual_pinned_runtime(workspace_tmp_path):
         image,
         method="cellbender",
         version="0.4.0",
-        options={"expected_cells": 160, "total_droplets_included": 700, "fpr": 0.01},
+        options={
+            "expected_cells": 160,
+            "total_droplets_included": 700,
+            "fpr": 0.01,
+            "allow_cellbender_cpu": True,
+        },
     )
     artifact = result["artifacts"]["corrected_expression"]
     assert artifact["count1_admissible"] is False

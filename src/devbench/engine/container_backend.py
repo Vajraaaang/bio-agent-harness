@@ -630,7 +630,7 @@ def _scratch_size(scratch, limit):
     return total
 
 
-def _local_process_exit(process, scratch, profile):
+def _local_process_exit(process, scratch, profile, *, exit_record=None):
     import time
 
     import psutil
@@ -638,6 +638,10 @@ def _local_process_exit(process, scratch, profile):
     root = psutil.Process(process.pid)
     deadline = time.monotonic() + profile.timeout_sec
     while process.poll() is None:
+        if exit_record is not None and exit_record.exists():
+            return int(exit_record.read_text())
+        if time.monotonic() >= deadline:
+            raise NativeRuntimeError("Local worker resource ceiling exceeded")
         try:
             tree = [root, *root.children(recursive=True)]
             rss = sum(p.memory_info().rss for p in tree)
@@ -646,7 +650,7 @@ def _local_process_exit(process, scratch, profile):
             continue
         scratch_limit = profile.scratch_mb * 1024**2
         scratch_size = _scratch_size(scratch, scratch_limit)
-        if time.monotonic() >= deadline or (
+        if (
             rss > profile.memory_mb * 1024**2
             or tasks > profile.pids_limit
             or scratch_size > scratch_limit
@@ -659,6 +663,7 @@ def _local_process_exit(process, scratch, profile):
 def _stop_local(created):
     """Only signal a new-session leader whose birth identity matches the journal."""
     import signal
+    import time
 
     import psutil
 
@@ -683,10 +688,15 @@ def _stop_local(created):
         pass
     except psutil.TimeoutExpired as error:
         raise NativeRuntimeError("Local worker group cleanup unverified") from error
-    try:
-        os.killpg(pid, 0)
-    except ProcessLookupError:
-        return
+    # A killed descendant can remain in the group briefly while its new
+    # parent reaps it. Never signal the numeric ID again after leader exit.
+    until = time.monotonic() + 3
+    while time.monotonic() < until:
+        try:
+            os.killpg(pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.02)
     raise NativeRuntimeError("Local worker group cleanup unverified")
 
 
@@ -912,64 +922,587 @@ class NonOciPublicFallbackBackend:
         }
 
     def cleanup(self, stage, *, request_sha, image_id, attempt_id):
+        return _cleanup_local(stage, request_sha, image_id, attempt_id, self.stamps)
+
+
+def _cleanup_local(stage, request_sha, image_id, attempt_id, stamps, *, gated=False):
+    from .mounted_kernel_oci import (
+        _CREATED,
+        _INTENT,
+        _RECOVERED,
+        _check_stage_location,
+        _identity,
+        _oci_lock,
+        _optional_record,
+    )
+    from .tier_a_executor import _write_record
+
+    _check_stage_location(stage)
+    binding = {**_identity(request_sha, image_id, attempt_id), **stamps}
+    with _oci_lock(stage.parent):
+        intent = _optional_record(stage.parent, _INTENT)
+        created = _optional_record(stage.parent, _CREATED)
+        proof = _optional_record(stage.parent, _RECOVERED)
+        if intent and any(intent.get(k) != v for k, v in binding.items()):
+            raise NativeRuntimeError("Local worker launch identity unverified")
+        if created is None and (intent is None or gated):
+            record = {
+                **binding,
+                "claim_tier": "none",
+                "disposition": "not_created",
+                "cleanup_confirmed": True,
+            }
+            if gated:
+                record["oci_isolated"] = False
+        else:
+            if (
+                not intent
+                or not created
+                or (
+                    created
+                    != {
+                        **intent,
+                        "pid": created.get("pid"),
+                        "process_birth": created.get("process_birth"),
+                    }
+                )
+            ):
+                raise NativeRuntimeError("Local worker launch identity unverified")
+            if proof is None:
+                _stop_local(created)
+            record = {
+                **created,
+                "claim_tier": "none",
+                "disposition": "terminated",
+                "cleanup_confirmed": True,
+            }
+            if (
+                proof
+                and proof.get("disposition") == "exited"
+                and proof.get("claim_tier") in {"none", "L1_execution_verified"}
+            ):
+                record.update(disposition="exited", claim_tier=proof["claim_tier"])
+                if (
+                    gated
+                    and proof["claim_tier"] == "none"
+                    and not proof["oci_isolated"]
+                ):
+                    record.update(
+                        isolation_backend="apptainer_no_netns", oci_isolated=False
+                    )
+        if proof is not None and proof != record:
+            raise NativeRuntimeError("Local worker cleanup proof mismatch")
+        if proof is None:
+            _write_record(stage.parent / _RECOVERED, record)
+        return record
+
+
+# This code executes *inside* the requested SIF, before importing the worker.
+# Verify effective mounts and the actual namespace for this invocation. A
+# successful discovery probe on a different mount namespace grants no access.
+_APPTAINER_PREFLIGHT = """
+import json, os, socket, sys
+host_ns, bindings, worker, request, limit = json.loads(sys.argv[1])
+def require(condition):
+    if not condition:
+        raise SystemExit(74)
+def inode(path):
+    st = os.stat(path)
+    return [st.st_dev, st.st_ino]
+require(inode('/proc/self/ns/net') != host_ns)
+require({name for _, name in socket.if_nameindex()} <= {'lo'})
+with open('/proc/self/mountinfo') as source:
+    mounts = [line.split()[4] for line in source]
+for mount, identity in bindings.items():
+    require(inode(mount) == identity and mounts.count(mount) == 1)
+    require(not any(p.startswith(mount + '/') for p in mounts))
+    require(bool(os.statvfs(mount).f_flag & os.ST_RDONLY) == (mount == '/inputs'))
+if worker is None:
+    with open('/outputs/probe', 'x') as out:
+        out.write(request)
+else:
+    with open('/tmp/.devbench-isolation', 'x') as out:
+        out.write(request)
+    os.environ['DEVBENCH_MOUNTED_TIMEOUT_SEC'] = str(limit)
+    os.execvp('python3.13', ['python3.13', '-m', worker, request])
+"""
+
+_APPTAINER_STAMPS = {
+    "isolation_backend": "apptainer",
+    "oci_isolated": True,
+    "clinical_release_allowed": False,
+}
+
+
+def _apptainer_environment(home="/"):
+    # Never inherit APPTAINER_BIND*, SINGULARITYENV_*, host credentials, or
+    # site modules that redirect the engine to a different image/namespace.
+    return {"HOME": str(home), "PATH": os.defpath, "LANG": "C", "LC_ALL": "C"}
+
+
+def _apptainer_binary():
+    if sys.platform != "linux" or os.geteuid() == 0:
+        raise NativeRuntimeError("Apptainer needs an unprivileged Linux host")
+    for binary in ("apptainer", "singularity"):
+        path = shutil.which(binary)
+        if path is None:
+            continue
+        executable = str(Path(path).resolve(strict=True))
+        result = subprocess.run(
+            [executable, "--version"],
+            env=_apptainer_environment(),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+            check=False,
+        )
+        if result.returncode == 0 and re.fullmatch(
+            rb"(apptainer|singularity-ce) version [0-9]+\.[0-9]+[\w.+-]*",
+            result.stdout.strip(),
+            re.IGNORECASE,
+        ):
+            return executable
+    raise NativeRuntimeError("Verified Apptainer or SingularityCE binary unavailable")
+
+
+def _sif_source(path):
+    """Walk every component with no-follow semantics, including parent dirs."""
+    from contextlib import ExitStack
+
+    if (
+        not path.is_absolute()
+        or path.suffix != ".sif"
+        or ".." in path.parts
+        or path.resolve(strict=True) != path
+    ):
+        raise NativeRuntimeError("A canonical local SIF image is required")
+    with ExitStack() as stack:
+        fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+        stack.callback(os.close, fd)
+        for name in path.parts[1:-1]:
+            fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            stack.callback(os.close, fd)
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            raise NativeRuntimeError("SIF image must be a regular file")
+        return os.fdopen(fd, "rb")
+
+
+def _verified_sif(binding, destination=None):
+    """Hash the bytes passed to exec, independent of later source path changes."""
+    from contextlib import nullcontext
+
+    path, expected = binding
+    digest = hashlib.sha256()
+    with _sif_source(path) as reader:
+        # SIF global header: launch script (32), magic (10), version (3),
+        # architecture (3). A renamed SquashFS or script is not a SIF.
+        header = reader.read(48)
+        arch = {b"02\x00": "amd64", b"04\x00": "arm64"}.get(header[45:48])
+        if header[32:42] != b"SIF_MAGIC\x00" or arch is None:
+            raise NativeRuntimeError("Invalid SIF header or unsupported architecture")
+        digest.update(header)
+        with destination.open("xb") if destination else nullcontext() as copy:
+            if copy:
+                copy.write(header)
+            while block := reader.read(4 * 1024**2):
+                digest.update(block)
+                if copy:
+                    copy.write(block)
+            if copy:
+                os.fchmod(copy.fileno(), 0o400)
+    if digest.hexdigest() != expected:
+        raise NativeRuntimeError("Apptainer SIF SHA-256 mismatch")
+    return "linux/" + arch
+
+
+def _configured_apptainer_map():
+    value = json.loads(os.environ.get("DEVBENCH_APPTAINER_IMAGES", "{}"))
+    if type(value) is not dict:
+        raise NativeRuntimeError("Invalid Apptainer image map")
+    return value
+
+
+def _apptainer_selections():
+    try:
+        return _configured_apptainer_map()
+    except (ValueError, RecursionError):
+        # Without a parsed object there is no operator selection to override
+        # the normal backend. Discovery still reports the HPC config failure.
+        return {}
+
+
+def configured_apptainer_ids() -> set[str]:
+    """Image pins explicitly routed to HPC, including invalid SIF bindings."""
+    return {
+        pin
+        for pin in _apptainer_selections()
+        if re.fullmatch(r"sha256:[a-f0-9]{64}", pin)
+    }
+
+
+def _apptainer_images(config):
+    if type(config) is not dict or len(config) > 64:
+        raise NativeRuntimeError("Invalid Apptainer image map")
+    images = {}
+    for image_id, item in config.items():
+        if (
+            not re.fullmatch(r"sha256:[a-f0-9]{64}", image_id)
+            or type(item) is not dict
+            or set(item) != {"path", "sha256"}
+            or not isinstance(item["sha256"], str)
+            or not re.fullmatch("[a-f0-9]{64}", item["sha256"])
+            or not isinstance(item["path"], str)
+        ):
+            raise NativeRuntimeError("Invalid Apptainer SIF registration")
+        path = Path(item["path"])
+        if not path.is_absolute() or path.suffix != ".sif" or ".." in path.parts:
+            raise NativeRuntimeError("A local absolute SIF path is required")
+        images[image_id] = path, item["sha256"]
+    return images
+
+
+def _fs_identity(path):
+    info = os.stat(path)
+    return [info.st_dev, info.st_ino]
+
+
+def _apptainer_command(
+    executable, image, stage, scratch, worker, request, profile, gpu
+):
+    dirs = {"/inputs": stage / "inputs", "/outputs": stage / "outputs", "/tmp": scratch}
+    if any(any(c in str(path) for c in ":,\n\r") for path in dirs.values()):
+        raise NativeRuntimeError("Ambiguous Apptainer bind source")
+    limits = (
+        []
+        if profile is None
+        else [
+            "--cpus",
+            str(profile.cpus),
+            "--memory",
+            f"{profile.memory_mb}M",
+            "--pids-limit",
+            str(profile.pids_limit),
+        ]
+    )
+    if profile and profile.gpu:
+        limits.append("--nv" if gpu == "cuda" else "--rocm")
+    expected = {mount: _fs_identity(path) for mount, path in dirs.items()}
+    preflight = [
+        _fs_identity("/proc/self/ns/net"),
+        expected,
+        worker,
+        request,
+        profile.timeout_sec if profile else 0,
+    ]
+    return [
+        executable,
+        "exec",
+        "--containall",
+        "--no-home",
+        "--cleanenv",
+        "--no-eval",
+        "--net",
+        "--network=none",
+        "--no-mount",
+        "cwd,hostfs,bind-paths",
+        "--pwd",
+        "/tmp",
+        "--bind",
+        f"{dirs['/inputs']}:/inputs:ro",
+        "--bind",
+        f"{dirs['/outputs']}:/outputs",
+        "--bind",
+        f"{scratch}:/tmp",
+        *limits,
+        str(image),
+        "python3.13",
+        "-c",
+        _APPTAINER_PREFLIGHT,
+        json.dumps(preflight),
+    ]
+
+
+def _apptainer_probe(executable, sif, area):
+    import signal
+    from uuid import uuid4
+
+    with tempfile.TemporaryDirectory(dir=area, prefix="probe-") as temp:
+        stage = Path(temp)
+        scratch = stage / "scratch"
+        for path in (stage / "inputs", stage / "outputs", scratch):
+            path.mkdir(mode=0o700)
+        nonce = uuid4().hex
+        command = _apptainer_command(
+            executable, sif, stage, scratch, None, nonce, None, None
+        )
+        with subprocess.Popen(
+            command,
+            cwd="/",
+            env=_apptainer_environment(area),
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ) as process:
+            try:
+                if process.wait(timeout=8) != 0:
+                    return False
+            except subprocess.TimeoutExpired:
+                # The unreaped, owned leader still reserves the group ID.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                return False
+        try:
+            with (stage / "outputs/probe").open("rb") as receipt:
+                return receipt.read(33) == nonce.encode()
+        except FileNotFoundError:
+            return False
+
+
+def _apptainer_launch(command, directory, intent, scratch, profile):
+    import psutil
+
+    from .mounted_kernel_oci import _CREATED
+    from .tier_a_executor import _write_record
+
+    # The group leader stays alive until teardown, even if the real engine
+    # exits first. On parent loss its pipe closes and the whole group dies.
+    # The guest cannot reach the host-only status file.
+    gate = """
+import os, select, signal, subprocess, sys
+if os.read(0, 1) != b'1':
+    sys.exit(1)
+child = subprocess.Popen(sys.argv[2:], stdin=subprocess.DEVNULL)
+while child.poll() is None:
+    if select.select([0], [], [], 0.1)[0]:
+        os.killpg(0, signal.SIGKILL)
+with open(sys.argv[1] + '.tmp', 'x') as status:
+    status.write(str(child.returncode))
+os.rename(sys.argv[1] + '.tmp', sys.argv[1])
+os.read(0, 1)
+os.killpg(0, signal.SIGKILL)
+"""
+    exit_record = scratch.parent / "worker-exit"
+    with subprocess.Popen(
+        [sys.executable, "-I", "-S", "-c", gate, str(exit_record), *command],
+        cwd="/",
+        env=_apptainer_environment(scratch.parent),
+        start_new_session=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ) as process:
+        created = {
+            **intent,
+            "pid": process.pid,
+            "process_birth": psutil.Process(process.pid).create_time(),
+        }
+        try:
+            _write_record(directory / _CREATED, created)
+            process.stdin.write(b"1")
+            process.stdin.flush()
+            code = _local_process_exit(
+                process, scratch, profile, exit_record=exit_record
+            )
+        except (NativeRuntimeError, BrokenPipeError):
+            code = 1
+        finally:
+            _stop_local(created)
+        return created, code
+
+
+class ApptainerBackend:
+    """HPC execution using an operator-mapped and independently hashed local SIF.
+
+    DEVBENCH_APPTAINER_IMAGES is a daemon-side JSON object keyed by the frozen
+    image ID. Each value has an absolute SIF 'path' and its own 'sha256'.
+    A SIF conversion and its source OCI image have distinct content digests.
+    """
+
+    name = "apptainer"
+
+    def __init__(self, *, images=None, registry=BUILTIN_WORKERS, gpu_backend=None):
+        self.registry = registry
+        self.gpu_backend = gpu_backend or os.environ.get(
+            "DEVBENCH_APPTAINER_GPU", "cuda"
+        )
+        if self.gpu_backend not in {"cuda", "rocm"}:
+            raise NativeRuntimeError("Unknown Apptainer GPU backend")
+        if images is None:
+            config = _configured_apptainer_map()
+            if len(config) > 64:
+                raise NativeRuntimeError("Invalid Apptainer image map")
+            self.images = {}
+            for pin, source in config.items():
+                try:
+                    self.images.update(_apptainer_images({pin: source}))
+                except NativeRuntimeError:
+                    # Discovery must still probe independently valid bindings.
+                    continue
+        else:
+            self.images = _apptainer_images(images)
+
+    @classmethod
+    def configured_for(cls, image_id):
+        config = _apptainer_selections()
+        if image_id not in config:
+            return None
+        if len(config) > 64:
+            raise NativeRuntimeError("Invalid Apptainer image map")
+        # A named but invalid binding must fail here, before Docker selection.
+        return cls(images={image_id: config[image_id]})
+
+    def _binding(self, image_id):
+        try:
+            return self.images[image_id]
+        except KeyError as error:
+            raise NativeRuntimeError("No local SIF bound to this image pin") from error
+
+    def probe(self):
+        try:
+            executable = _apptainer_binary()
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return _capability(
+                self.name, available=False, isolated=False, local_image_ids=[]
+            )
+        ready = []
+        attempted = False
+        for image_id, binding in self.images.items():
+            try:
+                with tempfile.TemporaryDirectory(prefix="sif-probe-") as temp:
+                    area = Path(temp).resolve()
+                    sif = area / "runtime.sif"
+                    _verified_sif(binding, sif)
+                    attempted = True
+                    if _apptainer_probe(executable, sif, area):
+                        ready.append(image_id)
+            except (OSError, ValueError, subprocess.SubprocessError):
+                continue
+        return _capability(
+            self.name if ready or not attempted else "apptainer_no_netns",
+            available=True,
+            isolated=bool(ready),
+            local_image_ids=sorted(ready),
+        )
+
+    def verify_image(self, image_id):
+        return _verified_sif(self._binding(image_id))
+
+    def run_isolated(
+        self,
+        stage,
+        *,
+        request_sha,
+        image_id,
+        attempt_id,
+        worker_module,
+        resource_profile,
+        data_classification,
+        claim_tier,
+        epistemic_purpose,
+    ):
+        from dataclasses import asdict
+
+        from devbench.core._files import read_bounded_file
+
         from .mounted_kernel_oci import (
-            _CREATED,
             _INTENT,
             _RECOVERED,
             _check_stage_location,
             _identity,
             _oci_lock,
             _optional_record,
+            _prepare_mounts,
         )
         from .tier_a_executor import _write_record
 
         _check_stage_location(stage)
-        binding = {**_identity(request_sha, image_id, attempt_id), **self.stamps}
+        self.registry.admit(worker_module, resource_profile, image_id)
+        executable = _apptainer_binary()
+        binding = self._binding(image_id)
+        identity = _identity(request_sha, image_id, attempt_id)
         with _oci_lock(stage.parent):
-            intent = _optional_record(stage.parent, _INTENT)
-            created = _optional_record(stage.parent, _CREATED)
-            proof = _optional_record(stage.parent, _RECOVERED)
-            if intent is None and created is None:
-                record = {
-                    **binding,
-                    "claim_tier": "none",
-                    "disposition": "not_created",
-                    "cleanup_confirmed": True,
-                }
-            else:
-                if (
-                    not intent
-                    or not created
-                    or any(intent.get(k) != v for k, v in binding.items())
-                    or (
-                        created
-                        != {
-                            **intent,
-                            "pid": created.get("pid"),
-                            "process_birth": created.get("process_birth"),
-                        }
+            if any(
+                _optional_record(stage.parent, k) is not None
+                for k in (_INTENT, _RECOVERED)
+            ):
+                raise NativeRuntimeError(
+                    "Apptainer worker already launched or disarmed"
+                )
+            area = stage / (".apptainer-" + attempt_id)
+            area.mkdir(mode=0o700)
+            try:
+                sif = area / "runtime.sif"
+                platform = _verified_sif(binding, sif)
+                if not _apptainer_probe(executable, sif, area):
+                    raise NativeRuntimeError(
+                        "Apptainer private network or read-only mount unavailable"
                     )
-                ):
-                    raise NativeRuntimeError("Local worker launch identity unverified")
-                if proof is None:
-                    _stop_local(created)
-                record = {
+                _prepare_mounts(stage)
+                scratch = area / "scratch"
+                scratch.mkdir(mode=0o700)
+                command = _apptainer_command(
+                    executable,
+                    sif,
+                    stage,
+                    scratch,
+                    worker_module,
+                    request_sha,
+                    resource_profile,
+                    self.gpu_backend,
+                )
+                intent = dict(
+                    identity,
+                    **_APPTAINER_STAMPS,
+                    worker_module=worker_module,
+                    resource_profile=asdict(resource_profile),
+                    sif_sha256=binding[1],
+                )
+                _write_record(stage.parent / _INTENT, intent)
+                created, code = _apptainer_launch(
+                    command, stage.parent, intent, scratch, resource_profile
+                )
+                try:
+                    verified = (
+                        read_bounded_file(scratch / ".devbench-isolation", 64)
+                        == request_sha.encode()
+                    )
+                except (OSError, ValueError):
+                    verified = False
+                if not verified:
+                    code = 1
+                proof = {
                     **created,
-                    "claim_tier": "none",
-                    "disposition": "terminated",
+                    "oci_isolated": verified,
+                    "isolation_backend": self.name
+                    if verified
+                    else "apptainer_no_netns",
+                    "claim_tier": "none" if code else "L1_execution_verified",
+                    "disposition": "exited",
                     "cleanup_confirmed": True,
                 }
-                if (
-                    proof
-                    and proof.get("disposition") == "exited"
-                    and proof.get("claim_tier") in {"none", "L1_execution_verified"}
-                ):
-                    record.update(disposition="exited", claim_tier=proof["claim_tier"])
-            if proof is not None and proof != record:
-                raise NativeRuntimeError("Local worker cleanup proof mismatch")
-            if proof is None:
-                _write_record(stage.parent / _RECOVERED, record)
-            return record
+                _write_record(stage.parent / _RECOVERED, proof)
+            finally:
+                shutil.rmtree(area)
+        return {
+            **proof,
+            "platform": platform,
+            "error_type": "ApptainerError" if code else None,
+        }
+
+    def cleanup(self, stage, *, request_sha, image_id, attempt_id):
+        proof = _cleanup_local(
+            stage, request_sha, image_id, attempt_id, _APPTAINER_STAMPS, gated=True
+        )
+        area = stage / (".apptainer-" + attempt_id)
+        if area.exists():
+            shutil.rmtree(area)
+        return proof
 
 
 def probe_container_backends(*, allow_non_oci_public_fallback=False):
@@ -977,7 +1510,15 @@ def probe_container_backends(*, allow_non_oci_public_fallback=False):
     fallback = NonOciPublicFallbackBackend(
         allow_non_oci_public_fallback=allow_non_oci_public_fallback
     )
-    return {
+    results = {
         engine.name: engine.probe()
         for engine in (DockerBackend(), PodmanBackend(), fallback)
     }
+    try:
+        results["apptainer"] = ApptainerBackend().probe()
+    except (ValueError, RecursionError):
+        # Malformed HPC configuration must not invalidate other engines' probes.
+        results["apptainer"] = _capability(
+            "apptainer", available=False, isolated=False, local_image_ids=[]
+        )
+    return results

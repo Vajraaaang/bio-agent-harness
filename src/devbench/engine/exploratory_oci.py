@@ -111,7 +111,7 @@ class ExploratoryOCI:
         self.artifacts = PartitionVault(self.training.root, max_bytes=VAULT_BYTES)
         self.zarr_vault = MountedZarrVault(self.root / "training-zarr")
         self.private = False
-        self._member_cache = {}
+        self._member_cache: dict[str, tuple[str, ...]] = {}
         self.plugin_plan = None
         self.session_id = None
         self.binary_training = PartitionVault(self.training.root, max_bytes=100_000_000)

@@ -138,7 +138,7 @@ def _tool_error(
         reason = "local_workflow_unavailable"
     else:
         reason = "internal_tool_error"
-    result = {"error": "OperationBlocked", "reason": reason}
+    result: dict[str, Any] = {"error": "OperationBlocked", "reason": reason}
     if isinstance(error, ValidationError):
         result["validation_errors"] = _validation_diagnostics(_TOOLS[name][0], error)
     sid = arguments.get("session_id") if isinstance(arguments, dict) else None

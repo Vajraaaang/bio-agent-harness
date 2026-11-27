@@ -122,6 +122,8 @@ def _other_research_kernels():
 def catalog():
     from devbench.core.scrna_composition import CompositionSpec
 
+    from .registry_m2 import m2_kernels
+
     camera = obj(
         {
             "condition_column": ID,
@@ -185,6 +187,10 @@ def catalog():
     )
     return {
         **_other_research_kernels(),
+        **m2_kernels(
+            _CELL,
+            frozenset((*pins.M2_QC_IMAGES.values(), *pins.M2_CUDA_IMAGES.values())),
+        ),
         "bulk_de": Kernel(
             ("B1",),
             (COUNTS, "metadata_only"),
@@ -273,10 +279,10 @@ def registered_image_ids():
     return result
 
 
-def _live_images(ctx):
+def _live_images(ctx, backend="docker"):
     from .runtime import available_images
 
-    return {row["image_id"] for row in available_images(ctx, backend="docker")}
+    return {row["image_id"] for row in available_images(ctx, backend=backend)}
 
 
 def _image(ctx, kernel, live):
@@ -293,7 +299,7 @@ def _image(ctx, kernel, live):
     return min(native or compatible, default=None)
 
 
-def select_image(ctx, kernel_id, *, session_id=None, version=None):
+def select_image(ctx, kernel_id, *, session_id=None, version=None, require_gpu=False):
     kernel = catalog().get(kernel_id)
     if kernel is None and session_id:
         promoted = workspace_kernels(ctx, session_id)
@@ -303,7 +309,19 @@ def select_image(ctx, kernel_id, *, session_id=None, version=None):
             if name == kernel_id and (version is None or revision == version)
         }
         return next(iter(images)) if len(images) == 1 else None
-    return _image(ctx, kernel, _live_images(ctx)) if kernel and kernel.images else None
+    if not kernel or not kernel.images:
+        return None
+    live = _live_images(ctx, _image_backend(kernel_id))
+    if require_gpu:
+        live &= set(pins.M2_CUDA_IMAGES.values())
+    return _image(ctx, kernel, live)
+
+
+def _image_backend(name):
+    # Scripts and matrix_audit use the Docker-specific governed script runner.
+    from rna_kernels.m2_contract import KERNEL_AXES
+
+    return "mounted" if name in KERNEL_AXES else "docker"
 
 
 def _profile(mounted):
@@ -319,7 +337,27 @@ def _profile(mounted):
 
 
 def _repository_row(ctx, name, kernel, live, include_schema):
+    from rna_kernels.m2_contract import KERNEL_AXES
+
+    profile = _profile(bool(kernel.images))
+    if name == "scrna_ambient_decontamination":
+        profile["gpu_supported"] = (
+            _image(ctx, kernel, live & set(pins.M2_CUDA_IMAGES.values())) is not None
+        )
+    extra = {}
+    if name in KERNEL_AXES:
+        extra["output_representations"] = [SUMMARY]
+        if name == "scrna_ambient_decontamination":
+            extra["output_representations"].append("ambient_adjusted_counts")
+        extra["supports_plot_sidecar"] = True
+        extra["optional_representations"] = {
+            "donor_forensics": ["raw_reads_or_droplets", "metadata_only", REFERENCE],
+            "snrna_droplet_qc": ["metadata_only"],
+            "scrna_doublets": [SUMMARY],
+            "scrna_ambient_decontamination": ["raw_reads_or_droplets"],
+        }[name]
     return {
+        **extra,
         "kernel_id": name,
         "version": "1",
         "lane": "tier1_curated",
@@ -329,7 +367,7 @@ def _repository_row(ctx, name, kernel, live, include_schema):
         "calibration_status": "uncalibrated_L1",
         "calibrated_regimes": [],
         "runtime_ready": _image(ctx, kernel, live) is not None,
-        "resource_profile": _profile(bool(kernel.images)),
+        "resource_profile": profile,
         "parameter_schema": kernel.parameters if include_schema else None,
     }
 
@@ -463,8 +501,15 @@ def list_kernels_and_methods(ctx, args):
     include_schema = args.get("include_parameter_schema", False)
     live = _live_images(ctx)
     assay = (args.get("assay") or "").casefold().replace("-", "_")
+    mounted = _live_images(ctx, "mounted")
     rows = [
-        _repository_row(ctx, name, kernel, live, include_schema)
+        _repository_row(
+            ctx,
+            name,
+            kernel,
+            mounted if _image_backend(name) == "mounted" else live,
+            include_schema,
+        )
         for name, kernel in catalog().items()
         if not assay or not kernel.assays or assay in kernel.assays
     ]
@@ -482,7 +527,7 @@ def list_kernels_and_methods(ctx, args):
 def resolve_kernel(ctx, kernel_id, version, *, session_id=None):
     kernel = catalog().get(kernel_id)
     if kernel is not None and version == "1":
-        live = _live_images(ctx) if kernel.images else set()
+        live = _live_images(ctx, _image_backend(kernel_id)) if kernel.images else set()
         return _repository_row(ctx, kernel_id, kernel, live, True)
     if session_id:
         ctx.require_public(session_id)

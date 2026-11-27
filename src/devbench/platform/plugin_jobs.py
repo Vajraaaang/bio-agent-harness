@@ -18,7 +18,7 @@ from contextlib import closing, contextmanager
 from contextvars import ContextVar
 from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 from urllib.parse import urlencode, urlsplit
 
 import psutil
@@ -173,6 +173,10 @@ def _studio_origin(workspace: Path, *, offline_only: bool = False) -> str | None
     return None
 
 
+class _OptionalImage(TypedDict, total=False):
+    mounted_image_id: str
+
+
 def ensure_offline_studio(
     workspace: Path, input_root: Path, mounted_image_id: str | None
 ) -> str | None:
@@ -180,7 +184,9 @@ def ensure_offline_studio(
     from devbench.daemon.ipc import DaemonError, daemon_status, start_daemon
 
     if not _studio_origin(workspace, offline_only=True):
-        options = {"mounted_image_id": mounted_image_id} if mounted_image_id else {}
+        options: _OptionalImage = (
+            {"mounted_image_id": mounted_image_id} if mounted_image_id else {}
+        )
         try:
             owner = daemon_status(workspace)
             if owner.get("status") == "running" and not owner.get("offline_only"):

@@ -162,7 +162,7 @@ class DirectoryInventory:
                     data.extend(block)
             if _signature(os.fstat(child)) != _signature(info):
                 raise OperationBlocked("plan_identity_mismatch")
-        if "X" in parts[:-1]:
+        if "X" in parts[:-1] or parts[0] in {"obs", "var"}:
             self.array_chunks["/".join(parts)] = hasher.hexdigest()
         self._retain(parts, name, data, collect, hasher.hexdigest())
         self.size += info.st_size

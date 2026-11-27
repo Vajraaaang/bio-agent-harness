@@ -385,7 +385,9 @@ def test_discovery_keeps_non_oci_fallback_disabled_by_default(monkeypatch):
     observed = backends.probe_container_backends()
     assert observed["docker"]["available"] and not observed["podman"]["available"]
     [fallback] = [
-        entry for name, entry in observed.items() if name not in {"docker", "podman"}
+        entry
+        for name, entry in observed.items()
+        if name not in {"docker", "podman", "apptainer"}
     ]
     assert not fallback["available"] and not fallback["enabled"]
     assert not fallback["oci_isolated"] and not fallback["clinical_release_allowed"]

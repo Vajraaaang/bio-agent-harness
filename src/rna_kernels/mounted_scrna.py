@@ -72,7 +72,8 @@ def _file_state(path: Path) -> tuple[int, ...]:
 
 
 def _required_inputs(
-    inputs: Path, request_sha256: str,
+    inputs: Path,
+    request_sha256: str,
 ) -> tuple[MountedSingleCellRequest, dict[str, Path], dict[Path, tuple[int, ...]]]:
     request_path = inputs / "request.json"
     states = {request_path: _file_state(request_path)}
@@ -96,7 +97,10 @@ def _required_inputs(
 
 
 def _check_hdf5_storage(
-    path: Path, *, prepared: bool, matrix_path: str = f"layers/{COUNT_LAYER}",
+    path: Path,
+    *,
+    prepared: bool,
+    matrix_path: str = f"layers/{COUNT_LAYER}",
 ) -> None:
     import h5py
 
@@ -153,22 +157,28 @@ def _hdf5_dataset_bytes(node) -> int:
 
 
 def _batch_qc(
-    paths: dict[str, Path], store: CheckpointStore, parameters: BatchQCParameters,
+    paths: dict[str, Path],
+    store: CheckpointStore,
+    parameters: BatchQCParameters,
 ) -> _StageResult:
     from devbench.analysis.streaming import stream_qc
 
     settings = parameters.model_dump()
     settings["qc_group_key"] = parameters.qc_group_key or parameters.batch_key
     folder = stream_qc(paths["expression"], store, layer=COUNT_LAYER, **settings)
-    return _StageResult({
-        "qc_metrics": folder / "metrics.csv",
-        "qc_features": folder / "features.csv",
-        "qc_report": folder / "report.json",
-    })
+    return _StageResult(
+        {
+            "qc_metrics": folder / "metrics.csv",
+            "qc_features": folder / "features.csv",
+            "qc_report": folder / "report.json",
+        }
+    )
 
 
 def _bind_qc_stage(
-    paths: dict[str, Path], store: CheckpointStore, batch_key: str,
+    paths: dict[str, Path],
+    store: CheckpointStore,
+    batch_key: str,
 ) -> pd.Index:
     import pandas as pd
 
@@ -177,14 +187,15 @@ def _bind_qc_stage(
     from devbench.core.expression_io import open_h5ad
 
     metrics = read_table(paths["qc_metrics"], label_columns=(batch_key,))
-    if (
-        "qc_pass" not in metrics
-        or not pd.api.types.is_bool_dtype(metrics.qc_pass.dtype)
+    if "qc_pass" not in metrics or not pd.api.types.is_bool_dtype(
+        metrics.qc_pass.dtype
     ):
         raise ValueError("Mounted QC metrics require exact boolean QC pass flags")
     with open_h5ad(paths["expression"], layer=COUNT_LAYER) as source:
         labels = declared_groups(
-            source.obs, batch_key, "Declared batch identities required",
+            source.obs,
+            batch_key,
+            "Declared batch identities required",
         )
         if not metrics.index.equals(source.obs.index) or batch_key not in metrics:
             raise ValueError("Mounted QC metrics do not match the source cell axis")
@@ -228,17 +239,70 @@ def _verify_library_totals(source, metrics: pd.DataFrame, batches: int) -> None:
 
 
 def _doublets(
-    paths: dict[str, Path], store: CheckpointStore, parameters: LaneDoubletParameters,
+    paths: dict[str, Path],
+    store: CheckpointStore,
+    parameters: LaneDoubletParameters,
 ) -> _StageResult:
     from devbench.analysis.annotation import run_doublets
 
     retained = _bind_qc_stage(paths, store, parameters.batch_key)
     if parameters.method == "scdblfinder":
-        return _unavailable_doublet_method(store, parameters, retained)
+        from devbench.core.expression_io import open_h5ad
+
+        from .scrna_capture_doublets import predict_captures
+
+        if parameters.capture_key is None:
+            return _StageResult({}, "refused", "capture_library_role_not_declared")
+        with open_h5ad(paths["expression"], layer=COUNT_LAYER) as source:
+            frame, lanes = predict_captures(
+                source,
+                source.obs.index.isin(retained),
+                parameters.capture_key,
+                parameters.batch_key,
+                method=parameters.method,
+                expected_rates=None,
+                default_rate=parameters.expected_rate,
+                allow_fallback=False,
+                seed=parameters.seed,
+                scratch=store.root,
+            )
+        frame = frame.loc[retained]
+        scored = int(frame.doublet_score.count())
+        status = (
+            "completed"
+            if scored and scored == len(frame)
+            else ("partial" if scored else "unavailable")
+        )
+        folder = store.root / "scdblfinder"
+        folder.mkdir()
+        frame.to_csv(folder / "predictions.csv")
+        (folder / "report.json").write_bytes(
+            canonical_json(
+                dict(
+                    status=status,
+                    method=parameters.method,
+                    capture_key=parameters.capture_key,
+                    batches=lanes,
+                    filtering="flag_only",
+                )
+            )
+        )
+        return _StageResult(
+            {
+                "predictions": folder / "predictions.csv",
+                "doublet_report": folder / "report.json",
+            },
+            status,
+            None if scored else "no_admissible_lane_predictions",
+        )
     folder = run_doublets(
-        paths["expression"], store, layer=COUNT_LAYER,
-        batch_key=parameters.batch_key, capture_key=parameters.capture_key,
-        seed=parameters.seed, expected_rate=parameters.expected_rate,
+        paths["expression"],
+        store,
+        layer=COUNT_LAYER,
+        batch_key=parameters.batch_key,
+        capture_key=parameters.capture_key,
+        seed=parameters.seed,
+        expected_rate=parameters.expected_rate,
         max_batch_bytes=MAX_MATRIX_BYTES,
         require_declared_capture=parameters.capture_key is not None,
     )
@@ -246,40 +310,20 @@ def _doublets(
     reason = report.get("reason")
     if report["status"] == "unavailable" and reason is None:
         reason = "no_admissible_lane_predictions"
-    return _StageResult({
-        "predictions": folder / "predictions.csv",
-        "doublet_report": folder / "report.json",
-    }, report["status"], reason)
-
-
-def _unavailable_doublet_method(
-    store: CheckpointStore, parameters: LaneDoubletParameters, retained: pd.Index,
-) -> _StageResult:
-    import pandas as pd
-
-    reason = "scdblfinder_runtime_unavailable"
-
-    def unavailable(folder: Path) -> None:
-        pd.DataFrame(
-            {"doublet_score": None, "predicted_doublet": None}, index=retained,
-        ).to_csv(folder / "predictions.csv")
-        (folder / "report.json").write_bytes(canonical_json({
-            "status": "unavailable",
-            "reason": reason,
-            "method": parameters.method,
-            "capture_key": parameters.capture_key,
-            "batches": [],
-        }))
-
-    folder = store.run("doublets", unavailable, dependencies=("qc",))
-    return _StageResult({
-        "predictions": folder / "predictions.csv",
-        "doublet_report": folder / "report.json",
-    }, "unavailable", reason)
+    return _StageResult(
+        {
+            "predictions": folder / "predictions.csv",
+            "doublet_report": folder / "report.json",
+        },
+        report["status"],
+        reason,
+    )
 
 
 def _prepare(
-    paths: dict[str, Path], store: CheckpointStore, parameters: PreparationParameters,
+    paths: dict[str, Path],
+    store: CheckpointStore,
+    parameters: PreparationParameters,
 ) -> _StageResult:
     from devbench.analysis.streaming import stream_hvg, stream_selected
 
@@ -295,19 +339,27 @@ def _prepare(
         if disposition["status"] != "completed":
             return _StageResult(artifacts, disposition["status"], disposition["reason"])
     hvg = stream_hvg(
-        paths["expression"], store, layer=COUNT_LAYER,
-        batch_key=parameters.batch_key, n_top_genes=parameters.n_top_genes,
+        paths["expression"],
+        store,
+        layer=COUNT_LAYER,
+        batch_key=parameters.batch_key,
+        n_top_genes=parameters.n_top_genes,
         use_scran_factors=use_scran,
     )
     selected = stream_selected(
-        paths["expression"], store, layer=COUNT_LAYER, use_scran_factors=use_scran,
+        paths["expression"],
+        store,
+        layer=COUNT_LAYER,
+        use_scran_factors=use_scran,
     )
     artifacts.update(selected=selected / "selected.h5ad", hvg=hvg / "features.csv")
     return _StageResult(artifacts)
 
 
 def _droplets(
-    request: MountedSingleCellRequest, paths: dict[str, Path], directory: Path,
+    request: MountedSingleCellRequest,
+    paths: dict[str, Path],
+    directory: Path,
     parameters: DropletParameters,
 ) -> _StageResult:
     from .scrna_droplets import (
@@ -323,7 +375,8 @@ def _droplets(
     raw = read_bounded_file(provenance_file, 16_384)
     record = decode_receipt_json(raw)
     if (
-        not isinstance(record, dict) or canonical_json(record) != raw
+        not isinstance(record, dict)
+        or canonical_json(record) != raw
         or record.pop("format", None) != "devbench.raw-droplet-provenance/1"
     ):
         raise ValueError("Mounted droplet provenance must use its canonical format")
@@ -342,14 +395,19 @@ def _droplets(
     runtime = None
     if request.runtime_image_id is not None:
         runtime = DropletRuntime(
-            parameters.method, request.runtime_image_id, package_version,
+            parameters.method,
+            request.runtime_image_id,
+            package_version,
         )
     outputs = directory / "droplets"
     outputs.mkdir()
     result = run_droplet_action(
-        paths["droplets"], outputs, provenance,
+        paths["droplets"],
+        outputs,
+        provenance,
         expected_provenance_sha256=request.inputs["droplet_provenance"],
-        action=action, runtime=runtime,
+        action=action,
+        runtime=runtime,
     )
     report = directory / "droplet_report.json"
     report.write_bytes(canonical_json(result))
@@ -363,7 +421,9 @@ def _droplets(
 
 
 def _bind_selected_stage(
-    selected: Path, store: CheckpointStore, parameters: IntegrationParameters,
+    selected: Path,
+    store: CheckpointStore,
+    parameters: IntegrationParameters,
 ) -> None:
     import numpy as np
     from scipy import sparse
@@ -376,7 +436,9 @@ def _bind_selected_stage(
         raise ValueError("Integration batch name conflicts with embedding columns")
     with open_h5ad(selected, layer=COUNT_LAYER) as counts:
         declared_groups(
-            counts.obs, parameters.batch_key, "Declared batch identities required",
+            counts.obs,
+            parameters.batch_key,
+            "Declared batch identities required",
         )
         for block in counts.iter_rows(block_rows=128, max_bytes=_BLOCK_BYTES):
             validate_counts(block.X)
@@ -393,7 +455,9 @@ def _bind_selected_stage(
 
 
 def _integration_outcome(
-    parameters: IntegrationParameters, report: dict[str, Any], accepted: dict[str, str],
+    parameters: IntegrationParameters,
+    report: dict[str, Any],
+    accepted: dict[str, str],
 ) -> tuple[str | None, str, str | None]:
     candidate = parameters.correction
     if candidate in accepted:
@@ -406,14 +470,21 @@ def _integration_outcome(
     if availability != "applicable":
         return "uncorrected", "partial", availability
     status = report["conditions"][candidate]["status"]
-    return "uncorrected", "partial", (
-        "requested_correction_unavailable" if status == "unavailable"
-        else "requested_correction_rejected"
+    return (
+        "uncorrected",
+        "partial",
+        (
+            "requested_correction_unavailable"
+            if status == "unavailable"
+            else "requested_correction_rejected"
+        ),
     )
 
 
 def _integrate(
-    paths: dict[str, Path], store: CheckpointStore, parameters: IntegrationParameters,
+    paths: dict[str, Path],
+    store: CheckpointStore,
+    parameters: IntegrationParameters,
     verified_labels: ExternalLabelEvidence | None,
 ) -> _StageResult:
     from devbench.analysis.embedding import run_embedding_stages
@@ -421,7 +492,9 @@ def _integrate(
     _bind_selected_stage(paths["selected"], store, parameters)
     try:
         accepted = run_embedding_stages(
-            store, **parameters.model_dump(), governed=True,
+            store,
+            **parameters.model_dump(),
+            governed=True,
             verified_labels=verified_labels,
         )
     except ValueError as error:
@@ -438,11 +511,15 @@ def _integrate(
     if condition is not None:
         folder = store.path(condition + "_graph")
         artifacts.update(
-            embedding=folder / "embedding.csv", graph=folder / "neighbors.npz",
+            embedding=folder / "embedding.csv",
+            graph=folder / "neighbors.npz",
         )
         provenance = report["conditions"][condition]["provenance"]
         report["plot"] = _render_figure(
-            store.root, parameters, condition, artifacts,
+            store.root,
+            parameters,
+            condition,
+            artifacts,
             provenance["embedding_csv_sha256"],
         )
     capsule.write_bytes(canonical_json(report))
@@ -450,7 +527,8 @@ def _integrate(
 
 
 def _scib_status(
-    report: dict[str, Any], condition: str | None,
+    report: dict[str, Any],
+    condition: str | None,
     qualification: ExternalLabelEvidence | None,
 ) -> dict[str, Any]:
     if condition is None:
@@ -464,15 +542,20 @@ def _scib_status(
 
 
 def _render_figure(
-    root: Path, parameters: IntegrationParameters, condition: str,
-    artifacts: dict[str, Path], assessed_coordinates_sha256: str,
+    root: Path,
+    parameters: IntegrationParameters,
+    condition: str,
+    artifacts: dict[str, Path],
+    assessed_coordinates_sha256: str,
 ) -> dict[str, Any]:
     from devbench.analysis.embedding import render_integration_embedding
 
     image = root / "embedding.png"
     plot = render_integration_embedding(
-        artifacts["embedding"], image,
-        batch_key=parameters.batch_key, condition=condition,
+        artifacts["embedding"],
+        image,
+        batch_key=parameters.batch_key,
+        condition=condition,
     )
     if plot["status"] == "rendered":
         if plot["data_sha256"] != assessed_coordinates_sha256:
@@ -482,7 +565,9 @@ def _render_figure(
 
 
 def _donor_trajectory(
-    request: MountedSingleCellRequest, paths: dict[str, Path], root: Path,
+    request: MountedSingleCellRequest,
+    paths: dict[str, Path],
+    root: Path,
 ) -> _StageResult:
     from devbench.core.scrna_donor_trajectory import (
         DonorTrajectorySpec,
@@ -502,7 +587,8 @@ def _donor_trajectory(
         ):
             raise ValueError("trajectory_specification_input_mismatch")
         _check_hdf5_storage(
-            expression, prepared=True,
+            expression,
+            prepared=True,
             matrix_path="X" if spec.layer is None else f"layers/{spec.layer}",
         )
         result = fit_donor_trajectory(
@@ -517,17 +603,27 @@ def _donor_trajectory(
         if not re.fullmatch(r"[A-Za-z0-9_]{1,128}", reason):
             reason = "invalid_donor_trajectory_input"
         return _StageResult({}, "refused", reason)
-    output = root / SCRNA_OPERATIONS[DONOR_TRAJECTORY].outputs[
-        "trajectory_result"
-    ].filename
-    output.write_bytes(canonical_json({
-        **result,
-        "verified_mounted_inputs": request.inputs,
-        "upstream_receipt_status": (
-            "independently_reviewed" if evidence is not None else "supplied_only"
-        ),
-        **({"trajectory_evidence_sha256": evidence.sha256()} if evidence else {}),
-    }))
+    output = (
+        root / SCRNA_OPERATIONS[DONOR_TRAJECTORY].outputs["trajectory_result"].filename
+    )
+    output.write_bytes(
+        canonical_json(
+            {
+                **result,
+                "verified_mounted_inputs": request.inputs,
+                "upstream_receipt_status": (
+                    "independently_reviewed"
+                    if evidence is not None
+                    else "supplied_only"
+                ),
+                **(
+                    {"trajectory_evidence_sha256": evidence.sha256()}
+                    if evidence
+                    else {}
+                ),
+            }
+        )
+    )
     artifacts = {"trajectory_result": output}
     if result["status"] == "no_estimable_genes":
         return _StageResult(artifacts, "refused", "trajectory_no_estimable_genes")
@@ -535,7 +631,9 @@ def _donor_trajectory(
 
 
 def _execute(
-    request: MountedSingleCellRequest, paths: dict[str, Path], store: CheckpointStore,
+    request: MountedSingleCellRequest,
+    paths: dict[str, Path],
+    store: CheckpointStore,
 ) -> _StageResult:
     parameters = request.parameters
     if isinstance(parameters, (EmptyDropsParameters, CellBenderParameters)):
@@ -574,21 +672,26 @@ def _execute(
 
 
 def _label_input(
-    request: MountedSingleCellRequest, paths: dict[str, Path],
+    request: MountedSingleCellRequest,
+    paths: dict[str, Path],
 ) -> ExternalLabelEvidence | None:
     from devbench.analysis.integration_metrics import ExternalLabelEvidence
 
     if request.operation != "scrna_integrate_qualified":
         return None
     return ExternalLabelEvidence(
-        paths["labels"], paths["label_qualification"],
+        paths["labels"],
+        paths["label_qualification"],
         request.inputs["label_qualification"],
     )
 
 
 def _publish(
-    request: MountedSingleCellRequest, request_sha256: str, result: _StageResult,
-    outputs: Path, temporary: Path,
+    request: MountedSingleCellRequest,
+    request_sha256: str,
+    result: _StageResult,
+    outputs: Path,
+    temporary: Path,
 ) -> dict[str, Any]:
     ports = SCRNA_OPERATIONS[request.operation].outputs
     summary = {
@@ -625,17 +728,25 @@ def run_mounted_scrna(inputs: Path, outputs: Path, request_sha256: str) -> dict:
     """Admit a canonical request, run its operation and publish verified outputs."""
     from devbench.analysis.checkpoints import CheckpointStore
 
-    if (not inputs.is_absolute() or not outputs.is_absolute()
-            or inputs.resolve() != inputs or outputs.resolve() != outputs
-            or inputs.is_relative_to(outputs) or outputs.is_relative_to(inputs)
-            or not inputs.is_dir() or not outputs.is_dir() or any(outputs.iterdir())
-            or not _SHA256.fullmatch(request_sha256)):
+    if (
+        not inputs.is_absolute()
+        or not outputs.is_absolute()
+        or inputs.resolve() != inputs
+        or outputs.resolve() != outputs
+        or inputs.is_relative_to(outputs)
+        or outputs.is_relative_to(inputs)
+        or not inputs.is_dir()
+        or not outputs.is_dir()
+        or any(outputs.iterdir())
+        or not _SHA256.fullmatch(request_sha256)
+    ):
         raise ValueError("Expected canonical input/output mounts and a request digest")
     request, paths, source_states = _required_inputs(inputs, request_sha256)
     with tempfile.TemporaryDirectory(prefix=".scrna-", dir=outputs) as directory:
         temporary = Path(directory)
         store = CheckpointStore(
-            temporary / "checkpoints", {"request_sha256": request_sha256},
+            temporary / "checkpoints",
+            {"request_sha256": request_sha256},
         )
         result = (
             _donor_trajectory(request, paths, store.root)
@@ -645,6 +756,37 @@ def run_mounted_scrna(inputs: Path, outputs: Path, request_sha256: str) -> dict:
         if any(_file_state(path) != state for path, state in source_states.items()):
             raise ValueError("Mounted single-cell input changed during execution")
         return _publish(request, request_sha256, result, outputs, temporary)
+
+
+def run_m2(
+    operation: str,
+    paths: dict[str, Path],
+    params: dict,
+    outputs: Path,
+    *,
+    primary_count_admitted: bool = False,
+) -> dict[str, Path]:
+    """Execute an A2 kernel after the coordinator binds its input representations."""
+    from .scrna_ambient import ambient
+    from .scrna_capture_doublets import capture_doublets
+    from .scrna_qc_audit import nuclear_qc
+    from .scrna_upstream_contract import M2_QC_PARAMETERS
+
+    kernels = {
+        "snrna_droplet_qc": (nuclear_qc, {"expression", "bam_summary"}),
+        "scrna_doublets": (capture_doublets, {"expression", "qc_metrics"}),
+        "scrna_ambient_decontamination": (ambient, {"expression", "raw_droplets"}),
+    }
+    kernel, allowed = kernels[operation]
+    if "expression" not in paths or set(paths) - allowed:
+        raise ValueError("invalid_A2_input_ports")
+    _check_hdf5_storage(paths["expression"], prepared=False, matrix_path="X")
+    settings = M2_QC_PARAMETERS[operation].model_validate(params)
+    if operation == "scrna_ambient_decontamination":
+        return ambient(
+            paths, settings, outputs, primary_count_admitted=primary_count_admitted
+        )
+    return kernel(paths, settings, outputs)
 
 
 def main() -> None:
