@@ -317,3 +317,152 @@ def test_explicit_gpu_plan_selects_only_a_qualified_cuda_pin(monkeypatch):
     assert registry.select_image(ctx, name, require_gpu=True) == cuda
     ctx.plugin.mounted_image_id = cpu
     assert registry.select_image(ctx, name, require_gpu=True) is None
+
+
+def _write_unevaluable_cohort(path, case, logged, *, fractional_log1p=False):
+    data = _cohort("integer_log" if logged else None)
+    if fractional_log1p:
+        data.X = np.log1p(data.X.astype(float))
+        data.uns["log1p"] = {"base": None}
+    if case == "donor_limit":
+        rows = np.arange(257) % data.n_obs
+        data = ad.AnnData(
+            X=data.X[rows],
+            var=data.var.copy(),
+            obs=pd.DataFrame(
+                {"donor_id": [f"d{i}" for i in range(len(rows))]},
+                index=[f"c{i}" for i in range(len(rows))],
+            ),
+        )
+    elif case == "duplicate_features":
+        data.var_names = ["gene"] * data.n_vars
+    elif case == "duplicate_cells":
+        data.obs_names = ["cell"] * data.n_obs
+
+    if path.suffix == ".h5ad":
+        data.write_h5ad(path)
+        if case == "structured_obs":
+            import h5py
+
+            records = np.rec.fromarrays(
+                [data.obs_names.to_numpy(dtype="S8"), data.obs.donor_id.to_numpy("S8")],
+                names="_index,donor_id",
+            )
+            with h5py.File(path, "r+") as handle:
+                del handle["obs"]
+                handle["obs"] = records
+    else:
+        data.write_zarr(path)
+        if case == "axis_limit":
+            import zarr
+
+            # Valid fill-only column exceeds the decoded axis budget without I/O.
+            var = zarr.open_group(str(path), mode="r+")["var"]
+            labels = var.create_dataset(
+                "annotation",
+                shape=(data.n_vars,),
+                dtype="U450000",
+                chunks=(1,),
+                fill_value="",
+            )
+            labels.attrs.update(
+                {"encoding-type": "string-array", "encoding-version": "0.2.0"}
+            )
+            var.attrs["column-order"] = [*var.attrs["column-order"], "annotation"]
+
+
+@pytest.mark.parametrize(
+    ("fmt", "case", "logged"),
+    [
+        ("h5ad", "donor_limit", False),
+        ("zarr", "donor_limit", False),
+        ("h5ad", "duplicate_features", False),
+        ("h5ad", "duplicate_cells", False),
+        ("h5ad", "structured_obs", False),
+        ("zarr", "axis_limit", False),
+        ("h5ad", "donor_limit", True),
+        ("h5ad", "duplicate_features", True),
+        ("h5ad", "structured_obs", True),
+        ("zarr", "axis_limit", True),
+    ],
+)
+def test_public_intake_unevaluable_donor_identity(plane, fmt, case, logged):
+    from devbench.core.donor_forensics import CAVEAT, SUSPECTED_TRANSFORM
+
+    path = plane.input_root / f"cohort.{fmt}"
+    _write_unevaluable_cohort(path, case, logged)
+    request = _admission(path, "public")
+    entry = dict(request["input"])
+    del entry["investigation_role"]
+    inspected = _ok(plane, "inspect_inputs", {"inputs": [entry]})["inputs"][0]
+    reg = _ok(plane, "register_investigation_input", request)
+    artifact = reg["artifact"]
+    detail = plane.artifact(
+        reg["session_id"], artifact["artifact_id"], artifact["sha256"]
+    )["detail"]
+    expected = {
+        "status": "conflict_halted" if logged else "warning",
+        "findings": ["donor_identity_not_evaluable"]
+        + ([SUSPECTED_TRANSFORM] if logged else []),
+        "forensic_evidence_level": "expression_only_L1",
+        "caveat": CAVEAT,
+    }
+    assert inspected["count_1_forensics"]["suspected_transformed"] is logged
+    assert inspected["donor_forensics"] == detail["donor_forensics"] == expected
+    assert detail["count_1_verified"] is (not logged)
+    if logged:
+        blocked = dispatch(
+            plane,
+            "freeze_analysis_plan",
+            dict(_audit_plan(reg), epistemic_purpose="confirmatory"),
+        )
+        assert (
+            blocked.isError
+            and blocked.structuredContent["category"] == "scientific_refusal"
+        )
+
+
+@pytest.mark.parametrize(
+    ("fmt", "case", "finding"),
+    [
+        ("h5ad", None, "count_screen_not_evaluable"),
+        ("zarr", "axis_limit", "donor_identity_not_evaluable"),
+    ],
+)
+def test_fractional_log1p_does_not_hold_donor_inference(plane, fmt, case, finding):
+    path = plane.input_root / f"normalized.{fmt}"
+    _write_unevaluable_cohort(path, case, False, fractional_log1p=True)
+    request = _admission(path, "public")
+    request["representation_class"] = "size_factor_normalized"
+    request["provenance_declaration"]["count_provenance"] = "fractional log1p"
+    entry = dict(request["input"])
+    del entry["investigation_role"]
+    inspected = _ok(plane, "inspect_inputs", {"inputs": [entry]})["inputs"][0]
+    reg = _ok(plane, "register_investigation_input", request)
+    artifact = reg["artifact"]
+    detail = plane.artifact(
+        reg["session_id"], artifact["artifact_id"], artifact["sha256"]
+    )["detail"]
+
+    counts = inspected["count_1_forensics"]
+    assert counts["suspected_transformed"] and counts["nonnegative"]
+    assert not counts["integer_valued"]
+    forensic = inspected["donor_forensics"]
+    assert forensic == detail["donor_forensics"]
+    assert forensic["status"] == "warning" and forensic["findings"] == [finding]
+    assert not detail.get("donor_conflict_halted")
+    assert not detail["count_1_verified"]
+
+    decision = _ok(
+        plane,
+        "check_answerability",
+        {
+            "session_id": reg["session_id"],
+            "question_text": "Compare normalized expression across donors",
+            "axis_b_class": "B1",
+            "assay": "bulk_short_read",
+            "entry_point": "open",
+            "artifact_ids": [artifact["artifact_id"]],
+        },
+    )
+    assert decision["epistemic_state"] != "E_ABSTAIN"

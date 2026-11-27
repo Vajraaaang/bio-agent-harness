@@ -16,6 +16,7 @@ from devbench.core.donor_forensics import (
     DonorForensicsReceipt,
     intake_h5ad_forensics,
 )
+from devbench.engine.workflow_operations import OperationBlocked
 from rna_kernels import donor_forensics as kernel
 
 
@@ -275,3 +276,38 @@ def test_concordance_sidecar_contains_only_aggregate_observations(tmp_path):
         plot["source_receipt_sha256"]
         == json.loads(ports["result"].read_text())["provenance_sha256"]
     )
+
+
+def test_intake_profile_budget_keeps_mounted_screen_strict(tmp_path, monkeypatch):
+    from devbench.core import donor_forensics
+
+    source = tmp_path / "data.h5ad"
+    _cohort().write_h5ad(source)
+    monkeypatch.setattr(donor_forensics, "_MAX_PROFILE_BYTES", 128)
+    with pytest.raises(ValueError, match="bounded forensic budget"):
+        kernel.run_m2("donor_forensics", {"expression": source}, {}, tmp_path)
+    with source.open("rb") as stream:
+        observed = intake_h5ad_forensics(
+            stream, source_sha256=kernel.source_digest(source)
+        )
+    assert observed["findings"] == ["donor_identity_not_evaluable"]
+    assert observed["status"] == "warning"
+
+
+@pytest.mark.parametrize("error", [MemoryError, OperationBlocked])
+def test_intake_screen_enforces_control_plane_quota(tmp_path, error):
+    def interrupted():
+        raise error("resource_quota_exceeded")
+
+    source = tmp_path / "data.h5ad"
+    _cohort().write_h5ad(source)
+    with source.open("rb") as stream:
+        kwargs = dict(
+            source_sha256=kernel.source_digest(source), check_time=interrupted
+        )
+        if error is OperationBlocked:
+            with pytest.raises(OperationBlocked, match="resource_quota_exceeded"):
+                intake_h5ad_forensics(stream, **kwargs)
+        else:
+            observed = intake_h5ad_forensics(stream, **kwargs)
+            assert observed["findings"] == ["donor_identity_not_evaluable"]

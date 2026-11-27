@@ -415,27 +415,38 @@ def receipt(status, findings, rows, pairs, hashes, params, genetic=None):
     return DonorForensicsReceipt(**fields, provenance_sha256=digest)
 
 
+def _unevaluable_intake(counts, finding="donor_identity_not_evaluable"):
+    findings = [finding]
+    status = "warning"
+    if (
+        counts is not None
+        and counts["integer_valued"]
+        and counts["nonnegative"]
+        and counts["suspected_transformed"]
+    ):
+        findings.append(SUSPECTED_TRANSFORM)
+        status = "conflict_halted"
+    return dict(
+        status=status,
+        findings=findings,
+        forensic_evidence_level="expression_only_L1",
+        caveat=CAVEAT,
+    )
+
+
 def _intake(group, source_sha256, counts, check_time):
     # Minimal H5AD headers admitted for structural inventory can lack annotated
     # dataframe axes. Such inputs cannot resolve identity, even with integer X.
     if counts is not None and not (counts["integer_valued"] and counts["nonnegative"]):
-        return dict(
-            status="warning",
-            findings=["count_screen_not_evaluable"],
-            forensic_evidence_level="expression_only_L1",
-            caveat=CAVEAT,
-        )
+        return _unevaluable_intake(counts, "count_screen_not_evaluable")
     obs = group.get("obs")
     keys = ("donor_id", "donor", "animal_id", "subject_id", "individual")
-    if obs is None or not any(k in obs for k in keys):
-        flags = ["donor_identity_not_evaluable"]
-        status = "warning"
-        if counts is not None and counts["suspected_transformed"]:
-            flags.append(SUSPECTED_TRANSFORM)
-            status = "conflict_halted"
-    else:
-        from .expression_io import BackedExpression
+    if obs is None or hasattr(obs, "dtype") or not any(k in obs for k in keys):
+        return _unevaluable_intake(counts)
 
+    from .expression_io import BackedExpression
+
+    try:
         source = BackedExpression(group, None)
         status, flags, _, _ = screen_expression(
             source,
@@ -443,6 +454,8 @@ def _intake(group, source_sha256, counts, check_time):
             count_forensics=counts,
             check_time=check_time,
         )
+    except (ValueError, MemoryError):
+        return _unevaluable_intake(counts)
     return dict(
         status=status,
         findings=flags,
@@ -486,7 +499,10 @@ def intake_zarr_forensics(
 ):
     """Accept a checksum-bound group with vetted codecs and bounded local chunks."""
     if "obs" in group and "var" in group:
-        check_zarr_axes(group)
+        try:
+            check_zarr_axes(group)
+        except (ValueError, MemoryError):
+            return _unevaluable_intake(count_forensics)
     return _intake(group, source_sha256, count_forensics, check_time)
 
 
