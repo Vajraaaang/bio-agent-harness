@@ -712,11 +712,13 @@ class Supervisor:
         poll_sec=0.15,
         worker_factory=None,
         offline_only=True,
+        allow_external_input_files=False,
         policy_sha256=None,
     ):
         self.policy_sha256 = policy_sha256
         self.workspace = directory(Path(workspace), exists=False)
         self.offline_only = offline_only is True
+        self.allow_external_input_files = allow_external_input_files is True
         cpu = (
             max(2, min(4, (os.cpu_count() or 1) // 2))
             if cpu_slots is None
@@ -828,6 +830,11 @@ class Supervisor:
     def _enforce(self, plan, sha, protected, *, db=None):
         from devbench.mcp.approval import active_policy_digest
 
+        if (
+            plan.get("allow_external_input_files") is True
+            and not self.allow_external_input_files
+        ):
+            raise OperationBlocked("input_scope_violation")
         policy = active_policy_digest(self.workspace, self.policy_sha256)
         require_execution_policy(
             self.authority,
@@ -1311,6 +1318,7 @@ class Supervisor:
             ).start()
         stage = json.loads(row["stage_json"])
         stage["_offline_only"] = self.offline_only
+        stage["_allow_external_input_files"] = self.allow_external_input_files
         stage["_approval_policy_sha256"] = self.policy_sha256
         db.execute(
             "UPDATE scientific_daemon_runs SET status='running',pid=?,create_time=?,"

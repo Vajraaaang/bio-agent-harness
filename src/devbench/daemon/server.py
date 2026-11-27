@@ -335,6 +335,7 @@ class _Daemon:
         self.supervisor = Supervisor(
             workspace,
             offline_only=config["offline_only"],
+            allow_external_input_files=config.get("allow_external_input_files", False),
             policy_sha256=load_policy(
                 workspace, cli_enabled=config.get("auto_approve_tier2_public")
             ),

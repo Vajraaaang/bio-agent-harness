@@ -1039,9 +1039,12 @@ async def _stdio_session(
     legacy_browser_log=None,
     example=False,
     capabilities=None,
+    allow_external_input_files=False,
 ):
     if legacy_browser_log is None:
         command = ["-m", "devbench.platform.cli", "mcp", "--no-auto-browser"]
+        if allow_external_input_files:
+            command.append("--allow-external-input-files")
     else:
         entry = (
             "from pathlib import Path; "
@@ -1342,6 +1345,48 @@ def _audit_plan(admitted):
             "expression": {k: ref[k] for k in ("artifact_id", "sha256")}
         },
     }
+
+
+def test_restart_revokes_external_file_plan(workspace_tmp_path):
+    external = workspace_tmp_path / "external.csv"
+    external.write_text("gene,A,B\nred,1,2\nblue,3,4\n")
+    with (
+        _daemon(workspace_tmp_path, allow_external_input_files=True) as (
+            workspace,
+            inputs,
+            _,
+        ),
+        (workspace_tmp_path / "stderr").open("wb") as errors,
+    ):
+
+        async def freeze():
+            async with _stdio_session(
+                workspace, inputs, errors, allow_external_input_files=True
+            ) as client:
+                admitted = await _tool(
+                    client, "register_investigation_input", _admission(external)
+                )
+                plan = await _tool(
+                    client, "freeze_analysis_plan", _audit_plan(admitted)
+                )
+                return {k: plan[k] for k in ("session_id", "plan_id", "plan_sha256")}
+
+        async def check_revocation(identity):
+            async with _stdio_session(workspace, inputs, errors) as client:
+                refusal = await _tool(
+                    client, "submit_reviewed_run", identity, expect_error=True
+                )
+                assert refusal["category"] == "input_scope_violation"
+                state = await _tool(
+                    client,
+                    "list_investigation_state",
+                    {"session_id": identity["session_id"]},
+                )
+                assert state["runs"] == []
+
+        identity = asyncio.run(freeze())
+        _stop_when_idle(workspace)
+        asyncio.run(check_revocation(identity))
 
 
 def _controlled_worker(workspace, rid):

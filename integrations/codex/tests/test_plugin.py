@@ -470,15 +470,18 @@ def test_detect_image_prefers_routed_de_over_older_voom(tmp_path, monkeypatch):
     assert configure._detect_image(pinned, tmp_path, preferred=preferred) == legacy_arm
 
 
-def test_external_file_permission_is_bound_to_configured_shim(paths):
+@pytest.mark.parametrize("prestarted", [False, True], ids=["cold", "daemon-cli"])
+def test_external_file_permission_is_bound_to_configured_shim(paths, prestarted):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
     from devbench.platform.workbench_ui import _detect_mounted_image
+    from devharness_controlled.native_contracts import routed_de_kernel_images
     from tests.test_research_daemon import _admission
+    from tests.test_research_daemon import _cli as daemon_cli
 
     inputs, workspace, output = paths
-    image = _detect_mounted_image()
+    image = _detect_mounted_image() or sorted(routed_de_kernel_images())[0]
     api().configure(
         Path(sys.executable),
         inputs,
@@ -489,8 +492,7 @@ def test_external_file_permission_is_bound_to_configured_shim(paths):
     )
     server = _read(output / ".mcp.json")["mcpServers"]["devharness"]
     args = server["args"]
-    if image:
-        assert args[args.index("--mounted-image-id") + 1] == image
+    assert args[args.index("--mounted-image-id") + 1] == image
     external = inputs.parent / "external"
     external.mkdir()
     metadata = external / "metadata.csv"
@@ -545,6 +547,21 @@ def test_external_file_permission_is_bound_to_configured_shim(paths):
             assert b"workspace daemon connection failed" in stderr
 
     try:
+        if prestarted:
+            started = daemon_cli(
+                "daemon",
+                "start",
+                "--workspace",
+                workspace,
+                "--input-root",
+                inputs,
+                "--mounted-image-id",
+                image,
+                "--allow-external-input-files",
+            )
+            config = json.loads(started.stdout)
+            assert config["mounted_image_id"] == image
+            assert config["allow_external_input_files"] is True
         asyncio.run(exercise())
     finally:
         _stop_when_idle(workspace)

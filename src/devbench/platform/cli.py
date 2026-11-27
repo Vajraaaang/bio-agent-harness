@@ -59,6 +59,10 @@ def _daemon_parser():
     for command in (start, status, stop):
         command.add_argument("--workspace", required=True, type=Path)
     start.add_argument("--input-root", type=Path)
+    start.add_argument("--mounted-image-id")
+    start.add_argument(
+        "--allow-external-input-files", action="store_true", default=argparse.SUPPRESS
+    )
     start.add_argument("--http-port", type=int, default=0)
     start.add_argument("--idle-timeout-sec", type=float, default=1800)
     start.add_argument("--offline-only", action="store_true")
