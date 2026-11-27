@@ -11,18 +11,23 @@ import json
 import os
 import platform
 import subprocess
+import sys
 from importlib.metadata import version
 from pathlib import Path
 
-from devharness_core.provenance import hash_artifact
-from rna_kernels.mounted_bulk import run_mounted_bulk
+ROUTE_PROBES = {
+    "declared-heterogeneous": "limma_voom_qw",
+    "unbalanced-contrast": "dream",
+    "repeated-donor": "dream",
+}
 
 _PYTHON_PACKAGES = ("numpy", "scipy", "pyarrow", "h5py")
 
 
 def _capture_runtime():
     query = """
-    packages <- c("edgeR", "DESeq2", "limma", "BiocParallel", "jsonlite")
+    packages <- c("edgeR", "DESeq2", "limma", "variancePartition",
+                  "statmod", "BiocParallel", "jsonlite")
     versions <- lapply(setNames(packages, packages),
                        function(pkg) as.character(packageVersion(pkg)))
     versions$R <- as.character(getRversion())
@@ -58,10 +63,18 @@ def _capture_runtime():
 
 
 def _run_sentinels() -> None:
+    if os.environ.get("DEVBENCH_CALIBRATION_SOURCES") == "checkout":
+        sys.path.insert(0, "/checkout/src")
+    from devharness_core.provenance import hash_artifact
+    from rna_kernels.mounted_bulk import run_mounted_bulk
+
     inputs, outputs = Path("/inputs"), Path("/outputs")
     sentinel_cases = tuple(sorted(inputs.iterdir()))
-    if len(sentinel_cases) != 6:
-        raise ValueError("Expected five normal and one confounded sentinel cohort")
+    if (
+        len(sentinel_cases) != 6
+        and {p.name for p in sentinel_cases} != ROUTE_PROBES.keys()
+    ):
+        raise ValueError("Expected the frozen historical or route-probe inventory")
     observations = {}
     for case in sentinel_cases:
         target = outputs / case.name
@@ -108,14 +121,20 @@ def _runtime(directory):
     return runtime
 
 
-def compare_sentinels(source, target, *, mode, alpha=0.05, blas_debug_oracle=False):
+def compare_sentinels(
+    source, target, *, mode, alpha=0.05, blas_debug_oracle=False, route_probes=False
+):
     """Return per-fit ADR-16 receipts and the exact expected confounding refusal."""
     from devbench.analysis.thesis_replay import compare_replayed_fit
     from devbench.core._files import read_bounded_json
     from tests.thesis_calibration_inputs import SIMULATIONS
 
     refused = "bi-confounded-000"
-    expected = {f"{spec.key}-planted-000" for spec in SIMULATIONS} | {refused}
+    expected = (
+        set(ROUTE_PROBES)
+        if route_probes
+        else {f"{spec.key}-planted-000" for spec in SIMULATIONS} | {refused}
+    )
     result = {"mode": mode, "passed": False, "cases": {}, "violations": []}
     errors = result["violations"]
     try:
@@ -162,6 +181,7 @@ def compare_sentinels(source, target, *, mode, alpha=0.05, blas_debug_oracle=Fal
                 result["cases"][case] = receipt
                 observations_match = all(
                     obs["status"] == "completed"
+                    and (not route_probes or obs["solver"] == ROUTE_PROBES[case])
                     and all(obs.get(k) == v for k, v in receipt["fits"][side].items())
                     for side, obs in (("source", a), ("target", b))
                 )

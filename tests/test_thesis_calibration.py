@@ -1,4 +1,4 @@
-"""Synthetic P4 calibration on the locked, production mounted count driver."""
+"""Historic synthetic P4 panel, checked-out drivers in the locked image."""
 
 import json
 import os
@@ -104,6 +104,8 @@ def _execute(
     script: Path,
     entrypoint: str,
     arguments: tuple[str, ...] = (),
+    *,
+    checkout: bool = True,
 ) -> None:
     docker, image = runtime
     command = [
@@ -111,6 +113,7 @@ def _execute(
         "run",
         "--rm",
         "--pull=never",
+        f"--platform={kernel_test_platform(image)}",
         "--network=none",
         "--read-only",
         "--pids-limit=64",
@@ -120,6 +123,7 @@ def _execute(
         "--security-opt=no-new-privileges",
         "--log-driver=none",
         f"--env=DEVBENCH_RNA_KERNEL_TEST_IMAGE={image}",
+        f"--env=DEVBENCH_CALIBRATION_SOURCES={'checkout' if checkout else 'baked'}",
         "--env=OPENBLAS_NUM_THREADS=1",
         "--env=OMP_NUM_THREADS=1",
         "--env=MKL_NUM_THREADS=1",
@@ -131,6 +135,14 @@ def _execute(
         f"type=bind,src={volume.outputs},dst=/outputs",
         "--mount",
         f"type=bind,src={script},dst=/run-calibration,readonly",
+        *(
+            [
+                "--mount",
+                f"type=bind,src={_ROOT.parent / 'src'},dst=/checkout/src,readonly",
+            ]
+            if checkout
+            else []
+        ),
         "--entrypoint",
         entrypoint,
         image,
@@ -150,6 +162,18 @@ def _append_failure(
     failures.append({"case_id": case, "phase": phase, "reason": str(reason)[:400]})
 
 
+def _stage_routed(cohort, directory):
+    """Keep historical counts/design custody, then freeze today's production route."""
+    from rna_kernels.mounted_model import _fit_config, freeze_mounted_solver
+    from tests.thesis_calibration_inputs import stage_solver_inputs
+
+    stage_solver_inputs(cohort, directory)
+    compiled = compile_mounted_model(cohort.rows, cohort.request)
+    choice = freeze_mounted_solver(compiled, cohort.request, True, "bioconductor")
+    cfg = _fit_config(choice, compiled, cohort.source, cohort.request)
+    (directory / "model.json").write_text(json.dumps(cfg, allow_nan=False))
+
+
 def _prepare(
     batches: tuple[_Volume, ...],
     parity: _Volume,
@@ -160,7 +184,6 @@ def _prepare(
         SIMULATIONS,
         generate_cohort,
         stage_mounted_request,
-        stage_solver_inputs,
     )
 
     expected: dict[str, np.ndarray] = {}
@@ -179,7 +202,7 @@ def _prepare(
                         "A cohort reuses another sampled matrix"
                     )
                     digests.add(digest)
-                    stage_solver_inputs(cohort, batches[batch].inputs / case)
+                    _stage_routed(cohort, batches[batch].inputs / case)
                     if planted and index == 0:
                         stage_mounted_request(cohort, parity.inputs / case)
                     expected[case] = cohort.latent_signs
@@ -244,7 +267,9 @@ def _count_discoveries(
     output_directory: Path,
     receipt: dict[str, Any],
     truth: np.ndarray,
+    config: dict,
 ) -> _Fit:
+    from rna_kernels.mounted_model import _read_model_quantities
     from tests.thesis_calibration_inputs import ALPHA, N_GENES
 
     effects, probabilities, adjusted, codes, method = _read_result(
@@ -252,16 +277,34 @@ def _count_discoveries(
         N_GENES,
         omnibus=False,
     )
-    assert method["solver"] == "edger_v4"
-    assert method["test"] == "qlf"
-    assert method["solver_version"] == _SOLVER_VERSION
-    assert method["solver_details"]["normalization"] == "full_family_RLE"
-    assert np.count_nonzero(codes) == 0, "A calibration family was filtered or failed"
+    assert method["solver"] == config["solver"]
+    assert method["test"] == config["test"]
+    package = {"edger_v4": "edgeR", "limma_voom_qw": "limma"}[config["solver"]]
+    assert method["solver_version"] == KERNEL_VERSIONS[package]
+    details = method["solver_details"]
+    assert details["normalization"] == "TMM" and details["filter"] == "filterByExpr"
+    if method["solver"] == "edger_v4":
+        assert details["abundance_trend"] is False
+    assert np.isin(codes, [0, 1]).all(), "An eligible calibration estimate failed"
+    estimated = codes == 0
+    assert estimated.any(), "No testable hypotheses"
     np.testing.assert_allclose(
-        adjusted,
-        false_discovery_control(probabilities, method="bh"),
+        adjusted[estimated],
+        false_discovery_control(probabilities[estimated], method="bh"),
         atol=1e-14,
-        rtol=1e-12,
+        rtol=0,
+    )
+    other = config["sensitivity_solver"]
+    assert method["sensitivity_details"]["solver"] == other
+    columns = _read_model_quantities(
+        output_directory, method["model_columns"], N_GENES, other
+    )
+    other_codes = columns["sensitivity_code"]
+    assert np.isin(other_codes, [0, 1]).all()
+    other_p = columns["sensitivity_p_value"][other_codes == 0]
+    other_q = columns["sensitivity_q_value"][other_codes == 0]
+    np.testing.assert_allclose(
+        other_q, false_discovery_control(other_p), atol=1e-14, rtol=0
     )
     discovered = adjusted <= ALPHA
     latent = truth != 0
@@ -298,6 +341,7 @@ def _read_batch(
                 volume.outputs / case,
                 receipt,
                 expected[case],
+                json.loads((volume.inputs / case / "model.json").read_bytes()),
             )
         except _FAILURES as error:
             _append_failure(failures, case, "fit", error)
@@ -324,8 +368,11 @@ def _check_parity(
                 assert not any(target.iterdir())
             else:
                 assert report["status"] == "completed"
-                assert report["tested_count"] == N_GENES
-                assert report["solver"] == "edger_v4"
+                assert 0 < report["tested_count"] <= N_GENES
+                config = json.loads(
+                    (batches[0].inputs / case / "model.json").read_bytes()
+                )
+                assert report["solver"] == config["solver"]
                 table = target / "genes.parquet"
                 assert hash_artifact(table)["sha256"] == report["genes_sha256"]
                 result = pq.read_table(
@@ -495,6 +542,7 @@ def test_thesis_calibration_n_sim_200(
             "used_for_acceptance": False,
         },
         "pinned_image": runtime[1],
+        "driver_source": "read-only checkout overlay in pinned runtime",
         "edgeR_version": _SOLVER_VERSION,
         "distinct_generated_cohorts": len(digests),
         "normal_mounted_sentinels": parity_cases,

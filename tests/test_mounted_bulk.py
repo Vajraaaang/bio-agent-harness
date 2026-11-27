@@ -331,15 +331,9 @@ def test_mounted_edger_checkout_filters_bh_and_retains_scores(
         "--mount",
         f"type=bind,src={outputs},dst=/outputs",
     ]
-    for path in (
-        "devharness_server/r/bulk_edger.R",
-        "devharness_server/r/bulk_latent_diagnostics.R",
-        "devharness_server/r/mounted_edger.R",
-        "devharness_server/r/mounted_general.R",
-        "rna_kernels/mounted_bulk.py",
-        "rna_kernels/mounted_model.py",
-        "rna_kernels/rank_sensitivity.py",
-    ):
+    # Explicit checkout overlay. Exercise the routed Python adapter and every
+    # sibling R source in the same pinned R/Python runtime.
+    for path in ("devharness_server/r", "rna_kernels"):
         source = root / "src" / path
         destination = f"/opt/rna/runtime/{path}"
         command.extend(

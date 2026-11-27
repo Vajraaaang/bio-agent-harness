@@ -43,28 +43,123 @@ def _validate_row_coordinates(data, estimated, effects):
         )
 
 
-def verify_mounted_solver(summary, spec):
+def _verify_routed_method(solver, details, eligible, columns):
+    from devharness_controlled.native_contracts import KERNEL_VERSIONS
+
+    stats = {"df.prior", "df.total", "s2.post"}
+    if solver == "edger_v4":
+        engine = "edgeR"
+        stats.update(("F", "df.residual.adj"))
+        configured = (
+            details.get("robust") is True
+            and details.get("legacy") is False
+            and details.get("abundance_trend") is (eligible >= 500)
+        )
+    elif solver in ("limma_voom_qw", "limma_voom"):
+        engine = "limma"
+        weights = "voomWithQualityWeights" if solver == "limma_voom_qw" else "voom"
+        stats.add("t")
+        configured = details.get("robust") is True and details.get("weights") == weights
+    else:
+        engine = "variancePartition::dream"
+        stats.add("t")
+        configured = solver == "dream" and details.get("voom_weights") is True
+
+    if (
+        not configured
+        or not stats <= columns
+        or details.get("engine") != engine
+        or not details.get("version")
+        or engine in KERNEL_VERSIONS
+        and details["version"] != KERNEL_VERSIONS[engine]
+        or details.get("normalization") != "TMM"
+        or details.get("filter") != "filterByExpr"
+        or details.get("n_eligible_genes") != eligible
+    ):
+        raise ValueError("Mounted model evidence differs from the frozen count route")
+
+
+def _verify_route(summary, spec, inputs):
+    """Recompute arbitration from the original digest-bound design."""
+    import csv
+    import io
+
+    from rna_kernels.mounted_bulk import _metadata, _read_bound_file, _request
+    from rna_kernels.mounted_model import MountedCohort, freeze_mounted_solver
+
+    request = _request(inputs, summary["request_sha256"])
+    raw = _read_bound_file(inputs / "metadata.csv", spec.metadata_sha256, 5_000_000)
+    rows = list(csv.DictReader(io.StringIO(raw.decode("utf-8")), strict=True))
+    arrays, condition, cohort = _metadata(raw, [r["sample_id"] for r in rows], request)
+    if cohort is None:
+        # Preserve the implicit two-arm protocol's own nuisance/design semantics.
+        design, units, strata, covariates = arrays
+        labels = [r[request["condition_column"]] for r in rows]
+        cohort = MountedCohort(
+            design, condition, units, labels, strata, covariates, None, None
+        )
+        request["model"] = {"units": "independent", "comparison": "coefficient"}
+    choice = freeze_mounted_solver(cohort, request, spec.family.primary, "bioconductor")
+    details = summary.get("solver_details", {})
+    companion = summary.get("sensitivity_details") or {}
+    if (
+        not choice.regime_route
+        or summary["regime_route"] != choice.regime_route
+        or summary.get("calibration_status") != choice.calibration_status
+        or summary.get("units_per_arm") != list(cohort.units_per_arm)
+        or summary.get("rank_sensitivity_planned")
+        is not choice.rank_sensitivity_planned
+        or summary.get("sensitivity_solver") != choice.sensitivity_solver
+        or companion.get("solver") != choice.sensitivity_solver
+        or summary.get("solver_version") != details.get("version")
+    ):
+        raise ValueError("Mounted route or calibration differs from frozen design")
+    eligible = summary["row_count"] - summary["status_counts"].get("filtered", 0)
+    columns = set(summary.get("model_columns", ()))
+    _verify_routed_method(choice.solver, details, eligible, columns)
+    if choice.sensitivity_solver:
+        secondary = {
+            k.removeprefix("sensitivity_")
+            for k in columns
+            if k.startswith("sensitivity_")
+        }
+        if not {"effect", "p_value", "q_value", "code"} <= secondary:
+            raise ValueError("Mounted comparator differs from the frozen count route")
+        _verify_routed_method(choice.sensitivity_solver, companion, eligible, secondary)
+    return choice
+
+
+def verify_mounted_solver(summary, spec, *, inputs=None):
     from rna_kernels.bulk_solver_policy import freeze_bulk_solver
 
     model = spec.mounted_model
-    if model is None:
+    if "calibration_status" in summary and not summary.get("regime_route"):
+        raise ValueError("Calibration receipt requires a frozen regime route")
+    if summary.get("regime_route"):
+        if inputs is None:
+            raise ValueError("Routed receipt requires the original staged design")
+        choice = _verify_route(summary, spec, inputs)
+    elif model is None:
         return
-    choice = freeze_bulk_solver(
-        measurement=spec.measurement,
-        runtime="bioconductor",
-        comparison=model.comparison,
-        units=model.units,
-        primary=spec.family.primary,
-        single_factor=not (spec.design.technical_factors or spec.continuous_covariates),
-        sensitivity_method=model.sensitivity_method,
-    )
+    else:
+        choice = freeze_bulk_solver(
+            measurement=spec.measurement,
+            runtime="bioconductor",
+            comparison=model.comparison,
+            units=model.units,
+            primary=spec.family.primary,
+            single_factor=not (
+                spec.design.technical_factors or spec.continuous_covariates
+            ),
+            sensitivity_method=model.sensitivity_method,
+        )
     degrees = summary.get("test_df")
     if (
         (summary.get("solver"), summary.get("test"), summary.get("shrinkage"))
         != (choice.solver, choice.test, choice.shrinkage)
         or type(degrees) is not int
         or degrees < 1
-        or model.comparison in {"coefficient", "contrast"}
+        or (model is None or model.comparison in {"coefficient", "contrast"})
         and degrees != 1
     ):
         raise ValueError("Mounted solver and test differ from the frozen arbitration")
@@ -86,11 +181,33 @@ def mounted_method_evidence(result):
     method = {
         key: result[key]
         for key in (
-            "solver", "solver_version", "test", "test_df", "shrinkage",
-            "comparison", "design_rank", "residual_df", "condition_number",
+            "solver",
+            "solver_version",
+            "test",
+            "test_df",
+            "shrinkage",
+            "comparison",
+            "design_rank",
+            "residual_df",
+            "condition_number",
         )
         if key in result
     }
+    if result.get("regime_route"):
+        details = result["solver_details"]
+        method.update(
+            regime_route=result["regime_route"],
+            calibration_status=result["calibration_status"],
+            normalization=details.get("normalization"),
+            filter=details.get("filter"),
+            abundance_trend=details.get("abundance_trend"),
+            engine=details.get("engine"),
+            sensitivity_solver=result.get("sensitivity_solver"),
+            sensitivity_version=(result.get("sensitivity_details") or {}).get(
+                "version"
+            ),
+            units_per_arm=result.get("units_per_arm"),
+        )
     if method.get("solver") == "limma_voom":
         method.update(
             analysis_role="nonprimary_sensitivity",
@@ -131,7 +248,8 @@ def verify_mounted_primary(artifact, *, open_artifact, summary, spec):
             raise ValueError(
                 "Mounted result footer differs from the frozen request or summary"
             )
-        if tuple(reader.schema_arrow.names) != _COLUMNS:
+        model_columns = tuple(summary.get("model_columns", ()))
+        if tuple(reader.schema_arrow.names) != (*_COLUMNS, *model_columns):
             raise ValueError("Mounted result has unexpected Parquet columns")
         data = reader.read(use_threads=False)
         _validate_parquet_rows(data, footer, ("effect", "p_value", "q_value"))

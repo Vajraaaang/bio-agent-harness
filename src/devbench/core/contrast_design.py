@@ -121,16 +121,26 @@ class MountedModelSpec(BaseModel):
     n_factors: int | None = Field(default=None, ge=1, le=32)
     controls_sha256: _Digest | None = None
     sensitivity_method: SensitivityMethod | None = None
+    heterogeneous_independent: bool = False
 
     @model_serializer(mode="wrap")
     def retain_model_encoding(self, handler):
         record = handler(self)
         if self.sensitivity_method is None:
             record.pop("sensitivity_method", None)
+        if not self.heterogeneous_independent:
+            record.pop("heterogeneous_independent", None)
         return record
 
     @model_validator(mode="after")
     def validate_hypothesis(self):
+        if self.heterogeneous_independent and (
+            self.units != "independent"
+            or self.comparison not in {"coefficient", "contrast"}
+        ):
+            raise ValueError(
+                "Heterogeneity requires a directed independent-donor design"
+            )
         levels = {row.level for row in self.condition_weights}
         if self.comparison == "contrast":
             weights = [row.weight for row in self.condition_weights]
@@ -141,8 +151,8 @@ class MountedModelSpec(BaseModel):
                 or abs(sum(weights)) > 1e-8
             ):
                 raise ValueError(
-                    'A directed condition contrast requires distinct levels and '
-                    'weights summing to zero'
+                    "A directed condition contrast requires distinct levels and "
+                    "weights summing to zero"
                 )
         elif levels:
             raise ValueError("Condition weights require a directed contrast")
@@ -164,8 +174,8 @@ class MountedModelSpec(BaseModel):
             bool(self.sv_method),
         ) != expected:
             raise ValueError(
-                'Latent diagnostics require method-specific arguments and '
-                'independent RUVg controls'
+                "Latent diagnostics require method-specific arguments and "
+                "independent RUVg controls"
             )
         return self
 
@@ -181,6 +191,8 @@ class MountedModelSpec(BaseModel):
 
     def request(self, controls=None):
         document = {"comparison": self.comparison, "units": self.units}
+        if self.heterogeneous_independent:
+            document["heterogeneous_independent"] = True
         if self.sensitivity_method is not None:
             document["sensitivity_method"] = self.sensitivity_method
         if self.condition_weights:
@@ -280,8 +292,8 @@ class PipelineSpec(BaseModel):
             and Fraction(family.weight) != int(family.primary)
         ):
             raise ValueError(
-                'The solver requires a complete primary or unweighted sensitivity '
-                'family'
+                "The solver requires a complete primary or unweighted sensitivity "
+                "family"
             )
         roles = (
             self.condition_column,
@@ -317,6 +329,8 @@ class PipelineSpec(BaseModel):
         return self
 
     def _validate_mounted_model(self, model):
+        if model.heterogeneous_independent and self.measurement != "raw_counts":
+            raise ValueError("Independent-donor count routing requires raw counts")
         if (self.design.regime == "B-I") != (model.units == "independent"):
             raise ValueError("Mounted unit model differs from the declared regime")
         nuisance = {*self.design.technical_factors, *self.continuous_covariates}
@@ -362,9 +376,12 @@ class PipelineSpec(BaseModel):
         if model.latent_method is not None:
             raise ValueError("limma-voom sensitivity does not use latent diagnostics")
         freeze_bulk_solver(
-            measurement=self.measurement, runtime="bioconductor",
-            comparison=model.comparison, units=model.units,
-            primary=self.family.primary, single_factor=False,
+            measurement=self.measurement,
+            runtime="bioconductor",
+            comparison=model.comparison,
+            units=model.units,
+            primary=self.family.primary,
+            single_factor=False,
             sensitivity_method=model.sensitivity_method,
         )
 
@@ -379,7 +396,11 @@ class PipelineSpec(BaseModel):
         return data
 
     def require_mounted_runtime(
-        self, image_id, *, representation=None, allow_python_wald=False,
+        self,
+        image_id,
+        *,
+        representation=None,
+        allow_python_wald=False,
         approved_voom_image_ids: frozenset[str] = frozenset(),
     ):
         model = self.mounted_model
@@ -407,8 +428,8 @@ class PipelineSpec(BaseModel):
                 )
             if not image_id and not allow_python_wald:
                 raise ValueError(
-                    'Mounted counts require a pinned image or a frozen '
-                    'Python-only runtime'
+                    "Mounted counts require a pinned image or a frozen "
+                    "Python-only runtime"
                 )
             from rna_kernels.bulk_solver_policy import freeze_bulk_solver
 
@@ -558,8 +579,8 @@ def _validate_spec(specification):
         else specification.condition is not None
     ):
         raise ValueError(
-            'Within-population designs require a population and P-P requires one '
-            'condition'
+            "Within-population designs require a population and P-P requires one "
+            "condition"
         )
     for factors in (specification.technical_factors, specification.candidate_aliases):
         if (
@@ -617,14 +638,20 @@ def _alias_proof(values, proposed_column, proposed_values):
 
 
 def prove_donor_aliases(
-    donors: tuple[str, ...], factors: dict[str, tuple[str, ...]],
+    donors: tuple[str, ...],
+    factors: dict[str, tuple[str, ...]],
 ) -> tuple[tuple[DesignColumn, ...], tuple[AliasProof, ...]]:
     """Prove complete technical factors against the paired donor basis alone."""
     donor_levels = sorted(set(donors))
     columns = [DesignColumn("intercept", "intercept", None, None)]
     values = [(1,) * len(donors)]
     _reference_columns(
-        columns, values, "biological_unit", "biological_unit", donors, donor_levels,
+        columns,
+        values,
+        "biological_unit",
+        "biological_unit",
+        donors,
+        donor_levels,
     )
     proofs: list[AliasProof] = []
     for factor, labels in factors.items():

@@ -39,7 +39,8 @@
     metadata[colnames(expression), fields, drop=FALSE]
 }
 
-.dream_design <- function(metadata, condition_col, donor_col, numerator, denominator, technical_factors) {
+.dream_design <- function(metadata, condition_col, donor_col, numerator, denominator, technical_factors,
+                          random_intercept) {
     condition <- as.character(metadata[[condition_col]])
     donor <- as.character(metadata[[donor_col]])
     if (!.dream_labels(condition) || !setequal(condition, c(numerator, denominator)) ||
@@ -49,9 +50,11 @@
     treated <- condition == numerator
     repeats <- table(donor)
     donor_counts <- c(length(unique(donor[!treated])), length(unique(donor[treated])))
-    if (sum(repeats > 1) < 2L || min(donor_counts) < 3L) {
+    if (random_intercept && sum(repeats > 1) < 2L) {
         stop("dream needs at least two repeated donors and three distinct donors in each condition")
     }
+    if (!random_intercept && any(repeats != 1L)) stop("Independent dream requires distinct donors")
+    if (min(donor_counts) < 3L) stop("dream needs three distinct donors in each condition")
     data <- data.frame(condition_target=as.numeric(treated), donor_group=factor(donor),
                        row.names=rownames(metadata))
     factors <- character()
@@ -83,7 +86,8 @@
     if (rank != ncol(fixed) || residual <= 1L || !is.finite(conditioning) || conditioning > 1000) {
         stop("dream fixed design fails the rank, conditioning, or residual-information check")
     }
-    list(data=data, formula=stats::reformulate(c(terms, "(1 | donor_group)")),
+    list(data=data, fixed=fixed,
+         formula=stats::reformulate(c(terms, if (random_intercept) "(1 | donor_group)")),
          diagnostics=list(donor_count=length(repeats), repeated_donor_count=sum(repeats > 1),
                           biological_units_by_condition=setNames(as.list(donor_counts), c(denominator, numerator)),
                           balanced_donor_profile_counts=length(unique(repeats)) == 1L,
@@ -97,17 +101,19 @@
         stop("dream needs positive raw library sizes within exact count bounds")
     }
     if (is.null(size_factors)) {
-        libraries <- libraries * edgeR::normLibSizes(expression, method="TMM")
+        norms <- edgeR::normLibSizes(expression, method="TMM")
+        effective <- libraries * norms
         method <- "TMM_effective_library_sizes"
     } else {
         center <- mean(log(libraries))
-        libraries <- exp(log(size_factors) + center - mean(log(size_factors)))
+        effective <- exp(log(size_factors) + center - mean(log(size_factors)))
+        norms <- effective / libraries
         method <- "supplied_RLE_effective_library_sizes"
     }
-    if (any(!is.finite(libraries) | libraries <= 0)) {
+    if (any(!is.finite(effective) | effective <= 0)) {
         stop("dream effective library sizes must remain finite and positive")
     }
-    list(sizes=libraries, method=method)
+    list(sizes=effective, lib.size=unname(libraries), norm.factors=unname(norms), method=method)
 }
 
 .dream_eligible <- function(expression, libraries) {
@@ -123,13 +129,25 @@
 
 bulk_dream <- function(expression, metadata, condition_col, donor_col, numerator,
                        denominator, technical_factors=character(), measurement="raw_counts",
-                       size_factors=NULL) {
+                       size_factors=NULL, random_intercept=TRUE, normalization=NULL, filter_mode=NULL) {
     metadata <- .dream_inputs(expression, metadata, condition_col, donor_col, numerator,
                               denominator, technical_factors, measurement, size_factors)
-    design <- .dream_design(metadata, condition_col, donor_col, numerator, denominator, technical_factors)
+    if (!identical(random_intercept, FALSE) && !identical(random_intercept, TRUE)) stop("Invalid donor model")
+    design <- .dream_design(metadata, condition_col, donor_col, numerator, denominator, technical_factors,
+                            random_intercept)
     raw_counts <- identical(measurement, "raw_counts")
+    if (!is.null(normalization) && !(raw_counts &&
+        (identical(normalization, "TMM") && is.null(size_factors) ||
+         identical(normalization, "RLE") && !is.null(size_factors)))) stop("Invalid frozen dream normalization")
     libraries <- if (raw_counts) .dream_library_sizes(expression, size_factors) else NULL
     reasons <- .dream_eligible(expression, libraries$sizes)
+    if (identical(filter_mode, "filterByExpr") && raw_counts) {
+        keep <- edgeR::filterByExpr(expression, design=design$fixed, lib.size=libraries$sizes)
+        reasons <- ifelse(keep, NA_character_, ifelse(rowSums(expression) == 0, "all_zero_gene",
+                                                      "independent_low_count_filter"))
+    } else if (!is.null(filter_mode) && !(raw_counts && identical(filter_mode, "normalized_mean_ge_1"))) {
+        stop("Unsupported frozen dream filter")
+    }
     eligible <- which(is.na(reasons))
     rows <- data.frame(gene_id=rownames(expression), effect=NA_real_, p_value=NA_real_,
                        q_value=NA_real_, estimate_status="not_estimable", missing_reason=reasons)
@@ -137,15 +155,24 @@ bulk_dream <- function(expression, metadata, condition_col, donor_col, numerator
     rows$estimate_status[eligible] <- "failed"
     rows$missing_reason[eligible] <- "insufficient_genes_for_moderation"
     diagnostics <- c(design$diagnostics, list(
-        solver="variancePartition::dream", package_version=as.character(utils::packageVersion("variancePartition")),
-        formula_scope="fixed_condition_and_declared_covariates_plus_donor_random_intercept",
+        solver="variancePartition::dream", engine="variancePartition::dream",
+        version=as.character(utils::packageVersion("variancePartition")),
+        package_version=as.character(utils::packageVersion("variancePartition")),
+        formula_scope=if (random_intercept) "fixed_condition_and_declared_covariates_plus_donor_random_intercept"
+                      else "fixed_condition_and_declared_covariates",
         contrast=list(numerator=numerator, denominator=denominator), voom_weights=raw_counts,
-        normalization=if (raw_counts) libraries$method else "none_already_continuous",
+        normalization=if (!is.null(normalization)) normalization else
+                      if (raw_counts) libraries$method else "none_already_continuous",
+        lib.size=libraries$lib.size, norm.factors=libraries$norm.factors,
+        offset=if (raw_counts) unname(log(libraries$sizes)) else NULL,
         measurement=measurement, effect_scale=if (raw_counts) "log2_CPM" else "input_units",
-        denominator_df="Satterthwaite", moderated=TRUE,
-        filter=if (raw_counts) "label_blind_overall_normalized_mean_at_least_one" else "constant_rows",
+        denominator_df=if (random_intercept) "Satterthwaite" else "limma_moderated_residual",
+        moderated=TRUE, n_eligible_genes=length(eligible),
+        filter=if (!is.null(filter_mode)) filter_mode else
+               if (raw_counts) "label_blind_overall_normalized_mean_at_least_one" else "constant_rows",
         multiplicity="BH_failed_eligible_tests_padded_with_one"
     ))
+    quantities <- setNames(rep(list(rep(NA_real_, nrow(expression))), 4L), c("t", "df.prior", "df.total", "s2.post"))
     if (length(eligible) >= 2L) {
         counts <- expression[eligible, , drop=FALSE]
         workers <- BiocParallel::SerialParam()
@@ -167,6 +194,13 @@ bulk_dream <- function(expression, metadata, condition_col, donor_col, numerator
         }
         effects <- fit$coefficients[, coefficient]
         probabilities <- fit$p.value[, coefficient]
+        positions <- match(fit_genes, rows$gene_id)
+        for (field in names(quantities)) {
+            values <- fit[[field]]
+            if (is.matrix(values)) values <- values[, coefficient]
+            if (!length(values) %in% c(1L, length(fit_genes))) stop("Unexpected dream statistic inventory")
+            quantities[[field]][positions] <- values
+        }
         valid <- is.finite(effects) & is.finite(probabilities) & probabilities >= 0 & probabilities <= 1
         rows$missing_reason[eligible] <- "dream_estimate_unavailable"
         fitted <- match(fit_genes[valid], rows$gene_id)
@@ -179,5 +213,5 @@ bulk_dream <- function(expression, metadata, condition_col, donor_col, numerator
         adjusted <- stats::p.adjust(family, method="BH")
         rows$q_value[fitted] <- pmax(rows$p_value[fitted], adjusted[match(fitted, eligible)])
     }
-    list(rows=rows, diagnostics=diagnostics)
+    list(rows=rows, diagnostics=diagnostics, quantities=quantities)
 }

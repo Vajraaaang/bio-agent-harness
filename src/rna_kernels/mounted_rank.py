@@ -77,7 +77,16 @@ def _rank_rows(genes, effects, probabilities, adjusted, codes):
         }
 
 
-def write_rank_sensitivity(source, destination, request, cohort, primary, factors=None):
+def write_rank_sensitivity(
+    source,
+    destination,
+    request,
+    cohort,
+    primary,
+    factors=None,
+    *,
+    normalization_method="RLE",
+):
     """Run the frozen comparison once and emit a private columnar evidence artifact."""
     design, unit_ids, strata, covariates = cohort
     if len(unit_ids) < _MIN_UNITS:
@@ -139,7 +148,9 @@ def write_rank_sensitivity(source, destination, request, cohort, primary, factor
         "n_units": len(unit_ids),
         "permutations": plan.permutations,
         "seed": plan.seed,
-        "input_scale": "log1p_RLE" if factors is not None else "declared_continuous",
+        "input_scale": f"log1p_{normalization_method}"
+        if factors is not None
+        else "declared_continuous",
         "tested_count": int(np.count_nonzero(codes == 0)),
         "artifact_sha256": hash_artifact(destination, max_bytes=256 * 1024**2)[
             "sha256"
