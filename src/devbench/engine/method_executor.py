@@ -814,16 +814,22 @@ class LocalDockerExecutor:
                 LocalDockerExecutor._lifecycle_file(binding, "runtime-control.lock"),
                 blocking=False,
             ):
-                settled = self._cancel_settled(runtime, binding)
-                if binding.get("disk_staging") and settled["state"] == "cancelled":
-                    tier2_staging.remove_storage(runtime, binding)
-                return settled
+                return self._cancel_settled(runtime, binding)
         except BlockingIOError:
             return {
                 **observed,
                 "state": "cancellation_pending",
                 "diagnostic_status": "dispatch_effect_in_flight",
             }
+
+    def _finish_cancel(self, runtime, binding):
+        # The caller holds the effect lock. Keep recovery open until all
+        # storage owned by this attempt has been removed and verified absent.
+        if binding.get("disk_staging"):
+            tier2_staging.remove_storage(runtime, binding)
+        self._dispatch_phase(
+            binding, "cancelled", closed=True, in_flight=False, cleanup_complete=True
+        )
 
     def _cancel_settled(self, runtime, binding):
         observed = self._inspect_owned(runtime, binding)
@@ -839,13 +845,7 @@ class LocalDockerExecutor:
                         "proof"
                     ),
                 }
-            self._dispatch_phase(
-                binding,
-                "cancelled",
-                closed=True,
-                in_flight=False,
-                cleanup_complete=True,
-            )
+            self._finish_cancel(runtime, binding)
             retained = (
                 self._collection_receipt(binding, binding["max_output_bytes"])
                 if binding.get("container_id")
@@ -863,13 +863,12 @@ class LocalDockerExecutor:
             }
         if observed["state"] == "created":
             runtime._call(["rm", "--force", "--volumes", binding["container_id"]])
-            self._dispatch_phase(
-                binding,
-                "cancelled",
-                closed=True,
-                in_flight=False,
-                cleanup_complete=True,
-            )
+            if (
+                binding.get("disk_staging")
+                and self._inspect_owned(runtime, binding)["state"] != "missing"
+            ):
+                raise ValueError("Exploratory container removal could not be verified")
+            self._finish_cancel(runtime, binding)
             return {
                 **observed,
                 "state": "cancelled",
@@ -878,18 +877,7 @@ class LocalDockerExecutor:
         if observed["state"] in {"exited", "dead"}:
             return self._cancel_stopped(runtime, binding, observed)
         if phase is not None and not phase.get("worker_reserved", False):
-            # No worker effect has been reserved. The durable latch plus this
-            # same effect lock prevents any subsequent start/exec phase.
-            runtime._call(["stop", "--time=1", binding["container_id"]], timeout=5)
-            stopped = self._inspect_owned(runtime, binding)
-            if stopped["state"] not in {"exited", "dead", "missing"}:
-                raise ValueError("Pre-worker supervisor stop was not verified")
-            self._dispatch_phase(binding, "cancelled", closed=True, in_flight=False)
-            return {
-                **stopped,
-                "state": "cancelled",
-                "diagnostic_status": "worker_never_launched",
-            }
+            return self._cancel_before_worker(runtime, binding)
         if binding.get("profile") == "exploratory-oci-1":
             return self._cancel_live_exploratory(runtime, binding)
         # Request an attached worker to stop its owned engine process group.
@@ -937,6 +925,29 @@ else:print(json.dumps({'state':'cancellation_pending'}))
         self._dispatch_phase(binding, "cancelled", closed=True, in_flight=False)
         return {**stopped, "state": "cancelled", "diagnostic_collection": collection}
 
+    def _cancel_before_worker(self, runtime, binding):
+        # No worker effect has been reserved. The durable latch plus this
+        # same effect lock prevents any subsequent start/exec phase.
+        if binding.get("profile") == "exploratory-oci-1":
+            runtime._call(
+                ["rm", "--force", "--volumes", binding["container_id"]], timeout=5
+            )
+            stopped = self._inspect_owned(runtime, binding)
+            if stopped["state"] != "missing":
+                raise ValueError("Exploratory container removal could not be verified")
+            self._finish_cancel(runtime, binding)
+        else:
+            runtime._call(["stop", "--time=1", binding["container_id"]], timeout=5)
+            stopped = self._inspect_owned(runtime, binding)
+            if stopped["state"] not in {"exited", "dead", "missing"}:
+                raise ValueError("Pre-worker supervisor stop was not verified")
+            self._dispatch_phase(binding, "cancelled", closed=True, in_flight=False)
+        return {
+            **stopped,
+            "state": "cancelled",
+            "diagnostic_status": "worker_never_launched",
+        }
+
     def _cancel_stopped(self, runtime, binding, observed):
         retained = self._collection_receipt(binding, binding["max_output_bytes"])
         loss = None
@@ -962,13 +973,10 @@ else:print(json.dumps({'state':'cancellation_pending'}))
                 raise ValueError(
                     "Stopped exploratory object removal could not be verified"
                 )
-        self._dispatch_phase(
-            binding,
-            "cancelled",
-            closed=True,
-            in_flight=False,
-            **({"cleanup_complete": True} if removed else {}),
-        )
+        if removed:
+            self._finish_cancel(runtime, binding)
+        else:
+            self._dispatch_phase(binding, "cancelled", closed=True, in_flight=False)
         return {
             **observed,
             "state": "cancelled",
@@ -995,13 +1003,7 @@ else:print(json.dumps({'state':'cancellation_pending'}))
         stopped = self._inspect_owned(runtime, binding)
         if stopped["state"] != "missing":
             raise ValueError("Exploratory container removal could not be verified")
-        self._dispatch_phase(
-            binding,
-            "cancelled",
-            closed=True,
-            in_flight=False,
-            cleanup_complete=True,
-        )
+        self._finish_cancel(runtime, binding)
         return {
             **stopped,
             "state": "cancelled",
@@ -1211,10 +1213,8 @@ else:print(json.dumps({'state':'cancellation_pending'}))
             primary = error
             raise
         finally:
-            if binding.get("container_id"):
+            if exploratory or binding.get("container_id"):
                 self._cleanup_container(runtime, binding, durable, exploratory, primary)
-            if exploratory:
-                tier2_staging.remove_storage(runtime, binding)
 
     def _check_submission(self, contract, source, lock, frozen, observer):
         from devbench.analysis import community_workflow
@@ -1768,6 +1768,11 @@ else:print(json.dumps({'state':'cancellation_pending'}))
         # Only a successful create response provides immutable ownership.
         try:
             with self._effect_lock(binding, durable):
+                if not binding.get("container_id"):
+                    # Staging may have been allocated before create returned an ID.
+                    # The result of the create RPC still needs reconciliation.
+                    tier2_staging.remove_storage(runtime, binding)
+                    return
                 if durable and self._dispatch_state(binding).get(
                     "cleanup_complete", False
                 ):
@@ -1778,6 +1783,8 @@ else:print(json.dumps({'state':'cancellation_pending'}))
                     and self._inspect_owned(runtime, binding)["state"] != "missing"
                 ):
                     raise ValueError("Exploratory cleanup could not be verified")
+                if binding.get("disk_staging"):
+                    tier2_staging.remove_storage(runtime, binding)
                 if durable:
                     self._dispatch_phase(
                         binding,

@@ -199,7 +199,14 @@ def _checked_driver(stage: Path, request_sha: str, image: str) -> dict:
             platform,
             resource_profile=profile,
         )
-        if args[-4:] != ["python3.13", "-m", "rna_kernels.mounted_bulk", request_sha]:
+        if args[-6:] != [
+            "/usr/bin/env",
+            f"DEVBENCH_MOUNTED_TIMEOUT_SEC={_TIMEOUT}",
+            "python3.13",
+            "-m",
+            "rna_kernels.mounted_bulk",
+            request_sha,
+        ]:
             raise ValueError("Mounted isolation command differs from its frozen tail")
         command = [
             "/usr/local/bin/Rscript",
@@ -207,7 +214,7 @@ def _checked_driver(stage: Path, request_sha: str, image: str) -> dict:
             "/inputs/diagnostic.R",
             request_sha,
         ]
-        args[-4:] = command
+        args[-6:] = command
         intent = {**binding, **_daemon(runtime)}
         _write_record(directory / _INTENT, intent)
         error = None

@@ -637,3 +637,41 @@ def test_fresh_adaptive_poll_distinguishes_graph_revision_conflict(
         assert cursors == [None, None, None, None, "bound-cursor", None]
     finally:
         app.close()
+
+
+@pytest.mark.parametrize(
+    ("status", "pid", "orphan", "expected"),
+    [
+        ("queued", None, True, "queued"),
+        ("running", 123, False, "running"),
+        ("running", 123, True, "interrupted"),
+    ],
+)
+def test_daemon_run_view_uses_supervisor_liveness(
+    tmp_path, monkeypatch, status, pid, orphan, expected
+):
+    from devbench.platform import plugin_graph_studio as studio
+
+    calls = []
+
+    def check(workspace, worker_pid, created):
+        calls.append((workspace, worker_pid, created))
+        return orphan
+
+    monkeypatch.setattr(studio, "_orphaned_worker", check)
+    run = {
+        "session_id": _SID,
+        "plan_id": _ID,
+        "plan_sha256": _SHA,
+        "run_id": _ATTEMPT,
+        "status": status,
+        "pid": pid,
+        "error_text": None,
+        "stage_json": json.dumps({"daemon_managed": True, "process_created_at": 17}),
+    }
+    view = studio._run_view(tmp_path, run, _SHA, run)
+    assert view["status"] == expected
+    assert view.get("error") == (
+        "worker_not_running" if expected == "interrupted" else None
+    )
+    assert calls == ([] if status == "queued" else [(tmp_path, pid, 17)])

@@ -608,3 +608,98 @@ def test_generic_custom_method_cannot_start_without_a_governed_plan(tmp_path):
     ):
         LocalDockerExecutor().execute(contract, {}, {}, script, lock, output)
     assert list(output.iterdir()) == []
+
+
+@pytest.mark.parametrize("created", [False, True])
+def test_staging_cleanup_failure_preserves_dispatch_error(
+    tmp_path, monkeypatch, created
+):
+    from devbench.engine import method_executor as module
+
+    executor = module.LocalDockerExecutor()
+    output = tmp_path.resolve() / "outputs"
+    binding = {
+        "output_dir": str(output),
+        "profile": "exploratory-oci-1",
+        "disk_staging": True,
+    }
+    runtime = SimpleNamespace(_call=lambda *args, **kwargs: "daemon", endpoint="local")
+    primary = ValueError("dispatch failed")
+    primary.execution = {"exit_code": 17}
+
+    def fail_dispatch(*args):
+        executor._dispatch_phase(binding, "created" if created else "create_uncertain")
+        if created:
+            binding["container_id"] = "a" * 64
+        raise primary
+
+    def fail_storage(_runtime, _binding):
+        with (
+            pytest.raises(BlockingIOError),
+            executor._control_lock(
+                binding, "exploratory-runtime-control.lock", blocking=False
+            ),
+        ):
+            pytest.fail("cleanup must hold the effect lock")
+        raise OSError("staging removal failed")
+
+    monkeypatch.setattr(executor, "_check_submission", lambda *args: None)
+    monkeypatch.setattr(executor, "_prepare_runtime", lambda *args: (runtime, {}))
+    monkeypatch.setattr(executor, "_stage_method", lambda *args: None)
+    monkeypatch.setattr(executor, "_runtime_binding", lambda *args: (binding, {}))
+    monkeypatch.setattr(executor, "_create_container", fail_dispatch)
+    monkeypatch.setattr(executor, "_inspect_owned", lambda *args: {"state": "missing"})
+    monkeypatch.setattr(module.tier2_staging, "remove_storage", fail_storage)
+    with pytest.raises(ValueError) as raised:
+        executor.execute({}, {}, {}, None, None, output, frozen={})
+    assert raised.value is primary
+    assert primary.execution == {"exit_code": 17, "cleanup_error": "OSError"}
+    assert not executor._dispatch_state(binding).get("cleanup_complete")
+
+
+def test_pre_worker_cancel_verifies_container_then_retries_volume_removal(
+    tmp_path, monkeypatch
+):
+    from devbench.engine import method_executor as module
+    from devharness_controlled import native_runtime
+
+    executor = module.LocalDockerExecutor()
+    binding = {
+        "output_dir": str(tmp_path.resolve() / "outputs"),
+        "profile": "exploratory-oci-1",
+        "disk_staging": True,
+        "container_id": "a" * 64,
+        "max_output_bytes": 1024,
+    }
+    state = "running"
+    events = []
+
+    def inspect(_runtime, _binding):
+        events.append(state)
+        return {**binding, "state": state}
+
+    def remove(command, timeout):
+        nonlocal state
+        assert command == ["rm", "--force", "--volumes", binding["container_id"]]
+        state = "missing"
+
+    def remove_storage(_runtime, _binding):
+        assert events[-1] == "missing"
+        assert not executor._dispatch_state(binding).get("cleanup_complete")
+        if "volumes" not in events:
+            events.append("volumes")
+            raise OSError("busy staging volume")
+        events.append("retried")
+
+    monkeypatch.setattr(
+        native_runtime, "LocalDocker", lambda: SimpleNamespace(_call=remove)
+    )
+    monkeypatch.setattr(executor, "_inspect_owned", inspect)
+    monkeypatch.setattr(module.tier2_staging, "remove_storage", remove_storage)
+    executor._dispatch_phase(binding, "container_started", worker_reserved=False)
+    with pytest.raises(OSError, match="busy staging volume"):
+        executor.cancel_run(binding)
+    assert not executor._dispatch_state(binding).get("cleanup_complete")
+    assert executor.cancel_run(binding)["state"] == "cancelled"
+    assert events[-1] == "retried"
+    assert executor._dispatch_state(binding)["cleanup_complete"] is True

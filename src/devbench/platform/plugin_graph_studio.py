@@ -10,7 +10,7 @@ from typing import Any
 from devbench.analysis.evidence_access import EvidenceBroker
 from devbench.engine.workflow_operations import OperationBlocked
 
-from .plugin_jobs import ACTIVE, JobStore, _worker_alive
+from .plugin_jobs import ACTIVE, JobStore, _orphaned_worker, _worker_alive
 from .plugin_rna_solvers import LOCAL_OPERATIONS
 
 _ID = re.compile(r"[0-9a-f]{32}")
@@ -126,9 +126,15 @@ def _run_view(workspace, plan, plan_sha, run):
     view = {"run_id": run["run_id"], "status": run["status"]}
     if run["error_text"]:
         view["error"] = _error_code(run["error_text"], "plugin_worker_failed")
-    if run["status"] in ACTIVE and not _worker_alive(
-        run["pid"], json.loads(run["stage_json"]).get("process_created_at")
-    ):
+    stage = json.loads(run["stage_json"])
+    created = stage.get("process_created_at")
+    if stage.get("daemon_managed"):
+        interrupted = run["status"] in {"starting", "running", "cancelling"} and (
+            _orphaned_worker(workspace, run["pid"], created)
+        )
+    else:
+        interrupted = run["status"] in ACTIVE and not _worker_alive(run["pid"], created)
+    if interrupted:
         view.update(status="interrupted", error="worker_not_running")
     if run["status"] == "completed":
         try:
