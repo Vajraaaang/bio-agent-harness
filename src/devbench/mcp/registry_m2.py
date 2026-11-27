@@ -6,7 +6,7 @@ from pathlib import Path
 
 from devbench.core._files import hash_bounded_file, read_bounded_json
 from devbench.engine.workflow_operations import OperationBlocked
-from rna_kernels.m2_contract import KERNEL_AXES, OUTPUTS
+from rna_kernels.m2_contract import KERNEL_AXES, OUTPUTS, WAVE2_KERNELS, wave2_outputs
 
 from ._sources import canonical
 
@@ -47,6 +47,7 @@ def m2_kernels(cell_assays, images):
             cell_assays,
         )
         for name, axis in KERNEL_AXES.items()
+        if name not in WAVE2_KERNELS
     }
 
 
@@ -81,6 +82,10 @@ def _admitted_ports(name, bindings, params, purpose):
 
 
 def validate_bindings(name, bindings, params, purpose):
+    if name in WAVE2_KERNELS:
+        from .registry_m2_wave2 import validate_wave2
+
+        return validate_wave2(name, bindings, params, purpose)
     required, allowed = _admitted_ports(name, bindings, params, purpose)
     if (
         not {"expression", *required} <= bindings.keys()
@@ -147,7 +152,35 @@ def execute_m2(ctx, jobs, rid, plan, bindings, directory, stage, image):
     }
     request_sha = _dispatch(jobs, rid, plan, stage, canonical(request), WORKER, image)
     files = _collect_m2(stage / "outputs", directory, name, request_sha)
-    return _outcome(directory, name, params, request, files)
+    if name == "scrna_cross_species_integrate":
+        from .registry_m2_wave2 import verify_homology
+
+        verify_homology(stage / "inputs", filenames, files, params)
+    outcome = _outcome(directory, name, params, request, files)
+    if name in {"scrna_clusterde", "scrna_cadet"}:
+        from devbench.engine.nb_marker_confirmation import verify_m2_marker_execution
+
+        result = read_bounded_json(directory / "result.json", 16 * 1024**2)
+        if result.get("method") != name.removeprefix("scrna_"):
+            raise OperationBlocked("plan_identity_mismatch")
+        evidence = verify_m2_marker_execution(
+            result,
+            expression_sha256=request["inputs"]["expression"]["sha256"],
+            parameters=params,
+            request_sha256=request_sha,
+            runtime_sha256=image,
+            reference_sha256=request["inputs"].get("reference", {}).get("sha256"),
+        )
+        proof = directory / "marker_proof.json"
+        proof.write_bytes(canonical(evidence))
+        files["marker_proof"] = {
+            "path": proof,
+            "kind": "table",
+            "format": "json",
+            "representation_class": "derived_summary",
+        }
+        outcome["metrics"]["output_artifacts"] = len(files)
+    return outcome
 
 
 def _collect_m2(outputs, directory, name, request_sha):
@@ -181,9 +214,45 @@ def _collect_m2(outputs, directory, name, request_sha):
     return files
 
 
+def _verify_wave2(name, result, request, files):
+    if set(files) != wave2_outputs(name) or result.get("status") != "completed":
+        raise OperationBlocked("scientific_refusal")
+    if name == "scrna_nb_countsplit":
+        if (
+            result["counts_sha256"] != request["inputs"]["expression"]["sha256"]
+            or result["dispersion_manifest_sha256"]
+            != request["inputs"]["split_dispersion"]["sha256"]
+            or any(
+                result[p + "_sha256"]
+                != hash_bounded_file(files[p]["path"], 64 * 1024**2)
+                for p in ("clustering_counts", "inference_counts")
+            )
+        ):
+            raise OperationBlocked("plan_identity_mismatch")
+    if result.get("clinical_release_allowed") is not False:
+        raise OperationBlocked("scientific_refusal")
+    if name == "scrna_annotate_cells" and (
+        result.get("e5_promoted") is not False
+        or result.get("input_sha256")
+        != {p: v["sha256"] for p, v in request["inputs"].items()}
+    ):
+        raise OperationBlocked("plan_identity_mismatch")
+    if (
+        "embedding" in files
+        and result.get("representation_class") != "integrated_latent_or_graph"
+    ):
+        raise OperationBlocked("scientific_refusal")
+    if not isinstance(
+        read_bounded_json(files["plot_sidecar"]["path"], 64 * 1024**2), dict
+    ):
+        raise OperationBlocked("plan_identity_mismatch")
+
+
 def _outcome(directory, name, params, request, files):
     result = read_bounded_json(directory / "result.json", 16 * 1024**2)
     limits = []
+    if name in WAVE2_KERNELS:
+        _verify_wave2(name, result, request, files)
     if name == "donor_forensics":
         from devbench.core._hashing import canonical_sha256
         from devbench.core.donor_forensics import (

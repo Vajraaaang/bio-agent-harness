@@ -1,0 +1,5 @@
+**
+!src/devbench/core/*.py
+!src/devbench/analysis/*.py
+!src/rna_kernels/*.py
+!src/rna_kernels/r/*.R

@@ -46,6 +46,9 @@ _AUXILIARY_FORMATS = {
     "csi",
     "fa",
     "fasta",
+    "rds",
+    "annoy",
+    "pt",
     "fai",
     "bed",
     "txt",
@@ -460,6 +463,7 @@ def _file_details(stream, sha, hidden, path, fmt, kind, layers, until):
 
 def _inspect(ctx, entry, layers, until, *, admit):
     donor = None
+    species_scope = None
     hidden = _known_private(ctx.input_root, entry)
     if hidden and not admit:
         raise OperationBlocked(PRIVATE)
@@ -489,6 +493,11 @@ def _inspect(ctx, entry, layers, until, *, admit):
             details, donor = _file_details(
                 stream, sha, hidden, path, fmt, entry["file_kind"], layers, until
             )
+            if admit and fmt == "h5ad" and not hidden and not details[2]:
+                from .species_scope import h5ad_scope
+
+                stream.seek(0)
+                species_scope = h5ad_scope(stream, until)
     dimensions, counts, clinical_header, expression = details
     ctx.check_embargo((sha,))
     label = entry.get("data_classification", "unclassified")
@@ -498,6 +507,7 @@ def _inspect(ctx, entry, layers, until, *, admit):
         raise OperationBlocked(PRIVATE)
     return (
         {
+            **({"species_scope": species_scope} if admit else {}),
             "canonical_path": str(path),
             "format": fmt,
             "size_bytes": size,
@@ -547,6 +557,7 @@ def register_investigation_input(ctx, args):
     checked = profile["count_1_forensics"]
     representation = args["representation_class"]
     detail = {
+        "species_scope": profile.get("species_scope"),
         "input": entry,
         "provenance_declaration": args["provenance_declaration"],
         "axes": profile["axes"],
@@ -559,6 +570,7 @@ def register_investigation_input(ctx, args):
         "contains_expression_matrix": expression,
         "count_1_verified": (
             representation == "count_1_raw_counts"
+            and profile.get("species_scope") != "integrated"
             and raw_declared(
                 args["provenance_declaration"].get("count_provenance"), checked
             )

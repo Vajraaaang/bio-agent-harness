@@ -521,3 +521,209 @@ class NBMarkerConfirmationAuthority:
         if retained.universe_sha256 != content_sha256(universe.model_dump(mode="json")):
             raise PermissionError("Mounted ORA requires the confirmed tested universe")
         return retained
+
+
+def verify_m2_marker_execution(
+    result,
+    *,
+    expression_sha256,
+    parameters,
+    request_sha256,
+    runtime_sha256,
+    reference_sha256=None,
+):
+    """Independently recalculate selections from sealed numerical intermediates.
+
+    The host can check Clipper rejection sets or truncated normal probabilities
+    without executing untrusted code. Validating the fitted biological null,
+    reference covariance and selection history requires separate scientific
+    review. A numerical check of this execution is not that review capability.
+    """
+    from devbench.core.scrna_marker_inference import (
+        MarkerContext,
+        MarkerRow,
+        marker_rows_sha256,
+    )
+    from rna_kernels.scrna_cadet import Parameters as CadetParameters
+    from rna_kernels.scrna_clusterde import Parameters as ClusterDEParameters
+
+    method = result["method"]
+    model = {"clusterde": ClusterDEParameters, "cadet": CadetParameters}[method]
+    params = model.model_validate(parameters).model_dump(mode="json")
+    context = MarkerContext.model_validate(result["context"])
+    rows = tuple(MarkerRow.model_validate(row) for row in result["gene_statistics"])
+    features = tuple(row.gene_id for row in rows)
+    alpha = params["alpha"]
+    if (
+        context.counts_sha256 != expression_sha256
+        or context.design_sha256 != content_sha256(params)
+        or context.feature_ids_sha256 != content_sha256(features)
+        or len(set(features)) != len(features)
+        or result["rows_sha256"] != marker_rows_sha256(rows)
+        or float(result["fdr_threshold"]) != alpha
+        or result["evidence_level"] != "L1"
+        or result["clinical_release_allowed"] is not False
+        or result["independent_review_required"] is not True
+    ):
+        raise ValueError("M2 selective marker input, row or scientific scope mismatch")
+    common = dict(
+        context=context,
+        rows_sha256=result["rows_sha256"],
+        execution_receipt_sha256=content_sha256(
+            [
+                "m2-marker-execution/1",
+                request_sha256,
+                runtime_sha256,
+                content_sha256(result),
+            ]
+        ),
+        runtime_sha256=runtime_sha256.removeprefix("sha256:"),
+        method_version=result["method_version"],
+        fdr_threshold=alpha,
+    )
+    if method == "clusterde":
+        proof = _replay_clusterde(common, result, rows)
+    else:
+        proof = _replay_cadet(
+            common, result, rows, params["target_feature"], reference_sha256
+        )
+    return {
+        "proof": proof.model_dump(mode="json"),
+        "verification": "numerical_selection_replayed",
+        "scientific_custody_verified": False,
+        "evidence_level": "L1",
+        "clinical_release_allowed": False,
+    }
+
+
+def _replay_clusterde(common, result, rows):
+    from devbench.core.scrna_marker_inference import ClusterDEProof
+
+    alpha = common["fdr_threshold"]
+    request_sha256 = common["execution_receipt_sha256"]
+    null_model = result["null_model"]
+    diag = result["null_diagnostic"]
+    if (
+        content_sha256(null_model) != result["null_model_sha256"]
+        or content_sha256(diag) != result["null_diagnostic_sha256"]
+        or result["input_population"] != "single_batch"
+    ):
+        raise ValueError("ClusterDE null model or diagnostic digest differs")
+    contrasts = [
+        a - b for a, b in zip(diag["target_scores"], diag["null_scores"], strict=True)
+    ]
+    # Evaluate native Clipper BC independently of the kernel implementation.
+    cutoff = next(
+        (
+            t
+            for t in sorted({abs(v) for v in contrasts if v})
+            if (1 + sum(v <= -t for v in contrasts))
+            <= alpha * sum(v >= t for v in contrasts)
+        ),
+        None,
+    )
+    if cutoff != diag["threshold"]:
+        raise ValueError("Incorrect ClusterDE threshold")
+    for row, contrast in zip(rows, contrasts, strict=True):
+        if (
+            row.score != contrast
+            or row.test_status != "tested"
+            or row.p_value is not None
+            or row.q_value is not None
+            or row.selected != (cutoff is not None and contrast >= cutoff)
+        ):
+            raise ValueError("ClusterDE selection differs from score contrasts")
+    return ClusterDEProof(
+        **common,
+        independent_check_sha256=content_sha256(
+            ["clipper_bc_replay/1", request_sha256, contrasts, cutoff]
+        ),
+        # No scientific reviewer has independently assessed the fitted null.
+        unimodal=False,
+        input_population="single_batch",
+        null_model_sha256=result["null_model_sha256"],
+        null_diagnostic_sha256=result["null_diagnostic_sha256"],
+    )
+
+
+def _replay_cadet(common, result, rows, target, reference_sha256):
+    import math
+
+    from scipy.special import log_ndtr, logsumexp
+
+    from devbench.core.scrna_marker_inference import CADETProof
+
+    features = tuple(row.gene_id for row in rows)
+    alpha = common["fdr_threshold"]
+    request_sha256 = common["execution_receipt_sha256"]
+    event = result["selection_event"]
+    index = features.index(target)
+    row = rows[index]
+    if (
+        result["null_regime"] != "independent_nb_features_and_units"
+        or target != result["target_feature"]
+        or result["gaussian_reference_sha256"] != reference_sha256
+        or content_sha256(event) != result["selection_event_sha256"]
+        or row.test_status != "tested"
+        or row.score is None
+        or row.p_value is None
+        or row.q_value != row.p_value
+        or row.selected != (row.p_value <= alpha)
+        or any(
+            r.test_status != "independently_filtered"
+            or r.score is not None
+            or r.selected
+            or r.p_value is not None
+            or r.q_value is not None
+            for i, r in enumerate(rows)
+            if i != index
+        )
+    ):
+        raise ValueError("CADET target, reference or tested family differs")
+    # Sigma_jj = 1 on the quantile-residual scale.
+    sizes = event["cluster_sizes"]
+    if len(sizes) != 2 or min(sizes) < 1:
+        raise ValueError("Invalid CADET cluster sizes")
+    sd = math.sqrt(sum(1 / n for n in sizes))
+    if not math.isclose(sd, event["contrast_standard_error"]):
+        raise ValueError("CADET contrast precision differs")
+    z = row.score / sd
+    intervals = [
+        (-math.inf if lo is None else lo, math.inf if hi is None else hi)
+        for lo, hi in event["standardized_intervals"]
+    ]
+    if (
+        not any(lo <= z <= hi for lo, hi in intervals)
+        or any(lo >= hi for lo, hi in intervals)
+        or any(a[1] >= b[0] for a, b in zip(intervals, intervals[1:], strict=False))
+    ):
+        raise ValueError("Invalid CADET selection event")
+
+    def logmass(lo, hi):
+        if hi <= lo:
+            return -math.inf
+        if lo >= 0:
+            lo, hi = -hi, -lo
+        high, low = float(log_ndtr(hi)), float(log_ndtr(lo))
+        return -math.inf if high <= low else high + math.log(-math.expm1(low - high))
+
+    denom = logsumexp([logmass(a, b) for a, b in intervals])
+    tails = logsumexp(
+        [
+            m
+            for a, b in intervals
+            for m in (logmass(a, min(b, -abs(z))), logmass(max(a, abs(z)), b))
+        ]
+    )
+    p = math.exp(min(0, float(tails - denom)))
+    if not math.isclose(p, row.p_value, rel_tol=1e-8, abs_tol=0):
+        raise ValueError("CADET conditional probability differs")
+    return CADETProof(
+        **common,
+        independent_check_sha256=content_sha256(
+            ["truncated_normal_replay/1", request_sha256, p]
+        ),
+        selection_event_sha256=result["selection_event_sha256"],
+        gaussian_reference_sha256=reference_sha256,
+        target_feature=target,
+    )

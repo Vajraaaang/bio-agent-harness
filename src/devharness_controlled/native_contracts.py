@@ -48,6 +48,8 @@ except FileNotFoundError:
 KERNEL_IMAGES = _KERNEL["image_ids"]
 MOUNTED_KERNEL_IMAGES = _KERNEL.get("mounted_image_ids", KERNEL_IMAGES)
 M2_CUDA_IMAGES = _KERNEL.get("m2_cuda_image_ids", {})
+M2_WAVE2_CUDA_IMAGES = _KERNEL.get("m2_wave2_cuda_image_ids", {})
+M2_WAVE2_IMAGES = _KERNEL.get("m2_wave2_image_ids", {})
 M2_QC_IMAGES = _KERNEL.get("m2_qc_image_ids", {})
 SCRNA_KERNEL_IMAGES = _KERNEL.get("scrna_image_ids", {})
 SCCODA_KERNEL_IMAGES = _KERNEL.get("sccoda_image_ids", {})
@@ -127,6 +129,8 @@ def kernel_test_platform(image_id: str) -> str | None:
     profiles = (
         M2_CUDA_IMAGES,
         M2_QC_IMAGES,
+        M2_WAVE2_IMAGES,
+        M2_WAVE2_CUDA_IMAGES,
         ROUTED_DE_KERNEL_IMAGES,
         _ORIGINAL_ROUTED_IMAGES,
         LIMMA_VOOM_KERNEL_IMAGES,

@@ -123,6 +123,7 @@ def catalog():
     from devbench.core.scrna_composition import CompositionSpec
 
     from .registry_m2 import m2_kernels
+    from .registry_m2_wave2 import wave2_kernels
 
     camera = obj(
         {
@@ -181,12 +182,19 @@ def catalog():
         ),
     )
     bulk["description"] = (
+        "Cross-species comparisons require within-species R1 DE and "
+        "C1 effect-size meta-analysis. "
         "Ports: expression (a gene-by-sample CSV/TSV or annotated H5AD X) "
         "and metadata (sample_id, biological units, condition, covariates). "
         "The complete ordered feature family is sealed before fitting."
     )
     return {
         **_other_research_kernels(),
+        **wave2_kernels(
+            _CELL,
+            frozenset(pins.M2_WAVE2_IMAGES.values()),
+            frozenset(pins.M2_WAVE2_CUDA_IMAGES.values()),
+        ),
         **m2_kernels(
             _CELL,
             frozenset((*pins.M2_QC_IMAGES.values(), *pins.M2_CUDA_IMAGES.values())),
@@ -313,7 +321,9 @@ def select_image(ctx, kernel_id, *, session_id=None, version=None, require_gpu=F
         return None
     live = _live_images(ctx, _image_backend(kernel_id))
     if require_gpu:
-        live &= set(pins.M2_CUDA_IMAGES.values())
+        live &= set(pins.M2_CUDA_IMAGES.values()) | set(
+            pins.M2_WAVE2_CUDA_IMAGES.values()
+        )
     return _image(ctx, kernel, live)
 
 
@@ -337,15 +347,30 @@ def _profile(mounted):
 
 
 def _repository_row(ctx, name, kernel, live, include_schema):
-    from rna_kernels.m2_contract import KERNEL_AXES
+    from rna_kernels.m2_contract import (
+        KERNEL_AXES,
+        OUTPUTS,
+        WAVE2_KERNELS,
+        wave2_outputs,
+    )
 
     profile = _profile(bool(kernel.images))
+    if name == "scrna_cross_species_integrate":
+        profile["gpu_supported"] = (
+            _image(ctx, kernel, live & set(pins.M2_WAVE2_CUDA_IMAGES.values()))
+            is not None
+        )
     if name == "scrna_ambient_decontamination":
         profile["gpu_supported"] = (
             _image(ctx, kernel, live & set(pins.M2_CUDA_IMAGES.values())) is not None
         )
     extra = {}
-    if name in KERNEL_AXES:
+    if name in WAVE2_KERNELS:
+        extra["supports_plot_sidecar"] = True
+        extra["output_representations"] = sorted(
+            {OUTPUTS[p].representation for p in wave2_outputs(name)}
+        )
+    elif name in KERNEL_AXES:
         extra["output_representations"] = [SUMMARY]
         if name == "scrna_ambient_decontamination":
             extra["output_representations"].append("ambient_adjusted_counts")

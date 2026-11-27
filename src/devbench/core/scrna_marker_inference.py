@@ -16,7 +16,9 @@ from .scientific_types import (
     content_sha256,
 )
 
-MarkerMethod = Literal["unsplit", "poisson_thinning", "nb_countsplit", "clusterde"]
+MarkerMethod = Literal[
+    "unsplit", "poisson_thinning", "nb_countsplit", "clusterde", "cadet"
+]
 MarkerScope = Literal["exploratory_marker_ranking", "confirmatory_marker_eligible"]
 _MAX_FEATURES = 100_000
 _EXPLORATORY: MarkerScope = "exploratory_marker_ranking"
@@ -40,7 +42,10 @@ class MarkerRow(FrozenContract):
     p_value: Probability | None = None
     q_value: Probability | None = None
     test_status: Literal[
-        "ranked", "tested", "not_estimable", "independently_filtered",
+        "ranked",
+        "tested",
+        "not_estimable",
+        "independently_filtered",
     ] = "ranked"
     selected: bool = False
 
@@ -81,8 +86,17 @@ class ClusterDEProof(_MarkerProof):
     null_diagnostic_sha256: Sha256
 
 
+class CADETProof(_MarkerProof):
+    method: Literal["cadet"] = "cadet"
+    selection_event_sha256: Sha256
+    gaussian_reference_sha256: Sha256
+    target_feature: Identifier
+    clustering: Literal["two_cluster_lloyd"] = "two_cluster_lloyd"
+
+
 MarkerProof = Annotated[
-    NegativeBinomialSplitProof | ClusterDEProof, Field(discriminator="method"),
+    NegativeBinomialSplitProof | ClusterDEProof | CADETProof,
+    Field(discriminator="method"),
 ]
 MarkerCustodyVerifier = Callable[[MarkerProof], bool]
 
@@ -96,7 +110,8 @@ class MarkerResult(FrozenContract):
     marker_scope: MarkerScope
     reason: Identifier
     gene_statistics: Annotated[
-        tuple[MarkerRow, ...], Field(min_length=1, max_length=_MAX_FEATURES),
+        tuple[MarkerRow, ...],
+        Field(min_length=1, max_length=_MAX_FEATURES),
     ]
     proof: MarkerProof | None = None
 
@@ -107,7 +122,9 @@ class MarkerResult(FrozenContract):
         if self.marker_scope == _EXPLORATORY and (
             self.proof is not None
             or any(
-                row.p_value is not None or row.q_value is not None or row.selected
+                row.p_value is not None
+                or row.q_value is not None
+                or row.selected
                 or row.test_status == "tested"
                 for row in self.gene_statistics
             )
@@ -136,17 +153,27 @@ def _countsplit_basis_error(proof: NegativeBinomialSplitProof) -> str | None:
     if proof.split_distribution != "dirichlet_multinomial":
         return "nb_dirichlet_multinomial_split_required"
     matrix_ids = {
-        proof.context.counts_sha256, proof.clustering_counts_sha256,
+        proof.context.counts_sha256,
+        proof.clustering_counts_sha256,
         proof.inference_counts_sha256,
     }
-    if len(matrix_ids) != 3 or len({
-        proof.splitting_receipt_sha256, proof.clustering_receipt_sha256,
-        proof.execution_receipt_sha256, proof.independent_check_sha256,
-    }) != 4:
+    if (
+        len(matrix_ids) != 3
+        or len(
+            {
+                proof.splitting_receipt_sha256,
+                proof.clustering_receipt_sha256,
+                proof.execution_receipt_sha256,
+                proof.independent_check_sha256,
+            }
+        )
+        != 4
+    ):
         return "separate_countsplit_folds_and_receipts_required"
     dispersion = proof.dispersion
     if (
-        dispersion.origin == "in_sample" or not dispersion.prior_free
+        dispersion.origin == "in_sample"
+        or not dispersion.prior_free
         or dispersion.source_sha256 in matrix_ids
         or dispersion.feature_ids_sha256 != proof.context.feature_ids_sha256
     ):
@@ -156,7 +183,8 @@ def _countsplit_basis_error(proof: NegativeBinomialSplitProof) -> str | None:
 
 def _clusterde_basis_error(proof: ClusterDEProof) -> str | None:
     if (
-        not proof.unimodal or proof.input_population == "mixed_unassessed"
+        not proof.unimodal
+        or proof.input_population == "mixed_unassessed"
         or proof.null_model_sha256 == proof.context.counts_sha256
         or proof.null_diagnostic_sha256 == proof.execution_receipt_sha256
     ):
@@ -178,13 +206,17 @@ def _control_error(
     if proof is None or proof.method != method:
         return "marker_control_evidence_unavailable"
     if (
-        proof.context != context or proof.rows_sha256 != marker_rows_sha256(rows)
+        proof.context != context
+        or proof.rows_sha256 != marker_rows_sha256(rows)
         or proof.execution_receipt_sha256 == proof.independent_check_sha256
     ):
         return "marker_execution_or_axes_not_bound"
     basis_error = (
-        _countsplit_basis_error(proof) if isinstance(proof, NegativeBinomialSplitProof)
+        _countsplit_basis_error(proof)
+        if isinstance(proof, NegativeBinomialSplitProof)
         else _clusterde_basis_error(proof)
+        if isinstance(proof, ClusterDEProof)
+        else None
     )
     if basis_error is not None:
         return basis_error
@@ -206,7 +238,30 @@ def _validate_test_rows(rows: Sequence[MarkerRow], proof: MarkerProof) -> None:
         if any(row.p_value is not None or row.q_value is not None for row in rows):
             raise ValueError("ClusterDE selection has no calibrated BH p/q pair")
         return
+    if isinstance(proof, CADETProof):
+        _validate_cadet_target(rows, proof)
     _validate_bh(rows, proof.fdr_threshold)
+
+
+def _validate_cadet_target(rows: Sequence[MarkerRow], proof: CADETProof) -> None:
+    targets = [row for row in rows if row.test_status == "tested"]
+    if len(targets) != 1 or targets[0].gene_id != proof.target_feature:
+        raise ValueError("CADET requires one prespecified target feature")
+    target = targets[0]
+    if (
+        target.p_value is None
+        or target.q_value != target.p_value
+        or target.selected != (target.p_value <= proof.fdr_threshold)
+    ):
+        raise ValueError(
+            "CADET target selection differs from its single-test BH family"
+        )
+    if any(
+        row.test_status != "independently_filtered" or row.score is not None
+        for row in rows
+        if row.gene_id != proof.target_feature
+    ):
+        raise ValueError("CADET non-target features must remain untested")
 
 
 def _validate_bh(rows: Sequence[MarkerRow], fdr_threshold: float) -> None:
@@ -223,7 +278,10 @@ def _validate_bh(rows: Sequence[MarkerRow], fdr_threshold: float) -> None:
     expected = budgeted_bh([row.p_value for row in family], "1", pad_failed=True)
     for row, item in zip(family, expected, strict=True):
         if row.q_value is not None and not isclose(
-            row.q_value, item["q_local"], rel_tol=1e-10, abs_tol=0.0,
+            row.q_value,
+            item["q_local"],
+            rel_tol=1e-10,
+            abs_tol=0.0,
         ):
             raise ValueError("Marker q-values must match the complete BH family")
 
@@ -249,7 +307,10 @@ def project_post_clustering_markers(
     error = _control_error(method, context, retained, proof, verify_custody)
     if error is not None:
         return MarkerResult(
-            context=context, method=method, marker_scope=_EXPLORATORY, reason=error,
+            context=context,
+            method=method,
+            marker_scope=_EXPLORATORY,
+            reason=error,
             gene_statistics=tuple(
                 MarkerRow(gene_id=row.gene_id, score=row.score) for row in retained
             ),
@@ -257,8 +318,12 @@ def project_post_clustering_markers(
     assert proof is not None
     _validate_test_rows(retained, proof)
     return MarkerResult(
-        context=context, method=method, marker_scope=_CONFIRMATORY,
-        reason="verified_marker_control", gene_statistics=retained, proof=proof,
+        context=context,
+        method=method,
+        marker_scope=_CONFIRMATORY,
+        reason="verified_marker_control",
+        gene_statistics=retained,
+        proof=proof,
     )
 
 

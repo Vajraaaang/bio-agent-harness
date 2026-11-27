@@ -78,6 +78,9 @@ def _text_sensitive(reader, fmt, until):
 def auxiliary_sensitive(stream, fmt, until):
     """Unsupported/opaque native layouts retain local private custody."""
     try:
+        if fmt in {"rds", "annoy", "pt"}:
+            # Binary reference internals cannot be screened for identifiers.
+            return True
         if fmt == "h5":
             return _tenx_sensitive(stream)
         magic = stream.read(4)
