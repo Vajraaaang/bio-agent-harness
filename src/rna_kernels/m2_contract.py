@@ -67,3 +67,42 @@ def source_digest(path: Path) -> str:
         return h.hexdigest()
 
     return branch(path, 0)
+
+
+# Mounted wave-two adapters expose Parameters and run_m2(op, paths, params, outputs).
+WAVE2_KERNELS = {
+    "scrna_integrate_qualified": "rna_kernels.scrna_cross_species",
+    "scrna_cross_species_integrate": "rna_kernels.scrna_cross_species",
+    "scrna_annotate_cells": "rna_kernels.scrna_annotation",
+    "scrna_clusterde": "rna_kernels.scrna_clusterde",
+    "scrna_cadet": "rna_kernels.scrna_cadet",
+    "scrna_nb_countsplit": "rna_kernels.scrna_nb_countsplit",
+}
+OUTPUTS["embedding"] = OutputPort(
+    "embedding.h5ad", "expression_matrix", "h5ad", "integrated_latent_or_graph"
+)
+
+WAVE2_AXES = {
+    "scrna_integrate_qualified": ("B7", "C2"),
+    "scrna_cross_species_integrate": ("B7",),
+    "scrna_annotate_cells": ("B2", "C2"),
+    "scrna_clusterde": ("B2",),
+    "scrna_cadet": ("B2",),
+    "scrna_nb_countsplit": ("B2",),
+}
+KERNEL_AXES.update({name: axes[0] for name, axes in WAVE2_AXES.items()})
+OUTPUTS.update(
+    {
+        "clustering_counts": OutputPort("clustering.h5ad", "expression_matrix", "h5ad"),
+        "inference_counts": OutputPort("inference.h5ad", "expression_matrix", "h5ad"),
+    }
+)
+
+
+def wave2_outputs(operation):
+    ports = {"result", "plot_sidecar"}
+    if operation in {"scrna_integrate_qualified", "scrna_cross_species_integrate"}:
+        ports.add("embedding")
+    if operation == "scrna_nb_countsplit":
+        ports.update(("clustering_counts", "inference_counts"))
+    return ports

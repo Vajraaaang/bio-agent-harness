@@ -1,0 +1,6 @@
+# Use the immutable M2 QC image as an offline local build context.
+FROM m2_qc
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+COPY src/devbench/core/ /opt/rna/runtime/devbench/core/
+COPY src/devbench/analysis/ /opt/rna/runtime/devbench/analysis/
+COPY src/rna_kernels/ /opt/rna/runtime/rna_kernels/

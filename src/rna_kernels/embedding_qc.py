@@ -25,6 +25,7 @@ def neighborhood_metrics(
 ) -> dict:
     """Compare Euclidean neighborhoods on caller-bounded aligned coordinates."""
     from scipy.spatial.distance import cdist
+
     n = len(reference)
     if n < 4:
         return {
@@ -34,21 +35,28 @@ def neighborhood_metrics(
             "comparison_available": False,
         }
     k = min(n_neighbors, (n - 1) // 2)
-    reference_distances = cdist(reference, reference)
-    candidate_distances = cdist(candidate, candidate)
-    np.fill_diagonal(reference_distances, np.inf)
-    np.fill_diagonal(candidate_distances, np.inf)
-    reference_order = np.argsort(reference_distances, axis=1, kind="stable")
-    candidate_neighbors = np.argsort(candidate_distances, axis=1, kind="stable")[:, :k]
-    # Both scores use the same tie order and exclude self-neighbors.
-    ranks = np.empty_like(reference_order)
-    np.put_along_axis(ranks, reference_order, np.arange(1, n + 1)[None, :], axis=1)
-    candidate_ranks = np.take_along_axis(ranks, candidate_neighbors, axis=1)
-    intrusion_penalty = np.maximum(candidate_ranks - k, 0).sum()
+    # Rank every cell against the full cohort in memory-bounded blocks.
+    block = max(1, min(n, (16 * 1024**2) // (n * 32)))
+    intrusion_penalty = retained = 0
+    for start in range(0, n, block):
+        stop = min(n, start + block)
+        rows = np.arange(stop - start)
+        cols = np.arange(start, stop)
+        reference_distances = cdist(reference[start:stop], reference)
+        candidate_distances = cdist(candidate[start:stop], candidate)
+        reference_distances[rows, cols] = candidate_distances[rows, cols] = np.inf
+        order = np.argsort(reference_distances, axis=1, kind="stable")
+        neighbors = np.argsort(candidate_distances, axis=1, kind="stable")[:, :k]
+        ranks = np.empty_like(order)
+        np.put_along_axis(ranks, order, np.arange(1, n + 1)[None, :], axis=1)
+        candidate_ranks = np.take_along_axis(ranks, neighbors, axis=1)
+        intrusion_penalty += np.maximum(candidate_ranks - k, 0).sum()
+        retained += int(np.count_nonzero(candidate_ranks <= k))
+
     normalization = n * k * (2 * n - 3 * k - 1)
     return {
         "trustworthiness": float(1 - 2 * intrusion_penalty / normalization),
-        "neighborhood_retention": float(np.mean(candidate_ranks <= k)),
+        "neighborhood_retention": float(retained / (n * k)),
         "n_neighbors": k,
         "comparison_available": True,
     }

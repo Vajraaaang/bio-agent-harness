@@ -534,7 +534,8 @@ def _scib_status(
     if condition is None:
         return {"status": "unavailable", "reason": "no_admitted_embedding"}
     if qualification is not None:
-        return report["conditions"][condition]["biological_conservation"]
+        conservation = report["conditions"][condition]["biological_conservation"]
+        return {**conservation, **conservation.get("benchmark", {})}
     reason = "scib_runtime_unavailable"
     if find_spec("scib_metrics") is not None:
         reason = "verified_external_labels_required"

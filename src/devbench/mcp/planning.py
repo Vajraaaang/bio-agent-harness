@@ -292,7 +292,10 @@ def _admit_input_purpose(plan, step, bound):
     from .registry_m2 import validate_bindings
 
     kernel = step.get("kernel") or {}
+    from .species_scope import require_within_species
+
     name = kernel.get("kernel_id")
+    require_within_species(name, bound)
     purpose = plan["epistemic_purpose"]
     if purpose == "confirmatory" and any(
         r["detail"].get("donor_conflict_halted")
@@ -302,7 +305,14 @@ def _admit_input_purpose(plan, step, bound):
         raise OperationBlocked("scientific_refusal")
     if name in KERNEL_AXES:
         for variant in (plan.get("sweep_spec") or {}).get("parameter_sets", [{}]):
-            validate_bindings(name, bound, {**kernel["parameters"], **variant}, purpose)
+            parameters = {**kernel["parameters"], **variant}
+            if (
+                name == "scrna_cross_species_integrate"
+                and parameters.get("comparator") == "saturn"
+                and not (plan.get("resource_override") or {}).get("gpu")
+            ):
+                raise OperationBlocked("runtime_prerequisite_missing")
+            validate_bindings(name, bound, parameters, purpose)
     return name in KERNEL_AXES
 
 

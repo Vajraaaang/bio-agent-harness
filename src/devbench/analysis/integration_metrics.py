@@ -27,7 +27,6 @@ from rna_kernels.embedding_qc import (
 from .checkpoints import digest
 
 _MAX_CELLS = 100_000
-_GEOMETRY_CELLS = 500
 _GEOMETRY_NEIGHBORS = 10
 _MIN_GEOMETRY_BATCH_CELLS = 4
 _MAX_ISOLATED_FRACTION = 0.1
@@ -139,31 +138,6 @@ def _validate_coordinates(coordinates: np.ndarray, n_cells: int) -> np.ndarray:
     return values
 
 
-def _geometry_rows(batch_codes):
-    """Reserve a usable sample per eligible batch within the total geometry budget."""
-    sizes = np.bincount(batch_codes)
-    order = np.argsort(batch_codes, kind="stable")
-    stops = sizes.cumsum()
-    starts = stops - sizes
-    eligible = np.flatnonzero(sizes >= _MIN_GEOMETRY_BATCH_CELLS)
-    limit = _GEOMETRY_CELLS // _MIN_GEOMETRY_BATCH_CELLS
-    if len(eligible) > limit:
-        largest_first = np.argsort(-sizes[eligible], kind="stable")
-        eligible = np.sort(eligible[largest_first[:limit]])
-    weights = sizes[eligible]
-    quotas = weights.copy()
-    if weights.sum() > _GEOMETRY_CELLS:
-        extra = (weights - _MIN_GEOMETRY_BATCH_CELLS).cumsum()
-        remaining = _GEOMETRY_CELLS - len(eligible) * _MIN_GEOMETRY_BATCH_CELLS
-        quotas = _MIN_GEOMETRY_BATCH_CELLS + np.diff(
-            extra * remaining // extra[-1], prepend=0
-        )
-    return [
-        (order[starts[i]:stops[i]], quota)
-        for i, quota in zip(eligible, quotas, strict=True)
-    ]
-
-
 def _comparison_geometry(
     reference: np.ndarray, candidate: np.ndarray, batch_codes: np.ndarray, seed: int
 ) -> dict:
@@ -174,12 +148,12 @@ def _comparison_geometry(
     reference_rank = embedding_rank(reference, tolerance)
     if not reference_rank:
         raise ValueError("embedding_reference_unavailable")
-    rng = np.random.default_rng(seed)
     samples, scores, weights = [], [], []
-    for rows, quota in _geometry_rows(batch_codes):
+    for batch in np.unique(batch_codes):
+        rows = np.flatnonzero(batch_codes == batch)
+        if len(rows) < _MIN_GEOMETRY_BATCH_CELLS:
+            continue
         sample = rows
-        if quota < len(rows):
-            sample = np.sort(rng.choice(rows, quota, replace=False))
         samples.append(sample)
         weights.append(len(rows))
         scores.append(
@@ -192,7 +166,8 @@ def _comparison_geometry(
     return {
         **{
             key: float(np.average([score[key] for score in scores], weights=weights))
-            if scores else None
+            if scores
+            else None
             for key in ("neighborhood_retention", "trustworthiness")
         },
         "n_neighbors": (
@@ -226,40 +201,47 @@ def _batch_structure(
 
 
 def _score_label_conservation(
-    candidate: np.ndarray, batch_codes: np.ndarray, labels: np.ndarray,
+    candidate: np.ndarray,
+    batch_codes: np.ndarray,
+    labels: np.ndarray,
     provenance: dict[str, str],
 ) -> tuple[dict, float | None]:
     levels = len(np.unique(labels))
-    if levels == len(labels):
+    if levels < 2 or levels == len(labels):
         return dict(
             status="unavailable",
             reason="unestimable_label_structure",
             provenance=provenance,
         ), None
-    # Exact ASW computes quadratic distances. The fixed limit bounds CPU work
-    # while the graph and finite-coordinate checks still cover all observations.
-    if len(labels) > 10_000:
-        return dict(
-            status="unavailable",
-            reason="scib_label_metrics_size_bound",
-            provenance=provenance,
-        ), None
-    metrics = full_silhouette_metrics(candidate, batch_codes, labels)
-    score = metrics["cell_type_ASW"]
+    if len(np.unique(batch_codes)) < 2:
+        scores = full_silhouette_metrics(candidate, batch_codes, labels)
+        return {
+            "status": "measured",
+            "cell_type_ASW": scores["cell_type_ASW"],
+            "silhouette_label": (1 + scores["cell_type_ASW"]) / 2,
+            "cells_evaluated": len(labels),
+            "scope": "single_batch_label_preservation",
+            "provenance": provenance,
+        }, None
+    benchmark = scib_benchmark(candidate, batch_codes, labels)
+    batch_asw = benchmark["metrics"]["silhouette_batch"]
+    silhouette = benchmark["metrics"]["silhouette_label"]
+    score = None if silhouette is None else 2 * silhouette - 1
     if score is None:
         return dict(
             status="unavailable",
             reason="unestimable_label_structure",
             provenance=provenance,
-        ), metrics["batch_ASW"]
+        ), batch_asw
     return {
         "status": "measured",
         "cell_type_ASW": score,
         "silhouette_label": (1 + score) / 2,
-        "cells_evaluated": metrics["cells_evaluated"],
+        "cells_evaluated": len(labels),
+        "benchmark": benchmark,
         "provenance": provenance,
         "scope": "descriptive_label_preservation_relative_to_qualified_reference",
-    }, metrics["batch_ASW"]
+    }, batch_asw
 
 
 def _conservation(
@@ -271,7 +253,8 @@ def _conservation(
 ) -> tuple[dict, float | None]:
     if verified_labels is None:
         return {
-            "status": "unavailable", "reason": "verified_external_labels_required",
+            "status": "unavailable",
+            "reason": "verified_external_labels_required",
         }, None
     if not selected_sha256:
         raise ValueError("integration_label_cohort_mismatch")
@@ -305,7 +288,7 @@ def assess_integration(
         "policy": {
             **EMBEDDING_THRESHOLDS,
             "max_isolated_fraction": _MAX_ISOLATED_FRACTION,
-            "geometry_max_cells": _GEOMETRY_CELLS,
+            "geometry_population": "all_eligible_batches",
             "geometry_seed": seed,
             "geometry_min_cells_per_batch": _MIN_GEOMETRY_BATCH_CELLS,
             "comparison_basis": _COMPARISON_BASIS,
@@ -547,4 +530,173 @@ def full_silhouette_metrics(
             "batch_mixing_and_preservation_of_external_prediction_structure"
             "_not_annotation_validation"
         ),
+    }
+
+
+def _reference_scib(x, batch, labels, indices, distances, seed):
+    """CPU reference metrics using full-data silhouettes and exact neighbor indices."""
+    from scipy.sparse.csgraph import connected_components
+    from scipy.stats import chi2
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import (
+        adjusted_rand_score,
+        normalized_mutual_info_score,
+        silhouette_samples,
+    )
+
+    classes = np.unique(labels)
+    silhouettes = silhouette_samples(x, labels, working_memory=32)
+    batch_counts = [len(np.unique(batch[labels == c])) for c in classes]
+    isolated = [
+        c for c, n in zip(classes, batch_counts, strict=True) if n == min(batch_counts)
+    ]
+    connectivity = []
+    graph = sparse.csr_matrix(
+        (
+            np.ones(indices.size),
+            indices.ravel(),
+            np.arange(0, indices.size + 1, indices.shape[1]),
+        ),
+        shape=(len(x), len(x)),
+    )
+    for c in classes:
+        group = labels == c
+        _, membership = connected_components(
+            graph[group][:, group], connection="strong"
+        )
+        connectivity.append(np.bincount(membership).max() / group.sum())
+    partition = KMeans(
+        n_clusters=len(classes), random_state=seed, n_init=10
+    ).fit_predict(x)
+    levels, codes = np.unique(batch, return_inverse=True)
+    observed = np.stack(
+        [(codes[indices] == i).sum(axis=1) for i in range(len(levels))], axis=1
+    )
+    expected = np.bincount(codes) / len(codes) * indices.shape[1]
+    stat = np.sum((observed - expected) ** 2 / expected, axis=1)
+
+    # Entropy-matched Gaussian kernel weights for inverse Simpson diversity.
+    # Solve one bandwidth per observation, removing self exactly as in LISI.
+    weights = distances.copy()
+    for i, (row, idx) in enumerate(zip(distances, indices, strict=True)):
+        valid = idx != i
+        d = row[valid] - row[valid].min()
+        target = np.log(max(1, indices.shape[1] // 3))
+        low, high, beta = 0.0, np.inf, 1.0
+        for _ in range(50):
+            raw = np.exp(-d * beta)
+            probabilities = raw / raw.sum()
+            entropy = np.log(raw.sum()) + beta * np.dot(d, probabilities)
+            if abs(entropy - target) < 1e-5:
+                break
+            if entropy > target:
+                low = beta
+                beta = beta * 2 if np.isinf(high) else (beta + high) / 2
+            else:
+                high = beta
+                beta = (beta + low) / 2
+        weights[i] = 0
+        weights[i, valid] = probabilities
+
+    def lisi(values):
+        levels, codes = np.unique(values, return_inverse=True)
+        local = np.asarray(
+            [
+                1 / np.sum(np.bincount(codes[idx], weights=w) ** 2)
+                for idx, w in zip(indices, weights, strict=True)
+            ]
+        )
+        return (np.median(local) - 1) / (len(levels) - 1)
+
+    return {
+        "silhouette_label": (1 + silhouettes.mean()) / 2,
+        "silhouette_batch": full_silhouette_metrics(x, batch, labels)["batch_ASW"],
+        "isolated_labels": np.mean(
+            [((1 + silhouettes[labels == c]) / 2).mean() for c in isolated]
+        ),
+        "graph_connectivity": np.mean(connectivity),
+        "ari": adjusted_rand_score(labels, partition),
+        "nmi": normalized_mutual_info_score(labels, partition),
+        "ilisi": lisi(batch),
+        "clisi": 1 - lisi(labels),
+        "kbet": np.mean(chi2.sf(stat, len(levels) - 1) >= 0.05),
+    }
+
+
+def scib_benchmark(coordinates, batches, reference_labels, seed=0):
+    """Report separate scIB axes, metric values, backend and cohort size."""
+    from sklearn.neighbors import NearestNeighbors
+
+    x = _validate_coordinates(np.asarray(coordinates), len(batches))
+    batch = np.asarray(batches)
+    labels = np.asarray(reference_labels)
+    if (
+        labels.shape != batch.shape
+        or batch.shape != (len(x),)
+        or not all(1 < len(np.unique(v)) < len(x) for v in (batch, labels))
+        or not embedding_rank(x, 1e-8)
+    ):
+        raise ValueError("unestimable_scib_design")
+    # A population-wide neighborhood makes kBET and connectivity vacuous.
+    k = min(90, max(3, int(np.ceil(np.sqrt(len(x))))), len(x) - 1)
+    distances, indices = NearestNeighbors(n_neighbors=k, n_jobs=1).fit(x).kneighbors(x)
+    try:
+        import scib_metrics as scib
+    except ModuleNotFoundError as exc:
+        if exc.name != "scib_metrics":
+            raise
+        scores = _reference_scib(x, batch, labels, indices, distances, seed)
+        backend = "numpy_scipy_sklearn_reference"
+    else:
+        from scib_metrics.nearest_neighbors import NeighborsResults
+
+        nn = NeighborsResults(indices=indices, distances=distances)
+        concordance = scib.nmi_ari_cluster_labels_kmeans(x, labels)
+        estimable = any(
+            1
+            < len(np.unique(batch[labels == label]))
+            < np.count_nonzero(labels == label)
+            for label in np.unique(labels)
+        )
+        scores = {
+            "silhouette_label": scib.silhouette_label(x, labels),
+            "silhouette_batch": scib.silhouette_batch(x, labels, batch)
+            if estimable
+            else None,
+            "graph_connectivity": scib.graph_connectivity(nn, labels),
+            "ilisi": scib.ilisi_knn(nn, batch),
+            "clisi": scib.clisi_knn(nn, labels),
+            "kbet": scib.kbet(nn, batch)[0],
+            "isolated_labels": scib.isolated_labels(x, labels, batch),
+            "ari": concordance["ari"],
+            "nmi": concordance["nmi"],
+        }
+        backend = "scib-metrics/" + scib.__version__
+    scores = {
+        k: float(v) if v is not None and np.isfinite(v) else None
+        for k, v in scores.items()
+    }
+    axes = {
+        "batch_correction": ["silhouette_batch", "ilisi", "kbet", "graph_connectivity"],
+        "bio_conservation": [
+            "silhouette_label",
+            "clisi",
+            "ari",
+            "nmi",
+            "isolated_labels",
+        ],
+    }
+    return {
+        "backend": backend,
+        "cells_evaluated": len(x),
+        "metrics": scores,
+        "axis_metrics": axes,
+        "neighbors": k,
+        "kbet_definition": "exact_knn_global_batch_acceptance",
+        **{
+            axis: float(np.mean([scores[key] for key in keys]))
+            if all(scores[key] is not None for key in keys)
+            else None
+            for axis, keys in axes.items()
+        },
     }

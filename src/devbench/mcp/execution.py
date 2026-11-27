@@ -211,6 +211,9 @@ def _bind(ctx, plan):
     ):
         raise OperationBlocked("scientific_refusal")
     kernel = plan.get("kernel") or {}
+    from .species_scope import require_within_species
+
+    require_within_species(kernel.get("kernel_id"), records)
     if kernel.get("kernel_id") in KERNEL_AXES:
         validate_bindings(kernel["kernel_id"], records, kernel["parameters"], purpose)
         return records

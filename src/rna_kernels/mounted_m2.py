@@ -3,12 +3,20 @@
 import argparse
 import hashlib
 import json
+import os
 import re
+from importlib import import_module
 from pathlib import Path
 
 from devbench.core._files import hash_bounded_file, read_bounded_file
 from devbench.core._hashing import decode_receipt_json
-from rna_kernels.m2_contract import KERNEL_AXES, OUTPUTS, source_digest
+from rna_kernels.m2_contract import (
+    KERNEL_AXES,
+    OUTPUTS,
+    WAVE2_KERNELS,
+    source_digest,
+    wave2_outputs,
+)
 
 
 def _bound_inputs(inputs, request):
@@ -38,7 +46,14 @@ def run_mounted_m2(inputs: Path, outputs: Path, request_sha256: str):
     if op not in KERNEL_AXES:
         raise ValueError("Unknown M2 operation")
     paths = _bound_inputs(inputs, request)
-    if op == "donor_forensics":
+    if op in WAVE2_KERNELS:
+        if hasattr(os, "sched_getaffinity"):
+            # XLA sizes native pools from CPU affinity rather than the Docker
+            # quota. Respect the two-CPU mounted profile and its PID budget.
+            allowed = sorted(os.sched_getaffinity(0))
+            os.sched_setaffinity(0, allowed[:2])
+        run_m2 = import_module(WAVE2_KERNELS[op]).run_m2
+    elif op == "donor_forensics":
         from rna_kernels.donor_forensics import run_m2
     else:
         from rna_kernels.mounted_scrna import run_m2
@@ -48,6 +63,8 @@ def run_mounted_m2(inputs: Path, outputs: Path, request_sha256: str):
         else {}
     )
     files = run_m2(op, paths, request["parameters"], outputs, **options)
+    if op in WAVE2_KERNELS and set(files) != wave2_outputs(op):
+        raise ValueError("Incomplete wave-two scientific output set")
     if "result" not in files or set(outputs.iterdir()) != set(files.values()):
         raise ValueError("Unexpected M2 output set")
     hashes = {}

@@ -279,3 +279,137 @@ def split_mounted_counts(
         "split_report": report,
         **({"donor_roster": roster} if roster is not None else {}),
     }
+
+
+class Parameters(_FrozenParameters):
+    seed: int = Field(default=0, ge=0, lt=2**32)
+    clustering_fraction: float = Field(default=0.5, gt=0, lt=1)
+
+
+class FoldDiagnostics:
+    """Gene-wise moments accumulated across the actual output folds, including zeros."""
+
+    def __init__(self, theta):
+        self.n = 0
+        self.theta = np.array(theta)
+        self.moments = np.zeros((5, len(theta)))
+
+    def update(self, first, second):
+        x, y = first.astype(float), second.astype(float)
+        self.n += x.shape[0]
+        for row, term in enumerate((x, y, x.multiply(x), y.multiply(y), x.multiply(y))):
+            self.moments[row] += np.asarray(term.sum(axis=0)).ravel()
+
+    def verify(self):
+        if self.n < 64:
+            raise ValueError("Insufficient observations to verify split dispersion")
+        x, y, xx, yy, xy = self.moments / self.n
+        vx, vy = xx - x * x, yy - y * y
+        if np.any(vx <= 0) or np.any(vy <= 0):
+            raise ValueError("Split diagnostics require estimable features")
+        corr = (xy - x * y) / np.sqrt(vx * vy)
+        mean = x + y
+        observed = (xx + yy + 2 * xy - mean**2) * self.n / (self.n - 1)
+        predicted = mean + mean**2 / self.theta
+        ratio = observed / predicted
+        # Fixed scientific bounds on each gene prevent cancellation of opposite
+        # misspecifications. This empirical screen is not proof of independence.
+        if np.max(np.abs(corr)) > 0.25 or np.any((ratio < 0.5) | (ratio > 2)):
+            raise ValueError(
+                "Split dispersion or measured fold correlation outside frozen bounds"
+            )
+        return {
+            "n_cells": self.n,
+            "correlations": corr.tolist(),
+            "max_abs_correlation": float(np.max(abs(corr))),
+            "variance_ratios": ratio.tolist(),
+            "correlation_limit": 0.25,
+            "variance_ratio_limits": [0.5, 2.0],
+        }
+
+
+def run_m2(op, paths, params, outputs):
+    from tempfile import TemporaryDirectory
+
+    from rna_kernels.scrna_clusterde import write_report
+
+    par = Parameters.model_validate(params)
+    source = paths["expression"]
+    digest = hash_bounded_file(source, 1 << 40)
+    raw = read_bounded_file(paths["split_dispersion"], 16 * 1024**2)
+    dispersion = IndependentDispersion.model_validate_json(raw)
+    if (
+        dispersion.analysis_counts_sha256 != digest
+        or canonical_json(decode_receipt_json(raw)) != raw
+    ):
+        raise ValueError("Dispersion must be canonical and bound to the staged counts")
+    diagnostics = FoldDiagnostics(dispersion.theta)
+    rng = np.random.default_rng(par.seed)
+    with TemporaryDirectory(dir=outputs) as temporary:
+        root = Path(temporary)
+        clustering, inference = root / "clustering.h5ad", root / "inference.h5ad"
+        with (
+            open_h5ad(source) as expression,
+            h5py.File(clustering, "x") as a,
+            h5py.File(inference, "x") as b,
+        ):
+            dispersion.verify_axes(expression.obs, tuple(expression.var.index))
+            left = _FoldWriter(
+                a, expression.obs.index, expression.var.index, "clustering"
+            )
+            right = _FoldWriter(
+                b, expression.obs.index, expression.var.index, "inference"
+            )
+            for block in expression.iter_rows(block_rows=128, max_bytes=16 * 1024**2):
+                x, y = split_count_block(
+                    sparse.csr_matrix(block.X),
+                    diagnostics.theta,
+                    par.clustering_fraction,
+                    rng,
+                )
+                diagnostics.update(x, y)
+                left.append(x)
+                right.append(y)
+        diagnostic = diagnostics.verify()
+        report = {
+            "method": "nb_countsplit",
+            "counts_sha256": digest,
+            "dispersion_manifest_sha256": hash_bounded_file(
+                paths["split_dispersion"], 16 * 1024**2
+            ),
+            "dispersion_origin": dispersion.origin,
+            "split_distribution": "dirichlet_multinomial",
+            "diagnostic": diagnostic,
+            "diagnostic_sha256": content_sha256(diagnostic),
+            "feature_ids_sha256": content_sha256(dispersion.feature_ids),
+            "clustering_counts_sha256": hash_bounded_file(clustering, MAX_MATRIX_BYTES),
+            "inference_counts_sha256": hash_bounded_file(inference, MAX_MATRIX_BYTES),
+            "marker_inference_performed": False,
+            "parameters": par.model_dump(mode="json"),
+        }
+        hist, edges = np.histogram(
+            diagnostic["correlations"], bins=np.linspace(-1, 1, 21)
+        )
+        files = write_report(
+            outputs,
+            report,
+            {
+                "axis_labels": {"x": "Between-fold gene correlation", "y": "Genes"},
+                "sample_count": diagnostics.n,
+                "donor_count": 0,
+                "transformations": [
+                    "Each gene contributes one fold correlation across cells."
+                ],
+                "columns": ["lower", "upper", "count"],
+                "rows": [
+                    [float(lo), float(hi), int(n)]
+                    for lo, hi, n in zip(edges[:-1], edges[1:], hist, strict=True)
+                ],
+            },
+        )
+        for port, path in (
+            ("clustering_counts", clustering),
+            ("inference_counts", inference),
+        ):
+            files[port] = path.rename(outputs / path.name)
+        return files
