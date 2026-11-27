@@ -30,8 +30,8 @@ from rna_kernels.normalization import log1p_counts_per_10k
 from ._files import read_bounded_file
 from ._hashing import decode_receipt_json
 from ._rna_solver_inputs import (
-    MAX_INPUT_BYTES,
-    MAX_MATRIX_ENTRIES,
+    DENSE_WORK_BYTES,
+    DENSE_WORK_ENTRIES,
     read_count_and_metadata,
     require_labels,
     solver_receipt,
@@ -256,7 +256,7 @@ def _metrics(metadata: pd.DataFrame, predictions: _Floats) -> dict[str, Any]:
 def _locked_inputs(
     path: Path, digest: str, genes: list[str]
 ) -> tuple[_Floats, pd.DataFrame]:
-    content = read_bounded_file(path, MAX_INPUT_BYTES)
+    content = read_bounded_file(path, DENSE_WORK_BYTES)
     if hashlib.sha256(content).hexdigest() != digest:
         raise ValueError("independent_evaluation_partition_digest_mismatch")
     report = decode_receipt_json(content)
@@ -270,7 +270,7 @@ def _locked_inputs(
         or set(features) != set(genes)
         or not isinstance(rows, list)
         or not rows
-        or len(rows) * len(features) > MAX_MATRIX_ENTRIES
+        or len(rows) * len(features) > DENSE_WORK_ENTRIES
     ):
         raise ValueError("locked_evaluation_requires_matching_bounded_feature_axis")
     return _locked_rows(rows, pd.Index(features).get_indexer(genes))

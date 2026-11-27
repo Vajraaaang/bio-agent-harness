@@ -754,11 +754,18 @@ class _WorkbenchHandler:
                 "Use one bounded Content-Length, without transfer encoding"
             )
         size = int(lengths[0])
-        if size > ui.MAX_BODY:
+        limit = ui.MAX_BODY
+        if re.fullmatch(
+            r"/api/scientific/adaptive/[0-9a-f]{32}/tier2-freeze", self.path
+        ):
+            # JSON escaping can expand a UTF-8 source; the decoded script has a
+            # separate 512 KiB bound. Other Studio routes keep their own limit.
+            limit = 4 << 20
+        if size > limit:
             raise ValueError("JSON size exceeds the request bound")
         if self.headers.get("Content-Type") != "application/json":
             raise ValueError("Use application/json")
-        return ui.decode_json(self.rfile.read(size))
+        return ui.decode_json(self.rfile.read(size), max_bytes=limit)
 
     def _project_routes(self, request: _Request):
         target = request.target
@@ -1262,14 +1269,17 @@ class _WorkbenchHandler:
         target = request.target
         app = request.app
         private_run = re.fullmatch(
-            r"/api/scientific/adaptive/([0-9a-f]{32})/plugin-execute",
+            r"/api/scientific/adaptive/([0-9a-f]{32})/(plugin-execute|tier2-freeze|tier2-review|tier2-output)",
             target.path,
         )
         if not private_run or not request.mutation or target.query:
             return _UNHANDLED_ROUTE
         if (
             app.offline_only is not True
-            or app.allow_data_execution is not True
+            or (
+                private_run[2] == "plugin-execute"
+                and app.allow_data_execution is not True
+            )
             or (
                 self._project_hub is not None
                 and self._project_hub.read_only(request.project_id)
@@ -1277,6 +1287,41 @@ class _WorkbenchHandler:
         ):
             raise PermissionError(
                 "Private graph steps require offline Studio execution"
+            )
+        if private_run[2].startswith("tier2-") and self._delivery() is not None:
+            raise PermissionError(
+                "Private scripts and outputs require local operator access"
+            )
+        if private_run[2] == "tier2-output":
+            from .plugin_exploratory_studio import studio_output_preview
+
+            return self._json(
+                studio_output_preview(app, private_run[1], request.body), admitted=True
+            )
+        if private_run[2] == "tier2-freeze":
+            from .plugin_exploratory_studio import studio_freeze_exploration
+
+            return self._json(
+                studio_freeze_exploration(app, private_run[1], request.body),
+                201,
+                admitted=True,
+            )
+        if private_run[2] == "tier2-review":
+            from .plugin_exploratory_studio import studio_script_review
+
+            if not isinstance(request.body, dict) or request.body.keys() != {
+                "plan_id",
+                "plan_sha256",
+            }:
+                raise ValueError("Select the frozen plan to review")
+            return self._json(
+                studio_script_review(
+                    app,
+                    private_run[1],
+                    request.body["plan_id"],
+                    request.body["plan_sha256"],
+                ),
+                admitted=True,
             )
         from .plugin_graph_studio import studio_launch
 

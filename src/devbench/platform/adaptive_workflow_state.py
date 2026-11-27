@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from devbench.adaptive.models import AdaptiveRecord, ConsumerPurpose, Port
+from devbench.core.execution_contracts import RepresentationClass
 from devbench.core.procedure_profile import ADMITTED_RESEARCH, ProcedureProfile
 from devbench.engine.workflow_operations import OperationBlocked, OperationConflict
 
@@ -35,7 +36,52 @@ class BasisUse(AdaptiveRecord):
     use: Use = "compute"
 
 
-class ArtifactVersion(AdaptiveRecord):
+class ExploratoryEvidence(AdaptiveRecord):
+    # None fields are omitted so legacy sealed receipts retain their exact digest.
+    execution_lane: Literal["tier2_exploratory"] | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
+    claim_tier: Literal["L1_execution_verified"] | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
+    exploratory_only: Literal[True] | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
+    figure_verification: Literal["produced_unverified"] | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
+    clinical_release_allowed: Literal[False] | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
+    data_classification: Literal["private"] | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
+
+    @model_validator(mode="after")
+    def check_exploratory_stamp(self):
+        fields = (
+            self.execution_lane,
+            self.claim_tier,
+            self.exploratory_only,
+            self.figure_verification,
+            self.clinical_release_allowed,
+        )
+        if any(v is not None for v in fields) and any(v is None for v in fields):
+            raise ValueError("Exploratory evidence requires the complete L1 stamp")
+        return self
+
+
+class ArtifactVersion(ExploratoryEvidence):
+    plot_sidecar_sha256: Digest | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
+
+    representation_class: RepresentationClass | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
+    parent_sha256: tuple[Digest, ...] | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
     version_id: Identity
     sha256: Digest
     kind: str
@@ -52,6 +98,19 @@ class ArtifactVersion(AdaptiveRecord):
 
     @model_validator(mode="after")
     def graph_identity(self):
+        if (
+            self.execution_lane
+            and self.kind == "figure"
+            and not self.plot_sidecar_sha256
+        ):
+            raise ValueError("An exploratory figure requires its sealed plot sidecar")
+        if self.execution_lane and set(self.permitted_uses) & {
+            "qualified_inference",
+            "admitted_research_inference",
+        }:
+            raise ValueError(
+                "Exploratory artifacts cannot support confirmatory inference"
+            )
         if (self.kind == "graph") != (self.graph_sha256 is not None):
             raise ValueError("Graph versions require their own graph digest")
         return self
@@ -134,7 +193,7 @@ class ArtifactPin(AdaptiveRecord):
     graph_sha256: Digest | None
 
 
-class StepReceipt(AdaptiveRecord):
+class StepReceipt(ExploratoryEvidence):
     job_id: Identity
     request_sha256: Digest
     consumed: tuple[ArtifactPin, ...] = Field(max_length=16)

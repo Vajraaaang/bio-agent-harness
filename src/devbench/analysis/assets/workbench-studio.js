@@ -658,8 +658,65 @@
     return plan.status === 'completed' && digest(plan.graph_execution?.receipt_sha256);
   }
 
-  function privateWorkflow(host, view, {readOnly, launch}) {
+  function exploratoryAuthoring(host, inputs, freeze) {
+    const panel = section(host, 'Exploratory script');
+    const form = node('details');
+    form.append(node('summary', 'Prepare a local run'));
+    panel.append(form);
+    form.append(tableView(['Available input', 'SHA-256'], inputs.map(i => [i.name, i.sha256]), 'Private inputs'));
+    const field = (title, control) => {
+      const label = node('label', title);
+      label.append(control);
+      form.append(label);
+      return control;
+    };
+    const mode = field('Script source', node('select'));
+    for (const [value, title] of [['python', 'Local Python'], ['r', 'Local R'], ['template', 'Tested template']]) {
+      const option = node('option', title);
+      option.value = value;
+      mode.append(option);
+    }
+    const source = field('Source code', node('textarea'));
+    source.rows = 8;
+    const templateId = field('Public or synthetic plan ID', node('input'));
+    const templateSha = field('Tested plan SHA-256', node('input'));
+    const options = field('Input bindings and run settings (JSON)', node('textarea'));
+    options.rows = 12;
+    const common = {step_name: 'Exploratory analysis', input_bindings: {data: inputs[0].sha256}, parameters: {}};
+    function changeMode() {
+      const template = mode.value === 'template';
+      source.parentElement.hidden = template;
+      templateId.parentElement.hidden = templateSha.parentElement.hidden = !template;
+      options.value = JSON.stringify(template ? common : {...common,
+        resource_profile: {cpus: 1, memory_mb: 1024, pids_limit: 128, timeout_sec: 300, max_output_bytes: 67108864},
+        expected_outputs: {out: {artifact_type: 'json', path: '/outputs/out.json', required: true}},
+      }, null, 2);
+    }
+    mode.addEventListener('change', changeMode);
+    changeMode();
+    const button = node('button', 'Freeze for review');
+    button.type = 'button';
+    const feedback = node('p');
+    feedback.setAttribute('role', 'status');
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        const settings = JSON.parse(options.value);
+        await freeze(mode.value === 'template'
+          ? {...settings, template: {plan_id: templateId.value.trim(), plan_sha256: templateSha.value.trim()}}
+          : {...settings, base_image_id: mode.value === 'r' ? 'devharness-explore-r' : 'devharness-explore-py',
+            source_code: source.value});
+      } catch (error) {
+        feedback.textContent = error.message || 'The script could not be frozen.';
+      } finally { button.disabled = false; }
+    });
+    form.append(button, feedback);
+  }
+
+  function privateWorkflow(host, view, {readOnly, launch, review: readScript, preview, freeze}) {
     const plans = privatePlans(view);
+    const inputs = asList(view?.private_workflow?.authoring_inputs);
+    if (inputs.length && !readOnly && freeze) exploratoryAuthoring(host, inputs, freeze);
     for (const plan of plans) {
       const operation = humanize(plan.operation) || 'Analysis';
       const panel = section(host, operation[0].toUpperCase() + operation.slice(1));
@@ -672,6 +729,18 @@
         humanize(plan.error || 'verified_receipt_unavailable')));
       const review = disclosure('Frozen plan', tableView(['Plan ID', 'Plan SHA-256'],
         [[plan.plan_id, plan.plan_sha256]], 'Frozen plan'));
+      if (plan.operation === 'registered_exploratory' && readScript) {
+        const inspect = node('button', 'Review script, bindings and limits');
+        const content = node('pre');
+        inspect.type = 'button';
+        inspect.addEventListener('click', async () => {
+          try {
+            const {script, ...details} = await readScript(plan);
+            content.textContent = JSON.stringify(details, null, 2) + '\n\n' + script;
+          } catch (error) { content.textContent = error.message || 'Script is unavailable.'; }
+        });
+        review.append(inspect, content);
+      }
       const inputs = asList(plan.inputs).filter(item => typeof item?.name === 'string');
       if (inputs.length) review.append(tableView(['Input', 'Role'], inputs.map(item =>
         [item.name, humanize(item.role)]), 'Frozen inputs'));
@@ -689,6 +758,26 @@
         panel.append(digestButton('Inspect graph receipt', graph.receipt_sha256, {
           ...graph, artifact_sha256: graph.result_sha256, delivery_status: 'verified',
         }));
+        for (const port of asList(plan.output_ports)) {
+          if (!preview) break;
+          const button = node('button', 'Inspect ' + port);
+          button.type = 'button';
+          const output = node('div');
+          button.addEventListener('click', async () => {
+            try {
+              const {png, text, ...metadata} = await preview(plan, port);
+              output.replaceChildren(node('pre', JSON.stringify(metadata, null, 2)));
+              if (text !== undefined) output.append(node('pre', text));
+              if (png) {
+                const image = node('img');
+                image.alt = port;
+                image.src = 'data:image/png;base64,' + png;
+                output.append(image);
+              }
+            } catch (error) { output.textContent = error.message || 'Output is unavailable.'; }
+          });
+          panel.append(button, output);
+        }
       }
       if (state !== 'awaiting_review') continue;
       if (plan.can_run !== true || readOnly || !launch) {
@@ -697,7 +786,7 @@
       }
       localApproval(panel, 'Approve and run', () => launch(plan), 'Studio could not start the plan.');
     }
-    return plans.length > 0;
+    return plans.length > 0 || Boolean(inputs.length && !readOnly && freeze);
   }
 
   function motorCompletedMethod(panel, workflow) {

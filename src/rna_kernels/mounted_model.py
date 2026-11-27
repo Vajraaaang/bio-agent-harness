@@ -2,6 +2,7 @@
 
 import json
 import math
+import os
 import re
 import subprocess
 from collections import Counter
@@ -549,6 +550,16 @@ def _verify_count_route(evidence, choice, cohort, codes):
     return _tmm_normalization(details, len(cohort.labels))
 
 
+def _r_solver_timeout() -> int:
+    """Use the OCI launcher's reviewed ceiling, or the standalone legacy default."""
+    value = os.environ.get("DEVBENCH_MOUNTED_TIMEOUT_SEC")
+    if value is None:
+        return 240
+    if not re.fullmatch(r"[1-9][0-9]{0,5}", value) or int(value) > 72 * 3600:
+        raise ValueError("Invalid mounted R solver deadline")
+    return int(value)
+
+
 def fit_mounted_model(source, cohort, request, primary, runtime, outputs, lengths_path):
     model = request["model"]
     measurement = request["measurement"]
@@ -579,7 +590,7 @@ def fit_mounted_model(source, cohort, request, primary, runtime, outputs, length
                     stdin=subprocess.DEVNULL,
                     stdout=diagnostics,
                     stderr=subprocess.STDOUT,
-                    timeout=240,
+                    timeout=_r_solver_timeout(),
                 )
             except (OSError, subprocess.SubprocessError) as error:
                 raise ValueError(f"Mounted {choice.solver} execution failed") from error

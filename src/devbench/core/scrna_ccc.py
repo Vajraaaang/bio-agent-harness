@@ -12,7 +12,7 @@ from scipy.stats import t
 
 from ._hashing import canonical_sha256
 from ._rna_solver_inputs import (
-    MAX_MATRIX_ENTRIES,
+    DENSE_WORK_ENTRIES,
     ConditionContrast,
     Label,
     adjust_probabilities,
@@ -44,7 +44,7 @@ class CellCommunicationSpec(FrozenContract):
     contrast: ConditionContrast | None = None
     min_cells_per_donor_type: int = Field(ge=1)
     complex_aggregation: Literal["min", "geometric_mean"] = "min"
-    n_perm: int = Field(default=999, ge=1, le=20 * (MAX_MATRIX_ENTRIES // 32))
+    n_perm: int = Field(default=999, ge=1, le=20 * (DENSE_WORK_ENTRIES // 32))
     seed: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
@@ -283,7 +283,7 @@ def _interaction_statistics(
         if all(gene in genes for side in pair for gene in side)
     }
     pair_shape = (len(measured), n_types, n_types)
-    if len(measured) * n_types**2 * len(donors) > MAX_MATRIX_ENTRIES:
+    if len(measured) * n_types**2 * len(donors) > DENSE_WORK_ENTRIES:
         raise ValueError("communication_interaction_family_over_budget")
     complexes = {
         side: index
@@ -447,8 +447,8 @@ def fit_cell_communication(
         _, full_design, diagnostics = donor_design(metadata, spec.contrast)
     cell_types = sorted(set(metadata["cell_type"]))
     if (
-        len(reference) * len(cell_types) ** 2 > MAX_MATRIX_ENTRIES // 32
-        or metadata["donor_id"].nunique() * len(cell_types) > MAX_MATRIX_ENTRIES
+        len(reference) * len(cell_types) ** 2 > DENSE_WORK_ENTRIES // 32
+        or metadata["donor_id"].nunique() * len(cell_types) > DENSE_WORK_ENTRIES
     ):
         raise ValueError("communication_interaction_family_over_budget")
     relevant = {gene for pair in reference.values() for side in pair for gene in side}

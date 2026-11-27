@@ -401,6 +401,12 @@ class JobStore:
 
     @staticmethod
     def _has_private_input(db, fingerprints, *, session_id=None):
+        from devbench.analysis.evidence_access import EvidenceBroker
+        from devbench.engine.workflow_operations import (
+            LEDGER_NAME,
+            WorkflowOperationLedger,
+        )
+
         hashes = sorted({value for value in fingerprints if value is not None})
         if JobStore._control_privacy(db, session_id, hashes):
             return True
@@ -408,7 +414,7 @@ class JobStore:
             return False
         # Scope includes the same H5AD, FASTQ inventory and lineage-root identities
         # delivered by existing MCP tools. Retained declarations are sticky.
-        return (
+        private_plan = (
             db.execute(
                 """WITH wanted AS (SELECT value AS sha FROM json_each(?)),
             sources AS (
@@ -419,7 +425,12 @@ class JobStore:
                 FROM plugin_plans p, json_each(p.plan_json,'$.fastq.inventory') item
                 UNION ALL
                 SELECT p.plan_json, json_object('sha256',item.value)
-                FROM plugin_plans p, json_each(p.plan_json,'$.session_roots') item)
+                FROM plugin_plans p, json_each(p.plan_json,'$.session_roots') item
+                UNION ALL
+                SELECT p.plan_json, item.value FROM plugin_runs r
+                JOIN plugin_plans p ON p.plan_id=r.plan_id
+                AND p.plan_sha256=r.plan_sha256,
+                json_each(r.receipt_json,'$.registered_method_outputs') item)
             SELECT 1 FROM sources WHERE json_extract(item,'$.sha256') IN (SELECT sha
                 FROM wanted) AND (
                 coalesce(json_extract(plan,'$.data_classification'),'unclassified')
@@ -430,6 +441,21 @@ class JobStore:
                 (canonical(hashes).decode(),),
             ).fetchone()
             is not None
+        )
+        if private_plan:
+            return True
+        # Includes locally authored source, unpublished private derivatives and
+        # individual chunks. Read the owning workspace WAL without creating it.
+        database = db.execute(
+            "SELECT file FROM pragma_database_list WHERE name='main'"
+        ).fetchone()
+        if not database or not database[0]:
+            return False
+        ledger_path = Path(database[0]).parent / "methods" / LEDGER_NAME
+        if not ledger_path.exists() and not ledger_path.is_symlink():
+            return False
+        return WorkflowOperationLedger(ledger_path, readonly=True)._read(
+            lambda scientific: EvidenceBroker.has_private_content(scientific, hashes)
         )
 
     def has_private_input(self, fingerprints: set[str | None]) -> bool:
@@ -581,6 +607,19 @@ class JobStore:
             if offline_approval is None
             else offline_approval
         )
+        if (
+            plan.get("operation") == "registered_exploratory"
+            and "registered_method" in plan
+        ):
+            contract = self._registered_contract(plan)
+            # Keep both the operator's note and the exact approved script in the
+            # ratified authority table without altering its sealed WAL schema.
+            rationale = canonical(
+                {
+                    "rationale": rationale,
+                    "script_sha256": contract["implementation"]["source_sha256"],
+                }
+            ).decode()
 
         def check(db):
             if (
@@ -608,6 +647,18 @@ class JobStore:
             if require_public
             else None,
         )
+
+    def _registered_contract(self, plan):
+        from devbench.engine.methods import MethodService
+
+        binding = plan["registered_method"]
+        method = MethodService(
+            self.workspace / "methods", readonly=True, reconcile=False
+        ).method(binding["step"]["oci_method_version_id"])
+        contract = method["contract"]
+        if digest(contract) != binding["method_contract_sha256"]:
+            raise OperationBlocked("registered_method_contract_changed")
+        return contract
 
     def unsettled_legacy_runs(self):
         """Original workers write these rows until their process exits."""
@@ -644,13 +695,26 @@ class JobStore:
             self.approve(sid, plan_id, sha, **grant)
         if previous := self.legacy_run(sid, plan_id):
             return previous
+        resources = {}
+        if (
+            plan.get("operation") == "registered_exploratory"
+            and "registered_method" in plan
+        ):
+            resources["memory_mb"] = self._registered_contract(plan)["execution"][
+                "memory_mb"
+            ]
         if supervisor := local_supervisor(self.workspace):
-            return supervisor.submit(sid, plan_id, sha)
+            return supervisor.submit(sid, plan_id, sha, **resources)
         if ipc.daemon_status(self.workspace).get("status") != "running":
             # Starting a reviewed job alone must not take an interactive Studio lock.
             ipc.start_daemon(self.workspace, offline_only=True, defer_studio=True)
         return ipc.request(
-            self.workspace, "submit", session_id=sid, plan_id=plan_id, plan_sha256=sha
+            self.workspace,
+            "submit",
+            session_id=sid,
+            plan_id=plan_id,
+            plan_sha256=sha,
+            **resources,
         )
 
     @staticmethod
@@ -812,6 +876,20 @@ class JobStore:
                     ),
                     db=db,
                 )
+                if (
+                    plan.get("operation") == "registered_exploratory"
+                    and "registered_method" in plan
+                ):
+                    limits = self._registered_contract(plan)["execution"]
+                    slots = json.loads(row["stage_json"]).get("_cpu_slots", 1)
+                    if (
+                        row["pool"] != "cpu"
+                        or limits["cpu"] > slots
+                        or limits["memory_mb"] > row["memory_mb"]
+                    ):
+                        raise OperationBlocked(
+                            "registered_method_reservation_insufficient"
+                        )
                 yield db, plan
 
     def start(self, rid: str) -> dict[str, Any]:
@@ -1150,7 +1228,13 @@ def _verify_retained_receipt(jobs, rid, plan, receipt):
     if plan["operation"] in LOCAL_OPERATIONS:
         plugin_mcp._verify_solver_result(jobs.workspace, rid, receipt)
     if plan["operation"] == "registered_exploratory":
-        verify_registered_method_result(jobs.workspace, rid, plan, receipt)
+        verify_registered_method_result(
+            jobs.workspace,
+            rid,
+            plan,
+            receipt,
+            offline_studio=plan.get("data_classification") == "private",
+        )
     if plan.get("graph_runtime") is not None:
         verify_registered_plugin_result(jobs.workspace, rid, plan, receipt)
     ledger = jobs.authority.ledger
@@ -1211,7 +1295,15 @@ def _compute_or_restore(jobs, rid, plan):
             },
         )
     # The native adapter independently verifies and consumes its accepted prefix.
-    receipt = run_frozen_plan(jobs, rid, plan)
+    if (
+        plan["operation"] == "registered_exploratory"
+        and plan.get("data_classification") == "private"
+    ):
+        from .plugin_exploratory_studio import run_private_exploration
+
+        receipt = run_private_exploration(jobs, rid, plan)
+    else:
+        receipt = run_frozen_plan(jobs, rid, plan)
     if receipt.get("replay_bundle_sha256") and receipt.get("run_id") == rid:
         jobs.checkpoint(
             rid,

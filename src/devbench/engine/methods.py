@@ -28,7 +28,8 @@ from devharness_core.provenance import (
     hash_artifact,
 )
 
-from .method_executor import EXPLORATORY_IMAGE, LocalDockerExecutor, _path
+from .exploratory_images import exploratory_image
+from .method_executor import LocalDockerExecutor, _path
 
 _INVESTIGATION_ARTIFACT_LIMITS = {
     "rna_investigation_packet": 48_000,
@@ -55,13 +56,26 @@ def exploratory_method(value):
     """Admit the custom method subset supported by the adaptive OCI profile."""
     method = MethodContract.from_dict(value)
     implementation = value["implementation"]
+    try:
+        image = exploratory_image(value["environment"].get("image", ""))
+    except (ValueError, KeyError) as error:
+        raise PermissionError(
+            "Unsupported image for the exploratory OCI profile"
+        ) from error
+    entrypoints = (
+        (
+            ["python", "/method/main.py"],
+            ["python3", "/method/main.py"],
+            ["python3.13", "/method/main.py"],
+        )
+        if image.language == "python"
+        else (["Rscript", "--vanilla", "/method/main.R"],)
+    )
     if (
         value["lifecycle"] != "custom"
         or value["implementation_trust"] != "unreviewed"
         or implementation["kind"] != "oci"
-        or value["environment"]["image"] != EXPLORATORY_IMAGE
-        or implementation["entrypoint"]
-        not in (["python", "/method/main.py"], ["python3", "/method/main.py"])
+        or implementation["entrypoint"] not in entrypoints
         or value["method_id"] == "community.nfcore.differentialabundance.2"
         or value["validation"]["comparator"] not in {"json", "file"}
         or value["validation"]["invariants"]
@@ -98,7 +112,7 @@ def _artifact_suffix(source, artifact_type):
             compound in {".csv.gz", ".tsv.gz"}
             and source.name.lower() not in _COMPRESSED_AXES
         ):
-            return source.name[-len(compound):]
+            return source.name[-len(compound) :]
     if suffix and re.fullmatch(r"\.[A-Za-z0-9_-]{1,20}", suffix) is None:
         raise ValueError("Unsupported artifact filename suffix")
     return suffix

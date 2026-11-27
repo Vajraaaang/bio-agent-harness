@@ -1,0 +1,11 @@
+# A code-only update of a pre-staged routed RNA kernel. No package downloads.
+ARG KERNEL_IMAGE=devbench-rna-kernel:2.0-thesis-routed-arm64
+FROM ${KERNEL_IMAGE}
+COPY src/devbench/core/expression_inventory.py src/devbench/core/expression_io.py \
+     src/devbench/core/sparse_expression_blocks.py src/devbench/core/hdf5_custody.py \
+     src/devbench/core/zarr_expression_store.py src/devbench/core/population_data.py \
+     src/devbench/core/population_contract.py /opt/rna/runtime/devbench/core/
+COPY src/devbench/platform/__init__.py src/devbench/platform/scrna_population_analysis.py \
+     /opt/rna/runtime/devbench/platform/
+COPY src/devbench/engine/mounted_population_qc.py /opt/rna/runtime/devbench/engine/
+COPY src/rna_kernels/mounted_model.py /opt/rna/runtime/rna_kernels/

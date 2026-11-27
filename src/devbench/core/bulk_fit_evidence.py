@@ -4,8 +4,9 @@ import math
 import re
 
 MAX_GENES = 100_000
-MAX_SAMPLES = 1_000
 MAX_MATRIX_VALUES = 1_000_000
+# An inline plot with at least one feature already observes this cell budget.
+MAX_SAMPLES = MAX_MATRIX_VALUES
 
 
 def _text(value):
@@ -57,7 +58,11 @@ def capture_bulk_plot_evidence(data, size_factors, calibration, *, design=None):
         if not gene_count or not sample_count:
             raise ValueError("empty_expression_evidence")
         values, factors, sample_ids, gene_ids, means = _capture_count_arrays(
-            data, size_factors, design, gene_count, sample_count,
+            data,
+            size_factors,
+            design,
+            gene_count,
+            sample_count,
         )
         samples, pairing = _capture_memberships(data, design, sample_ids, factors)
         evidence.update(
@@ -122,9 +127,7 @@ def _capture_count_arrays(data, size_factors, design, gene_count, sample_count):
 
 
 def _capture_memberships(data, design, sample_ids, factors):
-    resolved = (
-        design.attrs.get("bulk_plot_metadata") if design is not None else None
-    )
+    resolved = design.attrs.get("bulk_plot_metadata") if design is not None else None
     resolved = (
         resolved
         if isinstance(resolved, dict)
@@ -157,8 +160,7 @@ def _capture_memberships(data, design, sample_ids, factors):
         return (
             value
             if _text(value)
-            and value.lower()
-            not in {"unknown", "na", "nan", "none", "unidentified"}
+            and value.lower() not in {"unknown", "na", "nan", "none", "unidentified"}
             else None
         )
 

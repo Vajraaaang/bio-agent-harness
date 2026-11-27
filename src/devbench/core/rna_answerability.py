@@ -24,6 +24,7 @@ from pydantic import (
 )
 
 from ._hashing import canonical_sha256
+from .execution_contracts import AxisA, AxisB, AxisC, ClaimTier, RepresentationClass
 from .procedure_profile import EvidenceDigest
 
 Assay = Literal[
@@ -36,6 +37,8 @@ Assay = Literal[
     "small_rna_seq",
     "linked_modalities",
     "other_expression",
+    "open",
+    "custom",
 ]
 EntryPoint = Literal[
     "reads",
@@ -45,6 +48,8 @@ EntryPoint = Literal[
     "normalized_expression",
     "annotated_object",
     "prior_results",
+    "open",
+    "custom",
 ]
 Measurement = Literal[
     "sequencing_reads",
@@ -106,7 +111,9 @@ Measurement = Literal[
 ]
 Priority = Literal[1, 2, 3]
 AxisBinding = Literal["none", "observations", "features", "both"]
-Status = Literal["ready", "awaiting_information", "refused", "unavailable"]
+Status = Literal[
+    "ready", "awaiting_information", "refused", "unavailable", "tier2_exploratory_only"
+]
 Text = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
 ]
@@ -181,6 +188,41 @@ RNA_FAMILIES: Mapping[int, FamilyCapability] = MappingProxyType(
     {
         family_id: FamilyCapability(title, _priorities(family_id))
         for family_id, title in enumerate(_FAMILY_TITLES, 1)
+    }
+)
+
+
+@dataclass(frozen=True)
+class CapabilityAxes:
+    axis_a: tuple[AxisA, ...] = ()
+    axis_b: tuple[AxisB, ...] = ()
+    axis_c: tuple[AxisC, ...] = ()
+
+
+# The ordinal is the historical v1 family ID. Composite families retain all
+# their estimands; replication and methods evaluation are cross-cutting axes.
+LEGACY_CAPABILITY_AXES: Mapping[int, CapabilityAxes] = MappingProxyType(
+    {
+        1: CapabilityAxes(("A1", "A2"), ("B1",)),
+        2: CapabilityAxes(("A2",), ("B2",)),
+        3: CapabilityAxes(("A2",), ("B3",)),
+        4: CapabilityAxes(axis_b=("B4",)),
+        5: CapabilityAxes(("A0", "A3"), ("B4",)),
+        6: CapabilityAxes(axis_b=("B5",)),
+        7: CapabilityAxes(axis_b=("B6",)),
+        8: CapabilityAxes(axis_b=("B7",), axis_c=("C2",)),
+        9: CapabilityAxes(("A0", "A3"), ("B8",)),
+        10: CapabilityAxes(("A3",), ("B9",)),
+        11: CapabilityAxes(axis_b=("B10",), axis_c=("C2",)),
+        12: CapabilityAxes(("A1",), ("B11",)),
+        13: CapabilityAxes(axis_b=("B11", "B1", "B4")),
+        14: CapabilityAxes(("A3",), ("B1", "B4", "B5")),
+        15: CapabilityAxes(("A3",), ("B1", "B6")),
+        16: CapabilityAxes(("A3",), ("B1", "B3", "B5")),
+        17: CapabilityAxes(("A0", "A3"), ("B2", "B3", "B5", "B6")),
+        18: CapabilityAxes(axis_b=("B12",)),
+        19: CapabilityAxes(axis_c=("C1",)),
+        20: CapabilityAxes(axis_c=("C2",)),
     }
 )
 
@@ -572,6 +614,9 @@ class AttestedMeasurement(_Record):
     """Evidence about one specific measured object, such as an AnnData layer."""
 
     kind: Measurement
+    representation_class: RepresentationClass | None = None
+    # Populated by the trusted intake ancestry check, never inferred from dtype.
+    count1_ancestry_sha256: EvidenceDigest | None = None
     artifact_sha256: EvidenceDigest
     receipt_sha256: EvidenceDigest
     slot: Text | None = None
@@ -631,11 +676,15 @@ class RuntimeEvidence(_Record):
 
 
 class AnswerabilityRequest(_Record):
-    family_id: int = Field(ge=1)
+    family_id: Annotated[int, Field(ge=1)] | Literal["B_OPEN"] | None = None
+    axis_a: tuple[AxisA, ...] = ()
+    axis_b_class: AxisB | None = None
+    axis_c: tuple[AxisC, ...] = ()
     question: Identifier
     assay: Assay
     entry_point: EntryPoint
     requires_read_archive_download: bool = False
+    requires_count_model: bool = False
 
 
 class AnswerabilityDecision(_Record):
@@ -650,7 +699,14 @@ class AnswerabilityDecision(_Record):
     design_receipt_sha256: EvidenceDigest | None = None
     reference_pins: tuple[ReferencePin, ...] = ()
     access_pins: tuple[DatasetAccessPin, ...] = ()
-    execution_route: Literal["tier_a", "tier_b", "intake"] | None = None
+    axis_a: tuple[AxisA, ...] = ()
+    axis_b_class: AxisB | None = None
+    axis_c: tuple[AxisC, ...] = ()
+    representation_class: RepresentationClass | None = None
+    claim_tier: ClaimTier = "none"
+    execution_route: (
+        Literal["tier_a", "tier_b", "intake", "tier2_exploratory_only"] | None
+    ) = None
     runtime: RuntimeEvidence | None = None
     claim_scope: (
         Literal[
@@ -662,9 +718,14 @@ class AnswerabilityDecision(_Record):
     ) = None
     clinical_release_allowed: Literal[False] = False
 
+    @property
+    def axis_b(self):
+        return self.axis_b_class
+
 
 def _specialize_contract(
-    request: AnswerabilityRequest, contract: QuestionContract,
+    request: AnswerabilityRequest,
+    contract: QuestionContract,
     runtime: RuntimeEvidence | None,
 ) -> QuestionContract:
     if request.question == "differential_expression" and request.assay in _CELLS:
@@ -688,6 +749,34 @@ def _specialize_contract(
     return contract
 
 
+def _classify(request, contract):
+    if (
+        request.family_id == "B_OPEN"
+        or request.axis_b_class == "B_OPEN"
+        or request.assay in {"open", "custom"}
+        or request.entry_point in {"open", "custom"}
+        or request.family_id is None
+        and request.axis_b_class is None
+        and contract is None
+    ):
+        return CapabilityAxes(("A0", "A1", "A2", "A3"), ("B_OPEN",)), "B_OPEN"
+    family_id = request.family_id or (contract.family_id if contract else None)
+    axes = LEGACY_CAPABILITY_AXES.get(family_id, CapabilityAxes())
+    if request.axis_b_class:
+        return axes, request.axis_b_class
+    if len(axes.axis_b) == 1:
+        return axes, axes.axis_b[0]
+    return axes, None
+
+
+def _axis_compatible(request, axes):
+    return (
+        request.axis_b_class is None
+        or not axes.axis_b
+        or request.axis_b_class in axes.axis_b
+    )
+
+
 def assess_answerability(
     request: AnswerabilityRequest,
     *,
@@ -698,7 +787,16 @@ def assess_answerability(
     """Check scientific inputs before considering an available runtime."""
     if len(measurements) > 128:
         raise ValueError("Answerability accepts at most 128 attested measurements")
+    contract = RNA_QUESTIONS.get(request.question)
+    axes, primary = _classify(request, contract)
+    representations = {item.representation_class for item in measurements} - {None}
     result = AnswerabilityDecision(
+        axis_a=tuple(dict.fromkeys((*axes.axis_a, *request.axis_a))),
+        axis_b_class=primary,
+        axis_c=tuple(dict.fromkeys((*axes.axis_c, *request.axis_c))),
+        representation_class=next(iter(representations))
+        if len(representations) == 1
+        else None,
         request=request,
         status="refused",
         reason="unregistered_question",
@@ -714,16 +812,37 @@ def assess_answerability(
     )
     if request.requires_read_archive_download:
         return result.model_copy(update={"reason": "read_archive_download"})
-    contract = RNA_QUESTIONS.get(request.question)
-    if contract is None or contract.family_id != request.family_id:
+    if request.requires_count_model and not _attested_count_inputs(measurements):
+        return result.model_copy(update={"reason": "count1_ancestry_required"})
+    if contract is not None and request.family_id not in (
+        None,
+        contract.family_id,
+        "B_OPEN",
+    ):
         return result
-    if contract.assays and request.assay not in contract.assays:
+    if not _axis_compatible(request, axes):
+        return result.model_copy(update={"reason": "axis_b_class_incompatible"})
+    if (
+        contract
+        and contract.assays
+        and request.assay not in {"open", "custom"}
+        and request.assay not in contract.assays
+    ):
         return result.model_copy(update={"reason": "assay_incompatible"})
     if (
         request.question != "cross_species_comparison"
         and len({pin.organism.casefold() for pin in result.reference_pins}) > 1
     ):
         return result.model_copy(update={"reason": "reference_pins_conflict"})
+    if primary == "B_OPEN":
+        return _assess_open(result, contract, measurements, design, runtime)
+    if contract is None:
+        return result
+    return _assess_registered(result, contract, measurements, design, runtime)
+
+
+def _assess_registered(result, contract, measurements, design, runtime):
+    request = result.request
     contract = _specialize_contract(request, contract, runtime)
     selected, issue = _select_measurements(request, contract, measurements)
     if issue is not None:
@@ -742,6 +861,71 @@ def assess_answerability(
         status, reason = scientific
         return result.model_copy(update={"status": status, "reason": reason})
     return _select_route(result, contract, runtime)
+
+
+def _attested_count_inputs(measurements: tuple[AttestedMeasurement, ...]) -> bool:
+    matrices = [
+        item
+        for item in measurements
+        if item.kind
+        in {
+            *_COUNT_MATRIX,
+            "normalized_expression",
+            "latent_embedding",
+            "cell_type_expression",
+        }
+    ]
+    return bool(matrices) and all(
+        item.kind in _COUNT_MATRIX
+        and item.representation_class
+        in {"count_1_raw_counts", "aggregated_unit_counts"}
+        and item.count1_ancestry_sha256 is not None
+        for item in matrices
+    )
+
+
+def _assess_open(result, contract, measurements, design, runtime):
+    """Route eligible novel work to local exploration without promoting evidence."""
+    if contract is not None:
+        contract = _specialize_contract(result.request, contract, runtime)
+        selected, missing = _select_measurements(result.request, contract, measurements)
+        if missing is not None:
+            return result.model_copy(
+                update={
+                    "status": "awaiting_information",
+                    "reason": missing[0],
+                    "missing_measurements": missing[1],
+                }
+            )
+    else:
+        # A novel estimand has no registered measurement contract to certify.
+        contract = QuestionContract(0, ())
+        selected = measurements
+    if not selected:
+        return result.model_copy(
+            update={"status": "awaiting_information", "reason": "missing_measurements"}
+        )
+    issue = _measurement_issue(contract, selected)
+    if not issue:
+        issue = _design_issue(result.request, contract, selected, design)
+    if not issue and design is not None:
+        if design.estimability in {"confounded", "rank_deficient"}:
+            issue = ("refused", f"design_{design.estimability}")
+        elif (
+            design.independent_units_per_group
+            and min(design.independent_units_per_group) < 2
+        ):
+            issue = ("refused", "insufficient_replication")
+    if issue:
+        return result.model_copy(update={"status": issue[0], "reason": issue[1]})
+    return result.model_copy(
+        update={
+            "status": "tier2_exploratory_only",
+            "reason": "tier2_exploratory_only",
+            "execution_route": "tier2_exploratory_only",
+            "claim_scope": "exploratory_only",
+        }
+    )
 
 
 def _select_measurements(
@@ -769,9 +953,9 @@ def _select_measurements(
     )
     if missing:
         return (), ("missing_measurements", missing)
-    primary_measurements = RNA_ENTRY_POINTS[request.entry_point].present_any_of
-    if not any(item.kind in primary_measurements for item in measurements):
-        return (), ("entry_point_evidence_required", (primary_measurements,))
+    entry = RNA_ENTRY_POINTS.get(request.entry_point)
+    if entry and not any(item.kind in entry.present_any_of for item in measurements):
+        return (), ("entry_point_evidence_required", (entry.present_any_of,))
     if any(len(options) != 1 for options in candidates):
         return (), ("ambiguous_measurement_selection", ())
     return tuple(options[0] for options in candidates), None

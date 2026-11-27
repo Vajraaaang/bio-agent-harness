@@ -1,7 +1,9 @@
 """Offline Studio authorization and readback for Plugin graph steps."""
 
 import json
+import os
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +19,273 @@ _SID = "a" * 32
 _ID = "b" * 32
 _SHA = "c" * 64
 _ATTEMPT = "d" * 32
+
+
+@pytest.fixture
+def exploratory_studio(workspace_tmp_path, monkeypatch):
+    from devbench.platform.plugin_mcp import Plan, Plugin
+
+    inputs = workspace_tmp_path / "inputs"
+    inputs.mkdir(mode=0o700)
+    source = inputs / "matrix.csv"
+    source.write_text("gene_id,d1,d2\nprivate-fixture-sentinel,2,4\n")
+    monkeypatch.setattr(Plugin, "_handoff", lambda *a, **kw: {})
+    plugin = Plugin(workspace_tmp_path / "workspace", inputs, None)
+    result = plugin.plan(
+        Plan.model_validate(
+            {
+                "operation": "matrix_audit",
+                "objective": "Inspect a local synthetic fixture",
+                "inputs": [
+                    {
+                        "role": "expression",
+                        "path": str(source),
+                        "data_classification": "private",
+                    }
+                ],
+            }
+        )
+    )
+    session = result["session_id"]
+    app = SimpleNamespace(
+        offline_only=True, allow_data_execution=True, workspace=plugin.jobs.workspace
+    )
+    body = {
+        "source_code": "from pathlib import Path\nimport json\n"
+        "text = Path('/inputs/data').read_text()\n"
+        "Path('/outputs/out.json').write_text(json.dumps([len(text)]))\n",
+        "base_image_id": "devharness-explore-py",
+        "step_name": "Summarize a local file",
+        "parameters": {},
+        "input_bindings": {"data": plugin.jobs.plan(session)["profiles"][0]["sha256"]},
+        "expected_outputs": {
+            "out": {
+                "artifact_type": "json",
+                "path": "/outputs/out.json",
+                "required": True,
+            }
+        },
+        "resource_profile": {
+            "cpus": 1,
+            "memory_mb": 512,
+            "pids_limit": 64,
+            "max_output_bytes": 100000,
+            "timeout_sec": 30,
+        },
+    }
+    return plugin, app, session, body
+
+
+def test_private_script_freeze_and_review(exploratory_studio):
+    from devbench.platform.plugin_exploratory_studio import (
+        studio_freeze_exploration,
+        studio_script_review,
+    )
+
+    plugin, app, session, body = exploratory_studio
+    app.offline_only = False
+    with pytest.raises(PermissionError):
+        studio_freeze_exploration(app, session, body)
+    app.offline_only = True
+    with pytest.raises(OperationBlocked, match="unavailable"):
+        studio_freeze_exploration(
+            app, session, {**body, "input_bindings": {"data": "f" * 64}}
+        )
+    identity = studio_freeze_exploration(app, session, body)
+    pid, sha = identity["plan_id"], identity["plan_sha256"]
+    assert studio_script_review(app, session, pid, sha)["script"] == body["source_code"]
+    import hashlib
+
+    assert plugin.jobs.has_private_input(
+        {hashlib.sha256(body["source_code"].encode()).hexdigest()}
+    )
+    assert plugin.jobs.authority.plan_approval(session, pid, sha) is None
+    with pytest.raises(OperationBlocked, match="private_data_local_studio_only"):
+        plugin._allow_external(session, pid)
+
+
+def _await_exploration(jobs, session, run_id):
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        run = jobs.run(session, run_id)
+        if run["status"] not in {"queued", "running", "finishing"}:
+            assert run["status"] == "completed", run["error_text"]
+            return json.loads(run["receipt_json"])
+        time.sleep(0.15)
+    pytest.fail("Registered exploratory worker did not finish")
+
+
+@pytest.mark.skipif(
+    os.environ.get("DEVBENCH_T15_DOCKER") != "1", reason="live Docker opt-in"
+)
+def test_offline_operator_inspects_verified_private_output(exploratory_studio):
+    from devbench.daemon.supervisor import Supervisor
+    from devbench.platform.plugin_exploratory_studio import (
+        studio_freeze_exploration,
+        studio_output_preview,
+    )
+    from devbench.platform.plugin_graph_studio import studio_launch
+    from devbench.platform.plugin_jobs import studio_approval
+
+    plugin, app, sid, body = exploratory_studio
+    body = {
+        **body,
+        "source_code": "from pathlib import Path\n"
+        "Path('/outputs/table.csv').write_text('feature,total\\nlocal-report,17\\n')",
+        "expected_outputs": {
+            "summary": {
+                "artifact_type": "table",
+                "required": True,
+                "path": "/outputs/table.csv",
+                "columns": ["feature", "total"],
+            }
+        },
+    }
+    frozen = studio_freeze_exploration(app, sid, body)
+    identity = {k: frozen[k] for k in ("plan_id", "plan_sha256")}
+    query = {**identity, "port": "summary"}
+    with pytest.raises(OperationBlocked, match="verified_receipt_unavailable"):
+        studio_output_preview(app, sid, query)
+    supervisor = Supervisor(app.workspace, offline_only=True)
+    supervisor.start()
+    try:
+        with studio_approval(
+            sid,
+            identity["plan_id"],
+            identity["plan_sha256"],
+            actor_id="fixture-operator",
+            auth_method="session_cookie",
+        ):
+            run = studio_launch(app, sid, {**identity, "allow_data_execution": True})
+        receipt = _await_exploration(plugin.jobs, sid, run["run_id"])
+        preview = studio_output_preview(app, sid, query)
+        assert (
+            preview["sha256"]
+            == receipt["registered_method_outputs"]["summary"]["sha256"]
+        )
+        assert preview["text"] == "feature,total\nlocal-report,17\n"
+        with pytest.raises(OperationBlocked, match="private_output_unavailable"):
+            studio_output_preview(app, sid, {**query, "port": "other"})
+        with pytest.raises(OperationBlocked, match="plan_identity_mismatch"):
+            studio_output_preview(app, sid, {**query, "plan_sha256": "f" * 64})
+        with pytest.raises(OperationBlocked, match="private_data_local_studio_only"):
+            plugin._allow_external(sid, identity["plan_id"])
+        app.evidence_delivery = object()
+        with pytest.raises(PermissionError):
+            studio_output_preview(app, sid, query)
+        app.evidence_delivery, app.offline_only = None, False
+        with pytest.raises(PermissionError):
+            studio_output_preview(app, sid, query)
+    finally:
+        supervisor.stop_if_idle()
+
+
+@pytest.mark.skipif(
+    os.environ.get("DEVBENCH_T15_DOCKER") != "1", reason="live Docker opt-in"
+)
+def test_local_and_rebound_template_execute_under_offline_approval(exploratory_studio):
+    from devbench.daemon.supervisor import Supervisor
+    from devbench.platform.plugin_exploratory_studio import (
+        _bind_inputs,
+        _local_method,
+        studio_freeze_exploration,
+        studio_script_review,
+    )
+    from devbench.platform.plugin_graph_studio import studio_launch, studio_view
+    from devbench.platform.plugin_jobs import studio_approval
+    from devbench.platform.plugin_mcp import Plan
+
+    plugin, app, private, body = exploratory_studio
+    jobs = plugin.jobs
+    public_source = plugin.input_root / "public.csv"
+    public_source.write_text("gene_id,p1,p2\npublic,2,3\n")
+    public = plugin.plan(
+        Plan.model_validate(
+            {
+                "operation": "matrix_audit",
+                "objective": "Synthetic template test",
+                "inputs": [
+                    {
+                        "path": str(public_source),
+                        "role": "expression",
+                        "data_classification": "synthetic",
+                    }
+                ],
+            }
+        )
+    )["session_id"]
+    seed = jobs.plan(public)
+    method = _local_method(app.workspace, body, ("data",))
+    versions = _bind_inputs(
+        app.workspace, seed, method, {"data": seed["profiles"][0]["sha256"]}
+    )
+    frozen = plugin.plan(
+        Plan.model_validate(
+            {
+                "operation": "registered_exploratory",
+                "objective": "Test public fixture",
+                "session_id": public,
+                "method_version_id": method["version_id"],
+                "step_name": "Synthetic fixture",
+                "input_versions": versions,
+                "parameters": {},
+            }
+        )
+    )
+    pin = {k: frozen[k] for k in ("plan_id", "plan_sha256")}
+    handoff = {k: body[k] for k in ("step_name", "parameters", "input_bindings")} | {
+        "template": {**pin, "studio_url": "http://127.0.0.1:8000/"}
+    }
+    with pytest.raises(OperationBlocked, match="tested_template_required"):
+        studio_freeze_exploration(app, private, handoff)
+    supervisor = Supervisor(app.workspace, offline_only=True)
+    supervisor.start()
+    try:
+        jobs.approve(
+            public,
+            *pin.values(),
+            actor_id="fixture-operator",
+            surface="cli",
+            auth_method="local_os_user",
+        )
+        public_run = jobs.launch(public, *pin.values())
+        _await_exploration(jobs, public, public_run["run_id"])
+        for draft in (handoff, body):
+            local = studio_freeze_exploration(app, private, draft)
+            pid, sha = local["plan_id"], local["plan_sha256"]
+            review = studio_script_review(app, private, pid, sha)
+            assert review["script"] == body["source_code"]
+            with studio_approval(
+                private,
+                pid,
+                sha,
+                actor_id="fixture-operator",
+                auth_method="session_cookie",
+            ):
+                run = studio_launch(
+                    app,
+                    private,
+                    {"plan_id": pid, "plan_sha256": sha, "allow_data_execution": True},
+                )
+            receipt = _await_exploration(jobs, private, run["run_id"])
+            output = receipt["registered_method_outputs"]["out"]
+            assert (
+                receipt["claim_tier"] == "L1_execution_verified"
+                and output["data_classification"] == "private"
+            )
+            assert jobs.has_private_input({output["sha256"]})
+            grant = jobs.authority.plan_approval(private, pid, sha)
+            assert (
+                json.loads(grant["rationale"])["script_sha256"]
+                == review["script_sha256"]
+            )
+            assert studio_view(app, private)["plans"][-1]["status"] == "completed"
+            with pytest.raises(
+                OperationBlocked, match="private_data_local_studio_only"
+            ):
+                plugin._allow_external(private, pid)
+    finally:
+        supervisor.stop_if_idle()
 
 
 def test_plugin_execute_route_requires_offline_execution(
@@ -368,3 +637,41 @@ def test_fresh_adaptive_poll_distinguishes_graph_revision_conflict(
         assert cursors == [None, None, None, None, "bound-cursor", None]
     finally:
         app.close()
+
+
+@pytest.mark.parametrize(
+    ("status", "pid", "orphan", "expected"),
+    [
+        ("queued", None, True, "queued"),
+        ("running", 123, False, "running"),
+        ("running", 123, True, "interrupted"),
+    ],
+)
+def test_daemon_run_view_uses_supervisor_liveness(
+    tmp_path, monkeypatch, status, pid, orphan, expected
+):
+    from devbench.platform import plugin_graph_studio as studio
+
+    calls = []
+
+    def check(workspace, worker_pid, created):
+        calls.append((workspace, worker_pid, created))
+        return orphan
+
+    monkeypatch.setattr(studio, "_orphaned_worker", check)
+    run = {
+        "session_id": _SID,
+        "plan_id": _ID,
+        "plan_sha256": _SHA,
+        "run_id": _ATTEMPT,
+        "status": status,
+        "pid": pid,
+        "error_text": None,
+        "stage_json": json.dumps({"daemon_managed": True, "process_created_at": 17}),
+    }
+    view = studio._run_view(tmp_path, run, _SHA, run)
+    assert view["status"] == expected
+    assert view.get("error") == (
+        "worker_not_running" if expected == "interrupted" else None
+    )
+    assert calls == ([] if status == "queued" else [(tmp_path, pid, 17)])

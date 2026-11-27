@@ -610,8 +610,19 @@ def stage_single_cell_request(
     mount = stage / "inputs"
     mount.mkdir(mode=0o700)
     (stage / "outputs").mkdir(mode=0o700)
+    attestations = {}
     for name, port in mounted_single_cell_input_ports(spec).items():
         destination = mount / port.filename
+        artifact = inputs[name]
+        if (
+            name in _ORIGINAL_INPUTS
+            and not is_single_cell_output(artifact)
+            and executor.mounted_zarr.contains(artifact.sha256)
+        ):
+            attestations[port.filename] = executor.mounted_zarr.stage(
+                artifact.sha256, destination
+            )
+            continue
         with (
             open_single_cell_input(
                 executor,
@@ -623,6 +634,8 @@ def stage_single_cell_request(
         ):
             shutil.copyfileobj(source, output, length=1024 * 1024)
         destination.chmod(0o400)
+    if attestations:
+        _write_record(stage.parent / "matrix-attestations.json", attestations)
     request = mounted_single_cell_request(executor, spec, inputs, envelope=envelope)
     _write_record(mount / "request.json", request)
     return _sha(canonical_json(request))

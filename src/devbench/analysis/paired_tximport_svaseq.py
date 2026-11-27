@@ -15,6 +15,7 @@ from uuid import uuid4
 import numpy as np
 
 from devbench.core._files import hash_bounded_file, read_bounded_file, read_bounded_json
+from devbench.core.execution_contracts import ResourceProfile
 from devbench.engine.mounted_kernel_oci import (
     _INTENT,
     _RECOVERED,
@@ -187,6 +188,7 @@ def _checked_driver(stage: Path, request_sha: str, image: str) -> dict:
             raise ValueError(
                 "Paired tximport diagnostic kernel platform differs from lock"
             )
+        profile = ResourceProfile(memory_mb=_MEMORY_MB, timeout_sec=_TIMEOUT)
         args = _mount_arguments(
             stage,
             image,
@@ -195,8 +197,16 @@ def _checked_driver(stage: Path, request_sha: str, image: str) -> dict:
             _TIMEOUT,
             _MEMORY_MB,
             platform,
+            resource_profile=profile,
         )
-        if args[-4:] != ["python3.13", "-m", "rna_kernels.mounted_bulk", request_sha]:
+        if args[-6:] != [
+            "/usr/bin/env",
+            f"DEVBENCH_MOUNTED_TIMEOUT_SEC={_TIMEOUT}",
+            "python3.13",
+            "-m",
+            "rna_kernels.mounted_bulk",
+            request_sha,
+        ]:
             raise ValueError("Mounted isolation command differs from its frozen tail")
         command = [
             "/usr/local/bin/Rscript",
@@ -204,7 +214,7 @@ def _checked_driver(stage: Path, request_sha: str, image: str) -> dict:
             "/inputs/diagnostic.R",
             request_sha,
         ]
-        args[-4:] = command
+        args[-6:] = command
         intent = {**binding, **_daemon(runtime)}
         _write_record(directory / _INTENT, intent)
         error = None
@@ -216,7 +226,7 @@ def _checked_driver(stage: Path, request_sha: str, image: str) -> dict:
                 raise NativeRuntimeError(
                     "Paired diagnostic command differs from its pin"
                 )
-            _start_container(runtime, stage, intent, container, _TIMEOUT)
+            _start_container(runtime, stage, intent, container, profile, expected)
         except NativeRuntimeError as failure:
             error = failure
         proof = _clean(runtime, stage, intent)

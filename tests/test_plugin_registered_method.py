@@ -2,7 +2,6 @@
 
 import json
 import os
-from types import SimpleNamespace
 
 import pytest
 
@@ -165,44 +164,57 @@ def test_worker_cannot_execute_without_exact_job_launch(method_session):
     os.environ.get("DEVBENCH_T15_DOCKER") != "1",
     reason="explicit local Docker smoke opt-in",
 )
-def test_exact_job_runs_registered_method_and_rechecks_oci_outputs(
-    method_session, monkeypatch
-):
+def test_exact_job_runs_registered_method_and_rechecks_oci_outputs(method_session):
+    import time
+
+    from devbench.daemon.supervisor import Supervisor
     from devbench.engine.methods import MethodService
-    from devbench.platform import plugin_jobs
     from devbench.platform.method_planner import ScientificMethodPlanner
+    from devbench.platform.plugin_mcp import Plan
     from devbench.platform.plugin_registered_method import (
         OPERATION,
-        run_registered_method,
         verify_registered_method_result,
     )
 
-    plugin, session_id, flow, _, _ = method_session
-    plan = {
-        **plugin.jobs.plan(session_id),
-        "plan_id": "2" * 32,
-        "operation": OPERATION,
-        "registered_method": _freeze(method_session),
-    }
-    plan_id, checksum = plugin.jobs.freeze(plan)
-    # Exercise dispatch synchronously in the test process. The actual registered
-    # graph executor still starts a verified isolated OCI worker.
-    monkeypatch.setattr(
-        plugin_jobs,
-        "_spawn_worker",
-        lambda *_: SimpleNamespace(pid=os.getpid(), wait=lambda: None),
+    plugin, session_id, flow, method, initial = method_session
+    planned = plugin.plan(
+        Plan.model_validate(
+            {
+                "operation": OPERATION,
+                "objective": "Count the synthetic fixture",
+                "session_id": session_id,
+                "method_version_id": method["version_id"],
+                "step_name": "Count records",
+                "input_versions": {"data": initial.version_id},
+                "parameters": {"threshold": 1},
+            }
+        )
     )
-    rid = plugin.jobs.launch(session_id, plan_id, checksum)["run_id"]
-    execution = run_registered_method(
-        plugin.jobs, rid, plugin.jobs.start(rid), verify_sources=lambda: None
+    plan_id, checksum = planned["plan_id"], planned["plan_sha256"]
+    plan = plugin.jobs.plan(session_id, plan_id)
+    plugin.jobs.approve(
+        session_id,
+        plan_id,
+        checksum,
+        actor_id="local-operator",
+        surface="cli",
+        auth_method="local_os_user",
     )
-    receipt = {
-        **execution,
-        "run_id": rid,
-        "session_id": session_id,
-        "operation": OPERATION,
-    }
-    plugin.jobs.finish(rid, receipt=receipt)
+    supervisor = Supervisor(plugin.jobs.workspace)
+    supervisor.start()
+    try:
+        rid = plugin.jobs.launch(session_id, plan_id, checksum)["run_id"]
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            run = plugin.jobs.run(session_id, rid)
+            if run["status"] not in {"queued", "running", "finishing"}:
+                break
+            time.sleep(0.15)
+        assert run["status"] == "completed", (run["status"], run.get("error_text"))
+        receipt = json.loads(run["receipt_json"])
+        assert plugin.jobs.launch(session_id, plan_id, checksum)["run_id"] == rid
+    finally:
+        supervisor.close()
     graph = verify_registered_method_result(plugin.jobs.workspace, rid, plan, receipt)
     output = flow.current_use(graph["step_id"], "out", purpose="cache")
     worker = ScientificMethodPlanner(
@@ -211,7 +223,6 @@ def test_exact_job_runs_registered_method_and_rechecks_oci_outputs(
     with worker.training.open(output.sha256) as stream:
         assert json.load(stream) == {"n": 3}
     assert graph["accepted_record_id"]
-    assert plugin.jobs.launch(session_id, plan_id, checksum)["run_id"] == rid
     with pytest.raises(OperationBlocked, match="registered_method_receipt_changed"):
         verify_registered_method_result(
             plugin.jobs.workspace,

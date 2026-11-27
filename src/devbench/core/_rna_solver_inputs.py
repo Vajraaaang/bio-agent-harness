@@ -1,11 +1,12 @@
 """Bound file inputs and independent-donor designs for local RNA solvers."""
 
 import csv
-import hashlib
 import io
+import sys
+from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
-from itertools import chain
 from pathlib import Path
+from tempfile import TemporaryDirectory, TemporaryFile
 from typing import Annotated, Any, cast
 
 import numpy as np
@@ -13,63 +14,140 @@ import pandas as pd
 from numpy.typing import NDArray
 from pydantic import Field, model_validator
 
-from ._files import read_bounded_file
 from ._hashing import canonical_sha256
 from .design import require_design_condition
+from .population_data import bound_query_file
 from .publication_families import budgeted_bh
 from .scientific_types import FrozenContract, content_sha256
 
-MAX_INPUT_BYTES = 100_000_000
-MAX_MATRIX_ENTRIES = MAX_INPUT_BYTES // np.dtype(np.float64).itemsize
+# File admission is streamed; transport limits are independent of the explicitly
+# bounded dense working sets of methods that cannot evaluate out of core.
+MAX_INPUT_BYTES = sys.maxsize
+MAX_MATRIX_ENTRIES = sys.maxsize // np.dtype(np.float64).itemsize
+DENSE_WORK_BYTES = 100_000_000
+DENSE_WORK_ENTRIES = DENSE_WORK_BYTES // np.dtype(np.float64).itemsize
+_CHUNK_BYTES = 8 * 1024**2
 MAX_EXACT_COUNT = 2**53
 Label = Annotated[str, Field(min_length=1, max_length=200)]
 
 
-def read_solver_csv(path: Path, expected_sha256: str) -> pd.DataFrame:
-    """Read a rectangular UTF-8 CSV by digest, preserving literal identifiers."""
-    content = read_bounded_file(path, MAX_INPUT_BYTES)
-    if hashlib.sha256(content).hexdigest() != expected_sha256:
-        raise ValueError("solver_input_digest_mismatch")
-    if b"\0" in content:
-        raise ValueError("solver_csv_requires_utf8_text")
+@contextmanager
+def _solver_rows(path, expected_sha256):
     try:
-        reader = csv.reader(
-            io.StringIO(content.decode("utf-8"), newline=""), strict=True
-        )
-        header = next(reader, [])
-        if (
-            not header
-            or len(set(header)) != len(header)
-            or any(
-                not label or label.strip() != label or len(label) > 200
-                for label in header
-            )
-        ):
-            raise ValueError("solver_csv_requires_unique_nonempty_headers")
-        rows: list[list[str]] = []
-        for row in reader:
-            if len(row) != len(header):
-                raise ValueError("solver_csv_row_width_mismatch")
-            if (len(rows) + 1) * len(header) > MAX_MATRIX_ENTRIES:
-                raise ValueError("solver_csv_table_over_budget")
-            rows.append(row)
+        with bound_query_file(path, expected_sha256, path.lstat().st_size) as binary:
+            stream = io.TextIOWrapper(binary, encoding="utf-8", newline="")
+            try:
+                reader = csv.reader(stream, strict=True)
+                header = next(reader, [])
+                if (
+                    not header
+                    or len(set(header)) != len(header)
+                    or any(
+                        not label
+                        or label.strip() != label
+                        or len(label) > 200
+                        or "\x00" in label
+                        for label in header
+                    )
+                ):
+                    raise ValueError("solver_csv_requires_unique_nonempty_headers")
+                yield header, _checked_rows(reader, len(header))
+            finally:
+                stream.detach()
     except (csv.Error, UnicodeError) as error:
         raise ValueError("invalid_solver_csv") from error
-    if not rows:
+    except ValueError as error:
+        if str(error) == "Evidence input hash mismatch":
+            raise ValueError("solver_input_digest_mismatch") from error
+        raise
+
+
+def _checked_rows(reader, width):
+    for row in reader:
+        if len(row) != width:
+            raise ValueError("solver_csv_row_width_mismatch")
+        if any("\x00" in token for token in row):
+            raise ValueError("solver_csv_requires_utf8_text")
+        yield row
+
+
+def _backed_text_frame(header, rows):
+    """Keep string columns backed by a local Arrow mapping after validation."""
+    import pyarrow as pa
+
+    schema = pa.schema([(name, pa.string()) for name in header])
+    with TemporaryDirectory() as temporary:
+        path = Path(temporary) / "table.arrow"
+        with (
+            pa.OSFile(str(path), "wb") as sink,
+            pa.ipc.new_file(sink, schema) as writer,
+        ):
+            batch, size = [], 0
+            for row in rows:
+                size += sum(64 + len(token) * 4 for token in row)
+                batch.append(row)
+                if size >= _CHUNK_BYTES:
+                    writer.write_batch(
+                        pa.record_batch(
+                            [
+                                pa.array(col, type=pa.string())
+                                for col in zip(*batch, strict=True)
+                            ],
+                            schema=schema,
+                        )
+                    )
+                    batch, size = [], 0
+            if batch:
+                writer.write_batch(
+                    pa.record_batch(
+                        [
+                            pa.array(col, type=pa.string())
+                            for col in zip(*batch, strict=True)
+                        ],
+                        schema=schema,
+                    )
+                )
+        with pa.memory_map(str(path), "r") as source:
+            return (
+                pa.ipc.open_file(source)
+                .read_all()
+                .to_pandas(types_mapper=pd.ArrowDtype)
+            )
+
+
+def read_solver_csv(path: Path, expected_sha256: str) -> pd.DataFrame:
+    """Parse an attested UTF-8 file, preserving exact tokens and bounded buffers."""
+    with _solver_rows(path, expected_sha256) as (header, rows):
+        if path.lstat().st_size > _CHUNK_BYTES:
+            frame = _backed_text_frame(header, rows)
+        else:
+            frame = pd.DataFrame(rows, columns=pd.Index(header))
+    if frame.empty:
         raise ValueError("solver_csv_requires_data_rows")
-    return pd.DataFrame(rows, columns=pd.Index(header))
+    return frame
+
+
+def _matrix_buffer(shape):
+    if min(shape) < 1:
+        raise ValueError("solver_numeric_matrix_empty_or_over_budget")
+    if shape[0] * shape[1] * 8 <= _CHUNK_BYTES:
+        return np.empty(shape, dtype=np.float64)
+    with TemporaryFile() as backing:
+        return np.memmap(backing, shape=shape, dtype=np.float64, mode="w+")
 
 
 def numeric_matrix(frame: pd.DataFrame) -> NDArray[np.float64]:
-    """Check the dense float64 budget before converting values."""
-    if not 0 < frame.size <= MAX_MATRIX_ENTRIES:
-        raise ValueError("solver_numeric_matrix_empty_or_over_budget")
-    try:
-        values = frame.to_numpy(dtype=np.float64)
-    except (TypeError, ValueError) as error:
-        raise ValueError("solver_matrix_requires_numeric_values") from error
-    if not np.isfinite(values).all():
-        raise ValueError("solver_matrix_requires_finite_values")
+    """Convert bounded row blocks to a disk-backed array when needed."""
+    values = _matrix_buffer(frame.shape)
+    rows = max(1, _CHUNK_BYTES // (frame.shape[1] * 8))
+    for start in range(0, len(frame), rows):
+        try:
+            block = frame.iloc[start : start + rows].to_numpy(dtype=np.float64)
+        except (TypeError, ValueError) as error:
+            raise ValueError("solver_matrix_requires_numeric_values") from error
+        if not np.isfinite(block).all():
+            raise ValueError("solver_matrix_requires_finite_values")
+        values[start : start + len(block)] = block
     return cast(NDArray[np.float64], values)
 
 
@@ -93,21 +171,19 @@ def _raw_count(token: str) -> int:
     return int(value)
 
 
+def _exact_row(tokens):
+    counts = tuple(map(_raw_count, tokens))
+    if sum(counts) > MAX_EXACT_COUNT:
+        raise ValueError("count1_requires_bounded_nonnegative_integer_counts")
+    return counts
+
+
 def raw_count_matrix(frame: pd.DataFrame) -> NDArray[np.float64]:
     """Validate exact integer tokens and observation totals before conversion."""
-    if not 0 < frame.size <= MAX_MATRIX_ENTRIES:
-        raise ValueError("solver_numeric_matrix_empty_or_over_budget")
-
-    def rows():
-        for row in frame.itertuples(index=False, name=None):
-            counts = tuple(map(_raw_count, row))
-            if sum(counts) > MAX_EXACT_COUNT:
-                raise ValueError("count1_requires_bounded_nonnegative_integer_counts")
-            yield counts
-
-    return np.fromiter(
-        chain.from_iterable(rows()), dtype=np.float64, count=frame.size
-    ).reshape(frame.shape)
+    values = _matrix_buffer(frame.shape)
+    for i, row in enumerate(frame.itertuples(index=False, name=None)):
+        values[i] = _exact_row(row)
+    return values
 
 
 def require_labels(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:
@@ -237,11 +313,25 @@ def read_count_and_metadata(
     observation_id: str,
 ) -> tuple[NDArray[np.float64], pd.DataFrame, list[str]]:
     """Read aligned observation-by-feature raw counts without normalization."""
-    frame = indexed_rows(read_solver_csv(counts_path, counts_sha256), observation_id)
     metadata = indexed_rows(
         read_solver_csv(metadata_path, metadata_sha256), observation_id
     )
-    if set(frame.index) != set(metadata.index):
+    with _solver_rows(counts_path, counts_sha256) as (header, rows):
+        if observation_id not in header:
+            raise ValueError("required_solver_columns_missing")
+        id_column = header.index(observation_id)
+        genes = [name for name in header if name != observation_id]
+        counts = _matrix_buffer((len(metadata), len(genes)))
+        order, seen = [], set()
+        for index, row in enumerate(rows):
+            label = row.pop(id_column)
+            if label not in metadata.index:
+                raise ValueError("counts_and_metadata_observation_ids_must_match")
+            if label in seen:
+                raise ValueError("solver_observation_or_feature_ids_must_be_unique")
+            counts[index] = _exact_row(row)
+            seen.add(label)
+            order.append(label)
+    if len(order) != len(metadata):
         raise ValueError("counts_and_metadata_observation_ids_must_match")
-    counts = raw_count_matrix(frame)
-    return counts, metadata.loc[frame.index], list(frame.columns)
+    return counts, metadata.loc[order], genes

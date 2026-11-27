@@ -139,6 +139,9 @@ def _prepare(root, *, reverse=False, overlap=False):
             ),
         )
         flow.insert(node)
+        worker.approve_step(
+            flow, name, actor_id="test-operator", data_classification="synthetic"
+        )
         arms[name] = BenchmarkArm(
             step_id=name,
             method_version_id=method["version_id"],
@@ -285,6 +288,8 @@ def test_exploratory_plot_binds_numeric_sidecar_to_receipt(
     value,
     numeric_checked,
 ):
+    import json
+
     from PIL import Image
 
     from devbench.engine.method_executor import EXPLORATORY_IMAGE
@@ -292,11 +297,21 @@ def test_exploratory_plot_binds_numeric_sidecar_to_receipt(
     image = BytesIO()
     Image.new("RGB", (8, 6), (5, 15, 25)).save(image, format="PNG")
     png = b64encode(image.getvalue()).decode()
+    sidecar = json.dumps(
+        {
+            "plotted_statistics": {"rgb": [5, 15, 25]},
+            "axis_labels": ["x", "y"],
+            "sample_count": 0,
+            "donor_count": 0,
+            "transformations": [],
+        }
+    )
     directory = workspace_tmp_path / "method"
     directory.mkdir()
     contract, source, lock = custom(directory, comparator="file")
     source.write_text(
         "from base64 import b64decode\nfrom pathlib import Path\n"
+        f"Path('/outputs/plot_sidecar.json').write_text({sidecar!r})\n"
         f"Path('/outputs/plot.png').write_bytes(b64decode({png!r}))\n"
         f"Path('/outputs/plot.csv').write_text('x,y\\n0,{value}\\n')\n"
     )
@@ -305,6 +320,11 @@ def test_exploratory_plot_binds_numeric_sidecar_to_receipt(
         "plot": {
             "artifact_type": "file",
             "path": "/outputs/plot.png",
+            "required": True,
+        },
+        "plot_sidecar": {
+            "artifact_type": "json",
+            "path": "/outputs/plot_sidecar.json",
             "required": True,
         },
         "values": {
@@ -328,16 +348,24 @@ def test_exploratory_plot_binds_numeric_sidecar_to_receipt(
     data["profile"]["operations"][0]["output_kinds"] = ["figure", "table"]
     data["outputs"] = [
         {"name": "plot", "artifact_kind": "figure"},
+        {"name": "plot_sidecar", "artifact_kind": "table"},
         {"name": "values", "artifact_kind": "table"},
     ]
     flow.insert(bound_step(method, type(model).model_validate(data)))
     worker = ExploratoryOCI(methods, flow.ledger, [{"threshold": 1}])
+    worker.approve_step(
+        flow, "diagnostic", actor_id="test-operator", data_classification="synthetic"
+    )
     run = flow.dispatch("diagnostic", worker, actor="tester")
     assert run["status"] == "succeeded", run
     from devbench.platform.workflow_actions import WorkflowActions
 
     actions = WorkflowActions(
-        None, flow.ledger, actor="tester", selector=None, executor=worker,
+        None,
+        flow.ledger,
+        actor="tester",
+        selector=None,
+        executor=worker,
     )
     proof = actions.inspect_exploratory_figure(
         flow,
@@ -381,8 +409,11 @@ def test_thesis_replays_tier_b_training_with_current_local_owner(workspace_tmp_p
         accepted[arm.step_id] = flow.dispatch(arm.step_id, worker, actor="tester")
         assert accepted[arm.step_id]["status"] == "succeeded"
     followup = register(
-        worker.methods, workspace_tmp_path / "outline-method", "training-summary",
-        ("model",), ("out",),
+        worker.methods,
+        workspace_tmp_path / "outline-method",
+        "training-summary",
+        ("model",),
+        ("out",),
         "import json\nfrom pathlib import Path\n"
         "m = json.loads(Path('/inputs/model').read_text())\n"
         "out = Path('/outputs/out.json')\n"
@@ -394,6 +425,12 @@ def test_thesis_replays_tier_b_training_with_current_local_owner(workspace_tmp_p
         step("training-summary", link("model", plan.candidate.step_id, kind="model")),
     )
     flow.insert(followup_step)
+    worker.approve_step(
+        flow,
+        followup_step.step_id,
+        actor_id="test-operator",
+        data_classification="synthetic",
+    )
     accepted[followup_step.step_id] = flow.dispatch(
         followup_step.step_id, worker, actor="tester"
     )
@@ -403,11 +440,15 @@ def test_thesis_replays_tier_b_training_with_current_local_owner(workspace_tmp_p
     assert evaluation["status"] == "succeeded"
     held_digest = evaluation["outputs"]["out"]["sha256"]
     schema = workspace_tmp_path / "answer_schema.json"
-    schema.write_bytes(canonical_json({
-        "type": "object",
-        "properties": {"training_classes": {"type": "integer"}},
-        "required": ["training_classes"],
-    }))
+    schema.write_bytes(
+        canonical_json(
+            {
+                "type": "object",
+                "properties": {"training_classes": {"type": "integer"}},
+                "required": ["training_classes"],
+            }
+        )
+    )
     spec = ThesisSynthesisSpec(
         question="Which exploratory models trained successfully?",
         outcome="partial",
@@ -415,28 +456,40 @@ def test_thesis_replays_tier_b_training_with_current_local_owner(workspace_tmp_p
         answer_schema_sha256=hash_artifact(schema)["sha256"],
         fields={
             "training_classes": {
-                "step_id": followup_step.step_id, "port": "out", "path": ["classes"],
+                "step_id": followup_step.step_id,
+                "port": "out",
+                "path": ["classes"],
             },
         },
     )
     package = workspace_tmp_path / "thesis"
     publication = write_thesis_package(
-        package, flow, spec, answer_schema=schema,
+        package,
+        flow,
+        spec,
+        answer_schema=schema,
         open_artifact=lambda item: open_exploratory_thesis_artifact(flow, worker, item),
         exploratory_executor=worker,
     )
     answer = json.loads((package / "final_discovery.json").read_bytes())
     assert answer == {"training_classes": 2}
-    alias = spec.model_copy(update={"fields": {
-        "training_classes": AnswerFieldRef(
-            step_id=followup_step.step_id,
-            port="out",
-            path=("gene_statistics", 0, "q"),
-        ),
-    }})
+    alias = spec.model_copy(
+        update={
+            "fields": {
+                "training_classes": AnswerFieldRef(
+                    step_id=followup_step.step_id,
+                    port="out",
+                    path=("gene_statistics", 0, "q"),
+                ),
+            }
+        }
+    )
     with pytest.raises(PermissionError, match="Exploratory evidence cannot supply"):
         write_thesis_package(
-            workspace_tmp_path / "probability-alias", flow, alias, answer_schema=schema,
+            workspace_tmp_path / "probability-alias",
+            flow,
+            alias,
+            answer_schema=schema,
             open_artifact=lambda item: open_exploratory_thesis_artifact(
                 flow, worker, item
             ),
@@ -444,9 +497,7 @@ def test_thesis_replays_tier_b_training_with_current_local_owner(workspace_tmp_p
         )
     raw = (package / "replay_bundle/index.json").read_bytes()
     index = json.loads(raw)
-    assert {
-        record["step_id"] for record in index["exploratory_steps"]
-    } == set(accepted)
+    assert {record["step_id"] for record in index["exploratory_steps"]} == set(accepted)
     assert held_digest.encode() not in raw
     manifest = json.loads((package / "provenance_manifest.json").read_bytes())
     assert manifest["runtime"]["exploratory_replay_omissions"] == {
@@ -455,18 +506,28 @@ def test_thesis_replays_tier_b_training_with_current_local_owner(workspace_tmp_p
     revision = flow.status()["revision"]
     with pytest.raises(PermissionError, match="Tier B replay requires its local owner"):
         replay_thesis_package(
-            package, publication["root_sha256"], output=workspace_tmp_path / "unowned",
-            input_root=worker.training.root, allow_data_execution=True,
+            package,
+            publication["root_sha256"],
+            output=workspace_tmp_path / "unowned",
+            input_root=worker.training.root,
+            allow_data_execution=True,
         )
     assert not (workspace_tmp_path / "unowned").exists()
     result = replay_thesis_package(
-        package, publication["root_sha256"], output=workspace_tmp_path / "replayed",
-        input_root=worker.training.root, allow_data_execution=True,
+        package,
+        publication["root_sha256"],
+        output=workspace_tmp_path / "replayed",
+        input_root=worker.training.root,
+        allow_data_execution=True,
         exploratory_owner=worker.methods.root,
     )
     assert result["exact_exploratory_artifacts_match"]
     for name, replayed in result["exploratory_steps"].items():
         assert replayed == {
+            "execution_lane": "tier2_exploratory",
+            "claim_tier": "L1_execution_verified",
+            "exploratory_only": True,
+            "figure_verification": "produced_unverified",
             "outputs": {"out.json": accepted[name]["outputs"]["out"]["sha256"]},
             "claim_scope": "exploratory_only",
             "implementation_trust": "unreviewed",
@@ -474,13 +535,21 @@ def test_thesis_replays_tier_b_training_with_current_local_owner(workspace_tmp_p
         }
     cli = subprocess.run(
         [
-            sys.executable, str(package / "replay_bundle/replay.py"),
-            "--expected-root", publication["root_sha256"],
-            "--input-root", str(worker.training.root),
-            "--output", str(workspace_tmp_path / "cli-replayed"),
-            "--allow-data-execution", "--tier-b-owner", str(worker.methods.root),
+            sys.executable,
+            str(package / "replay_bundle/replay.py"),
+            "--expected-root",
+            publication["root_sha256"],
+            "--input-root",
+            str(worker.training.root),
+            "--output",
+            str(workspace_tmp_path / "cli-replayed"),
+            "--allow-data-execution",
+            "--tier-b-owner",
+            str(worker.methods.root),
         ],
-        check=True, capture_output=True, timeout=90,
+        check=True,
+        capture_output=True,
+        timeout=90,
     )
     assert json.loads(cli.stdout)["exploratory_steps"] == result["exploratory_steps"]
     assert flow.status()["revision"] == revision
@@ -491,14 +560,19 @@ def test_thesis_replays_tier_b_training_with_current_local_owner(workspace_tmp_p
     )
     worker.partition.protect_outputs({protected})
     recipes, omitted = capture_exploratory_replay(
-        flow, worker, flow.status()["revision"],
+        flow,
+        worker,
+        flow.status()["revision"],
     )
     assert not recipes
     assert omitted[followup_step.step_id] == "protected_replay_artifact"
     with pytest.raises(OperationBlocked, match="protected_replay_artifact"):
         replay_thesis_package(
-            package, publication["root_sha256"],
-            output=workspace_tmp_path / "restricted", input_root=worker.training.root,
-            allow_data_execution=True, exploratory_owner=worker.methods.root,
+            package,
+            publication["root_sha256"],
+            output=workspace_tmp_path / "restricted",
+            input_root=worker.training.root,
+            allow_data_execution=True,
+            exploratory_owner=worker.methods.root,
         )
     assert not (workspace_tmp_path / "restricted").exists()

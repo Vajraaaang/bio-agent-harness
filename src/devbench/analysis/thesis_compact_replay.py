@@ -10,7 +10,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
-from devbench.core._files import read_bounded_file
+from devbench.core._files import hash_bounded_file, read_bounded_file
 from devbench.core.contrast_design import PipelineSpec
 from devbench.core.publication_families import FamilySpec
 from devbench.core.scientific_types import FrozenContract, Sha256
@@ -135,17 +135,21 @@ def replay_compact_fit(
         raise ValueError(
             "Compact replay ended without a checked fit and worker cleanup"
         )
-    payload, failure = _result_table(pipeline, result, request.dispatch_request_sha256)
-    if payload is None or failure is not None:
+    genes, failure = _result_table(
+        pipeline,
+        result,
+        request.dispatch_request_sha256,
+        destination=stage / "outputs" / "genes.parquet",
+    )
+    if genes is None or failure is not None:
         raise ValueError("Compact replay did not reproduce a fitted gene family")
-    (stage / "outputs" / "genes.parquet").write_bytes(payload)
     (stage / "outputs" / "summary.json").write_bytes(
         canonical_json(
             {
                 "format": "devbench.thesis-compact-replay-summary/1",
                 "tool": tool["tool"],
                 "dispatch_request_sha256": request.dispatch_request_sha256,
-                "genes_sha256": sha256(payload).hexdigest(),
+                "genes_sha256": hash_bounded_file(genes, genes.stat().st_size),
                 "cleanup_confirmed": True,
             }
         )

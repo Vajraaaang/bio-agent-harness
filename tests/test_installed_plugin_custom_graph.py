@@ -122,6 +122,11 @@ Path("/outputs/out.json").write_text(
                 rationale="Review the pinned synthetic script",
             )
             receipt, _ = await _complete(client, custom)
+            assert receipt["claim_scope"] == "exploratory_only"
+            assert (
+                receipt["registered_method_outputs"]["out"]["claim_tier"]
+                == "L1_execution_verified"
+            )
             proof = receipt["graph_execution"]
             flow = AdaptiveWorkflow(ledger, sid)
             outcome = flow._read_projection(

@@ -6,7 +6,9 @@ from collections.abc import Iterator
 import h5py
 import numpy as np
 
+from .hdf5_custody import validate_hdf5_tree
 from .population_data import _node, _sparse_components
+from .sparse_expression_blocks import iter_minor_blocks
 
 _MAX_BLOCK_BYTES = 16 * 1024**2
 _MAX_AXIS_BYTES = 64 * 1024**2
@@ -36,12 +38,14 @@ def _axis(handle: h5py.File, name: str, size: int) -> list[str]:
     frame = _bounded_node(handle, name)
     if not isinstance(frame, h5py.Group):
         raise ValueError("AnnData axes must be dataframe groups")
+    validate_hdf5_tree(frame)
     if "_index" in frame.attrs and frame.attrs.get_id("_index").shape != ():
         raise ValueError("AnnData index name must be scalar")
     index = frame.attrs.get("_index", "_index")
     if isinstance(index, bytes):
         index = index.decode("utf-8")
     axis = _bounded_node(frame, index)
+    validate_hdf5_tree(axis, max_materialized_bytes=_MAX_AXIS_BYTES)
     if (
         not isinstance(axis, h5py.Dataset)
         or axis.shape != (size,)
@@ -100,8 +104,6 @@ class H5adGeneBlocks:
         handle: h5py.File,
         *,
         layer: str | None,
-        max_cells: int,
-        max_genes: int,
     ) -> None:
         matrix = (
             _bounded_node(handle, "X")
@@ -111,9 +113,8 @@ class H5adGeneBlocks:
                 layer,
             )
         )
+        validate_hdf5_tree(matrix)
         (cells, genes), layout = _header(matrix)
-        if cells > max_cells or genes > max_genes:
-            raise ValueError("trajectory_expression_axes_over_budget")
         self.shape = (genes, cells)
         self._matrix = matrix
         self._layout = layout
@@ -132,7 +133,7 @@ class H5adGeneBlocks:
             )
             data, _, indptr = components
             self._sparse = components
-            self._offsets = indptr[:]
+            self._offsets = indptr[:] if layout == "csc" else None
             self._dtype = data.dtype
         if self._dtype.kind not in "biuf":
             raise ValueError("AnnData expression must be real numeric")
@@ -152,24 +153,12 @@ class H5adGeneBlocks:
             (stop - start, self.shape[1]),
             dtype=np.result_type(self._dtype, accumulator),
         )
-        csr = self._layout == "csr"
-        major_axis = range(self.shape[1]) if csr else range(start, stop)
-        for major in major_axis:
+        for major in range(start, stop):
             left = int(self._offsets[major])
             right = int(self._offsets[major + 1])
             for offset in range(left, right, 65_536):
                 end = min(offset + 65_536, right)
-                coordinates = indices[offset:end]
-                values = data[offset:end]
-                if csr:
-                    selected = (coordinates >= start) & (coordinates < stop)
-                    np.add.at(
-                        result[:, major],
-                        coordinates[selected] - start,
-                        values[selected],
-                    )
-                else:
-                    np.add.at(result[major - start], coordinates, values)
+                np.add.at(result[major - start], indices[offset:end], data[offset:end])
         return result
 
     def iter_gene_chunks(
@@ -182,10 +171,45 @@ class H5adGeneBlocks:
         )
         if width < 1:
             raise ValueError("AnnData expression row exceeds the numeric read budget")
+        if self._layout == "csr":
+            for start, stop, block in iter_minor_blocks(
+                self._matrix, self.shape, block_rows=width, max_bytes=64 * 1024**2
+            ):
+                yield self.gene_names[start:stop], block.toarray()
+            return
         for start in range(0, self.shape[0], width):
             stop = min(start + width, self.shape[0])
             if self._sparse is None:
                 block = self._matrix[:, start:stop].T
             else:
                 block = self._read_sparse(start, stop)
+            yield self.gene_names[start:stop], block
+
+
+class ZarrGeneBlocks:
+    """Gene-axis traversal using the same sparse transposition as H5AD."""
+
+    def __init__(self, source):
+        self.source = source
+        self.shape = source.shape[::-1]
+        self.gene_names = source.var.index.tolist()
+        self.sample_names = source.obs.index.tolist()
+        source.validate_sparse_storage()
+
+    def iter_gene_chunks(self, chunk_size):
+        width = min(chunk_size, _MAX_BLOCK_BYTES // (self.shape[1] * 8))
+        if width < 1:
+            raise ValueError("AnnData expression row exceeds the numeric read budget")
+        node = self.source._element
+        if getattr(self.source.matrix, "format", None) == "csr":
+            for start, stop, block in iter_minor_blocks(
+                node, self.shape, block_rows=width, max_bytes=64 * 1024**2
+            ):
+                yield self.gene_names[start:stop], block.toarray()
+            return
+        for start in range(0, self.shape[0], width):
+            stop = min(self.shape[0], start + width)
+            block = self.source.matrix[:, start:stop].T
+            if hasattr(block, "toarray"):
+                block = block.toarray()
             yield self.gene_names[start:stop], block
