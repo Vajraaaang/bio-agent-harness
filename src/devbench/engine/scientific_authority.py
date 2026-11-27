@@ -94,6 +94,14 @@ DAEMON_SCHEMA = {
         granted_at_utc TEXT NOT NULL, rationale TEXT NOT NULL,
         UNIQUE(session_id,plan_id,plan_sha256,actor_id,surface,auth_method,rationale))""",
 }
+# Keep exact v1 DDL readable on an inert connection. A writer upgrades the
+# complete grant table atomically, leaving all existing frozen identities intact.
+_LEGACY_APPROVAL_SQL = DAEMON_SCHEMA["scientific_plan_approvals"]
+DAEMON_SCHEMA["scientific_plan_approvals"] = _LEGACY_APPROVAL_SQL.replace(
+    "        UNIQUE(",
+    "        script_sha256 TEXT, policy_sha256 TEXT, "
+    "offline_approval INTEGER NOT NULL DEFAULT 0,\n        UNIQUE(",
+)
 DISCLOSURE_SCHEMA = {
     "scientific_disclosure_schema": (
         "CREATE TABLE scientific_disclosure_schema (version INTEGER PRIMARY KEY "
@@ -174,6 +182,12 @@ def require_patched_wal():
         )
 
 
+def _legacy_approval_schema(found):
+    if found.get("scientific_plan_approvals") == _LEGACY_APPROVAL_SQL:
+        return {"scientific_plan_approvals": _LEGACY_APPROVAL_SQL}
+    return {}
+
+
 def check_schema(connection):
     found = dict(
         connection.execute(
@@ -192,6 +206,7 @@ def check_schema(connection):
     for extension in (EXECUTION_SCHEMA, DISCLOSURE_SCHEMA, DAEMON_SCHEMA):
         if found.keys() & extension.keys():
             expected.update(extension)
+    expected.update(_legacy_approval_schema(found))
     if found != expected or [
         row[0] for row in connection.execute("SELECT version FROM scientific_schema")
     ] != [1]:
@@ -281,13 +296,28 @@ def _validate_approval_actor(actor_id, surface, auth_method, rationale):
         or not actor_id.strip()
         or not actor_id.isprintable()
         or len(actor_id.encode()) > 256
-        or surface not in ("cli", "studio")
+        or surface not in ("cli", "studio", "codex_native", "daemon_policy")
         or not _matches(_ID, auth_method)
         or not isinstance(rationale, str)
         or "\x00" in rationale
         or len(rationale.encode()) > 4096
     ):
         raise ValueError("Invalid local operator approval attribution")
+
+
+def _approval_provenance(frozen_plan, surface, auth_method, policy_sha256, check_grant):
+    script_sha256 = frozen_plan.get("script_sha256")
+    if script_sha256 is not None and not _matches(_SHA, script_sha256):
+        raise OperationBlocked("plan_identity_mismatch")
+    policy_grant = surface == "daemon_policy"
+    if policy_grant != (auth_method == "workspace_policy_auto_tier2_public"):
+        raise ValueError("Invalid automatic grant provenance")
+    if policy_grant:
+        if not _matches(_SHA, policy_sha256) or not script_sha256 or not check_grant:
+            raise PermissionError("Automatic grants require verified policy custody")
+    elif policy_sha256 is not None:
+        raise ValueError("Policy digest is reserved for the daemon")
+    return script_sha256
 
 
 def _record_payload(record):
@@ -606,6 +636,22 @@ class ScientificAuthority:
                 for statement in DAEMON_SCHEMA.values():
                     db.execute(statement)
                 db.execute("INSERT INTO scientific_daemon_schema VALUES (1)")
+            elif (
+                db.execute(
+                    "SELECT sql FROM sqlite_master WHERE "
+                    "name='scientific_plan_approvals'"
+                ).fetchone()[0]
+                == _LEGACY_APPROVAL_SQL
+            ):
+                db.execute("ALTER TABLE scientific_plan_approvals RENAME TO v1_grants")
+                db.execute(DAEMON_SCHEMA["scientific_plan_approvals"])
+                db.execute(
+                    "INSERT INTO scientific_plan_approvals(session_id,plan_id,"
+                    "plan_sha256,actor_id,surface,auth_method,granted_at_utc,"
+                    "rationale) "
+                    "SELECT * FROM v1_grants"
+                )
+                db.execute("DROP TABLE v1_grants")
             yield db
 
     def initialize_daemon(self):
@@ -629,10 +675,16 @@ class ScientificAuthority:
         auth_method,
         rationale="",
         public_plan_policy=None,
+        policy_sha256=None,
+        offline_approval=False,
+        check_grant=None,
     ):
         """Record a local operator's grant for the verified frozen plan."""
         verify_frozen_plan(frozen_plan, session_id, plan_id, plan_sha256)
         _validate_approval_actor(actor_id, surface, auth_method, rationale)
+        script_sha256 = _approval_provenance(
+            frozen_plan, surface, auth_method, policy_sha256, check_grant
+        )
         identity = (session_id, plan_id, plan_sha256)
         attribution = (actor_id, surface, auth_method, rationale)
         # Match scheduler lock order. Keep the custody fence until the grant
@@ -641,7 +693,11 @@ class ScientificAuthority:
             if public_plan_policy is not None:
                 _, protected = custody.enter_context(public_plan_policy)
                 if protected:
+                    if frozen_plan.get("format") == "devbench.control-plan/1":
+                        raise OperationBlocked("private_data_local_studio_only")
                     raise PermissionError("Restricted plans require offline approval")
+            if check_grant is not None:
+                check_grant(db)
             changed_digest = db.execute(
                 "SELECT 1 FROM scientific_plan_approvals WHERE session_id=? "
                 "AND plan_id=? AND plan_sha256<>? LIMIT 1",
@@ -652,10 +708,22 @@ class ScientificAuthority:
             db.execute(
                 "INSERT INTO scientific_plan_approvals "
                 "(session_id,plan_id,plan_sha256,actor_id,surface,auth_method,"
-                "rationale,granted_at_utc) VALUES (?,?,?,?,?,?,?,?) "
+                "rationale,granted_at_utc,script_sha256,policy_sha256,"
+                "offline_approval) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(session_id,plan_id,plan_sha256,actor_id,surface,"
-                "auth_method,rationale) DO NOTHING",
-                (*identity, *attribution, datetime.now(UTC).isoformat()),
+                "auth_method,rationale) DO UPDATE SET "
+                "offline_approval=max(offline_approval,excluded.offline_approval) "
+                "WHERE policy_sha256 IS excluded.policy_sha256 "
+                "AND script_sha256 IS excluded.script_sha256",
+                (
+                    *identity,
+                    *attribution,
+                    datetime.now(UTC).isoformat(),
+                    script_sha256,
+                    policy_sha256,
+                    int(offline_approval),
+                ),
             )
             row = db.execute(
                 "SELECT * FROM scientific_plan_approvals WHERE session_id=? "

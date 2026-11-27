@@ -24,6 +24,7 @@ from typing import Any
 import psutil
 
 from devbench.core._files import read_bounded_file
+from devbench.mcp import LITERATURE_PROVIDERS
 
 from . import auth
 
@@ -290,6 +291,7 @@ def _reap(workspace: Path, directory: int, selected: Path) -> None:
             pass
     auth.remove_file(directory, _RECORD)
     auth.remove_file(directory, "daemon.token")
+    auth.remove_file(directory, "mcp.token")
 
 
 @contextmanager
@@ -320,6 +322,7 @@ def daemon_listener(workspace: Path, lock_fd: int):
         cleanup.callback(_unlink_socket, parent, address.name, bound)
         auth.verify_owner(bound, stat.S_IFSOCK, 0o600)
         cleanup.callback(auth.remove_file, directory, "daemon.token")
+        cleanup.callback(auth.remove_file, directory, "mcp.token")
         cleanup.callback(auth.remove_file, directory, _RECORD)
         token = secrets.token_hex(32)
         auth.write_file(directory, "daemon.token", token.encode())
@@ -433,7 +436,18 @@ def _config(
         "deadlines",
         "mounted_image_id",
         "allow_data_execution",
+        "auto_approve_tier2_public",
+        "literature_provider",
     }
+    if (
+        "auto_approve_tier2_public" in options
+        and type(options["auto_approve_tier2_public"]) is not bool
+    ):
+        raise ValueError("Invalid daemon approval policy")
+    if options.get("literature_provider") not in (None, *LITERATURE_PROVIDERS):
+        raise ValueError("Unknown operator-approved literature provider")
+    if offline_only and options.get("literature_provider"):
+        options = {**options, "literature_provider": None}
     if set(options) - allowed:
         raise ValueError("Unknown daemon configuration option")
     if type(http_port) is not int or not 0 <= http_port <= 65535:

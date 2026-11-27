@@ -47,6 +47,7 @@ _RUNNING = ("running", "cancelling")
 _POLICY_HOLDS = {
     "private_data_local_studio_only": "awaiting_offline",
     "explicit_plan_approval_required": "awaiting_approval",
+    "outcome_blind_critic_required": "awaiting_approval",
 }
 _LOCAL = {}
 _LOCAL_LOCK = threading.Lock()
@@ -711,7 +712,9 @@ class Supervisor:
         poll_sec=0.15,
         worker_factory=None,
         offline_only=True,
+        policy_sha256=None,
     ):
+        self.policy_sha256 = policy_sha256
         self.workspace = directory(Path(workspace), exists=False)
         self.offline_only = offline_only is True
         cpu = (
@@ -793,12 +796,15 @@ class Supervisor:
             self._adopt_legacy_runs(db)
             self._restore_policy(db)
             now = time.time()
-            db.execute(
+            failed = db.execute(
                 "UPDATE scientific_daemon_runs SET status='failed',finished_at=?,"
                 "updated_at=?,cleanup_state='confirmed',error_text='pool_unavailable' "
-                "WHERE status='queued' AND (memory_mb>? OR (pool='gpu' AND ?=0))",
+                "WHERE status='queued' AND (memory_mb>? OR (pool='gpu' AND ?=0)) "
+                "RETURNING run_id",
                 (now, now, self.memory_budget_mb, self.slots["gpu"]),
-            )
+            ).fetchall()
+            for (rid,) in failed:
+                self._seal_terminal(db, rid)
         sequence = 0
         while True:
             rows = self.authority.daemon_read(
@@ -819,17 +825,38 @@ class Supervisor:
             row["session_id"], row["plan_id"], row["plan_sha256"]
         )
 
-    def _enforce(self, plan, sha, protected):
+    def _enforce(self, plan, sha, protected, *, db=None):
+        from devbench.mcp.approval import active_policy_digest
+
+        policy = active_policy_digest(self.workspace, self.policy_sha256)
         require_execution_policy(
             self.authority,
             plan,
             sha,
             protected,
             offline_only=self.offline_only,
+            policy_sha=policy,
+            db=db,
         )
 
-    @staticmethod
-    def _hold(db, rid, reason):
+    def _seal_terminal(self, db, rid):
+        if not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='mcp_frozen_plans'"
+        ).fetchone():
+            return
+        row = db.execute(
+            "SELECT r.* FROM scientific_daemon_runs r JOIN mcp_frozen_plans p "
+            "ON p.session_id=r.session_id AND p.plan_id=r.plan_id "
+            "AND p.plan_sha256=r.plan_sha256 WHERE r.run_id=? "
+            "AND r.status IN ('failed','cancelled') AND r.cleanup_state='confirmed'",
+            (rid,),
+        ).fetchone()
+        if row is not None:
+            from devbench.mcp.receipts import seal_terminal
+
+            seal_terminal(self.authority, db, dict(row))
+
+    def _hold(self, db, rid, reason):
         status = _POLICY_HOLDS.get(reason, "failed")
         now = time.time()
         db.execute(
@@ -837,10 +864,14 @@ class Supervisor:
             "finished_at=?,cleanup_state='confirmed' WHERE run_id=?",
             (status, reason, now, now if status == "failed" else None, rid),
         )
+        self._seal_terminal(db, rid)
 
     def _resources(self, plan, pool, memory_mb):
         native = plan.get("operation") == "qc-salmon"
-        slots = fastq_cpu_slots(plan) if native else 1
+        resources = plan.get("resource_override") or {}
+        slots = fastq_cpu_slots(plan) if native else resources.get("cpus", 1)
+        if pool == "gpu":
+            slots = 1
         preferred = 6 * 1024 if native else 1024
         memory = (
             min(preferred, self.memory_budget_mb) if memory_mb is None else memory_mb
@@ -902,7 +933,7 @@ class Supervisor:
             try:
                 with self._check_policy(row) as (plan, protected):
                     self._restore_fastq_reservation(db, row, plan, waiting=waiting)
-                    self._enforce(plan, row["plan_sha256"], protected)
+                    self._enforce(plan, row["plan_sha256"], protected, db=db)
             except OperationBlocked as error:
                 if waiting:
                     self._hold(db, row["run_id"], error.state)
@@ -964,6 +995,35 @@ class Supervisor:
             raise OperationBlocked("unknown_run")
         return self.jobs.visible_run(row)
 
+    def _check_control_runtime(self, plan, sha, resume):
+        from devbench.mcp.planning import require_runtime_pins
+
+        if resume is None:
+            prior = self.authority.daemon_read(
+                lambda db: db.execute(
+                    "SELECT * FROM scientific_daemon_runs WHERE session_id=? "
+                    "AND plan_id=? AND plan_sha256=? AND (resume_from_run_id IS NULL "
+                    "OR run_id=resume_from_run_id) ORDER BY rowid DESC LIMIT 1",
+                    (plan["session_id"], plan["plan_id"], sha),
+                ).fetchone()
+            )
+            if prior:
+                return self.jobs.visible_run(prior)
+        require_runtime_pins(self, plan)
+        return None
+
+    def _requested_resources(self, plan, sha, protected, pool, memory_mb):
+        if plan.get("format") != "devbench.control-plan/1":
+            return pool, memory_mb
+        if not protected:
+            from devbench.mcp.approval import prepare_auto_grant
+
+            prepare_auto_grant(self.jobs, plan, sha, self.policy_sha256)
+        resources = plan.get("resource_override") or {}
+        return ("gpu" if resources.get("gpu") else "cpu"), resources.get(
+            "memory_mb", memory_mb
+        )
+
     def submit(
         self,
         session_id,
@@ -977,11 +1037,19 @@ class Supervisor:
     ):
         with self.jobs.frozen_policy(session_id, plan_id, plan_sha256) as policy:
             plan, protected = policy
+        pool, memory_mb = self._requested_resources(
+            plan, plan_sha256, protected, pool, memory_mb
+        )
         self._enforce(plan, plan_sha256, protected)
         if not resume_from_run_id and (
             existing := self.jobs.legacy_run(session_id, plan_id)
         ):
             return existing
+        if plan.get("format") == "devbench.control-plan/1":
+            if existing := self._check_control_runtime(
+                plan, plan_sha256, resume_from_run_id
+            ):
+                return existing
         if profile is None:
             profile = "qc" if plan.get("operation") == "matrix_audit" else "standard"
         if profile not in self.deadlines:
@@ -994,7 +1062,9 @@ class Supervisor:
             "profile": profile,
             "pool": pool,
             "memory_mb": memory,
-            "deadline_sec": self.deadlines[profile],
+            "deadline_sec": (plan.get("resource_override") or {}).get(
+                "timeout_sec", self.deadlines[profile]
+            ),
             "resume_from_run_id": resume_from_run_id,
             "stage_json": canonical(
                 {"_heartbeat_sec": self.heartbeat_sec, "_cpu_slots": slots}
@@ -1017,6 +1087,11 @@ class Supervisor:
             parent = None
             if resume_from_run_id is not None:
                 parent = self._resume_parent(db, resume_from_run_id, fields, plan)
+            if plan.get("format") == "devbench.control-plan/1":
+                from devbench.engine.dispatch_deadline import check_deadline
+
+                check_deadline()
+                self._enforce(plan, plan_sha256, protected, db=db)
             row = self._enqueue_run(db, fields, parent)
         self.jobs.project_run(row)
         self._wake.set()
@@ -1027,6 +1102,17 @@ class Supervisor:
             "SELECT * FROM scientific_daemon_runs WHERE run_id=?", (rid,)
         ).fetchone()
         state = verified_checkpoint(self.workspace, parent, fields)["state"]
+        if plan.get("format") == "devbench.control-plan/1":
+            units = state.get("completed_units")
+            if (
+                state.get("worker_protocol") != "devbench.control-worker/1"
+                or state.get("phase") != "completed_units"
+                or state.get("plan_sha256") != fields["plan_sha256"]
+                or not isinstance(units, list)
+                or not 1 <= len(units) <= 17 * 64
+            ):
+                raise OperationBlocked("checkpoint_identity_mismatch")
+            return None
         if state.get("worker_protocol") == "devbench.plugin-worker/1":
             if state.get("phase") == "native_steps":
                 verify_native_resume_plan(plan, state)
@@ -1144,22 +1230,35 @@ class Supervisor:
             return dict(row)
         return None
 
+    def _released_approvals(self, db):
+        rows = db.execute(
+            "SELECT * FROM scientific_daemon_runs AS run "
+            "WHERE status='awaiting_approval' "
+            "AND EXISTS (SELECT 1 FROM scientific_plan_approvals AS grant_record "
+            "WHERE grant_record.session_id=run.session_id "
+            "AND grant_record.plan_id=run.plan_id "
+            "AND grant_record.plan_sha256=run.plan_sha256)"
+        ).fetchall()
+        for row in rows:
+            try:
+                with self._check_policy(row) as (plan, protected):
+                    self._enforce(plan, row["plan_sha256"], protected, db=db)
+            except OperationBlocked as error:
+                if error.state != row["error_text"]:
+                    self._hold(db, row["run_id"], error.state)
+            else:
+                db.execute(
+                    "UPDATE scientific_daemon_runs SET status='queued',"
+                    "cleanup_state='pending',error_text=NULL,updated_at=? "
+                    "WHERE run_id=?",
+                    (time.time(), row["run_id"]),
+                )
+
     def _dispatch(self):
         with self.authority.daemon_transaction() as db:
             if not self._accepting:
                 return False
-            if self.offline_only:
-                # A CLI/Studio grant may arrive after the queue was restored.
-                db.execute(
-                    "UPDATE scientific_daemon_runs AS run SET status='queued',"
-                    "cleanup_state='pending',error_text=NULL,updated_at=? "
-                    "WHERE status='awaiting_approval' AND EXISTS "
-                    "(SELECT 1 FROM scientific_plan_approvals AS grant_record "
-                    "WHERE grant_record.session_id=run.session_id AND "
-                    "grant_record.plan_id=run.plan_id AND "
-                    "grant_record.plan_sha256=run.plan_sha256)",
-                    (time.time(),),
-                )
+            self._released_approvals(db)
             row = self._candidate(db)
             if row is None:
                 return False
@@ -1167,7 +1266,7 @@ class Supervisor:
                 # Keep the frozen plan and the sticky input classifications fenced
                 # against concurrent custody writes through the actual process fork.
                 with self._check_policy(row) as (plan, protected):
-                    self._enforce(plan, row["plan_sha256"], protected)
+                    self._enforce(plan, row["plan_sha256"], protected, db=db)
                     if not self._restore_fastq_reservation(db, row, plan, waiting=True):
                         self._spawn_reserved(db, row)
             except OperationBlocked as error:
@@ -1186,6 +1285,7 @@ class Supervisor:
                 "finished_at=?,updated_at=?,cleanup_state='confirmed' WHERE run_id=?",
                 (now, now, rid),
             )
+            self._seal_terminal(db, rid)
             return
         try:
             identity = psutil.Process(process.pid)
@@ -1202,6 +1302,7 @@ class Supervisor:
                 "pid=?,cleanup_state=? WHERE run_id=?",
                 (now, now, process.pid, cleanup, rid),
             )
+            self._seal_terminal(db, rid)
             return
         finally:
             # Capture the child's birth before a reaper can release its PID.
@@ -1210,6 +1311,7 @@ class Supervisor:
             ).start()
         stage = json.loads(row["stage_json"])
         stage["_offline_only"] = self.offline_only
+        stage["_approval_policy_sha256"] = self.policy_sha256
         db.execute(
             "UPDATE scientific_daemon_runs SET status='running',pid=?,create_time=?,"
             "dispatched_at=?,updated_at=?,generation=?,stage_json=? WHERE run_id=?",
@@ -1323,7 +1425,7 @@ class Supervisor:
     def _still_admitted(self, db, row):
         try:
             with self._check_policy(row) as (plan, protected):
-                self._enforce(plan, row["plan_sha256"], protected)
+                self._enforce(plan, row["plan_sha256"], protected, db=db)
         except OperationBlocked as error:
             now = time.time()
             db.execute(
@@ -1349,6 +1451,7 @@ class Supervisor:
                     "WHERE run_id=?",
                     (now, now, now, reason, rid),
                 )
+                self._seal_terminal(db, rid)
                 return
             if row["status"] not in {"queued", "running"}:
                 return
@@ -1360,9 +1463,11 @@ class Supervisor:
                 (now, reason, now, rid),
             )
 
-    def cancel_run(self, run_id):
+    def cancel_run(self, run_id, *, wait=True):
         self._request_cancel(run_id, "cancel_requested")
-        self._schedule_cleanup(run_id).join()
+        cleanup = self._schedule_cleanup(run_id)
+        if wait:
+            cleanup.join()
         row = self.status(run_id)
         self.jobs.project_run(row)
         self._wake.set()
@@ -1478,5 +1583,6 @@ class Supervisor:
                 finished_at=finished,
                 updated_at=now,
             )
+            self._seal_terminal(db, row["run_id"])
             write_progress(self.workspace, current)
         self.jobs.project_run(current)

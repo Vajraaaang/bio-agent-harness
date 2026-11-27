@@ -10,7 +10,7 @@ from typing import Any
 from devbench.analysis.evidence_access import EvidenceBroker
 from devbench.engine.workflow_operations import OperationBlocked
 
-from .plugin_jobs import ACTIVE, JobStore, _worker_alive
+from .plugin_jobs import ACTIVE, JobStore, _orphaned_worker, _worker_alive
 from .plugin_rna_solvers import LOCAL_OPERATIONS
 
 _ID = re.compile(r"[0-9a-f]{32}")
@@ -91,6 +91,17 @@ def _verified_result(workspace, plan, run):
     return result
 
 
+def _interrupted(workspace, run):
+    stage = json.loads(run["stage_json"])
+    created = stage.get("process_created_at")
+    if stage.get("daemon_managed"):
+        # Queued work has no PID. A live supervisor owns the exit/cleanup window.
+        return run["status"] == "running" and _orphaned_worker(
+            workspace, run["pid"], created
+        )
+    return not _worker_alive(run["pid"], created)
+
+
 def _run_view(workspace, plan, plan_sha, run):
     if (
         run["session_id"] != plan["session_id"]
@@ -102,9 +113,7 @@ def _run_view(workspace, plan, plan_sha, run):
     view = {"run_id": run["run_id"], "status": run["status"]}
     if run["error_text"]:
         view["error"] = _error_code(run["error_text"], "plugin_worker_failed")
-    if run["status"] in ACTIVE and not _worker_alive(
-        run["pid"], json.loads(run["stage_json"]).get("process_created_at")
-    ):
+    if run["status"] in ACTIVE and _interrupted(workspace, run):
         view.update(status="interrupted", error="worker_not_running")
     if run["status"] == "completed":
         try:
@@ -197,7 +206,7 @@ def studio_launch(app, session_id: str, body: dict[str, Any]) -> dict[str, Any]:
         or body.keys() != {"plan_id", "plan_sha256", "allow_data_execution"}
         or body["allow_data_execution"] is not True
         or not isinstance(body["plan_id"], str)
-        or _ID.fullmatch(body["plan_id"]) is None
+        or re.fullmatch(r"(?:cp-)?[0-9a-f]{32}", body["plan_id"]) is None
         or not isinstance(body["plan_sha256"], str)
         or _SHA.fullmatch(body["plan_sha256"]) is None
     ):
@@ -213,6 +222,9 @@ def studio_launch(app, session_id: str, body: dict[str, Any]) -> dict[str, Any]:
             ).fetchone()
         )
         plan = JobStore._plan(row, plan_id, plan_sha)
+    if plan.get("format") == "devbench.control-plan/1":
+        run = JobStore(app.workspace).launch(session_id, plan_id, plan_sha)
+        return {k: run[k] for k in ("session_id", "plan_id", "run_id", "status")}
     if not _supports(plan):
         raise OperationBlocked("private_graph_plan_unavailable")
     _check_scope(app.workspace, plan)

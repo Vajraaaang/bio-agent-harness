@@ -36,7 +36,7 @@ from devbench.platform.adaptive_workflow_state import (
     Digest,
     Identity,
 )
-from devharness_server.tools_rna_pathways import (
+from rna_kernels.pathways import (
     MAX_MATRIX_BYTES,
     MAX_RESULT_BYTES,
     SUMMARY_FORMAT,

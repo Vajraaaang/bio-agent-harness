@@ -110,6 +110,17 @@ Path("/outputs/out.json").write_text(
                 {**approval, "plan_sha256": "0" * 64},
                 blocked="plan_identity_mismatch",
             )
+            from devbench.platform.plugin_jobs import JobStore
+
+            JobStore(workspace).approve(
+                approval["session_id"],
+                approval["plan_id"],
+                approval["plan_sha256"],
+                actor_id="fixture-reviewer",
+                surface="cli",
+                auth_method="local_os_user",
+                rationale="Review the pinned synthetic script",
+            )
             receipt, _ = await _complete(client, custom)
             proof = receipt["graph_execution"]
             flow = AdaptiveWorkflow(ledger, sid)

@@ -30,6 +30,7 @@ from devbench.analysis.codex_job_policy import (
 )
 from devbench.core._hashing import utf8_sha256 as _digest
 from devbench.core._hashing import workflow_json as _json
+from devbench.engine import dispatch_deadline
 from devbench.study.model_telemetry import normalize_usage
 
 from .method_executor import _path
@@ -610,9 +611,15 @@ class WorkflowOperationLedger:
     def _database(self, *, read_transaction=False):
         # Share bookkeeping safely between sibling threads, while independent
         # objects/processes still observe SQLite's explicit busy state.
-        with self._transaction_lock:
+        bounded = dispatch_deadline.deadline.get() != float("inf")
+        timeout = dispatch_deadline.remaining(60) if bounded else -1
+        if not self._transaction_lock.acquire(timeout=timeout):
+            raise OperationBlocked("resource_quota_exceeded")
+        try:
             with self._connection(read_transaction=read_transaction) as connection:
                 yield connection
+        finally:
+            self._transaction_lock.release()
 
     def _validate_wal_sidecars(self):
         from .scientific_authority import require_patched_wal
@@ -633,6 +640,9 @@ class WorkflowOperationLedger:
 
     def _configure_connection(self, connection, *, wal, timeout, read_transaction):
         self._check_resource_identity()
+        end = dispatch_deadline.deadline.get()
+        if end != float("inf"):
+            connection.set_progress_handler(lambda: int(time.monotonic() >= end), 2000)
         connection.row_factory = sqlite3.Row
         if wal or self._scientific_requested:
             connection.execute("PRAGMA foreign_keys=ON")
@@ -640,7 +650,9 @@ class WorkflowOperationLedger:
             connection.execute("PRAGMA synchronous=FULL")
             if connection.execute("PRAGMA synchronous").fetchone()[0] != 2:
                 raise OperationConflict("Workflow ledger requires FULL durability")
-        if connection.execute("PRAGMA busy_timeout").fetchone()[0] != timeout * 1000:
+        if connection.execute("PRAGMA busy_timeout").fetchone()[0] != int(
+            timeout * 1000
+        ):
             raise OperationConflict("Workflow ledger busy timeout was not applied")
         if (
             self._scientific_enabled
@@ -672,6 +684,7 @@ class WorkflowOperationLedger:
             timeout = 10 if wal or self._scientific_requested or not self.inert else 0
             if read_transaction:
                 timeout = 0.25
+            timeout = dispatch_deadline.remaining(timeout)
             with closing(
                 sqlite3.connect(database, timeout=timeout, uri=self.readonly)
             ) as connection:

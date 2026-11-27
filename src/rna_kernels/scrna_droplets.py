@@ -36,9 +36,7 @@ _MAX_DROPLETS = 1_000_000
 _CHUNK_ENTRIES = 131_072
 _MAX_DROPLET_TOTAL = 2**31 - 1
 _CORRECTION = "devbench.droplet_correction"
-_EMPTYDROPS_DRIVER = (
-    Path(__file__).resolve().parent.parent / "devharness_server/r/scrna_emptydrops.R"
-)
+_EMPTYDROPS_DRIVER = Path(__file__).resolve().parent / "r/scrna_emptydrops.R"
 _R_PACKAGES = (
     'if (requireNamespace("DropletUtils", quietly=TRUE)) '
     'cat(as.character(utils::packageVersion("DropletUtils")))'

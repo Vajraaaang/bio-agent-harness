@@ -55,11 +55,12 @@ def test_motor_umap_roundtrip(workspace_tmp_path):
     selected = [{"path": str(path)} for path in paths]
     entrypoint = (
         "from pathlib import Path; "
-        "from devbench.platform import workbench_ui, plugin_mcp; "
+        "from devbench.platform import workbench_ui; from "
+        "examples.motor_programs import server; "
         f"out=Path({str(browser_calls)!r}); "
         "workbench_ui._open_browser_async=lambda url: "
         "out.write_text((out.read_text() if out.exists() else '') + url + '\\n'); "
-        "raise SystemExit(plugin_mcp.main())"
+        "raise SystemExit(server.main())"
     )
     parameters = StdioServerParameters(
         command=sys.executable,

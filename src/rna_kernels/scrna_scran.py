@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 _RSCRIPT = Path("/usr/local/bin/Rscript")
 _LIBRARY = Path("/opt/rna/scrna-R-library/scran")
 _VERSION = "1.40.0"
-_DRIVER = Path(__file__).resolve().parent.parent / "devharness_server/r/scrna_scran.R"
+_DRIVER = Path(__file__).resolve().parent / "r/scrna_scran.R"
 _MAX_MTX_BYTES = 256 * 1024**2
 _MAX_NONZERO = 8_000_000
 _MAX_CELLS = 100_000
@@ -34,8 +34,13 @@ def _pinned_runtime(folder: Path) -> bool:
     try:
         result = subprocess.run(
             [str(_RSCRIPT), "--vanilla", str(_DRIVER), "--probe"],
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            cwd=folder, env=_solver_env(folder), timeout=30, check=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            cwd=folder,
+            env=_solver_env(folder),
+            timeout=30,
+            check=True,
         )
     except (OSError, subprocess.SubprocessError):
         return False
@@ -43,7 +48,9 @@ def _pinned_runtime(folder: Path) -> bool:
 
 
 def _write_sparse_counts(
-    source_path: Path, selected: pd.Index, destination: Path,
+    source_path: Path,
+    selected: pd.Index,
+    destination: Path,
 ) -> tuple[int, int]:
     import numpy as np
     from scipy import sparse
@@ -64,7 +71,7 @@ def _write_sparse_counts(
         sink.write(f"{features} {cells} {0:010d}\n".encode())
         entries = 0
         for start in range(0, cells, 128):
-            data = source.subset(positions[start:start + 128], max_bytes=64 * 1024**2)
+            data = source.subset(positions[start : start + 128], max_bytes=64 * 1024**2)
             validate_counts(data.X)
             block = sparse.csr_matrix(data.X, dtype=np.float64)
             block.sum_duplicates()
@@ -84,17 +91,22 @@ def _write_coo(sink, block, start: int) -> None:
 
     for offset in range(0, block.nnz, 32_768):
         chunk = slice(offset, offset + 32_768)
-        triplets = np.column_stack((
-            block.col[chunk] + 1, block.row[chunk] + start + 1,
-            block.data[chunk].astype(np.int64),
-        ))
+        triplets = np.column_stack(
+            (
+                block.col[chunk] + 1,
+                block.row[chunk] + start + 1,
+                block.data[chunk].astype(np.int64),
+            )
+        )
         np.savetxt(sink, triplets, fmt="%d")
         if sink.tell() > _MAX_MTX_BYTES:
             raise ValueError("scran_full_count_export_exceeds_byte_budget")
 
 
 def _fit(
-    source: Path, selected: pd.Index, scratch: Path,
+    source: Path,
+    selected: pd.Index,
+    scratch: Path,
 ) -> tuple[Any, dict[str, Any]]:
     import numpy as np
 
@@ -103,13 +115,19 @@ def _fit(
     features, entries = _write_sparse_counts(source, selected, matrix)
     subprocess.run(
         [str(_RSCRIPT), "--vanilla", str(_DRIVER), str(matrix), str(result)],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        cwd=scratch, env=_solver_env(scratch), timeout=240, check=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        cwd=scratch,
+        env=_solver_env(scratch),
+        timeout=240,
+        check=True,
     )
     raw = read_bounded_file(result, _MAX_FACTOR_BYTES)
     factors = np.asarray(raw.splitlines(), dtype="<f8")
     if (
-        factors.shape != (len(selected),) or not np.isfinite(factors).all()
+        factors.shape != (len(selected),)
+        or not np.isfinite(factors).all()
         or (factors <= 0).any()
     ):
         raise ValueError("invalid_scran_size_factors")
@@ -125,7 +143,9 @@ def _fit(
 
 
 def _scran_report(
-    source: Path, retained: pd.Index, folder: Path,
+    source: Path,
+    retained: pd.Index,
+    folder: Path,
 ) -> dict[str, Any]:
     import pandas as pd
 
@@ -154,8 +174,12 @@ def _scran_report(
         except subprocess.TimeoutExpired:
             return {**report, "status": "failed", "reason": "scran_solver_timeout"}
         except subprocess.CalledProcessError as error:
-            return {**report, "status": "failed", "reason": "scran_solver_exit",
-                    "exit_code": error.returncode}
+            return {
+                **report,
+                "status": "failed",
+                "reason": "scran_solver_exit",
+                "exit_code": error.returncode,
+            }
         except ValueError as error:
             return {**report, "status": "refused", "reason": str(error)[:128]}
     pd.DataFrame({"scran_size_factor": factors}, index=retained).to_csv(
@@ -166,6 +190,7 @@ def _scran_report(
 
 def run_scran_factors(source: Path, store: CheckpointStore, retained: pd.Index) -> Path:
     """Retain a factor checkpoint or an explicit solver disposition."""
+
     def run(folder: Path) -> dict[str, Any]:
         report = _scran_report(source, retained, folder)
         (folder / "report.json").write_bytes(canonical_json(report))

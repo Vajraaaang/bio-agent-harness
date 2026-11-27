@@ -22,6 +22,7 @@ COPY src/devbench/core/scientific_types.py src/devbench/core/scrna_composition.p
     src/devbench/core/scrna_composition_solver.py /opt/rna/runtime/devbench/core/
 COPY src/devbench/engine/__init__.py src/devbench/engine/runtime_contracts.py \
     /opt/rna/runtime/devbench/engine/
+COPY src/rna_kernels/scrna_composition.py /opt/rna/runtime/rna_kernels/
 COPY src/devharness_server/tools_scrna_composition.py /opt/rna/runtime/devharness_server/
 USER 65532:65532
 RUN --network=none --mount=type=tmpfs,target=/tmp \

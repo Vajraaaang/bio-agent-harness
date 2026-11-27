@@ -737,9 +737,9 @@ def test_legacy_http_client_preserves_explicit_authorization(
         handler = server.RequestHandlerClass
         check = handler._bearer
 
-        def observe(request):
+        def observe(request, target):
             seen.append(request.headers.get_all("Authorization"))
-            return check(request)
+            return check(request, target)
 
         monkeypatch.setattr(handler, "_bearer", observe)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -864,7 +864,7 @@ def test_loopback_boundaries_session_exchange_and_studio_approval(
 
 
 def test_opt_in_streamable_http_serves_existing_mcp_tools(workspace_tmp_path):
-    from devbench.daemon.auth import read_token
+    from devbench.daemon.auth import read_mcp_token, read_token
 
     with _daemon(workspace_tmp_path, enable_streamable_http=True) as (
         workspace,
@@ -920,6 +920,7 @@ def test_opt_in_streamable_http_serves_existing_mcp_tools(workspace_tmp_path):
             == 403
         )
         sentinel = "LOCAL_INPUT_VALUE_MUST_NOT_APPEAR"
+        headers = {"Authorization": f"Bearer {read_mcp_token(workspace)}"}
         invalid = {"jsonrpc": sentinel, "id": 17, "method": "initialize"}
         status, _, diagnostic = _http(
             origin,
@@ -946,7 +947,9 @@ def test_opt_in_streamable_http_serves_existing_mcp_tools(workspace_tmp_path):
                         ]
 
         names = asyncio.run(tools())
-        assert len(names) == 7 and "execute_reviewed_plan" in names
+        from devbench.mcp.schemas import INPUTS
+
+        assert set(names) == set(INPUTS) and len(names) == 13
 
 
 def test_control_frame_requires_newline_before_dispatch(workspace_tmp_path):
@@ -1023,7 +1026,15 @@ async def _rpc(process, method, params, *, notify=False):
 
 
 @asynccontextmanager
-async def _stdio_session(workspace, inputs, errors, *, legacy_browser_log=None):
+async def _stdio_session(
+    workspace,
+    inputs,
+    errors,
+    *,
+    legacy_browser_log=None,
+    example=False,
+    capabilities=None,
+):
     if legacy_browser_log is None:
         command = ["-m", "devbench.platform.cli", "mcp", "--no-auto-browser"]
     else:
@@ -1034,7 +1045,13 @@ async def _stdio_session(workspace, inputs, errors, *, legacy_browser_log=None):
             "workbench_ui._open_browser_async=lambda *_: log.touch(); "
             "raise SystemExit(cli.main())"
         )
-        command = ["-c", entry, "plugin-mcp"]
+        if example:
+            entry = entry.replace(
+                "raise SystemExit(cli.main())",
+                "from examples.motor_programs.server import main; "
+                "raise SystemExit(main())",
+            )
+        command = ["-c", entry, *([] if example else ["plugin-mcp"])]
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         *command,
@@ -1053,7 +1070,7 @@ async def _stdio_session(workspace, inputs, errors, *, legacy_browser_log=None):
             "initialize",
             {
                 "protocolVersion": "2025-06-18",
-                "capabilities": {},
+                "capabilities": capabilities or {},
                 "clientInfo": {"name": "daemon-test", "version": "1.0"},
             },
         )
@@ -1098,7 +1115,11 @@ def test_cold_mcp_private_plan_executes_only_after_offline_studio_consent(
     async def request(rid=None):
         with errors.open("ab") as stderr:
             async with _stdio_session(
-                workspace, inputs, stderr, legacy_browser_log=opened if legacy else None
+                workspace,
+                inputs,
+                stderr,
+                legacy_browser_log=opened if legacy else None,
+                example=legacy,
             ) as process:
 
                 async def call(name, arguments, *, denied=False):
@@ -1120,26 +1141,36 @@ def test_cold_mcp_private_plan_executes_only_after_offline_studio_consent(
 
                 if rid is not None:
                     receipt = await call(
-                        "get_execution_receipt",
+                        "get_execution_receipt" if legacy else "get_run_receipt",
                         {"session_id": sid, "run_id": rid},
                         denied=True,
                     )
                     assert receipt["reason"] == "private_data_local_studio_only"
                     return
-                planned = await call(
-                    "plan_rna_workflow",
-                    {
-                        "operation": "motor_program_comparison",
-                        "objective": "Review the synthetic marker counts locally",
-                        "inputs": declarations,
-                    },
-                )
+                if legacy:
+                    planned = await call(
+                        "plan_rna_workflow",
+                        {
+                            "operation": "motor_program_comparison",
+                            "objective": "Review the synthetic marker counts locally",
+                            "inputs": declarations,
+                        },
+                    )
+                else:
+                    selected = await call(
+                        "register_investigation_input", _admission(paths[0], "private")
+                    )
+                    planned = await call("freeze_analysis_plan", _audit_plan(selected))
                 assert planned["status"] == "local_studio_only"
                 frozen = {
                     key: planned[key]
                     for key in ("session_id", "plan_id", "plan_sha256")
                 }
-                denial = await call("execute_reviewed_plan", frozen, denied=True)
+                denial = await call(
+                    "execute_reviewed_plan" if legacy else "submit_reviewed_run",
+                    frozen,
+                    denied=True,
+                )
                 assert denial["reason"] == "private_data_local_studio_only"
                 return planned, frozen
 
@@ -1152,7 +1183,10 @@ def test_cold_mcp_private_plan_executes_only_after_offline_studio_consent(
         assert plan["studio_url"] == f"{origin}/?session_id={sid}&view=workflows"
         assert daemon["offline_only"] and daemon["allow_data_execution"]
         assert not opened.exists()
-        launch = shlex.split(plan["launch_hint"])
+        launch = [
+            str({"<input-root>": inputs, "<workspace>": workspace}.get(word, word))
+            for word in shlex.split(plan["launch_hint"])
+        ]
         assert launch[:2] == ["devbench", "workbench"]
         assert {
             "--offline-only",
@@ -1243,17 +1277,21 @@ def test_default_legacy_plugin_mcp_uses_online_daemon_without_popup(
                     errors,
                     legacy_browser_log=browser_log if legacy else None,
                 ) as process:
-                    assert len((await _rpc(process, "tools/list", {}))["tools"]) == 7
+                    assert len((await _rpc(process, "tools/list", {}))["tools"]) == (
+                        7 if legacy else 13
+                    )
+                    declaration = {"path": str(counts), "data_classification": "public"}
+                    if not legacy:
+                        declaration["file_kind"] = "expression"
                     inspected = await _tool(
                         process,
-                        "inspect_rna_inputs",
-                        {
-                            "inputs": [
-                                {"path": str(counts), "data_classification": "public"}
-                            ]
-                        },
+                        "inspect_rna_inputs" if legacy else "inspect_inputs",
+                        {"inputs": [declaration]},
                     )
-                    assert inspected["inputs"][0]["observed"]["file_type"] == "csv"
+                    item = inspected["inputs"][0]
+                    assert (
+                        item["observed"]["file_type"] if legacy else item["format"]
+                    ) == "csv"
 
         asyncio.run(inspect())
         current = ipc.daemon_status(workspace)
@@ -1269,6 +1307,38 @@ def test_default_legacy_plugin_mcp_uses_online_daemon_without_popup(
         )
 
 
+def _admission(path, classification="synthetic"):
+    return {
+        "input": {
+            "path": str(path),
+            "file_kind": "expression",
+            "data_classification": classification,
+            "investigation_role": "primary_cohort",
+        },
+        "representation_class": "count_1_raw_counts",
+        "provenance_declaration": {
+            "origin": "user_declaration",
+            "source": "synthetic fixture",
+            "count_provenance": "raw counts",
+        },
+    }
+
+
+def _audit_plan(admitted):
+    ref = admitted["artifact"] or admitted["opaque_artifact"]
+    return {
+        "session_id": admitted["session_id"],
+        "plan_kind": "tier1_kernel",
+        "branch_id": "primary",
+        "epistemic_purpose": "qc_diagnostic",
+        "objective": "Audit the registered synthetic matrix",
+        "kernel": {"kernel_id": "matrix_audit", "version": "1", "parameters": {}},
+        "input_bindings": {
+            "expression": {k: ref[k] for k in ("artifact_id", "sha256")}
+        },
+    }
+
+
 def test_killed_stdio_client_reconnects_to_live_audit_and_receipt(workspace_tmp_path):
     from devbench.daemon import ipc
     from devbench.engine.workflow_operations import LEDGER_NAME
@@ -1280,7 +1350,6 @@ def test_killed_stdio_client_reconnects_to_live_audit_and_receipt(workspace_tmp_
         private = inputs / (sentinel + ".csv")
         private.write_text("gene,donor1,donor2\n" + sentinel + ",1,3\n")
         errors = workspace_tmp_path / "stderr"
-        selected = {"path": str(counts), "data_classification": "synthetic"}
 
         def worker_for(run_id):
             record = ipc.request(workspace, "run_status", run_id=run_id)
@@ -1296,21 +1365,17 @@ def test_killed_stdio_client_reconnects_to_live_audit_and_receipt(workspace_tmp_
             try:
                 with errors.open("wb") as stderr:
                     async with _stdio_session(workspace, inputs, stderr) as first:
+                        admitted = await _tool(
+                            first, "register_investigation_input", _admission(counts)
+                        )
                         plan = await _tool(
-                            first,
-                            "plan_rna_workflow",
-                            {
-                                "operation": "matrix_audit",
-                                "measurement": "non_umi_counts",
-                                "objective": "Audit the synthetic counts.",
-                                "inputs": [selected],
-                            },
+                            first, "freeze_analysis_plan", _audit_plan(admitted)
                         )
                         first_id = first.pid
                         identity = {
                             k: plan[k] for k in ("session_id", "plan_id", "plan_sha256")
                         }
-                        started = await _tool(first, "execute_reviewed_plan", identity)
+                        started = await _tool(first, "submit_reviewed_run", identity)
                         key = {k: started[k] for k in ("session_id", "run_id")}
                         worker = _until(lambda: worker_for(key["run_id"]))
                         worker.suspend()
@@ -1333,7 +1398,7 @@ def test_killed_stdio_client_reconnects_to_live_audit_and_receipt(workspace_tmp_
                                     break
                                 await asyncio.sleep(0.1)
                         assert last["status"] == "completed", last["warnings"]
-                        receipt = await _tool(second, "get_execution_receipt", key)
+                        receipt = await _tool(second, "get_run_receipt", key)
                         assert (
                             receipt["run_id"] == key["run_id"]
                             and receipt["metrics"]["genes"] == 3
@@ -1341,11 +1406,12 @@ def test_killed_stdio_client_reconnects_to_live_audit_and_receipt(workspace_tmp_
                         assert receipt["clinical_release_allowed"] is False
                         private_result = await _tool(
                             second,
-                            "inspect_rna_inputs",
+                            "inspect_inputs",
                             {
                                 "inputs": [
                                     {
                                         "path": str(private),
+                                        "file_kind": "expression",
                                         "data_classification": "private",
                                     }
                                 ]

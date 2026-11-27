@@ -58,9 +58,12 @@ COPY src/rna_kernels/__init__.py src/rna_kernels/canonical.py src/rna_kernels/bu
     /opt/rna/runtime/rna_kernels/
 COPY src/devharness_core/__init__.py src/devharness_core/provenance.py src/devharness_core/storage.py \
     /opt/rna/runtime/devharness_core/
-COPY src/devharness_server/r/mounted_edger.R src/devharness_server/r/mounted_general.R src/devharness_server/r/bulk_edger.R \
-    src/devharness_server/r/bulk_deseq2_sensitivity.R src/devharness_server/r/bulk_dream.R \
-    src/devharness_server/r/bulk_latent_diagnostics.R /opt/rna/runtime/devharness_server/r/
+COPY src/rna_kernels/r/mounted_edger.R src/rna_kernels/r/mounted_general.R src/rna_kernels/r/bulk_edger.R \
+    src/rna_kernels/r/bulk_deseq2_sensitivity.R src/rna_kernels/r/bulk_dream.R \
+    src/rna_kernels/r/bulk_latent_diagnostics.R /opt/rna/runtime/rna_kernels/r/
+COPY src/rna_kernels/r/mounted_edger.R src/rna_kernels/r/mounted_general.R src/rna_kernels/r/bulk_edger.R \
+    src/rna_kernels/r/bulk_deseq2_sensitivity.R src/rna_kernels/r/bulk_dream.R \
+    src/rna_kernels/r/bulk_latent_diagnostics.R /opt/rna/runtime/devharness_server/r/
 RUN --network=none ldconfig \
  && python3.13 -c 'from devharness_core.storage import ChunkedExpressionStore; import numpy, scipy, pyarrow; assert numpy.__version__ and scipy.__version__ and pyarrow.__version__' \
  && python3.13 -m rna_kernels.mounted_bulk --help > /dev/null
@@ -94,7 +97,9 @@ COPY src/devbench/analysis/__init__.py src/devbench/analysis/annotation.py \
     src/devbench/analysis/integration_metrics.py src/devbench/analysis/qc_concordance.py \
     src/devbench/analysis/resources.py src/devbench/analysis/scrna_qc.py \
     src/devbench/analysis/singlecell.py src/devbench/analysis/streaming.py /opt/rna/runtime/devbench/analysis/
-COPY src/devharness_server/r/scrna_emptydrops.R src/devharness_server/r/scrna_scran.R \
+COPY src/rna_kernels/r/scrna_emptydrops.R src/rna_kernels/r/scrna_scran.R \
+    /opt/rna/runtime/rna_kernels/r/
+COPY src/rna_kernels/r/scrna_emptydrops.R src/rna_kernels/r/scrna_scran.R \
     /opt/rna/runtime/devharness_server/r/
 RUN --network=none python3.13 -m rna_kernels.mounted_scrna --help > /dev/null
 

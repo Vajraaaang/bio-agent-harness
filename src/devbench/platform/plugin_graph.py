@@ -39,7 +39,7 @@ _BASE_MODULES = (
     "devbench.platform.adaptive_workflow_state",
     "devbench.platform.plugin_graph",
     "devbench.platform.plugin_jobs",
-    "devbench.platform.plugin_mcp",
+    "devbench.platform.plugin_workflows",
 )
 _OP_MODULES = {
     "matrix_audit": (
@@ -51,11 +51,12 @@ _OP_MODULES = {
         "devbench.analysis.fastq_contract",
     ),
     "shared_motor_umap": (
-        "devbench.platform.plugin_motor_umap",
+        "examples.motor_programs.umap",
+        "examples.motor_programs.code",
         "devbench.analysis.shared_motor_umap",
     ),
     "motor_program_comparison": (
-        "devbench.platform.plugin_motor_programs",
+        "examples.motor_programs.programs",
         "devbench.analysis.workbench_motor_programs",
     ),
 }

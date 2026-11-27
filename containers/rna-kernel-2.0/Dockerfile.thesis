@@ -37,20 +37,32 @@ COPY src/devharness_core/__init__.py \
     src/devharness_core/provenance.py \
     src/devharness_core/storage.py \
     /opt/rna/runtime/devharness_core/
+COPY src/rna_kernels/pathways.py src/rna_kernels/scrna_composition.py /opt/rna/runtime/rna_kernels/
 COPY src/devharness_server/__init__.py \
     src/devharness_server/tools_rna_pathways.py \
     src/devharness_server/tools_scrna_composition.py \
     /opt/rna/runtime/devharness_server/
-COPY src/devharness_server/r/bulk_deseq2_sensitivity.R \
-    src/devharness_server/r/bulk_dream.R \
-    src/devharness_server/r/bulk_edger.R \
-    src/devharness_server/r/bulk_latent_diagnostics.R \
-    src/devharness_server/r/mounted_edger.R \
-    src/devharness_server/r/mounted_general.R \
-    src/devharness_server/r/paired_tximport_svaseq.R \
-    src/devharness_server/r/rna_pathways.R \
-    src/devharness_server/r/scrna_emptydrops.R \
-    src/devharness_server/r/scrna_scran.R \
+COPY src/rna_kernels/r/bulk_deseq2_sensitivity.R \
+    src/rna_kernels/r/bulk_dream.R \
+    src/rna_kernels/r/bulk_edger.R \
+    src/rna_kernels/r/bulk_latent_diagnostics.R \
+    src/rna_kernels/r/mounted_edger.R \
+    src/rna_kernels/r/mounted_general.R \
+    src/rna_kernels/r/paired_tximport_svaseq.R \
+    src/rna_kernels/r/rna_pathways.R \
+    src/rna_kernels/r/scrna_emptydrops.R \
+    src/rna_kernels/r/scrna_scran.R \
+    /opt/rna/runtime/rna_kernels/r/
+COPY src/rna_kernels/r/bulk_deseq2_sensitivity.R \
+    src/rna_kernels/r/bulk_dream.R \
+    src/rna_kernels/r/bulk_edger.R \
+    src/rna_kernels/r/bulk_latent_diagnostics.R \
+    src/rna_kernels/r/mounted_edger.R \
+    src/rna_kernels/r/mounted_general.R \
+    src/rna_kernels/r/paired_tximport_svaseq.R \
+    src/rna_kernels/r/rna_pathways.R \
+    src/rna_kernels/r/scrna_emptydrops.R \
+    src/rna_kernels/r/scrna_scran.R \
     /opt/rna/runtime/devharness_server/r/
 COPY src/rna_kernels/__init__.py \
     src/rna_kernels/bulk_solver_policy.py \

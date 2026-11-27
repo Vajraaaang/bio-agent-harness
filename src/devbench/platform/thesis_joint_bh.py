@@ -1,6 +1,7 @@
 """Prospective joint-family declarations attached to the scientific ledger."""
 
 import time
+from contextlib import nullcontext
 from sqlite3 import Connection, Row
 
 from pydantic import Field, TypeAdapter
@@ -117,12 +118,30 @@ class ThesisJointBHRegistry:
     def __init__(self, aims: ThesisAimLifecycle):
         self.aims = aims
 
-    def freeze(self, plan: JointBHPlan, *, actor: str, rationale: str) -> int:
+    def freeze(
+        self,
+        plan: JointBHPlan,
+        *,
+        actor: str,
+        rationale: str,
+        connection: Connection | None = None,
+    ) -> int:
         actor, rationale = self.aims._actor(actor, rationale)
         plan = JointBHPlan.model_validate(plan)
         authority = self.aims.authority
         lineage = self.aims.lineage_id
-        with authority._execution_tx(lineage) as db:
+        if connection is not None:
+            from devbench.engine.scientific_authority import (
+                require_same_ledger_transaction,
+            )
+
+            require_same_ledger_transaction(connection, self.aims.ledger)
+        transaction = (
+            authority._execution_tx(lineage)
+            if connection is None
+            else nullcontext(connection)
+        )
+        with transaction as db:
             key, retained, revision = _read_plan(db, lineage, plan.family_id)
             state, _ = self.aims._projection(db)
             if retained is not None:

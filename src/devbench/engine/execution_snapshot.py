@@ -59,7 +59,20 @@ _RESOURCES = {
     "devharness_server/r/erql_1_3.R",
     "devharness_controlled/erql-package-sources.lock.json",
 }
+# Retain canonical statistical sources alongside immutable benchmark resource names.
+_RESOURCES.update(
+    name.replace("devharness_server/r/", "rna_kernels/r/", 1)
+    for name in tuple(_RESOURCES)
+    if name.startswith("devharness_server/r/")
+)
 _BUILD_FILES = (
+    "examples/__init__.py",
+    "examples/motor_programs/__init__.py",
+    "examples/motor_programs/code.py",
+    "examples/motor_programs/programs.py",
+    "examples/motor_programs/models.py",
+    "examples/motor_programs/umap.py",
+    "examples/motor_programs/server.py",
     "pyproject.toml",
     "README.md",
     "uv.lock",
@@ -140,7 +153,9 @@ def _installed_build_files(project):
     import zipfile
     from importlib import metadata
 
-    resource = package_root(project, "devbench") / "analysis" / "assets" / "source-bundle.zip"
+    resource = (
+        package_root(project, "devbench") / "analysis" / "assets" / "source-bundle.zip"
+    )
     if (project / "pyproject.toml").is_file() or not resource.is_file():
         return {}
     from scripts.source_bundle import _read_installed_resource
@@ -308,7 +323,7 @@ if observed != expected.keys():
     raise ValueError('Execution snapshot inventory changed before import')
 packages = (
     'devbench', 'devbench_engine', 'devharness', 'devharness_core',
-    'devharness_server', 'devharness_controlled', 'rna_kernels', 'scripts',
+    'devharness_server', 'devharness_controlled', 'rna_kernels', 'scripts', 'examples',
 )
 if any(name.split('.')[0] in packages for name in sys.modules):
     raise RuntimeError(

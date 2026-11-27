@@ -639,7 +639,7 @@ def mounted_single_cell_request(
         return spec.request.model_dump(mode="json")
     if spec.operation == _SCCODA:
         from devbench.core.scrna_composition import ScCODARuntime
-        from devharness_server.tools_scrna_composition import CompositionRequest
+        from rna_kernels.scrna_composition import CompositionRequest
 
         return CompositionRequest(
             input_sha256=inputs["composition_input"].sha256,

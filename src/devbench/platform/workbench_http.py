@@ -570,9 +570,12 @@ class _WorkbenchHandler:
         if sites and sites not in (["same-origin"], ["none"]):
             raise PermissionError("Cross-site requests are unavailable")
 
-    def _bearer(self):
+    def _bearer(self, target):
         headers = self.headers.get_all("Authorization") or []
-        return len(headers) == 1 and valid_bearer(headers[0], self.server.daemon_token)
+        token = self.server.daemon_token
+        if target.path == "/mcp" and self.server.streamable_http is not None:
+            token = self.server.mcp_token
+        return len(headers) == 1 and valid_bearer(headers[0], token)
 
     def _session_signature(self, key):
         return hmac.digest(
@@ -639,7 +642,7 @@ class _WorkbenchHandler:
             )
             self.wfile.write(_SESSION_WORKER)
             return False
-        bearer = self._bearer()
+        bearer = self._bearer(target)
         self._auth_method = "bearer" if bearer else "session_cookie"
         bearer_only = target.path in {"/mcp", _SESSION_PATH}
         if bearer or (
@@ -2074,6 +2077,7 @@ def make_workbench_server(
 
     server = ui.ThreadingHTTPServer(("127.0.0.1", port), Handler)
     server.daemon_token = daemon_token
+    server.mcp_token = secrets.token_hex(32) if streamable_http is not None else None
     server.studio_cookie_name = "devbench_" + secrets.token_hex(12)
     server.studio_token_file = "daemon.token"
     server.streamable_http = streamable_http

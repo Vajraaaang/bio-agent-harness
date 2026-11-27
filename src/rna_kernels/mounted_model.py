@@ -16,9 +16,7 @@ from devharness_core.storage import ChunkedExpressionStore
 from .bulk_solver_policy import freeze_bulk_solver, require_dream_coefficient
 from .streaming_rle import streaming_median_ratio_factors
 
-_DRIVER = (
-    Path(__file__).resolve().parent.parent / "devharness_server/r/mounted_general.R"
-)
+_DRIVER = Path(__file__).resolve().parent / "r/mounted_general.R"
 _MATRIX_BYTES = 512 * 1024**2
 MAX_SUMMARY_BYTES = 1024**2
 _OMNIBUS = {"nested", "lrt"}
