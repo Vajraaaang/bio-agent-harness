@@ -652,7 +652,8 @@ class TierAExecutor:
             from .mounted_kernel_oci import require_mounted_pipeline_runtime
 
             require_mounted_pipeline_runtime(
-                spec, self.mounted_image_id,
+                spec,
+                self.mounted_image_id,
                 representation=inputs["expression"].representation,
                 allow_python_wald=self.allow_python_wald,
             )
@@ -1206,7 +1207,7 @@ class TierAExecutor:
             raise ValueError(
                 "Mounted Tier A result differs from the frozen specification"
             )
-        verify_mounted_solver(result, spec)
+        verify_mounted_solver(result, spec, inputs=directory.parent / "inputs")
         digest = self._outputs.put_file(directory / "genes.parquet")
         if digest != result["genes_sha256"]:
             raise ValueError("Mounted Tier A Parquet hash mismatch")
@@ -1624,7 +1625,10 @@ class TierAExecutor:
         for pin in receipt.consumed:
             artifact = ArtifactVersion.model_validate(envelope["inputs"][pin.port])
             with open_single_cell_input(
-                self, pin.port, artifact, operation=spec.operation,
+                self,
+                pin.port,
+                artifact,
+                operation=spec.operation,
             ):
                 pass
         for artifact in receipt.outputs.values():

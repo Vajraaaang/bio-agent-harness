@@ -1,9 +1,10 @@
-# Invoke the exact baked mounted driver with independent scratch and model
-# environments. Sharing the pinned library namespace avoids 1,000 R startups.
-driver <- "/opt/rna/runtime/devharness_server/r/mounted_general.R"
+# The explicit checkout mode exercises a read-only source overlay. A standalone
+# invocation without it still exercises the image's baked driver and siblings.
+root <- if (Sys.getenv("DEVBENCH_CALIBRATION_SOURCES") == "checkout") "/checkout/src" else "/opt/rna/runtime"
+driver <- file.path(root, "devharness_server/r/mounted_general.R")
 case_names <- readLines("/inputs/cases.txt", n = 1001L)
 if (!length(case_names) || length(case_names) > 1000L || anyDuplicated(case_names) ||
-    any(!grepl("^(bi|bp|si|sp|pp)-(null|planted)-[0-9]{3}$", case_names))) {
+    any(!grepl("^(bi|bp|si|sp|pp)-((null|planted)-[0-9]{3}|fresh-[0-9]{4})$", case_names))) {
     stop("Invalid calibration batch inventory")
 }
 invisible(loadNamespace("edgeR"))
@@ -37,6 +38,9 @@ fit_one <- function(case, index) {
             invokeRestart("muffleWarning")
         }
     )
+    if (file.exists(file.path(scratch, "model-quantities.bin"))) {
+        outputs <- c(outputs, "model-quantities.bin")
+    }
     if (!dir.create(file.path("/outputs", case), mode = "0700") ||
         !all(file.copy(file.path(scratch, outputs), file.path("/outputs", case)))) {
         stop("Failed to collect cohort")

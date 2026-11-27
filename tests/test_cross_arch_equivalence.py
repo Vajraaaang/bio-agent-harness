@@ -522,3 +522,25 @@ def test_matching_incomplete_package_evidence_cannot_pass(workspace_tmp_path):
     result = compare_sentinels(*roots, mode=CROSS_ARCH)
     assert not result["passed"]
     assert "Missing observed Python" in result["violations"][0]
+
+
+def test_secondary_family_recomputes_bh_and_uses_the_same_continuous_bounds():
+    a = _row(
+        sensitivity_code=0.0,
+        sensitivity_effect=1.0,
+        sensitivity_p_value=0.04,
+        sensitivity_q_value=0.08,
+        t=2.0,
+    )
+    b = _row(
+        "B",
+        sensitivity_code=0.0,
+        sensitivity_effect=0.5,
+        sensitivity_p_value=0.2,
+        sensitivity_q_value=0.2,
+        t=1.0,
+    )
+    assert _verify([a, b], [{**a, "t": 2.0000002}, b])["passed"]
+    invalid = {**a, "sensitivity_q_value": 0.04}
+    _failed(_verify([invalid, b], [invalid, b]), "bh_sensitivity_source")
+    _failed(_verify([a, b], [{**a, "sensitivity_effect": 1.1}, b]), "continuous")

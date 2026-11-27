@@ -331,15 +331,9 @@ def test_mounted_edger_checkout_filters_bh_and_retains_scores(
         "--mount",
         f"type=bind,src={outputs},dst=/outputs",
     ]
-    for path in (
-        "devharness_server/r/bulk_edger.R",
-        "devharness_server/r/bulk_latent_diagnostics.R",
-        "devharness_server/r/mounted_edger.R",
-        "devharness_server/r/mounted_general.R",
-        "rna_kernels/mounted_bulk.py",
-        "rna_kernels/mounted_model.py",
-        "rna_kernels/rank_sensitivity.py",
-    ):
+    # Explicit checkout overlay. Exercise the routed Python adapter and every
+    # sibling R source in the same pinned R/Python runtime.
+    for path in ("devharness_server/r", "rna_kernels"):
         source = root / "src" / path
         destination = f"/opt/rna/runtime/{path}"
         command.extend(
@@ -389,3 +383,67 @@ def test_mounted_edger_checkout_filters_bh_and_retains_scores(
         assert hashlib.sha256(payload).hexdigest() == scores_info["payload_sha256"]
         scores = np.frombuffer(payload, dtype="<f8")
         assert abs(np.corrcoef(scores, hidden_batch)[0, 1]) > 0.8
+
+
+def test_mounted_deseq2_serializes_group_counts(workspace_tmp_path):
+    image = os.environ.get("DEVBENCH_RNA_KERNEL_TEST_IMAGE")
+    if not image:
+        pytest.skip("Set DEVBENCH_RNA_KERNEL_TEST_IMAGE to a locked local image ID")
+    platform = kernel_test_platform(image)
+    assert platform is not None
+    drivers = Path(__file__).resolve().parents[1] / "src/devharness_server/r"
+    genes, samples = 120, 12
+    condition = np.arange(samples) >= 5
+    rng = np.random.default_rng(101)
+    mean = rng.uniform(40, 300, (genes, 1))
+    counts = rng.negative_binomial(18, 18 / (18 + mean), (genes, samples))
+    counts[:12, condition] *= 4
+    counts.astype("<f8").tofile(workspace_tmp_path / "counts.bin")
+    design = np.column_stack((np.ones(samples), condition))
+    design.astype("<f8").tofile(workspace_tmp_path / "design.bin")
+    np.ones(samples, dtype="<f8").tofile(workspace_tmp_path / "rle.bin")
+
+    run = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--platform",
+            platform,
+            "--pull=never",
+            "--network=none",
+            "--read-only",
+            "--tmpfs=/tmp:rw,nosuid,nodev,noexec,size=64m",
+            f"--user={os.getuid()}:{os.getgid()}",
+            "--mount",
+            f"type=bind,src={drivers},dst=/drivers,readonly",
+            "--mount",
+            f"type=bind,src={workspace_tmp_path},dst=/scratch",
+            "--entrypoint=Rscript",
+            image,
+            "--vanilla",
+            "/drivers/mounted_edger.R",
+            "/scratch",
+            str(genes),
+            str(samples),
+            "2",
+            "deseq2",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert run.returncode == 0, run.stderr
+    method = json.loads((workspace_tmp_path / "method.json").read_bytes())
+    assert method["solver"] == "deseq2"
+    assert method["solver_details"]["group_observation_counts"] == {
+        "denominator": 5,
+        "numerator": 7,
+    }
+    effect, p, codes = np.fromfile(workspace_tmp_path / "result.bin", "<f8").reshape(
+        3, genes
+    )
+    q = np.fromfile(workspace_tmp_path / "model-quantities.bin", "<f8")
+    assert np.all(codes == 0) and np.isfinite(effect).all()
+    assert np.all((0 <= p) & (p <= q) & (q <= 1))
+    np.testing.assert_allclose(q, false_discovery_control(p), atol=1e-14, rtol=0)

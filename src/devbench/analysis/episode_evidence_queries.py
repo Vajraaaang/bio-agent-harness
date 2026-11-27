@@ -1150,6 +1150,8 @@ def _open_tier_a_parquet(artifact, open_artifact):
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    from rna_kernels.mounted_model import MODEL_QUANTITY_COLUMNS
+
     with open_artifact(artifact) as stream:
         if not 0 < stream.seek(0, io.SEEK_END) <= TIER_A_PARQUET_MAX_BYTES:
             raise ValueError("Parquet evidence exceeds its file byte bound")
@@ -1179,7 +1181,7 @@ def _open_tier_a_parquet(artifact, open_artifact):
                 "intervals": pa.list_(intervals),
                 **{
                     name: pa.float64()
-                    for name in _PARQUET_ADJUSTED
+                    for name in (*_PARQUET_ADJUSTED, *MODEL_QUANTITY_COLUMNS)
                     if name in schema.names
                 },
             }

@@ -25,6 +25,8 @@ from devharness_core.storage import ChunkedExpressionStore, _h5_member
 from .bulk_solver_policy import freeze_bulk_solver
 from .mounted_count import _REASONS, _fit_count
 from .mounted_model import (
+    MAX_SUMMARY_BYTES,
+    MountedCohort,
     _scaled_covariates,
     compile_mounted_model,
     fit_mounted_model,
@@ -34,7 +36,6 @@ from .mounted_rank import _MIN_UNITS, write_rank_sensitivity
 
 REQUEST_FORMAT = "devbench.mounted-bulk/1"
 SUMMARY_FORMAT = "devbench.mounted-bulk-summary/1"
-MAX_SUMMARY_BYTES = 1024**2
 MAX_MATRIX_BYTES = 512 * 1024**2
 MAX_PARQUET_BYTES = 256 * 1024**2
 MAX_FEATURES = 100_000
@@ -345,6 +346,7 @@ def _rows(
     measurement=None,
     errors=None,
     confidence=None,
+    quantities=None,
 ):
     for index, gene in enumerate(genes):
         effect, p_value, code = effects[index], probabilities[index], codes[index]
@@ -374,6 +376,10 @@ def _rows(
             "p_value": p_value if attempted else None,
             "q_value": adjusted[index] if attempted else None,
             "missing_reason": reason,
+            **{
+                key: None if np.isnan(values[index]) else values[index]
+                for key, values in (quantities or {}).items()
+            },
         }
 
 
@@ -577,6 +583,14 @@ def _fit_general(source, model, request, outputs, primary, runtime, lengths):
 
 def _rank_evidence(primary, request, cohort, location, expression, solver, primary_fit):
     n_units = len(set(cohort[1]))
+    if solver.get("rank_sensitivity_planned") and n_units < _MIN_UNITS:
+        return {
+            "status": "planned",
+            "method": "rank_or_permutation",
+            "n_units": n_units,
+            "execution_minimum_units": _MIN_UNITS,
+            "reason": "The frozen rank method requires 100 distinct units",
+        }
     if not primary or n_units < _MIN_UNITS:
         return None
     model = request.get("model", {})
@@ -597,7 +611,8 @@ def _rank_evidence(primary, request, cohort, location, expression, solver, prima
             ),
             "n_units": n_units,
         }
-    sizes = solver.get("normalization", {}).get("size_factors")
+    normalization = solver.get("normalization", {})
+    sizes = normalization.get("size_factors")
     with ChunkedExpressionStore(expression, layer=request["layer"]) as source:
         return write_rank_sensitivity(
             source,
@@ -606,6 +621,9 @@ def _rank_evidence(primary, request, cohort, location, expression, solver, prima
             cohort,
             primary_fit,
             factors=np.asarray(sizes) if sizes is not None else None,
+            normalization_method="TMM"
+            if normalization.get("method") == "TMM"
+            else "RLE",
         )
 
 
@@ -629,8 +647,37 @@ def _fit_mounted_inputs(inputs, outputs, request, genes, primary, runtime):
             )
         cohort, condition, model = _metadata(metadata, source.sample_names, request)
         design, unit_ids, _, _ = cohort
+        fit_request = request
+        if (
+            model is None
+            and primary
+            and runtime == "bioconductor"
+            and request["measurement"] == "raw_counts"
+        ):
+            # The original two-arm protocol carries its contrast implicitly.
+            # Retain its exact design compiler and forward the admitted design
+            # to the same pre-fit arbitration and R transport as explicit models.
+            fit_request = {
+                **request,
+                "model": {"comparison": "coefficient", "units": "independent"},
+            }
+            contrast = np.zeros(design.shape[1])
+            contrast[1] = 1.0
+            labels = np.where(
+                design[:, 1] == 1, request["numerator"], request["denominator"]
+            ).tolist()
+            model = MountedCohort(
+                design,
+                condition,
+                unit_ids,
+                labels,
+                cohort[2],
+                cohort[3],
+                None,
+                contrast,
+            )
         fit = (
-            _fit_general(source, model, request, outputs, primary, runtime, lengths)
+            _fit_general(source, model, fit_request, outputs, primary, runtime, lengths)
             if model is not None
             else _fit(
                 source, genes, design, unit_ids, request, outputs, primary, runtime
@@ -735,7 +782,11 @@ def run_mounted_bulk(
     }
     if "model" in request:
         footer["comparison"] = request["model"]["comparison"]
-    schema = _RESULT_SCHEMA.with_metadata({b"devbench.result": canonical_json(footer)})
+    quantities = solver.pop("_model_quantities", {})
+    schema = pa.schema(
+        [*_RESULT_SCHEMA, *(pa.field(key, pa.float64()) for key in quantities)],
+        metadata={b"devbench.result": canonical_json(footer)},
+    )
     with tempfile.TemporaryDirectory(dir=outputs) as stage:
         table = Path(stage) / "genes.parquet"
         sensitivity_file = Path(stage) / "sensitivity.parquet"
@@ -759,6 +810,7 @@ def run_mounted_bulk(
             measurement=request["measurement"],
             errors=errors,
             confidence=confidence,
+            quantities=quantities,
         )
         with pq.ParquetWriter(table, schema, compression="snappy") as writer:
             writer.add_key_value_metadata(score_metadata)

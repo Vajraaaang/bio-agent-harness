@@ -34,6 +34,9 @@ _CONTINUOUS = _EFFECTS | {
     "normalization_factors",
     "size_factors",
     "f",
+    "t",
+    "sample_weights",
+    "lr",
     "ql_f",
     "qlf",
     "ql_f_statistic",
@@ -67,6 +70,11 @@ _SUMMARY_FIELDS = {
     "test",
     "normalization",
     "solver_details",
+    "regime_route",
+    "calibration_status",
+    "sensitivity_details",
+    "units_per_arm",
+    "model_columns",
 }
 
 
@@ -281,8 +289,8 @@ def _compare_value(report, name, a, b, label, gene=None):
                 "norm_factors" if (name, k) == ("normalization", "factors") else k
             )
             _compare_value(report, quantity, a[k], b[k], f"{label}.{k}", gene)
-    elif _key(name) in _NUMERIC:
-        _numeric(report, _key(name), a, b, label, gene)
+    elif (quantity := _key(name).removeprefix("sensitivity_")) in _NUMERIC:
+        _numeric(report, quantity, a, b, label, gene)
     else:
         match = type(a) is type(b) and (a == b or _kind(a) == _kind(b) == "nan")
         report.check("structure", match, label, gene)
@@ -416,6 +424,34 @@ def _direction(report, left, right, i, gene, effects, omnibus):
         report.check("discovery_direction", valid, name, gene)
 
 
+def _check_sensitivity(report, left, right, alpha):
+    """Apply the identical family, direction and decision gates to the comparator."""
+    fields = {"sensitivity_" + k for k in ("code", "effect", "p_value", "q_value")}
+    if not fields.intersection(left.keys() | right.keys()):
+        return
+    if not fields <= left.keys() & right.keys():
+        report.check("structure", False, "incomplete sensitivity family")
+        return
+    families = []
+    statuses = {0: "estimated", 1: "filtered", 2: "failed", 3: "failed"}
+    for side, data in (("source", left), ("target", right)):
+        codes = data["sensitivity_code"]
+        if not all(code in statuses for code in codes):
+            report.check("structure", False, "invalid sensitivity status")
+            return
+        family = {k: data["sensitivity_" + k] for k in ("effect", "p_value", "q_value")}
+        family.update(
+            gene_id=data["gene_id"],
+            estimate_status=[statuses[code] for code in codes],
+            missing_reason=[None if code == 0 else statuses[code] for code in codes],
+        )
+        _check_family(report, family, "sensitivity_" + side)
+        families.append(family)
+    # The primary and comparator have distinct BH families and boundary genes.
+    _discoveries(report, *families, alpha, False)
+    report.data["sensitivity_boundary_band_genes"] = report.data["boundary_band_genes"]
+
+
 def _cross_arch(report, source, target, summaries, alpha):
     tables = [_read_table(payload) for payload in (source, target)]
     left, right = [table.to_pydict() for table in tables]
@@ -438,6 +474,7 @@ def _cross_arch(report, source, target, summaries, alpha):
         "nested",
         "lrt",
     )
+    _check_sensitivity(report, left, right, alpha)
     _discoveries(report, left, right, alpha, omnibus)
     same_schema = tables[0].schema.equals(tables[1].schema, check_metadata=False)
     report.check("structure", same_schema, "Parquet schema")

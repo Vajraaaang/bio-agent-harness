@@ -20,8 +20,25 @@ _DRIVER = (
     Path(__file__).resolve().parent.parent / "devharness_server/r/mounted_general.R"
 )
 _MATRIX_BYTES = 512 * 1024**2
+MAX_SUMMARY_BYTES = 1024**2
 _OMNIBUS = {"nested", "lrt"}
 _LATENT_SCORES = "latent_scores.bin"
+_MODEL_STATISTICS = frozenset(
+    {"F", "t", "LR", "df.prior", "df.residual.adj", "df.total", "s2.post"}
+)
+_COMPARATOR_COLUMNS = frozenset(
+    {
+        "sensitivity_effect",
+        "sensitivity_p_value",
+        "sensitivity_q_value",
+        "sensitivity_code",
+    }
+)
+MODEL_QUANTITY_COLUMNS = (
+    _MODEL_STATISTICS
+    | _COMPARATOR_COLUMNS
+    | {f"sensitivity_{key}" for key in _MODEL_STATISTICS}
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +51,13 @@ class MountedCohort:
     covariates: np.ndarray | None
     reduced: np.ndarray | None
     contrast: np.ndarray | None
+
+    @property
+    def units_per_arm(self) -> tuple[int, ...]:
+        # Sorting sizes makes the routing input invariant under renaming or
+        # exchanging condition labels. Multiple profiles of a donor count once.
+        pairs = set(zip(self.labels, self.unit_ids, strict=True))
+        return tuple(sorted(Counter(label for label, _ in pairs).values()))
 
 
 def _latent_options(latent):
@@ -87,6 +111,7 @@ def validate_mounted_model(model, measurement):
             "lengths_sha256",
             "latent",
             "sensitivity_method",
+            "heterogeneous_independent",
         }
         or model.get("comparison") not in ("coefficient", "contrast", "nested", "lrt")
         or model.get("units") not in ("independent", "paired_fixed", "mixed")
@@ -113,10 +138,17 @@ def validate_mounted_model(model, measurement):
                 "Latent diagnostics require an independent raw-count design"
             )
         _latent_options(model["latent"])
-    _validate_voom_request(model, measurement)
+    _validate_declared_methods(model, measurement)
 
 
-def _validate_voom_request(model, measurement):
+def _validate_declared_methods(model, measurement):
+    if "heterogeneous_independent" in model and (
+        type(model["heterogeneous_independent"]) is not bool
+        or measurement != "raw_counts"
+        or model["units"] != "independent"
+        or model["comparison"] not in {"coefficient", "contrast"}
+    ):
+        raise ValueError("Heterogeneity requires an independent directed count design")
     if "sensitivity_method" in model and (
         model["sensitivity_method"] != "limma_voom"
         or measurement != "raw_counts"
@@ -284,7 +316,7 @@ def compile_mounted_model(rows, request):
     )
 
 
-def _write_gene_matrix(path, source, *, positive=False):
+def _write_gene_matrix(path, source, *, positive=False, raw_counts=False):
     if math.prod(source.shape) * 8 > _MATRIX_BYTES:
         raise ValueError("Generalized solver matrix exceeds its scratch bound")
     position = 0
@@ -295,6 +327,13 @@ def _write_gene_matrix(path, source, *, positive=False):
                 or not np.isfinite(block).all()
                 or positive
                 and (block <= 0).any()
+                or raw_counts
+                and (
+                    (block < 0).any()
+                    or (block > 2**53 - 1).any()
+                    or block.dtype.kind == "f"
+                    and (block != np.floor(block)).any()
+                )
             ):
                 raise ValueError("Mounted solver matrix has invalid values")
             np.asarray(block, dtype="<f8").tofile(output)
@@ -308,7 +347,20 @@ def _write_gene_matrix(path, source, *, positive=False):
 def _fit_config(choice, cohort, source, request):
     model = request["model"]
     labels = cohort.labels
+    routing = {}
+    if choice.regime_route:
+        routing = {
+            "regime_route": choice.regime_route,
+            "normalization": choice.normalization,
+            "filter_mode": choice.filter_mode,
+            "abundance_trend": choice.abundance_trend,
+            "sensitivity_solver": choice.sensitivity_solver,
+            "units_per_arm": cohort.units_per_arm,
+            "rank_sensitivity_planned": choice.rank_sensitivity_planned,
+            "calibration_status": choice.calibration_status,
+        }
     return {
+        **routing,
         "solver": choice.solver,
         "test": choice.test,
         "shrinkage": choice.shrinkage,
@@ -329,12 +381,24 @@ def _fit_config(choice, cohort, source, request):
     }
 
 
-def _write_design_inputs(directory, source, cohort, measurement, lengths_path):
-    _write_gene_matrix(directory / "counts.bin", source)
+def _write_design_inputs(
+    directory,
+    source,
+    cohort,
+    measurement,
+    lengths_path,
+    *,
+    require_rle=True,
+):
+    _write_gene_matrix(
+        directory / "counts.bin", source, raw_counts=measurement == "raw_counts"
+    )
     cohort.design.astype("<f8").tofile(directory / "design.bin")
     if cohort.reduced is not None:
         cohort.reduced.astype("<f8").tofile(directory / "reduced.bin")
     if measurement == "raw_counts":
+        if not require_rle:
+            return {"method": "TMM"}
         factors, normalization = streaming_median_ratio_factors(
             lambda: (block for _, block in source.iter_gene_chunks(256)),
             source.shape[1],
@@ -382,18 +446,18 @@ def _read_result(directory, n_genes, omnibus):
             "Mounted model returned invalid effect or probability semantics"
         )
     with (directory / "method.json").open("rb") as file:
-        raw = file.read(256 * 1024 + 1)
-    if len(raw) > 256 * 1024:
+        raw = file.read(MAX_SUMMARY_BYTES + 1)
+    if len(raw) > MAX_SUMMARY_BYTES:
         raise ValueError("Generalized solver diagnostics exceed their bound")
     evidence = json.loads(raw)
     return effects, pvalues, adjusted, codes.astype(np.int8), evidence
 
 
-def fit_mounted_model(source, cohort, request, primary, runtime, outputs, lengths_path):
+def freeze_mounted_solver(cohort, request, primary, runtime):
+    """Freeze the method using only study design, before reading expression."""
     model = request["model"]
-    measurement = request["measurement"]
-    choice = freeze_bulk_solver(
-        measurement=measurement,
+    return freeze_bulk_solver(
+        measurement=request["measurement"],
         runtime=runtime,
         comparison=model["comparison"],
         units=model["units"],
@@ -402,7 +466,95 @@ def fit_mounted_model(source, cohort, request, primary, runtime, outputs, length
             request["technical_factors"] or request["continuous_covariates"]
         ),
         sensitivity_method=model.get("sensitivity_method"),
+        units_per_arm=cohort.units_per_arm,
+        heterogeneous_independent=model.get("heterogeneous_independent", False),
     )
+
+
+def _read_model_quantities(directory, fields, n_genes, comparator):
+    if (
+        not isinstance(fields, list)
+        or not fields
+        or len(fields) > len(MODEL_QUANTITY_COLUMNS)
+        or any(
+            not isinstance(field, str) or field not in MODEL_QUANTITY_COLUMNS
+            for field in fields
+        )
+        or len(set(fields)) != len(fields)
+        or set(fields) & _COMPARATOR_COLUMNS
+        != (_COMPARATOR_COLUMNS if comparator else set())
+    ):
+        raise ValueError("Invalid per-gene model statistic inventory")
+    path = directory / "model-quantities.bin"
+    expected = n_genes * len(fields) * 8
+    if path.stat().st_size != expected or expected > _MATRIX_BYTES:
+        raise ValueError("Invalid model quantity payload size")
+    data = np.fromfile(path, dtype="<f8").reshape(len(fields), n_genes)
+    columns = dict(zip(fields, data, strict=True))
+    if comparator:
+        codes = columns["sensitivity_code"]
+        estimated = codes == 0
+        p, q = columns["sensitivity_p_value"], columns["sensitivity_q_value"]
+        effects = columns["sensitivity_effect"]
+        if (
+            not np.isin(codes, (0, 1, 3)).all()
+            or not (
+                (0 <= p[estimated])
+                & (p[estimated] <= q[estimated])
+                & (q[estimated] <= 1)
+            ).all()
+            or not np.isfinite(effects[estimated]).all()
+            or any(not np.isnan(values[~estimated]).all() for values in (p, q, effects))
+        ):
+            raise ValueError("Invalid frozen sensitivity estimates")
+    return columns
+
+
+def _tmm_normalization(details, samples):
+    libraries = np.asarray(details.get("lib.size"), dtype=float)
+    factors = np.asarray(details.get("norm.factors"), dtype=float)
+    if libraries.shape != (samples,) or factors.shape != libraries.shape:
+        raise ValueError("Invalid TMM library axis")
+    effective = libraries * factors
+    if not np.all(np.isfinite(effective) & (effective > 0)):
+        raise ValueError("Invalid TMM effective library size")
+    relative = np.exp(np.log(effective) - np.log(effective).mean())
+    return {"method": "TMM", "size_factors": relative.tolist()}
+
+
+def _verify_count_route(evidence, choice, cohort, codes):
+    details = evidence["solver_details"]
+    if (
+        evidence.get("regime_route") != choice.regime_route
+        or evidence.get("calibration_status") != choice.calibration_status
+        or (evidence.get("sensitivity_details") or {}).get("solver")
+        != choice.sensitivity_solver
+        or evidence.get("solver") != choice.solver
+        or evidence.get("test") != choice.test
+        or details.get("normalization") != choice.normalization
+        or details.get("filter") != choice.filter_mode
+    ):
+        raise ValueError("Returned procedure differs from the frozen count route")
+    if choice.solver == "edger_v4" and details.get("abundance_trend") is not (
+        int(np.count_nonzero(codes != 1)) >= 500
+    ):
+        raise ValueError(
+            "Returned QL trend differs from the pre-fit eligible count rule"
+        )
+    evidence.update(
+        regime_route=choice.regime_route,
+        units_per_arm=list(cohort.units_per_arm),
+        calibration_status=choice.calibration_status,
+        sensitivity_solver=choice.sensitivity_solver,
+        rank_sensitivity_planned=choice.rank_sensitivity_planned,
+    )
+    return _tmm_normalization(details, len(cohort.labels))
+
+
+def fit_mounted_model(source, cohort, request, primary, runtime, outputs, lengths_path):
+    model = request["model"]
+    measurement = request["measurement"]
+    choice = freeze_mounted_solver(cohort, request, primary, runtime)
     if choice.solver == "pydeseq2" or runtime != "bioconductor":
         raise ValueError(
             "The generalized mounted model requires the pinned Bioconductor image"
@@ -410,7 +562,13 @@ def fit_mounted_model(source, cohort, request, primary, runtime, outputs, length
     with TemporaryDirectory(dir=outputs) as temporary:
         directory = Path(temporary)
         normalization = _write_design_inputs(
-            directory, source, cohort, measurement, lengths_path
+            directory,
+            source,
+            cohort,
+            measurement,
+            lengths_path,
+            require_rle=choice.normalization != "TMM"
+            or model.get("latent") is not None,
         )
         config = _fit_config(choice, cohort, source, request)
         with (directory / "model.json").open("x", encoding="utf-8") as stream:
@@ -432,6 +590,18 @@ def fit_mounted_model(source, cohort, request, primary, runtime, outputs, length
             source.shape[0],
             model["comparison"] in _OMNIBUS,
         )
+        # The binary files exist only inside this private solver scratch directory.
+        evidence.pop("numeric_transport", None)
+        if choice.regime_route:
+            normalization = _verify_count_route(evidence, choice, cohort, codes)
+        fields = evidence.get("model_columns")
+        if fields or choice.regime_route:
+            evidence["_model_quantities"] = _read_model_quantities(
+                directory,
+                fields,
+                source.shape[0],
+                choice.sensitivity_solver,
+            )
         if latent := evidence.get("latent_diagnostics"):
             samples = source.shape[1]
             factors = latent["n_factors"]

@@ -1,0 +1,2751 @@
+{
+  "additional_route_probes": {
+    "cross_arch_calibrated_match": {
+      "cases": {
+        "declared-heterogeneous": {
+          "alpha": 0.05,
+          "boundary_band": [
+            0.04998,
+            0.05002
+          ],
+          "boundary_band_genes": [],
+          "checks": {
+            "artifact_binding": {
+              "compared": 4,
+              "failed": 0
+            },
+            "bh_sensitivity_source": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 0.0
+            },
+            "bh_sensitivity_target": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 0.0
+            },
+            "bh_source": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 0.0
+            },
+            "bh_target": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 0.0
+            },
+            "continuous": {
+              "compared": 2464,
+              "failed": 0,
+              "max_delta": 3.699398121170816e-09
+            },
+            "discovery_direction": {
+              "compared": 72,
+              "failed": 0
+            },
+            "discovery_set": {
+              "compared": 384,
+              "failed": 0
+            },
+            "p_value.linear": {
+              "compared": 384,
+              "failed": 0,
+              "max_delta": 7.168488025399711e-12
+            },
+            "p_value.log10": {
+              "compared": 384,
+              "failed": 0,
+              "max_delta": 2.0026647007398424e-11
+            },
+            "probability_order": {
+              "compared": 768,
+              "failed": 0
+            },
+            "q_value.linear": {
+              "compared": 384,
+              "failed": 0,
+              "max_delta": 7.168488025399711e-12
+            },
+            "q_value.log10": {
+              "compared": 384,
+              "failed": 0,
+              "max_delta": 2.0026647007398424e-11
+            },
+            "runtime": {
+              "compared": 2,
+              "failed": 0
+            },
+            "structure": {
+              "compared": 5216,
+              "failed": 0
+            }
+          },
+          "debug_oracle": false,
+          "family_sha256": "1d97a5ad588afa6e5109520947128d53324ba757b9b407acbe5f112a21a0b5d6",
+          "fits": {
+            "source": {
+              "genes_sha256": "0cedae459b53ca6a1745766ea4191c9db11b28d29d1793fd9218917d47412366",
+              "request_sha256": "11859e6a6d7660500b4bbcba1beb4a4b841e68f4950d0cfaafc3573d71120e60",
+              "solver": "limma_voom_qw",
+              "tested_count": 192
+            },
+            "target": {
+              "genes_sha256": "92fe26142f69b5a8f7f45b87da1bdb4dbf0be2d1ed1e3e84873ca150accd40b7",
+              "request_sha256": "11859e6a6d7660500b4bbcba1beb4a4b841e68f4950d0cfaafc3573d71120e60",
+              "solver": "limma_voom_qw",
+              "tested_count": 192
+            }
+          },
+          "mode": "cross_arch_calibrated_match",
+          "passed": true,
+          "policy": "ADR-16",
+          "request_sha256": "11859e6a6d7660500b4bbcba1beb4a4b841e68f4950d0cfaafc3573d71120e60",
+          "runtimes": {
+            "source": {
+              "blas_threads": 1,
+              "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            },
+            "target": {
+              "blas_threads": 1,
+              "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            }
+          },
+          "same_arch": false,
+          "sensitivity_boundary_band_genes": [],
+          "source_arch": "arm64",
+          "source_sha256": "0cedae459b53ca6a1745766ea4191c9db11b28d29d1793fd9218917d47412366",
+          "target_arch": "amd64",
+          "target_sha256": "92fe26142f69b5a8f7f45b87da1bdb4dbf0be2d1ed1e3e84873ca150accd40b7",
+          "violations": []
+        },
+        "repeated-donor": {
+          "alpha": 0.05,
+          "boundary_band": [
+            0.04998,
+            0.05002
+          ],
+          "boundary_band_genes": [],
+          "checks": {
+            "artifact_binding": {
+              "compared": 4,
+              "failed": 0
+            },
+            "bh_source": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 0.0
+            },
+            "bh_target": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 0.0
+            },
+            "continuous": {
+              "compared": 1228,
+              "failed": 0,
+              "max_delta": 1.0756179946724842e-06
+            },
+            "discovery_direction": {
+              "compared": 52,
+              "failed": 0
+            },
+            "discovery_set": {
+              "compared": 192,
+              "failed": 0
+            },
+            "p_value.linear": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 1.7800985352423027e-08
+            },
+            "p_value.log10": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 2.0261531474830008e-07
+            },
+            "probability_order": {
+              "compared": 384,
+              "failed": 0
+            },
+            "q_value.linear": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 1.608378602524496e-08
+            },
+            "q_value.log10": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 2.0261531474830008e-07
+            },
+            "runtime": {
+              "compared": 2,
+              "failed": 0
+            },
+            "structure": {
+              "compared": 3012,
+              "failed": 0
+            }
+          },
+          "debug_oracle": false,
+          "family_sha256": "dde1fef7a6e2c614574f7c006ddbf5f808aaf1153a521867f070423c866e2538",
+          "fits": {
+            "source": {
+              "genes_sha256": "d5b1923487b810fdd43cd21cb36ddf90c875435ef63e5e9c889d926c0660eb4b",
+              "request_sha256": "a56e836d9920d65bdc7c24001066e35d06f947e498f8e3e819eaffdbfea72c61",
+              "solver": "dream",
+              "tested_count": 192
+            },
+            "target": {
+              "genes_sha256": "3fdc29fdfda8f6bafd41d620d9abac3371cb862399ba69678d4e36b54a8b7d90",
+              "request_sha256": "a56e836d9920d65bdc7c24001066e35d06f947e498f8e3e819eaffdbfea72c61",
+              "solver": "dream",
+              "tested_count": 192
+            }
+          },
+          "mode": "cross_arch_calibrated_match",
+          "passed": true,
+          "policy": "ADR-16",
+          "request_sha256": "a56e836d9920d65bdc7c24001066e35d06f947e498f8e3e819eaffdbfea72c61",
+          "runtimes": {
+            "source": {
+              "blas_threads": 1,
+              "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            },
+            "target": {
+              "blas_threads": 1,
+              "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            }
+          },
+          "same_arch": false,
+          "source_arch": "arm64",
+          "source_sha256": "d5b1923487b810fdd43cd21cb36ddf90c875435ef63e5e9c889d926c0660eb4b",
+          "target_arch": "amd64",
+          "target_sha256": "3fdc29fdfda8f6bafd41d620d9abac3371cb862399ba69678d4e36b54a8b7d90",
+          "violations": []
+        },
+        "unbalanced-contrast": {
+          "alpha": 0.05,
+          "boundary_band": [
+            0.04998,
+            0.05002
+          ],
+          "boundary_band_genes": [],
+          "checks": {
+            "artifact_binding": {
+              "compared": 4,
+              "failed": 0
+            },
+            "bh_source": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 0.0
+            },
+            "bh_target": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 0.0
+            },
+            "continuous": {
+              "compared": 1228,
+              "failed": 0,
+              "max_delta": 2.6290081223123707e-13
+            },
+            "discovery_direction": {
+              "compared": 46,
+              "failed": 0
+            },
+            "discovery_set": {
+              "compared": 192,
+              "failed": 0
+            },
+            "p_value.linear": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 2.3425705819590803e-14
+            },
+            "p_value.log10": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 5.3290705182007514e-14
+            },
+            "probability_order": {
+              "compared": 384,
+              "failed": 0
+            },
+            "q_value.linear": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 2.375877272697835e-14
+            },
+            "q_value.log10": {
+              "compared": 192,
+              "failed": 0,
+              "max_delta": 5.3290705182007514e-14
+            },
+            "runtime": {
+              "compared": 2,
+              "failed": 0
+            },
+            "structure": {
+              "compared": 3019,
+              "failed": 0
+            }
+          },
+          "debug_oracle": false,
+          "family_sha256": "87c90f7e5e1d8992e44fdb01765cf2029c04aa830fd3d5c1c0b1631a83e4848d",
+          "fits": {
+            "source": {
+              "genes_sha256": "12c758c65ec1012f54443f8ca678a4beb355655b3f2a830773d9f5adf93cc46a",
+              "request_sha256": "29df21d02933c2e3c27b36bb68bcca94fd16077a9817a1511141efa060493a7f",
+              "solver": "dream",
+              "tested_count": 192
+            },
+            "target": {
+              "genes_sha256": "a469868415218ecdba77d16c0012219e7767253f18d27ead7e04575ed6a53827",
+              "request_sha256": "29df21d02933c2e3c27b36bb68bcca94fd16077a9817a1511141efa060493a7f",
+              "solver": "dream",
+              "tested_count": 192
+            }
+          },
+          "mode": "cross_arch_calibrated_match",
+          "passed": true,
+          "policy": "ADR-16",
+          "request_sha256": "29df21d02933c2e3c27b36bb68bcca94fd16077a9817a1511141efa060493a7f",
+          "runtimes": {
+            "source": {
+              "blas_threads": 1,
+              "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            },
+            "target": {
+              "blas_threads": 1,
+              "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            }
+          },
+          "same_arch": false,
+          "source_arch": "arm64",
+          "source_sha256": "12c758c65ec1012f54443f8ca678a4beb355655b3f2a830773d9f5adf93cc46a",
+          "target_arch": "amd64",
+          "target_sha256": "a469868415218ecdba77d16c0012219e7767253f18d27ead7e04575ed6a53827",
+          "violations": []
+        }
+      },
+      "debug_oracle": false,
+      "mode": "cross_arch_calibrated_match",
+      "passed": true,
+      "same_arch": false,
+      "source_arch": "arm64",
+      "target_arch": "amd64",
+      "violations": []
+    },
+    "exact_match_same_arch": {
+      "cases": {
+        "declared-heterogeneous": {
+          "alpha": 0.05,
+          "boundary_band_genes": [],
+          "checks": {
+            "artifact_binding": {
+              "compared": 4,
+              "failed": 0
+            },
+            "runtime": {
+              "compared": 3,
+              "failed": 0
+            },
+            "sha256": {
+              "compared": 1,
+              "failed": 0
+            }
+          },
+          "debug_oracle": false,
+          "family_sha256": "1d97a5ad588afa6e5109520947128d53324ba757b9b407acbe5f112a21a0b5d6",
+          "fits": {
+            "source": {
+              "genes_sha256": "0cedae459b53ca6a1745766ea4191c9db11b28d29d1793fd9218917d47412366",
+              "request_sha256": "11859e6a6d7660500b4bbcba1beb4a4b841e68f4950d0cfaafc3573d71120e60",
+              "solver": "limma_voom_qw",
+              "tested_count": 192
+            },
+            "target": {
+              "genes_sha256": "0cedae459b53ca6a1745766ea4191c9db11b28d29d1793fd9218917d47412366",
+              "request_sha256": "11859e6a6d7660500b4bbcba1beb4a4b841e68f4950d0cfaafc3573d71120e60",
+              "solver": "limma_voom_qw",
+              "tested_count": 192
+            }
+          },
+          "mode": "exact_match_same_arch",
+          "passed": true,
+          "policy": "ADR-16",
+          "request_sha256": "11859e6a6d7660500b4bbcba1beb4a4b841e68f4950d0cfaafc3573d71120e60",
+          "runtimes": {
+            "source": {
+              "blas_threads": 1,
+              "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            },
+            "target": {
+              "blas_threads": 1,
+              "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            }
+          },
+          "same_arch": true,
+          "source_arch": "arm64",
+          "source_sha256": "0cedae459b53ca6a1745766ea4191c9db11b28d29d1793fd9218917d47412366",
+          "target_arch": "arm64",
+          "target_sha256": "0cedae459b53ca6a1745766ea4191c9db11b28d29d1793fd9218917d47412366",
+          "violations": []
+        },
+        "repeated-donor": {
+          "alpha": 0.05,
+          "boundary_band_genes": [],
+          "checks": {
+            "artifact_binding": {
+              "compared": 4,
+              "failed": 0
+            },
+            "runtime": {
+              "compared": 3,
+              "failed": 0
+            },
+            "sha256": {
+              "compared": 1,
+              "failed": 0
+            }
+          },
+          "debug_oracle": false,
+          "family_sha256": "dde1fef7a6e2c614574f7c006ddbf5f808aaf1153a521867f070423c866e2538",
+          "fits": {
+            "source": {
+              "genes_sha256": "d5b1923487b810fdd43cd21cb36ddf90c875435ef63e5e9c889d926c0660eb4b",
+              "request_sha256": "a56e836d9920d65bdc7c24001066e35d06f947e498f8e3e819eaffdbfea72c61",
+              "solver": "dream",
+              "tested_count": 192
+            },
+            "target": {
+              "genes_sha256": "d5b1923487b810fdd43cd21cb36ddf90c875435ef63e5e9c889d926c0660eb4b",
+              "request_sha256": "a56e836d9920d65bdc7c24001066e35d06f947e498f8e3e819eaffdbfea72c61",
+              "solver": "dream",
+              "tested_count": 192
+            }
+          },
+          "mode": "exact_match_same_arch",
+          "passed": true,
+          "policy": "ADR-16",
+          "request_sha256": "a56e836d9920d65bdc7c24001066e35d06f947e498f8e3e819eaffdbfea72c61",
+          "runtimes": {
+            "source": {
+              "blas_threads": 1,
+              "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            },
+            "target": {
+              "blas_threads": 1,
+              "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            }
+          },
+          "same_arch": true,
+          "source_arch": "arm64",
+          "source_sha256": "d5b1923487b810fdd43cd21cb36ddf90c875435ef63e5e9c889d926c0660eb4b",
+          "target_arch": "arm64",
+          "target_sha256": "d5b1923487b810fdd43cd21cb36ddf90c875435ef63e5e9c889d926c0660eb4b",
+          "violations": []
+        },
+        "unbalanced-contrast": {
+          "alpha": 0.05,
+          "boundary_band_genes": [],
+          "checks": {
+            "artifact_binding": {
+              "compared": 4,
+              "failed": 0
+            },
+            "runtime": {
+              "compared": 3,
+              "failed": 0
+            },
+            "sha256": {
+              "compared": 1,
+              "failed": 0
+            }
+          },
+          "debug_oracle": false,
+          "family_sha256": "87c90f7e5e1d8992e44fdb01765cf2029c04aa830fd3d5c1c0b1631a83e4848d",
+          "fits": {
+            "source": {
+              "genes_sha256": "12c758c65ec1012f54443f8ca678a4beb355655b3f2a830773d9f5adf93cc46a",
+              "request_sha256": "29df21d02933c2e3c27b36bb68bcca94fd16077a9817a1511141efa060493a7f",
+              "solver": "dream",
+              "tested_count": 192
+            },
+            "target": {
+              "genes_sha256": "12c758c65ec1012f54443f8ca678a4beb355655b3f2a830773d9f5adf93cc46a",
+              "request_sha256": "29df21d02933c2e3c27b36bb68bcca94fd16077a9817a1511141efa060493a7f",
+              "solver": "dream",
+              "tested_count": 192
+            }
+          },
+          "mode": "exact_match_same_arch",
+          "passed": true,
+          "policy": "ADR-16",
+          "request_sha256": "29df21d02933c2e3c27b36bb68bcca94fd16077a9817a1511141efa060493a7f",
+          "runtimes": {
+            "source": {
+              "blas_threads": 1,
+              "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            },
+            "target": {
+              "blas_threads": 1,
+              "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+              "package_versions": {
+                "BiocParallel": "1.46.0",
+                "Bioconductor": "3.23.1",
+                "DESeq2": "1.52.0",
+                "R": "4.6.1",
+                "edgeR": "4.10.7",
+                "h5py": "3.16.0",
+                "jsonlite": "2.0.0",
+                "limma": "3.68.5",
+                "numpy": "2.5.3",
+                "pyarrow": "23.0.1",
+                "python": "3.13.18",
+                "scipy": "1.18.1",
+                "statmod": "1.5.2",
+                "variancePartition": "1.42.0"
+              }
+            }
+          },
+          "same_arch": true,
+          "source_arch": "arm64",
+          "source_sha256": "12c758c65ec1012f54443f8ca678a4beb355655b3f2a830773d9f5adf93cc46a",
+          "target_arch": "arm64",
+          "target_sha256": "12c758c65ec1012f54443f8ca678a4beb355655b3f2a830773d9f5adf93cc46a",
+          "violations": []
+        }
+      },
+      "debug_oracle": false,
+      "mode": "exact_match_same_arch",
+      "passed": true,
+      "same_arch": true,
+      "source_arch": "arm64",
+      "target_arch": "arm64",
+      "violations": []
+    }
+  },
+  "baked_baseline_cross_arch": {
+    "cases": {
+      "bi-confounded-000": {
+        "passed": true,
+        "status": "refused"
+      },
+      "bi-planted-000": {
+        "alpha": 0.05,
+        "boundary_band": [
+          0.04998,
+          0.05002
+        ],
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "bh_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "continuous": {
+            "compared": 404,
+            "failed": 0,
+            "max_delta": 4.808931031163866e-13
+          },
+          "discovery_direction": {
+            "compared": 54,
+            "failed": 0
+          },
+          "discovery_set": {
+            "compared": 192,
+            "failed": 0
+          },
+          "p_value.linear": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 2.8557933795525514e-11
+          },
+          "p_value.log10": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 1.241970426241884e-11
+          },
+          "probability_order": {
+            "compared": 384,
+            "failed": 0
+          },
+          "q_value.linear": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 2.8557933795525514e-11
+          },
+          "q_value.log10": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 1.241970426241884e-11
+          },
+          "runtime": {
+            "compared": 2,
+            "failed": 0
+          },
+          "structure": {
+            "compared": 2167,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "000b624cbd9b5141dec31433264f885e4d9ce48c0cb80e1c0a704e2c105488d4",
+        "fits": {
+          "source": {
+            "genes_sha256": "f4144ba6987cf6dbb738c85f994edfb847cc54ea686b557129b76265bee379ac",
+            "request_sha256": "059dcf5336f80cef3e0678a5b810ef82b0d468cfe7e2132058f8268469efd4a9",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "f5da6e3db3ec9e6258cc4f2260ba95715589675785567ebbd868abf5fc9030b3",
+            "request_sha256": "059dcf5336f80cef3e0678a5b810ef82b0d468cfe7e2132058f8268469efd4a9",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "cross_arch_calibrated_match",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "059dcf5336f80cef3e0678a5b810ef82b0d468cfe7e2132058f8268469efd4a9",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": false,
+        "source_arch": "arm64",
+        "source_sha256": "f4144ba6987cf6dbb738c85f994edfb847cc54ea686b557129b76265bee379ac",
+        "target_arch": "amd64",
+        "target_sha256": "f5da6e3db3ec9e6258cc4f2260ba95715589675785567ebbd868abf5fc9030b3",
+        "violations": []
+      },
+      "bp-planted-000": {
+        "alpha": 0.05,
+        "boundary_band": [
+          0.04998,
+          0.05002
+        ],
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "bh_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "continuous": {
+            "compared": 404,
+            "failed": 0,
+            "max_delta": 3.013145288832675e-12
+          },
+          "discovery_direction": {
+            "compared": 54,
+            "failed": 0
+          },
+          "discovery_set": {
+            "compared": 192,
+            "failed": 0
+          },
+          "p_value.linear": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 1.593136733646361e-11
+          },
+          "p_value.log10": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 2.7685054249104724e-09
+          },
+          "probability_order": {
+            "compared": 384,
+            "failed": 0
+          },
+          "q_value.linear": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 5.7776339268400534e-11
+          },
+          "q_value.log10": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 2.0359518515533637e-09
+          },
+          "runtime": {
+            "compared": 2,
+            "failed": 0
+          },
+          "structure": {
+            "compared": 2167,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "53271753bc34224f27a47ac62e56678c30ebbd0b1539603c9d0d93cec6ec1552",
+        "fits": {
+          "source": {
+            "genes_sha256": "963f7eb39b291895a239457443ac6aa4d4938c031de8a8d2cef42c72c8a1ef88",
+            "request_sha256": "491027ae10c5624991a05732d2be8c93ab6d173904c2aa63d2be1b0f6f209eed",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "02f5c7dce8a0ef1a8e51e3eb64b937ec356d00a586318ff9d52f01ddaebba0ec",
+            "request_sha256": "491027ae10c5624991a05732d2be8c93ab6d173904c2aa63d2be1b0f6f209eed",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "cross_arch_calibrated_match",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "491027ae10c5624991a05732d2be8c93ab6d173904c2aa63d2be1b0f6f209eed",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": false,
+        "source_arch": "arm64",
+        "source_sha256": "963f7eb39b291895a239457443ac6aa4d4938c031de8a8d2cef42c72c8a1ef88",
+        "target_arch": "amd64",
+        "target_sha256": "02f5c7dce8a0ef1a8e51e3eb64b937ec356d00a586318ff9d52f01ddaebba0ec",
+        "violations": []
+      },
+      "pp-planted-000": {
+        "alpha": 0.05,
+        "boundary_band": [
+          0.04998,
+          0.05002
+        ],
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "bh_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "continuous": {
+            "compared": 404,
+            "failed": 0,
+            "max_delta": 3.0430033493011877e-12
+          },
+          "discovery_direction": {
+            "compared": 48,
+            "failed": 0
+          },
+          "discovery_set": {
+            "compared": 192,
+            "failed": 0
+          },
+          "p_value.linear": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 2.4094837236532385e-11
+          },
+          "p_value.log10": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 1.3002754428725893e-10
+          },
+          "probability_order": {
+            "compared": 384,
+            "failed": 0
+          },
+          "q_value.linear": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 2.4094837236532385e-11
+          },
+          "q_value.log10": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 1.3002576793041953e-10
+          },
+          "runtime": {
+            "compared": 2,
+            "failed": 0
+          },
+          "structure": {
+            "compared": 2167,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "41191814bf7f1d85343866502ee84832974f6246e945b1be975944479760a31f",
+        "fits": {
+          "source": {
+            "genes_sha256": "986027d3cbd954e91d46d19451fe240148e33df6b962fee3958ea07a4e8b89e5",
+            "request_sha256": "c14d9af4f9c1d8268298630fb53c06921602c316d8671ffd65725d9aebcaf942",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "b044e5679989e8a49cc13070d9e2abcce0a51cea292a3c50e1a9d623dfc47d43",
+            "request_sha256": "c14d9af4f9c1d8268298630fb53c06921602c316d8671ffd65725d9aebcaf942",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "cross_arch_calibrated_match",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "c14d9af4f9c1d8268298630fb53c06921602c316d8671ffd65725d9aebcaf942",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": false,
+        "source_arch": "arm64",
+        "source_sha256": "986027d3cbd954e91d46d19451fe240148e33df6b962fee3958ea07a4e8b89e5",
+        "target_arch": "amd64",
+        "target_sha256": "b044e5679989e8a49cc13070d9e2abcce0a51cea292a3c50e1a9d623dfc47d43",
+        "violations": []
+      },
+      "si-planted-000": {
+        "alpha": 0.05,
+        "boundary_band": [
+          0.04998,
+          0.05002
+        ],
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "bh_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "continuous": {
+            "compared": 404,
+            "failed": 14,
+            "max_delta": 1.461547992631651e-06
+          },
+          "discovery_direction": {
+            "compared": 52,
+            "failed": 0
+          },
+          "discovery_set": {
+            "compared": 192,
+            "failed": 0
+          },
+          "p_value.linear": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 3.0645224946557192e-06
+          },
+          "p_value.log10": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 1.9881479149219672e-05
+          },
+          "probability_order": {
+            "compared": 384,
+            "failed": 0
+          },
+          "q_value.linear": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 4.4019891326518845e-06
+          },
+          "q_value.log10": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 1.5338343008153288e-05
+          },
+          "runtime": {
+            "compared": 2,
+            "failed": 0
+          },
+          "structure": {
+            "compared": 2167,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "78eca6deec488eab270edeaabe9bb6c3651c3690801794754764a8f5ca1587bf",
+        "fits": {
+          "source": {
+            "genes_sha256": "95a793c7ba4ee54c449d98674971ac216c721c7ec7aae01a39e3b7d78a43efdc",
+            "request_sha256": "07a0e4120a035fa7534c8feaee4f7b1414152ba1b969e389aaf578a1999a8d95",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "052f4ae9f1a2d6057dfcdb57f5647cd4562753cf1bd2198f85cd6e9f3e8ab800",
+            "request_sha256": "07a0e4120a035fa7534c8feaee4f7b1414152ba1b969e389aaf578a1999a8d95",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "cross_arch_calibrated_match",
+        "passed": false,
+        "policy": "ADR-16",
+        "request_sha256": "07a0e4120a035fa7534c8feaee4f7b1414152ba1b969e389aaf578a1999a8d95",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": false,
+        "source_arch": "arm64",
+        "source_sha256": "95a793c7ba4ee54c449d98674971ac216c721c7ec7aae01a39e3b7d78a43efdc",
+        "target_arch": "amd64",
+        "target_sha256": "052f4ae9f1a2d6057dfcdb57f5647cd4562753cf1bd2198f85cd6e9f3e8ab800",
+        "violations": [
+          {
+            "check": "continuous",
+            "delta": 1.0392132282939504e-06,
+            "field": "values[0]",
+            "gene_id": "g025",
+            "limit": 3.27330267887958e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 3.117039573223568e-07,
+            "field": "values[0]",
+            "gene_id": "g030",
+            "limit": 2.261620124334978e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 9.420550342587042e-07,
+            "field": "values[0]",
+            "gene_id": "g104",
+            "limit": 4.0761793875155077e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 3.614279961705602e-07,
+            "field": "values[0]",
+            "gene_id": "g138",
+            "limit": 3.5343217872658054e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 1.021764692923921e-06,
+            "field": "values[0]",
+            "gene_id": "g163",
+            "limit": 9.740857744928378e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 3.5374339376822994e-07,
+            "field": "values[0]",
+            "gene_id": "g170",
+            "limit": 3.3798817827658064e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 4.881096048320321e-07,
+            "field": "values[0]",
+            "gene_id": "g177",
+            "limit": 2.940192658227815e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 1.0392132282939504e-06,
+            "field": "effect",
+            "gene_id": "g025",
+            "limit": 3.27330267887958e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 3.117039573223568e-07,
+            "field": "effect",
+            "gene_id": "g030",
+            "limit": 2.261620124334978e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 9.420550342587042e-07,
+            "field": "effect",
+            "gene_id": "g104",
+            "limit": 4.0761793875155077e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 3.614279961705602e-07,
+            "field": "effect",
+            "gene_id": "g138",
+            "limit": 3.5343217872658054e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 1.021764692923921e-06,
+            "field": "effect",
+            "gene_id": "g163",
+            "limit": 9.740857744928378e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 3.5374339376822994e-07,
+            "field": "effect",
+            "gene_id": "g170",
+            "limit": 3.3798817827658064e-07
+          },
+          {
+            "check": "continuous",
+            "delta": 4.881096048320321e-07,
+            "field": "effect",
+            "gene_id": "g177",
+            "limit": 2.940192658227815e-07
+          }
+        ]
+      },
+      "sp-planted-000": {
+        "alpha": 0.05,
+        "boundary_band": [
+          0.04998,
+          0.05002
+        ],
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "bh_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "continuous": {
+            "compared": 404,
+            "failed": 0,
+            "max_delta": 1.0428477525969981e-11
+          },
+          "discovery_direction": {
+            "compared": 52,
+            "failed": 0
+          },
+          "discovery_set": {
+            "compared": 192,
+            "failed": 0
+          },
+          "p_value.linear": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 3.4346414601316155e-11
+          },
+          "p_value.log10": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 6.830358501019873e-11
+          },
+          "probability_order": {
+            "compared": 384,
+            "failed": 0
+          },
+          "q_value.linear": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 3.673117365821099e-11
+          },
+          "q_value.log10": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 6.830358501019873e-11
+          },
+          "runtime": {
+            "compared": 2,
+            "failed": 0
+          },
+          "structure": {
+            "compared": 2167,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "efb818407d7451d59536974f2738237589ba154b71f791e1eb2b806a8448d85d",
+        "fits": {
+          "source": {
+            "genes_sha256": "18e4d5d61b41ffb3698da5a79265e4f19c4c55eacbec40e22672c46945d9799f",
+            "request_sha256": "7b9885bff0c0827c49d917a4f37e11148329aa767ab897a1f9a09ad0c70f5c96",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "4dd165bd84a66b7292352f1090d34955a4d1ac2cbd388115020217ee37d7d59f",
+            "request_sha256": "7b9885bff0c0827c49d917a4f37e11148329aa767ab897a1f9a09ad0c70f5c96",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "cross_arch_calibrated_match",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "7b9885bff0c0827c49d917a4f37e11148329aa767ab897a1f9a09ad0c70f5c96",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": false,
+        "source_arch": "arm64",
+        "source_sha256": "18e4d5d61b41ffb3698da5a79265e4f19c4c55eacbec40e22672c46945d9799f",
+        "target_arch": "amd64",
+        "target_sha256": "4dd165bd84a66b7292352f1090d34955a4d1ac2cbd388115020217ee37d7d59f",
+        "violations": []
+      }
+    },
+    "debug_oracle": false,
+    "mode": "cross_arch_calibrated_match",
+    "passed": false,
+    "same_arch": false,
+    "source_arch": "arm64",
+    "target_arch": "amd64",
+    "violations": [
+      "si-planted-000: Sentinel observations or verification checks failed"
+    ]
+  },
+  "cross_arch_calibrated_match": {
+    "cases": {
+      "bi-confounded-000": {
+        "passed": true,
+        "status": "refused"
+      },
+      "bi-planted-000": {
+        "alpha": 0.05,
+        "boundary_band": [
+          0.04998,
+          0.05002
+        ],
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "bh_sensitivity_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_sensitivity_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "continuous": {
+            "compared": 2444,
+            "failed": 0,
+            "max_delta": 1.6972734329101513e-10
+          },
+          "discovery_direction": {
+            "compared": 81,
+            "failed": 0
+          },
+          "discovery_set": {
+            "compared": 384,
+            "failed": 0
+          },
+          "p_value.linear": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 7.673861546209082e-12
+          },
+          "p_value.log10": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 1.3033130130679638e-11
+          },
+          "probability_order": {
+            "compared": 768,
+            "failed": 0
+          },
+          "q_value.linear": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 7.673861546209082e-12
+          },
+          "q_value.log10": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 1.3033130130679638e-11
+          },
+          "runtime": {
+            "compared": 2,
+            "failed": 0
+          },
+          "structure": {
+            "compared": 5198,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "000b624cbd9b5141dec31433264f885e4d9ce48c0cb80e1c0a704e2c105488d4",
+        "fits": {
+          "source": {
+            "genes_sha256": "1ed29a38d288773ee01f4863cecc89a5d5391eb48a23122586a3d7bf32ebdc53",
+            "request_sha256": "059dcf5336f80cef3e0678a5b810ef82b0d468cfe7e2132058f8268469efd4a9",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "d194e5703d98908897d1ceb6ea1a14fb5655ad71032824cca777e988f83cdef6",
+            "request_sha256": "059dcf5336f80cef3e0678a5b810ef82b0d468cfe7e2132058f8268469efd4a9",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "cross_arch_calibrated_match",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "059dcf5336f80cef3e0678a5b810ef82b0d468cfe7e2132058f8268469efd4a9",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": false,
+        "sensitivity_boundary_band_genes": [],
+        "source_arch": "arm64",
+        "source_sha256": "1ed29a38d288773ee01f4863cecc89a5d5391eb48a23122586a3d7bf32ebdc53",
+        "target_arch": "amd64",
+        "target_sha256": "d194e5703d98908897d1ceb6ea1a14fb5655ad71032824cca777e988f83cdef6",
+        "violations": []
+      },
+      "bp-planted-000": {
+        "alpha": 0.05,
+        "boundary_band": [
+          0.04998,
+          0.05002
+        ],
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "bh_sensitivity_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_sensitivity_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "continuous": {
+            "compared": 2444,
+            "failed": 0,
+            "max_delta": 2.1480673240148462e-08
+          },
+          "discovery_direction": {
+            "compared": 78,
+            "failed": 0
+          },
+          "discovery_set": {
+            "compared": 384,
+            "failed": 0
+          },
+          "p_value.linear": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 1.3809497989569763e-10
+          },
+          "p_value.log10": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 3.0523423788508808e-09
+          },
+          "probability_order": {
+            "compared": 768,
+            "failed": 0
+          },
+          "q_value.linear": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 2.121138820143642e-10
+          },
+          "q_value.log10": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 3.0523423788508808e-09
+          },
+          "runtime": {
+            "compared": 2,
+            "failed": 0
+          },
+          "structure": {
+            "compared": 5198,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "53271753bc34224f27a47ac62e56678c30ebbd0b1539603c9d0d93cec6ec1552",
+        "fits": {
+          "source": {
+            "genes_sha256": "37d8698b8eda3379afcf8e6599454b3d64b0f7a069c3228c9cefae7911724fce",
+            "request_sha256": "491027ae10c5624991a05732d2be8c93ab6d173904c2aa63d2be1b0f6f209eed",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "853ec9f5a9d6570ab7a450b3d78c15155f283a0dd823e0b22ce4556aa0b5ebe3",
+            "request_sha256": "491027ae10c5624991a05732d2be8c93ab6d173904c2aa63d2be1b0f6f209eed",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "cross_arch_calibrated_match",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "491027ae10c5624991a05732d2be8c93ab6d173904c2aa63d2be1b0f6f209eed",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": false,
+        "sensitivity_boundary_band_genes": [],
+        "source_arch": "arm64",
+        "source_sha256": "37d8698b8eda3379afcf8e6599454b3d64b0f7a069c3228c9cefae7911724fce",
+        "target_arch": "amd64",
+        "target_sha256": "853ec9f5a9d6570ab7a450b3d78c15155f283a0dd823e0b22ce4556aa0b5ebe3",
+        "violations": []
+      },
+      "pp-planted-000": {
+        "alpha": 0.05,
+        "boundary_band": [
+          0.04998,
+          0.05002
+        ],
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "bh_sensitivity_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_sensitivity_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "continuous": {
+            "compared": 2444,
+            "failed": 0,
+            "max_delta": 2.034568069575471e-10
+          },
+          "discovery_direction": {
+            "compared": 72,
+            "failed": 0
+          },
+          "discovery_set": {
+            "compared": 384,
+            "failed": 0
+          },
+          "p_value.linear": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 2.8107072225225238e-11
+          },
+          "p_value.log10": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 2.283684352732962e-11
+          },
+          "probability_order": {
+            "compared": 768,
+            "failed": 0
+          },
+          "q_value.linear": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 3.3067992788460288e-12
+          },
+          "q_value.log10": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 2.283684352732962e-11
+          },
+          "runtime": {
+            "compared": 2,
+            "failed": 0
+          },
+          "structure": {
+            "compared": 5198,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "41191814bf7f1d85343866502ee84832974f6246e945b1be975944479760a31f",
+        "fits": {
+          "source": {
+            "genes_sha256": "dd3d4bbfd08ae7b2df5fdc5b2a316ff800bc504c6feb8021a7278cdcd42d06c5",
+            "request_sha256": "c14d9af4f9c1d8268298630fb53c06921602c316d8671ffd65725d9aebcaf942",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "6b87ac501bf4def6bc4ee1c789ef4a047904f8de5ff0ad29f7f749cec982bebf",
+            "request_sha256": "c14d9af4f9c1d8268298630fb53c06921602c316d8671ffd65725d9aebcaf942",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "cross_arch_calibrated_match",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "c14d9af4f9c1d8268298630fb53c06921602c316d8671ffd65725d9aebcaf942",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": false,
+        "sensitivity_boundary_band_genes": [],
+        "source_arch": "arm64",
+        "source_sha256": "dd3d4bbfd08ae7b2df5fdc5b2a316ff800bc504c6feb8021a7278cdcd42d06c5",
+        "target_arch": "amd64",
+        "target_sha256": "6b87ac501bf4def6bc4ee1c789ef4a047904f8de5ff0ad29f7f749cec982bebf",
+        "violations": []
+      },
+      "si-planted-000": {
+        "alpha": 0.05,
+        "boundary_band": [
+          0.04998,
+          0.05002
+        ],
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "bh_sensitivity_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_sensitivity_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "continuous": {
+            "compared": 2444,
+            "failed": 0,
+            "max_delta": 4.6029049372009467e-07
+          },
+          "discovery_direction": {
+            "compared": 77,
+            "failed": 0
+          },
+          "discovery_set": {
+            "compared": 384,
+            "failed": 0
+          },
+          "p_value.linear": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 6.13904482804628e-11
+          },
+          "p_value.log10": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 3.790850300333659e-09
+          },
+          "probability_order": {
+            "compared": 768,
+            "failed": 0
+          },
+          "q_value.linear": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 1.2657330739074268e-10
+          },
+          "q_value.log10": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 3.790850300333659e-09
+          },
+          "runtime": {
+            "compared": 2,
+            "failed": 0
+          },
+          "structure": {
+            "compared": 5198,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "78eca6deec488eab270edeaabe9bb6c3651c3690801794754764a8f5ca1587bf",
+        "fits": {
+          "source": {
+            "genes_sha256": "752ed75e8d86634e95b33f7792c5bad3ca0872238405cd6787f991ff5a3dcc7d",
+            "request_sha256": "07a0e4120a035fa7534c8feaee4f7b1414152ba1b969e389aaf578a1999a8d95",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "362e6da32f97305b021755bc2e0f56dea6f81914bd3b398574e7bc409ad538c1",
+            "request_sha256": "07a0e4120a035fa7534c8feaee4f7b1414152ba1b969e389aaf578a1999a8d95",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "cross_arch_calibrated_match",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "07a0e4120a035fa7534c8feaee4f7b1414152ba1b969e389aaf578a1999a8d95",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": false,
+        "sensitivity_boundary_band_genes": [],
+        "source_arch": "arm64",
+        "source_sha256": "752ed75e8d86634e95b33f7792c5bad3ca0872238405cd6787f991ff5a3dcc7d",
+        "target_arch": "amd64",
+        "target_sha256": "362e6da32f97305b021755bc2e0f56dea6f81914bd3b398574e7bc409ad538c1",
+        "violations": []
+      },
+      "sp-planted-000": {
+        "alpha": 0.05,
+        "boundary_band": [
+          0.04998,
+          0.05002
+        ],
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "bh_sensitivity_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_sensitivity_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_source": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "bh_target": {
+            "compared": 192,
+            "failed": 0,
+            "max_delta": 0.0
+          },
+          "continuous": {
+            "compared": 2444,
+            "failed": 0,
+            "max_delta": 4.803411002285429e-10
+          },
+          "discovery_direction": {
+            "compared": 78,
+            "failed": 0
+          },
+          "discovery_set": {
+            "compared": 384,
+            "failed": 0
+          },
+          "p_value.linear": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 5.444311668156843e-12
+          },
+          "p_value.log10": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 3.149303040572704e-11
+          },
+          "probability_order": {
+            "compared": 768,
+            "failed": 0
+          },
+          "q_value.linear": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 5.2164939035037605e-12
+          },
+          "q_value.log10": {
+            "compared": 384,
+            "failed": 0,
+            "max_delta": 3.0945912499191763e-11
+          },
+          "runtime": {
+            "compared": 2,
+            "failed": 0
+          },
+          "structure": {
+            "compared": 5198,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "efb818407d7451d59536974f2738237589ba154b71f791e1eb2b806a8448d85d",
+        "fits": {
+          "source": {
+            "genes_sha256": "8e5bc1dce422125d1f0db72adff6d2a6ba6499e6b503a1f60d9578822db35f87",
+            "request_sha256": "7b9885bff0c0827c49d917a4f37e11148329aa767ab897a1f9a09ad0c70f5c96",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "0e07e5e2a1caeb7f095e708e855ac7dcc96a7e8ab1598d8094991e7c4fa64f4a",
+            "request_sha256": "7b9885bff0c0827c49d917a4f37e11148329aa767ab897a1f9a09ad0c70f5c96",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "cross_arch_calibrated_match",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "7b9885bff0c0827c49d917a4f37e11148329aa767ab897a1f9a09ad0c70f5c96",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:76903029805e2cbf1e1ed3df9f075ca53934e5026116b51113436ccf9351e1b8",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": false,
+        "sensitivity_boundary_band_genes": [],
+        "source_arch": "arm64",
+        "source_sha256": "8e5bc1dce422125d1f0db72adff6d2a6ba6499e6b503a1f60d9578822db35f87",
+        "target_arch": "amd64",
+        "target_sha256": "0e07e5e2a1caeb7f095e708e855ac7dcc96a7e8ab1598d8094991e7c4fa64f4a",
+        "violations": []
+      }
+    },
+    "debug_oracle": false,
+    "mode": "cross_arch_calibrated_match",
+    "passed": true,
+    "same_arch": false,
+    "source_arch": "arm64",
+    "target_arch": "amd64",
+    "violations": []
+  },
+  "exact_match_same_arch": {
+    "cases": {
+      "bi-confounded-000": {
+        "passed": true,
+        "status": "refused"
+      },
+      "bi-planted-000": {
+        "alpha": 0.05,
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "runtime": {
+            "compared": 3,
+            "failed": 0
+          },
+          "sha256": {
+            "compared": 1,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "000b624cbd9b5141dec31433264f885e4d9ce48c0cb80e1c0a704e2c105488d4",
+        "fits": {
+          "source": {
+            "genes_sha256": "1ed29a38d288773ee01f4863cecc89a5d5391eb48a23122586a3d7bf32ebdc53",
+            "request_sha256": "059dcf5336f80cef3e0678a5b810ef82b0d468cfe7e2132058f8268469efd4a9",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "1ed29a38d288773ee01f4863cecc89a5d5391eb48a23122586a3d7bf32ebdc53",
+            "request_sha256": "059dcf5336f80cef3e0678a5b810ef82b0d468cfe7e2132058f8268469efd4a9",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "exact_match_same_arch",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "059dcf5336f80cef3e0678a5b810ef82b0d468cfe7e2132058f8268469efd4a9",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": true,
+        "source_arch": "arm64",
+        "source_sha256": "1ed29a38d288773ee01f4863cecc89a5d5391eb48a23122586a3d7bf32ebdc53",
+        "target_arch": "arm64",
+        "target_sha256": "1ed29a38d288773ee01f4863cecc89a5d5391eb48a23122586a3d7bf32ebdc53",
+        "violations": []
+      },
+      "bp-planted-000": {
+        "alpha": 0.05,
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "runtime": {
+            "compared": 3,
+            "failed": 0
+          },
+          "sha256": {
+            "compared": 1,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "53271753bc34224f27a47ac62e56678c30ebbd0b1539603c9d0d93cec6ec1552",
+        "fits": {
+          "source": {
+            "genes_sha256": "37d8698b8eda3379afcf8e6599454b3d64b0f7a069c3228c9cefae7911724fce",
+            "request_sha256": "491027ae10c5624991a05732d2be8c93ab6d173904c2aa63d2be1b0f6f209eed",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "37d8698b8eda3379afcf8e6599454b3d64b0f7a069c3228c9cefae7911724fce",
+            "request_sha256": "491027ae10c5624991a05732d2be8c93ab6d173904c2aa63d2be1b0f6f209eed",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "exact_match_same_arch",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "491027ae10c5624991a05732d2be8c93ab6d173904c2aa63d2be1b0f6f209eed",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": true,
+        "source_arch": "arm64",
+        "source_sha256": "37d8698b8eda3379afcf8e6599454b3d64b0f7a069c3228c9cefae7911724fce",
+        "target_arch": "arm64",
+        "target_sha256": "37d8698b8eda3379afcf8e6599454b3d64b0f7a069c3228c9cefae7911724fce",
+        "violations": []
+      },
+      "pp-planted-000": {
+        "alpha": 0.05,
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "runtime": {
+            "compared": 3,
+            "failed": 0
+          },
+          "sha256": {
+            "compared": 1,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "41191814bf7f1d85343866502ee84832974f6246e945b1be975944479760a31f",
+        "fits": {
+          "source": {
+            "genes_sha256": "dd3d4bbfd08ae7b2df5fdc5b2a316ff800bc504c6feb8021a7278cdcd42d06c5",
+            "request_sha256": "c14d9af4f9c1d8268298630fb53c06921602c316d8671ffd65725d9aebcaf942",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "dd3d4bbfd08ae7b2df5fdc5b2a316ff800bc504c6feb8021a7278cdcd42d06c5",
+            "request_sha256": "c14d9af4f9c1d8268298630fb53c06921602c316d8671ffd65725d9aebcaf942",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "exact_match_same_arch",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "c14d9af4f9c1d8268298630fb53c06921602c316d8671ffd65725d9aebcaf942",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": true,
+        "source_arch": "arm64",
+        "source_sha256": "dd3d4bbfd08ae7b2df5fdc5b2a316ff800bc504c6feb8021a7278cdcd42d06c5",
+        "target_arch": "arm64",
+        "target_sha256": "dd3d4bbfd08ae7b2df5fdc5b2a316ff800bc504c6feb8021a7278cdcd42d06c5",
+        "violations": []
+      },
+      "si-planted-000": {
+        "alpha": 0.05,
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "runtime": {
+            "compared": 3,
+            "failed": 0
+          },
+          "sha256": {
+            "compared": 1,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "78eca6deec488eab270edeaabe9bb6c3651c3690801794754764a8f5ca1587bf",
+        "fits": {
+          "source": {
+            "genes_sha256": "752ed75e8d86634e95b33f7792c5bad3ca0872238405cd6787f991ff5a3dcc7d",
+            "request_sha256": "07a0e4120a035fa7534c8feaee4f7b1414152ba1b969e389aaf578a1999a8d95",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "752ed75e8d86634e95b33f7792c5bad3ca0872238405cd6787f991ff5a3dcc7d",
+            "request_sha256": "07a0e4120a035fa7534c8feaee4f7b1414152ba1b969e389aaf578a1999a8d95",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "exact_match_same_arch",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "07a0e4120a035fa7534c8feaee4f7b1414152ba1b969e389aaf578a1999a8d95",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": true,
+        "source_arch": "arm64",
+        "source_sha256": "752ed75e8d86634e95b33f7792c5bad3ca0872238405cd6787f991ff5a3dcc7d",
+        "target_arch": "arm64",
+        "target_sha256": "752ed75e8d86634e95b33f7792c5bad3ca0872238405cd6787f991ff5a3dcc7d",
+        "violations": []
+      },
+      "sp-planted-000": {
+        "alpha": 0.05,
+        "boundary_band_genes": [],
+        "checks": {
+          "artifact_binding": {
+            "compared": 4,
+            "failed": 0
+          },
+          "runtime": {
+            "compared": 3,
+            "failed": 0
+          },
+          "sha256": {
+            "compared": 1,
+            "failed": 0
+          }
+        },
+        "debug_oracle": false,
+        "family_sha256": "efb818407d7451d59536974f2738237589ba154b71f791e1eb2b806a8448d85d",
+        "fits": {
+          "source": {
+            "genes_sha256": "8e5bc1dce422125d1f0db72adff6d2a6ba6499e6b503a1f60d9578822db35f87",
+            "request_sha256": "7b9885bff0c0827c49d917a4f37e11148329aa767ab897a1f9a09ad0c70f5c96",
+            "solver": "edger_v4",
+            "tested_count": 192
+          },
+          "target": {
+            "genes_sha256": "8e5bc1dce422125d1f0db72adff6d2a6ba6499e6b503a1f60d9578822db35f87",
+            "request_sha256": "7b9885bff0c0827c49d917a4f37e11148329aa767ab897a1f9a09ad0c70f5c96",
+            "solver": "edger_v4",
+            "tested_count": 192
+          }
+        },
+        "mode": "exact_match_same_arch",
+        "passed": true,
+        "policy": "ADR-16",
+        "request_sha256": "7b9885bff0c0827c49d917a4f37e11148329aa767ab897a1f9a09ad0c70f5c96",
+        "runtimes": {
+          "source": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          },
+          "target": {
+            "blas_threads": 1,
+            "image_digest": "sha256:9d845943fc1754d9338330f9f5275848b95a65932ca7a41c3a89c369e63d0b98",
+            "package_versions": {
+              "BiocParallel": "1.46.0",
+              "Bioconductor": "3.23.1",
+              "DESeq2": "1.52.0",
+              "R": "4.6.1",
+              "edgeR": "4.10.7",
+              "h5py": "3.16.0",
+              "jsonlite": "2.0.0",
+              "limma": "3.68.5",
+              "numpy": "2.5.3",
+              "pyarrow": "23.0.1",
+              "python": "3.13.18",
+              "scipy": "1.18.1",
+              "statmod": "1.5.2",
+              "variancePartition": "1.42.0"
+            }
+          }
+        },
+        "same_arch": true,
+        "source_arch": "arm64",
+        "source_sha256": "8e5bc1dce422125d1f0db72adff6d2a6ba6499e6b503a1f60d9578822db35f87",
+        "target_arch": "arm64",
+        "target_sha256": "8e5bc1dce422125d1f0db72adff6d2a6ba6499e6b503a1f60d9578822db35f87",
+        "violations": []
+      }
+    },
+    "debug_oracle": false,
+    "mode": "exact_match_same_arch",
+    "passed": true,
+    "same_arch": true,
+    "source_arch": "arm64",
+    "target_arch": "arm64",
+    "violations": []
+  },
+  "historical_si_effects": {
+    "g025": {
+      "baked-amd64": -0.022731987575567502,
+      "baked-arm64": -0.022733026788795796,
+      "replay-amd64": -0.0651542717050372,
+      "replay-arm64": -0.06515427170501825
+    },
+    "g030": {
+      "baked-amd64": -0.01261620124334978,
+      "baked-arm64": -0.012615889539392458,
+      "replay-amd64": -0.0538295895803248,
+      "replay-arm64": -0.05382958958032948
+    },
+    "g104": {
+      "baked-amd64": -0.030760851820120817,
+      "baked-arm64": -0.030761793875155076,
+      "replay-amd64": -0.08548420407800518,
+      "replay-arm64": -0.08548420407798869
+    },
+    "g138": {
+      "baked-amd64": 0.02534321787265805,
+      "baked-arm64": 0.02534285644466188,
+      "replay-amd64": -0.013413166887614788,
+      "replay-arm64": -0.013413166887607157
+    },
+    "g163": {
+      "baked-amd64": 0.08740857744928378,
+      "baked-arm64": 0.08740755568459085,
+      "replay-amd64": 0.0566554662963893,
+      "replay-arm64": 0.05665546629640943
+    },
+    "g170": {
+      "baked-amd64": 0.023798817827658064,
+      "baked-arm64": 0.023798464084264295,
+      "replay-amd64": -0.009012125119842904,
+      "replay-arm64": -0.00901212511983526
+    },
+    "g177": {
+      "baked-amd64": 0.01940192658227815,
+      "baked-arm64": 0.019401438472673317,
+      "replay-amd64": -0.021822464524785083,
+      "replay-arm64": -0.021822464524776868
+    }
+  }
+}
