@@ -18,6 +18,38 @@ _SPECIES = (
 )
 
 
+def _column_scope(node, until):
+    categories = None
+    if isinstance(node, h5py.Group):
+        categories = node.get("categories")
+        node = node.get("codes")
+        if not isinstance(categories, h5py.Dataset) or categories.ndim != 1:
+            return "unresolved"
+    if not isinstance(node, h5py.Dataset) or node.ndim != 1 or not len(node):
+        return "unresolved"
+    first = None
+    for start in range(0, len(node), 4096):
+        check_time(until)
+        values = node[start : start + 4096]
+        if categories is not None:
+            if (
+                values.dtype.kind not in "iu"
+                or np.any(values < 0)
+                or np.any(values >= len(categories))
+            ):
+                return "unresolved"
+            values = categories[np.unique(values)]
+        if (values.dtype.kind == "f" and not np.isfinite(values).all()) or (
+            values.dtype.kind in "OSU" and any(not v.strip() for v in values)
+        ):
+            return "unresolved"
+        if first is None:
+            first = values[0]
+        if np.any(values != first):
+            return "pooled"
+    return "single_or_undeclared"
+
+
 def h5ad_scope(stream, until):
     with h5py.File(stream, "r") as handle:
         validate_hdf5_tree(handle)
@@ -38,29 +70,29 @@ def h5ad_scope(stream, until):
             or "uns/cross_species_homology_manifest" in handle
         ):
             return "integrated"
-        for column in _SPECIES:
-            node = handle.get("obs/" + column)
-            if node is None:
+        obs = handle.get("obs")
+        if isinstance(obs, h5py.Dataset) and any(
+            name.casefold() in _SPECIES for name in obs.dtype.names or ()
+        ):
+            return "unresolved"
+        columns = obs.keys() if isinstance(obs, h5py.Group) else ()
+        for key in columns:
+            if key.casefold() not in _SPECIES:
                 continue
-            if isinstance(node, h5py.Group):
-                if "codes" not in node:
-                    return "unresolved"
-                node = node["codes"]
-            if not isinstance(node, h5py.Dataset) or node.ndim != 1:
-                return "unresolved"
-            first = None
-            for start in range(0, len(node), 4096):
-                check_time(until)
-                values = node[start : start + 4096]
-                if first is None:
-                    first = values[0]
-                if np.any(values != first):
-                    return "pooled"
+            scope = _column_scope(obs[key], until)
+            if scope != "single_or_undeclared":
+                return scope
         return "single_or_undeclared"
 
 
 def require_within_species(name, bindings):
-    if name not in {"bulk_de", "scrna_clusterde", "scrna_cadet", "scrna_nb_countsplit"}:
+    if name not in {
+        "bulk_de",
+        "scrna_clusterde",
+        "scrna_cadet",
+        "scrna_nb_countsplit",
+        "scrna_integrate_qualified",
+    }:
         return
     if name == "bulk_de" and "metadata" in bindings:
         from .registry_execution import _table_rows

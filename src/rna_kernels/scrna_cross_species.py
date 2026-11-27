@@ -171,7 +171,10 @@ def _embedding(data, opt):
 
             model = harmonypy.run_harmony(
                 coords,
-                data.obs,
+                pd.DataFrame(
+                    {opt.batch_key: data.obs[opt.batch_key].astype(str)},
+                    index=data.obs_names,
+                ),
                 opt.batch_key,
                 random_state=opt.seed,
                 nclust=max(2, min(100, len(data) // 30)),
@@ -403,6 +406,32 @@ def _cross_species(data, paths, opt, batch, labels, report, side):
     return coords
 
 
+def _require_single_species(obs):
+    species_columns = {
+        "species_taxon_id",
+        "species_taxon_ids",
+        "organism_taxonomy_id",
+        "organism_ontology_term_id",
+        "taxon_id",
+        "species",
+    }
+    for key in obs.columns:
+        if key.casefold() in species_columns:
+            values = obs[key]
+            value = values.iloc[0]
+            if (
+                values.nunique(dropna=False) != 1
+                or values.isna().any()
+                or isinstance(value, (str, bytes))
+                and not value.strip()
+                or isinstance(value, (float, np.floating))
+                and not np.isfinite(value)
+            ):
+                raise ValueError(
+                    "Cross-species input requires ADR-28 homology manifest"
+                )
+
+
 def run_m2(op, paths, params, outputs):
     opt = PARAMETERS[op].model_validate(params)
     data = _counts(paths["expression"])
@@ -434,12 +463,7 @@ def run_m2(op, paths, params, outputs):
     if isinstance(opt, CrossSpeciesOptions):
         coords = _cross_species(data, paths, opt, batch, labels, report, side)
     else:
-        if any(
-            data.obs[k].nunique(dropna=False) != 1
-            for k in ("species_taxon_id", "organism_taxonomy_id", "taxon_id", "species")
-            if k in data.obs
-        ):
-            raise ValueError("Cross-species input requires ADR-28 homology manifest")
+        _require_single_species(data.obs)
         coords = _embedding(data, opt)
         report["method"] = opt.method
     report["benchmark"] = scib_benchmark(coords, batch, labels, opt.seed)

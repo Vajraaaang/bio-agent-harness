@@ -149,8 +149,10 @@ def _register_json(plane, reg, name, value, rep):
     return _register(plane, reg, path, rep)
 
 
-@pytest.mark.parametrize("cross", [False, True])
-def test_qualified_embedding_through_mcp(plane, cross):
+@pytest.mark.parametrize(
+    ("cross", "method"), [(False, "pca"), (True, "pca"), (True, "harmony")]
+)
+def test_qualified_embedding_through_mcp(plane, cross, method):
     from devbench.analysis.checkpoints import digest
 
     _require_image(plane)
@@ -186,7 +188,7 @@ def test_qualified_embedding_through_mcp(plane, cross):
         "reference_only",
     )
     name = "scrna_cross_species_integrate" if cross else "scrna_integrate_qualified"
-    args = {"n_pcs": 4}
+    args = {"n_pcs": 4, "method": method}
     if cross:
         args["regime"] = "close_mammals"
     plan = _plan(reg, name, args)
@@ -213,6 +215,7 @@ def test_qualified_embedding_through_mcp(plane, cross):
     embedding = receipt["outputs"]["embedding"]
     assert embedding["representation_class"] == "integrated_latent_or_graph"
     info = json.loads(_result(plane, reg, receipt).read_bytes())
+    assert info["method"] == method
     assert info["benchmark"]["backend"].startswith("scib-metrics/")
     if cross:
         assert "strict_1to1" in info
@@ -340,3 +343,28 @@ def test_recoded_supervision_refused_before_training(tmp_path):
             {"training_label_key": "reused", "method": "scanvi"},
             tmp_path,
         )
+
+
+@pytest.mark.parametrize("key", ["organism_ontology_term_id", "Species"])
+def test_pooled_qualified_integration_refused_at_freeze(plane, key):
+    from tests.test_integration_scib_and_cross_species import fixtures
+
+    paths, _ = fixtures(plane.input_root)
+    data = ad.read_h5ad(paths["expression"])
+    data.obs.rename(columns={"species_taxon_id": key}, inplace=True)
+    data.write_h5ad(paths["expression"])
+    reg = _ok(plane, "register_investigation_input", _admission(paths["expression"]))
+    qualification = json.loads(paths["label_qualification"].read_bytes())
+    qualification["selected_sha256"] = reg["artifact"]["sha256"]
+    plan = _plan(reg, "scrna_integrate_qualified")
+    plan["input_bindings"].update(
+        labels=_register(plane, reg, paths["labels"], "metadata_only"),
+        label_qualification=_register_json(
+            plane, reg, "qualification", qualification, "reference_only"
+        ),
+    )
+    refused = dispatch(plane, "freeze_analysis_plan", plan)
+    assert (
+        refused.isError
+        and refused.structuredContent["category"] == "scientific_refusal"
+    )

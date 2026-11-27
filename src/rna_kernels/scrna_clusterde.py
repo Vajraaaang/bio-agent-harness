@@ -99,6 +99,10 @@ def _de_scores(counts, seed):
     p = stats.mannwhitneyu(
         log[labels == 0], log[labels == 1], axis=0, method="asymptotic"
     ).pvalue
+    constant = np.ptp(log, axis=0) == 0
+    p = np.where(constant, 1.0, p)
+    if not np.isfinite(p).all():
+        raise ValueError("Nonfinite Wilcoxon p-value")
     return -np.log10(np.maximum(p, np.finfo(float).tiny)), labels
 
 

@@ -231,3 +231,56 @@ def test_saturn_unsorted_taxa_preserve_barcode_species(tmp_path):
     result.obs["species"] = species[::-1]
     with pytest.raises(ValueError, match="species mismatch"):
         _recover_coordinates(source, result)
+
+
+@pytest.mark.parametrize(
+    ("key", "values", "expected"),
+    [
+        ("Species", ["human", "mouse"], "pooled"),
+        ("SPECIES_TAXON_ID", [9606, 10090], "pooled"),
+        ("organism_ontology_term_id", ["NCBITaxon:9606", "NCBITaxon:10090"], "pooled"),
+        ("species_taxon_ids", [9606, 10090], "pooled"),
+        ("species_taxon_id", pd.Categorical([None, None]), "unresolved"),
+        ("species", ["", ""], "unresolved"),
+        ("species", ["  ", "  "], "unresolved"),
+        ("species", [np.inf, np.inf], "unresolved"),
+    ],
+)
+def test_species_scope_and_worker_refuse_unqualified_input(
+    tmp_path, key, values, expected
+):
+    from devbench.mcp.species_scope import h5ad_scope
+
+    paths, _ = fixtures(tmp_path)
+    data = ad.read_h5ad(paths["expression"])
+    del data.obs["species_taxon_id"]
+    data.obs[key] = (
+        values.take(np.arange(len(data)) % 2)
+        if isinstance(values, pd.Categorical)
+        else np.resize(values, len(data))
+    )
+    data.write_h5ad(paths["expression"])
+    with paths["expression"].open("rb") as stream:
+        assert h5ad_scope(stream, float("inf")) == expected
+    qualification = json.loads(paths["label_qualification"].read_bytes())
+    qualification["selected_sha256"] = source_digest(paths["expression"])
+    paths["label_qualification"].write_text(json.dumps(qualification))
+    with pytest.raises(
+        ValueError, match="Cross-species input requires ADR-28 homology manifest"
+    ):
+        run_m2("scrna_integrate_qualified", paths, {}, tmp_path)
+
+
+def test_compound_obs_species_is_unresolved(tmp_path):
+    import h5py
+
+    from devbench.mcp.species_scope import h5ad_scope
+
+    path = tmp_path / "compound.h5ad"
+    with h5py.File(path, "w") as handle:
+        handle["X"] = np.ones((2, 1))
+        handle["obs"] = np.array(
+            [(9606,), (10090,)], dtype=[("Species_Taxon_Id", "i4")]
+        )
+    with path.open("rb") as stream:
+        assert h5ad_scope(stream, float("inf")) == "unresolved"

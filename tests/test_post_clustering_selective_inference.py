@@ -382,3 +382,45 @@ def test_cadet_requires_declared_higher_identity():
     frame = pd.DataFrame({"cell_id": ["c0", "c1"], "specimen": ["s0", "s1"]})
     with pytest.raises(ValueError, match="higher-level biological unit"):
         _check_independent_rows(frame, "cell_id")
+
+
+def test_clusterde_sparse_constant_null_writes_finite_proof(tmp_path):
+    import anndata as ad
+
+    from devbench.engine.nb_marker_confirmation import verify_m2_marker_execution
+    from rna_kernels.m2_contract import source_digest
+    from rna_kernels.scrna_clusterde import _de_scores, run_m2, synthetic_null
+
+    rng = np.random.default_rng(18)
+    counts = rng.poisson(3, (96, 32))
+    counts[:, 8:] = 0
+    counts[np.arange(24), np.arange(8, 32)] = 1
+    synthetic, _ = synthetic_null(counts, np.random.default_rng(0))
+    constant = np.ptp(synthetic, axis=0) == 0
+    assert np.any(np.all(synthetic == 0, axis=0))
+    scores, labels = _de_scores(synthetic, 0)
+    assert np.all(scores[constant] == 0)
+    varying = np.log1p(synthetic[:, ~constant].astype(float))
+    p = stats.mannwhitneyu(
+        varying[labels == 0], varying[labels == 1], axis=0, method="asymptotic"
+    ).pvalue
+    np.testing.assert_array_equal(scores[~constant], -np.log10(p))
+
+    path = tmp_path / "counts.h5ad"
+    data = ad.AnnData(sparse.csr_matrix(counts))
+    data.obs["batch"] = "single"
+    data.write_h5ad(path)
+    params = {"batch_key": "batch", "seed": 0}
+    files = run_m2("scrna_clusterde", {"expression": path}, params, tmp_path)
+    result = json.loads(files["result"].read_bytes())
+    assert np.isfinite([row["score"] for row in result["gene_statistics"]]).all()
+    json.dumps(result, allow_nan=False)
+    proof = verify_m2_marker_execution(
+        result,
+        expression_sha256=source_digest(path),
+        parameters=params,
+        request_sha256="2" * 64,
+        runtime_sha256="3" * 64,
+    )
+    assert proof["proof"]["method"] == "clusterde"
+    json.dumps(proof, allow_nan=False)

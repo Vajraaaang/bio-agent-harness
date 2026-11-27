@@ -97,7 +97,7 @@
   },
   "profiled_mounted_model_sha256": "580055425adf0d220b753f73da325bc047e1d7e86d9735b88c45b5b43c9bce75",
   "m2_wave2_image_ids": {
-    "linux/arm64": "sha256:dc4502d9300111919700a2d77bd5a36ba7657135bd7610216a5427665d36f4fb"
+    "linux/arm64": "sha256:8a09ad48e96c9468f273dac69d11f88d6a3ff34c6a3ec596baabdce98a2e245a"
   },
   "m2_qc_image_ids": {
     "linux/arm64": "sha256:d70cda716390f8966de7998c918000a2da43050cd433bd5c701843fd3ce2a02d"
