@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 
 from devbench.core.execution_contracts import ResourceProfile
+from devharness_controlled.native_contracts import M2_CUDA_IMAGES, M2_QC_IMAGES
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,11 @@ BUILTIN_WORKERS = MountedWorkerRegistry(
         ),
         MountedWorker(
             "rna_kernels.mounted_scrna", _SCRNA, local_function="run_mounted_scrna"
+        ),
+        MountedWorker(
+            "rna_kernels.mounted_m2",
+            _SCRNA,
+            image_ids=frozenset((*M2_QC_IMAGES.values(), *M2_CUDA_IMAGES.values())),
         ),
         MountedWorker(
             "devharness_server.tools_scrna_composition",

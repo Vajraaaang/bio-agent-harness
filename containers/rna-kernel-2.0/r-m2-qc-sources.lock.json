@@ -1,0 +1,1504 @@
+{
+  "format": "devbench.m2-qc-r-sources/1",
+  "R": "4.6.1",
+  "BiocVersion": "3.23.1",
+  "targets": [
+    "SoupX",
+    "decontX",
+    "scDblFinder",
+    "DropletQC"
+  ],
+  "base_packages": {
+    "BH": "1.90.0-1",
+    "BiocGenerics": "0.58.1",
+    "BiocNeighbors": "2.6.0",
+    "BiocParallel": "1.46.0",
+    "BiocSingular": "1.28.1",
+    "DelayedArray": "0.38.2",
+    "GenomicAlignments": "1.48.0",
+    "GenomicFeatures": "1.64.0",
+    "GenomicRanges": "1.64.0",
+    "IRanges": "2.46.0",
+    "KernSmooth": "2.23-27",
+    "MASS": "7.3-66",
+    "Matrix": "1.7-6",
+    "MatrixGenerics": "1.24.0",
+    "RColorBrewer": "1.1-3",
+    "Rcpp": "1.1.2",
+    "RcppArmadillo": "15.6.2-1",
+    "RcppEigen": "0.3.4.0.2",
+    "Rsamtools": "2.28.0",
+    "S4Vectors": "0.50.3",
+    "S7": "0.2.2",
+    "Seqinfo": "1.2.0",
+    "SingleCellExperiment": "1.34.0",
+    "SparseArray": "1.12.3",
+    "SummarizedExperiment": "1.42.0",
+    "abind": "1.4-8",
+    "assorthead": "1.6.4",
+    "backports": "1.5.1",
+    "beachmat": "2.28.0",
+    "biocmake": "1.4.0",
+    "bluster": "1.22.0",
+    "broom": "1.0.13",
+    "cli": "3.6.6",
+    "cluster": "2.1.8.3",
+    "codetools": "0.2-20",
+    "colorspace": "2.1-4",
+    "cowplot": "1.2.0",
+    "crayon": "1.5.3",
+    "curl": "8.1.0",
+    "data.table": "1.18.6.1",
+    "datasets": "4.6.1",
+    "desc": "1.4.3",
+    "digest": "0.6.39",
+    "dplyr": "1.2.1",
+    "dqrng": "0.4.1",
+    "farver": "2.1.2",
+    "generics": "0.1.4",
+    "ggplot2": "4.0.4",
+    "glue": "1.8.1",
+    "grDevices": "4.6.1",
+    "graphics": "4.6.1",
+    "grid": "4.6.1",
+    "gtable": "0.3.6",
+    "httr": "1.4.9",
+    "igraph": "2.3.4",
+    "irlba": "2.4.1",
+    "iterators": "1.0.14",
+    "jsonlite": "2.0.0",
+    "lattice": "0.23-1",
+    "lifecycle": "1.0.5",
+    "lme4": "2.1-0",
+    "magrittr": "2.0.5",
+    "matrixStats": "1.5.0",
+    "methods": "4.6.1",
+    "mgcv": "1.9-5",
+    "mvtnorm": "1.4-2",
+    "nlme": "3.1-172",
+    "nnet": "7.3-21",
+    "numDeriv": "2016.8-1.1",
+    "parallel": "4.6.1",
+    "parallelly": "1.50.0",
+    "pbkrtest": "0.5.5",
+    "pillar": "1.11.1",
+    "pkgbuild": "1.4.8",
+    "plyr": "1.8.9",
+    "png": "0.1-9",
+    "purrr": "1.2.2",
+    "reshape2": "1.4.5",
+    "rjson": "0.2.23",
+    "rlang": "1.3.0",
+    "rtracklayer": "1.72.0",
+    "scales": "1.4.0",
+    "scran": "1.40.0",
+    "scuttle": "1.22.0",
+    "stats": "4.6.1",
+    "stats4": "4.6.1",
+    "stringr": "1.6.0",
+    "survival": "3.8-12",
+    "tibble": "3.3.1",
+    "tidyr": "1.3.2",
+    "tidyselect": "1.2.1",
+    "tools": "4.6.1",
+    "utils": "4.6.1",
+    "vctrs": "0.7.3",
+    "viridisLite": "0.4.3",
+    "withr": "3.0.3"
+  },
+  "packages": [
+    {
+      "package": "ComplexHeatmap",
+      "version": "2.28.0",
+      "dependencies": [
+        "GetoptLong",
+        "GlobalOptions",
+        "IRanges",
+        "RColorBrewer",
+        "circlize",
+        "clue",
+        "codetools",
+        "colorspace",
+        "digest",
+        "doParallel",
+        "foreach",
+        "grDevices",
+        "graphics",
+        "grid",
+        "matrixStats",
+        "methods",
+        "png",
+        "stats"
+      ],
+      "url": "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib/ComplexHeatmap_2.28.0.tar.gz",
+      "sha256": "b3435fa51cd45cdfa1078d561e9c87369a2f8818198825217926b8c38ab419c5",
+      "size": 1460412
+    },
+    {
+      "package": "DropletQC",
+      "version": "0.0.0.9000",
+      "dependencies": [
+        "BiocGenerics",
+        "GenomeInfoDb",
+        "GenomicAlignments",
+        "GenomicFeatures",
+        "GenomicRanges",
+        "Rsamtools",
+        "S4Vectors",
+        "dplyr",
+        "furrr",
+        "future",
+        "ggplot2",
+        "ggpubr",
+        "ks",
+        "mclust",
+        "patchwork",
+        "rtracklayer",
+        "stats",
+        "stringr",
+        "utils"
+      ],
+      "url": "https://codeload.github.com/powellgenomicslab/DropletQC/tar.gz/5d7dadca4dbc2aa471ea6540792469e85f1281e5",
+      "sha256": "1ca827b3ef120208ff51cdde1054efe82c98b53e957792707ba4ba15b9574766",
+      "size": 4010873
+    },
+    {
+      "package": "FNN",
+      "version": "1.1.4.1",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/FNN_1.1.4.1.tar.gz",
+      "sha256": "73d97487fd3eac8ae90f32fd439f1689b1923b5688d83fd57fd2faeea70cb854",
+      "size": 78809
+    },
+    {
+      "package": "Formula",
+      "version": "1.2-6",
+      "dependencies": [
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/Formula_1.2-6.tar.gz",
+      "sha256": "7e611ac371c045e100a6205d92fe5104001942673798f970290fea12e33bfd37",
+      "size": 47339
+    },
+    {
+      "package": "GenomeInfoDb",
+      "version": "1.48.0",
+      "dependencies": [
+        "BiocGenerics",
+        "IRanges",
+        "S4Vectors",
+        "Seqinfo",
+        "UCSC.utils",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "url": "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib/GenomeInfoDb_1.48.0.tar.gz",
+      "sha256": "42a1f6912a7c3972234004b88599b2af03553ed22a6566915094dbd6371be983",
+      "size": 3641821
+    },
+    {
+      "package": "GetoptLong",
+      "version": "1.1.1",
+      "dependencies": [
+        "GlobalOptions",
+        "crayon",
+        "methods",
+        "rjson"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/GetoptLong_1.1.1.tar.gz",
+      "sha256": "bfc784c53762074ef1ddc9c91c430484462e913170d0b9cdc0e2da496104c596",
+      "size": 1294168
+    },
+    {
+      "package": "GlobalOptions",
+      "version": "0.1.4",
+      "dependencies": [
+        "methods",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/GlobalOptions_0.1.4.tar.gz",
+      "sha256": "bed5f4afdb9d0565deac866c3793fc5c62d5259eadf8c8a5f57cc67ef0b47753",
+      "size": 382348
+    },
+    {
+      "package": "MCMCprecision",
+      "version": "0.4.2",
+      "dependencies": [
+        "Matrix",
+        "Rcpp",
+        "RcppArmadillo",
+        "RcppEigen",
+        "RcppProgress",
+        "combinat",
+        "parallel",
+        "stats",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/MCMCprecision_0.4.2.tar.gz",
+      "sha256": "fc2109165a7f147e7d2a782774617e328282e10cf2e0a54a2ef1bf064db9fa04",
+      "size": 391200
+    },
+    {
+      "package": "MatrixModels",
+      "version": "0.5-4",
+      "dependencies": [
+        "Matrix",
+        "methods",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/MatrixModels_0.5-4.tar.gz",
+      "sha256": "f57af9e0a35a3fea77790e46846482c6c7de0d0ea1996a995a5924f2d41cf33c",
+      "size": 24607
+    },
+    {
+      "package": "QuickJSR",
+      "version": "1.11.0",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/QuickJSR_1.11.0.tar.gz",
+      "sha256": "413e7a0e3d2e9cb1e8e931cafc458a1ad872281ddf821148efafbd2f5969fda8",
+      "size": 687681
+    },
+    {
+      "package": "RANN",
+      "version": "2.6.3",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/RANN_2.6.3.tar.gz",
+      "sha256": "df64fe85e4ea0431bd10a33807dca1294d665aef7d5d27ed71527ab7c6ca4b65",
+      "size": 59999
+    },
+    {
+      "package": "RSpectra",
+      "version": "0.16-2",
+      "dependencies": [
+        "Matrix",
+        "Rcpp",
+        "RcppEigen"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/RSpectra_0.16-2.tar.gz",
+      "sha256": "a2f149d79519fee79dabe1b174dfb847a916045315d5927a93cc6b005522aa7e",
+      "size": 128030
+    },
+    {
+      "package": "RcppAnnoy",
+      "version": "0.0.23",
+      "dependencies": [
+        "Rcpp",
+        "methods"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/RcppAnnoy_0.0.23.tar.gz",
+      "sha256": "e502e8d98590a3b9dc7ec82ec7242ab737a653603ecb0fc7145798f3e7e2d1dc",
+      "size": 118177
+    },
+    {
+      "package": "RcppHNSW",
+      "version": "0.7.0",
+      "dependencies": [
+        "Rcpp",
+        "methods"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/RcppHNSW_0.7.0.tar.gz",
+      "sha256": "8164785899f9e7f5ad5735fc0b7707d9ebadadc867a541816a9c2c5dd0fbac4c",
+      "size": 38733
+    },
+    {
+      "package": "RcppML",
+      "version": "0.3.7.1",
+      "dependencies": [
+        "Matrix",
+        "Rcpp",
+        "RcppEigen",
+        "methods",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/RcppML_0.3.7.1.tar.gz",
+      "sha256": "9a2e2556b436504b270ac29b31d7a72c07fe5f34d48562e5930366fb228aae4b",
+      "size": 45810
+    },
+    {
+      "package": "RcppParallel",
+      "version": "6.2.1",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/RcppParallel_6.2.1.tar.gz",
+      "sha256": "6d076439020f64f502552ae924e93f62b6fefd2bb5c193987751dc7a48826ebc",
+      "size": 761652
+    },
+    {
+      "package": "RcppProgress",
+      "version": "0.4.2",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/RcppProgress_0.4.2.tar.gz",
+      "sha256": "b1624b21b7aeb1dafb30f092b2a4bef4c3504efd2d6b00b2cdf55dc9df194b48",
+      "size": 12077
+    },
+    {
+      "package": "RcppThread",
+      "version": "2.4.0",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/RcppThread_2.4.0.tar.gz",
+      "sha256": "29e8955a0e1cad0775bcb6f29bde76f34cc2e1fa9c5f5d5d8d4962b91c3feaeb",
+      "size": 315632
+    },
+    {
+      "package": "Rigraphlib",
+      "version": "1.4.0",
+      "dependencies": [
+        "biocmake"
+      ],
+      "url": "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib/Rigraphlib_1.4.0.tar.gz",
+      "sha256": "ba14877dc3dac18122ceb1b15c7968b5527e590d0218a7039add79b65d5a49d1",
+      "size": 3506893
+    },
+    {
+      "package": "Rtsne",
+      "version": "0.17",
+      "dependencies": [
+        "Rcpp",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/Rtsne_0.17.tar.gz",
+      "sha256": "3aae6814d6c6d406785145f07374135652f2b26a58690dfd4bfbc8365dc5590b",
+      "size": 70904
+    },
+    {
+      "package": "Seurat",
+      "version": "6.0.1",
+      "dependencies": [
+        "KernSmooth",
+        "MASS",
+        "Matrix",
+        "RANN",
+        "RColorBrewer",
+        "RSpectra",
+        "Rcpp",
+        "RcppAnnoy",
+        "RcppEigen",
+        "RcppHNSW",
+        "RcppProgress",
+        "RcppThread",
+        "Rtsne",
+        "SeuratObject",
+        "cluster",
+        "cowplot",
+        "fastDummies",
+        "future",
+        "future.apply",
+        "generics",
+        "ggplot2",
+        "ggrepel",
+        "ggridges",
+        "grDevices",
+        "graphics",
+        "grid",
+        "httr",
+        "ica",
+        "igraph",
+        "irlba",
+        "jsonlite",
+        "lifecycle",
+        "matrixStats",
+        "methods",
+        "parallelly",
+        "patchwork",
+        "pbapply",
+        "pls",
+        "png",
+        "progressr",
+        "rlang",
+        "scales",
+        "scattermore",
+        "sctransform",
+        "stats",
+        "tools",
+        "utils",
+        "uwot"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/Seurat_6.0.1.tar.gz",
+      "sha256": "f6b6d1256310bab2fbaae08284b6dac40caf89d237f7ddce22e99be3ae50d8fd",
+      "size": 1683669
+    },
+    {
+      "package": "SeuratObject",
+      "version": "5.4.0",
+      "dependencies": [
+        "Matrix",
+        "Rcpp",
+        "RcppEigen",
+        "future",
+        "future.apply",
+        "generics",
+        "grDevices",
+        "grid",
+        "lifecycle",
+        "methods",
+        "progressr",
+        "rlang",
+        "sp",
+        "spam",
+        "stats",
+        "tools",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/SeuratObject_5.4.0.tar.gz",
+      "sha256": "11a748f7845115312021ee4e1e4c88f5a37546aa7d066f61652f09d81908f256",
+      "size": 773785
+    },
+    {
+      "package": "SoupX",
+      "version": "1.6.2",
+      "dependencies": [
+        "Matrix",
+        "Seurat",
+        "ggplot2",
+        "methods"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/SoupX_1.6.2.tar.gz",
+      "sha256": "9b6226cd7c0691498a874d5c029f8ff81fd2060295c298985397521c1f7ee3a5",
+      "size": 4962415
+    },
+    {
+      "package": "SparseM",
+      "version": "1.84-2",
+      "dependencies": [
+        "graphics",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/SparseM_1.84-2.tar.gz",
+      "sha256": "2580fdbb8679e76c92b9f0c5bd9bb503c4cb6a750ef6ae96595441690ce98665",
+      "size": 553080
+    },
+    {
+      "package": "StanHeaders",
+      "version": "2.39.1.1",
+      "dependencies": [
+        "RcppEigen",
+        "RcppParallel"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/StanHeaders_2.39.1.1.tar.gz",
+      "sha256": "025e433e64f94667f3649466a8c2d45da64af05308e884959dea09b71eada706",
+      "size": 2585919
+    },
+    {
+      "package": "UCSC.utils",
+      "version": "1.8.0",
+      "dependencies": [
+        "S4Vectors",
+        "httr",
+        "jsonlite",
+        "methods",
+        "stats"
+      ],
+      "url": "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib/UCSC.utils_1.8.0.tar.gz",
+      "sha256": "1e215d70540880793065b90d513ee37ef44a29983802e4487eb5d8b6851b8a8a",
+      "size": 236753
+    },
+    {
+      "package": "WriteXLS",
+      "version": "6.8.0",
+      "dependencies": [
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/WriteXLS_6.8.0.tar.gz",
+      "sha256": "0bd6b892815eb54f506583cf16bec951c7722db0ad99bffe5a681bc57b1f09f6",
+      "size": 796568
+    },
+    {
+      "package": "beeswarm",
+      "version": "0.4.0",
+      "dependencies": [
+        "grDevices",
+        "graphics",
+        "stats",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/beeswarm_0.4.0.tar.gz",
+      "sha256": "51f4339bf4080a2be84bb49a844c636625657fbed994abeaa42aead916c3d504",
+      "size": 24395
+    },
+    {
+      "package": "car",
+      "version": "3.1-5",
+      "dependencies": [
+        "Formula",
+        "MASS",
+        "abind",
+        "carData",
+        "grDevices",
+        "graphics",
+        "lme4",
+        "mgcv",
+        "nlme",
+        "nnet",
+        "pbkrtest",
+        "quantreg",
+        "scales",
+        "stats",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/car_3.1-5.tar.gz",
+      "sha256": "27ab23cff7c5c123ffe8a2475b5a3b4d778414a28dde0a59d5cfbbefa08c99fb",
+      "size": 378895
+    },
+    {
+      "package": "carData",
+      "version": "3.0-6",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/carData_3.0-6.tar.gz",
+      "sha256": "b14d5b40b35e5a59c1ec1cdf3cce2cea239b60ff6977a821cca0d6d5b4112551",
+      "size": 995588
+    },
+    {
+      "package": "celda",
+      "version": "1.28.0",
+      "dependencies": [
+        "ComplexHeatmap",
+        "DelayedArray",
+        "MCMCprecision",
+        "Matrix",
+        "RColorBrewer",
+        "Rcpp",
+        "RcppEigen",
+        "Rtsne",
+        "S4Vectors",
+        "SingleCellExperiment",
+        "SummarizedExperiment",
+        "circlize",
+        "data.table",
+        "dbscan",
+        "dendextend",
+        "digest",
+        "doParallel",
+        "enrichR",
+        "foreach",
+        "ggdendro",
+        "ggplot2",
+        "ggrepel",
+        "grDevices",
+        "graphics",
+        "grid",
+        "gridExtra",
+        "gtable",
+        "matrixStats",
+        "methods",
+        "pROC",
+        "plyr",
+        "reshape2",
+        "scales",
+        "scater",
+        "scran",
+        "stringr",
+        "uwot",
+        "withr"
+      ],
+      "url": "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib/celda_1.28.0.tar.gz",
+      "sha256": "f65fd889336c173cce0a66c0dccde1b945fb9ea1db86f3c7a4f57b5d024fd380",
+      "size": 2660059
+    },
+    {
+      "package": "checkmate",
+      "version": "2.3.4",
+      "dependencies": [
+        "backports",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/checkmate_2.3.4.tar.gz",
+      "sha256": "95e1068dee07d95c5e616dfd66e622cf245821acd358a77e790118c34ebd85ca",
+      "size": 252516
+    },
+    {
+      "package": "circlize",
+      "version": "0.4.18",
+      "dependencies": [
+        "GlobalOptions",
+        "colorspace",
+        "grDevices",
+        "graphics",
+        "grid",
+        "methods",
+        "shape",
+        "stats",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/circlize_0.4.18.tar.gz",
+      "sha256": "3e875b9138763eefaa85599e287c6c1f1399f988522bc2c6270075d2cde5481b",
+      "size": 2498639
+    },
+    {
+      "package": "clue",
+      "version": "0.3-68",
+      "dependencies": [
+        "cluster",
+        "graphics",
+        "methods",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/clue_0.3-68.tar.gz",
+      "sha256": "66841e71db41197000ef443d88cbb6da6c0b9c825903cb7b0db44537838a3216",
+      "size": 744888
+    },
+    {
+      "package": "combinat",
+      "version": "0.0-9",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/combinat_0.0-9.tar.gz",
+      "sha256": "430c1a340c7ef346d020454071bd953d3fcccd1bece8ecc87bc6c35361e07e81",
+      "size": 9331
+    },
+    {
+      "package": "corrplot",
+      "version": "0.95",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/corrplot_0.95.tar.gz",
+      "sha256": "84a31f675041e589201b4d640753302abc10ccc2c0ca0a409b5153861989d776",
+      "size": 3745190
+    },
+    {
+      "package": "dbscan",
+      "version": "1.3.0",
+      "dependencies": [
+        "Rcpp",
+        "generics",
+        "graphics",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/dbscan_1.3.0.tar.gz",
+      "sha256": "aa6d949390fecb6aea231683c50318d7e48f15306888ad2afb156d25f0775808",
+      "size": 4072159
+    },
+    {
+      "package": "decontX",
+      "version": "1.10.0",
+      "dependencies": [
+        "BH",
+        "DelayedArray",
+        "MCMCprecision",
+        "Matrix",
+        "Rcpp",
+        "RcppEigen",
+        "RcppParallel",
+        "S4Vectors",
+        "Seurat",
+        "SingleCellExperiment",
+        "StanHeaders",
+        "SummarizedExperiment",
+        "celda",
+        "dbscan",
+        "ggplot2",
+        "methods",
+        "patchwork",
+        "plyr",
+        "reshape2",
+        "rstan",
+        "rstantools",
+        "scater",
+        "withr"
+      ],
+      "url": "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib/decontX_1.10.0.tar.gz",
+      "sha256": "586b2805d85a733ceb136597f2cf3f1da2645cc7f113d368982d0070dd8ee776",
+      "size": 2154914
+    },
+    {
+      "package": "dendextend",
+      "version": "1.19.1",
+      "dependencies": [
+        "datasets",
+        "ggplot2",
+        "magrittr",
+        "stats",
+        "utils",
+        "viridis"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/dendextend_1.19.1.tar.gz",
+      "sha256": "be3c150c0ca460bb9181a906215244da92fe556e6bbfe1a6841398b45b5d2701",
+      "size": 4704910
+    },
+    {
+      "package": "distributional",
+      "version": "0.9.0",
+      "dependencies": [
+        "generics",
+        "lifecycle",
+        "numDeriv",
+        "pillar",
+        "rlang",
+        "stats",
+        "utils",
+        "vctrs"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/distributional_0.9.0.tar.gz",
+      "sha256": "1ed9f98e6366665db372b6a048c1b598c66a03e104e572472c96417642bf7226",
+      "size": 187535
+    },
+    {
+      "package": "doParallel",
+      "version": "1.0.17",
+      "dependencies": [
+        "foreach",
+        "iterators",
+        "parallel",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/doParallel_1.0.17.tar.gz",
+      "sha256": "b96a25ad105a654d70c7b4ca27290dc9967bc47f4668b2763927a886b178abd7",
+      "size": 164254
+    },
+    {
+      "package": "dotCall64",
+      "version": "1.2",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/dotCall64_1.2.tar.gz",
+      "sha256": "aad6ab571f30d4d191a9454cee278d57b478fb49d3f7b190593f317a0e4408aa",
+      "size": 20362
+    },
+    {
+      "package": "enrichR",
+      "version": "3.4",
+      "dependencies": [
+        "WriteXLS",
+        "curl",
+        "ggplot2",
+        "httr",
+        "rjson"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/enrichR_3.4.tar.gz",
+      "sha256": "56b16625c2c05afe6bb63b68ec06d94e9511f1532fae194e64d624f2c338843e",
+      "size": 302040
+    },
+    {
+      "package": "fastDummies",
+      "version": "1.7.6",
+      "dependencies": [
+        "data.table",
+        "stringr",
+        "tibble"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/fastDummies_1.7.6.tar.gz",
+      "sha256": "d140bbf3b0189067dd5c553d6f6837e2b9e6097e0e06f8b89e147bc52a2eac4e",
+      "size": 27464
+    },
+    {
+      "package": "foreach",
+      "version": "1.5.2",
+      "dependencies": [
+        "codetools",
+        "iterators",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/foreach_1.5.2.tar.gz",
+      "sha256": "56338d8753f9f68f262cf532fd8a6d0fe25a71a2ff0107f3ce378feb926bafe4",
+      "size": 89758
+    },
+    {
+      "package": "furrr",
+      "version": "0.4.0",
+      "dependencies": [
+        "future",
+        "globals",
+        "purrr",
+        "rlang",
+        "vctrs"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/furrr_0.4.0.tar.gz",
+      "sha256": "82f8d18078fdde968bdf8ea978a91b936a8bc5d0b3f41ce0f6e2c6bc0efce714",
+      "size": 911669
+    },
+    {
+      "package": "future",
+      "version": "1.82.0",
+      "dependencies": [
+        "globals",
+        "listenv",
+        "parallel",
+        "parallelly",
+        "tools",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/future_1.82.0.tar.gz",
+      "sha256": "30a6eeb5289f70f81f86eb2d379caba5cf36604299e689907d92710c45f7e946",
+      "size": 497159
+    },
+    {
+      "package": "future.apply",
+      "version": "1.21.0",
+      "dependencies": [
+        "future",
+        "globals",
+        "parallel",
+        "stats",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/future.apply_1.21.0.tar.gz",
+      "sha256": "4142c0d68cc247099b32d558d84fa8f6406b5f44f661494820ed5758484444e5",
+      "size": 81717
+    },
+    {
+      "package": "ggbeeswarm",
+      "version": "0.7.3",
+      "dependencies": [
+        "beeswarm",
+        "cli",
+        "ggplot2",
+        "lifecycle",
+        "vipor"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/ggbeeswarm_0.7.3.tar.gz",
+      "sha256": "5834381e53e38343e5720cf02a2b5be330ab440c1ac6d06e5dd62e59487c7060",
+      "size": 1704458
+    },
+    {
+      "package": "ggdendro",
+      "version": "0.2.0",
+      "dependencies": [
+        "MASS",
+        "ggplot2"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/ggdendro_0.2.0.tar.gz",
+      "sha256": "1940c34ddb30083a4c3bc3be98b6b466dcc78e03ac22a32088744db8bff7aa69",
+      "size": 167818
+    },
+    {
+      "package": "ggpubr",
+      "version": "1.0.0",
+      "dependencies": [
+        "cowplot",
+        "dplyr",
+        "ggplot2",
+        "ggrepel",
+        "ggsci",
+        "ggsignif",
+        "glue",
+        "grid",
+        "gridExtra",
+        "magrittr",
+        "polynom",
+        "purrr",
+        "rlang",
+        "rstatix",
+        "scales",
+        "stats",
+        "tibble",
+        "tidyr",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/ggpubr_1.0.0.tar.gz",
+      "sha256": "bb7f9c2d87328f9ce73f485dc7d77b56b567b8431513b531b2c1e9d090b4c589",
+      "size": 1871750
+    },
+    {
+      "package": "ggrepel",
+      "version": "0.9.8",
+      "dependencies": [
+        "Rcpp",
+        "S7",
+        "ggplot2",
+        "grid",
+        "rlang",
+        "scales",
+        "withr"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/ggrepel_0.9.8.tar.gz",
+      "sha256": "0317dff5e11d9dae7225d5c1794fe16ea1bedc7d535ac98e990925670724c027",
+      "size": 151726
+    },
+    {
+      "package": "ggridges",
+      "version": "0.5.7",
+      "dependencies": [
+        "ggplot2",
+        "grid",
+        "scales",
+        "withr"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/ggridges_0.5.7.tar.gz",
+      "sha256": "fcba89ffa3a31edfb3eeea249a78997150d9e01888dbe2015fec310709681133",
+      "size": 2210918
+    },
+    {
+      "package": "ggsci",
+      "version": "5.2.0",
+      "dependencies": [
+        "ggplot2",
+        "grDevices",
+        "rlang",
+        "scales"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/ggsci_5.2.0.tar.gz",
+      "sha256": "2c52a8059c057eea204fa479094973450c8fa0f3d6d6fc051ad546ec41559c46",
+      "size": 2178194
+    },
+    {
+      "package": "ggsignif",
+      "version": "0.6.4",
+      "dependencies": [
+        "ggplot2"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/ggsignif_0.6.4.tar.gz",
+      "sha256": "112051af425a0c0f2998ce187dacad066bc16f55af01e3e7b76d62ff6954b20a",
+      "size": 587393
+    },
+    {
+      "package": "globals",
+      "version": "0.20.0",
+      "dependencies": [
+        "codetools"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/globals_0.20.0.tar.gz",
+      "sha256": "7f59b223a63defb79749d40b6fa89071707b953bd6afd5718d088a712a4b39a7",
+      "size": 62556
+    },
+    {
+      "package": "gmp",
+      "version": "0.7-5.1",
+      "dependencies": [
+        "methods"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/gmp_0.7-5.1.tar.gz",
+      "sha256": "6e56d8373fd7a4148bac4ada5d3eee96f5033b76e5aaf1689db9ce7d9e3bdb69",
+      "size": 166706
+    },
+    {
+      "package": "gridExtra",
+      "version": "2.3.1",
+      "dependencies": [
+        "grDevices",
+        "graphics",
+        "grid",
+        "gtable",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/gridExtra_2.3.1.tar.gz",
+      "sha256": "de42e501ac2c6a70bd0ffc18d7703e9b0e6b878c610df09756183c3e52445c82",
+      "size": 480742
+    },
+    {
+      "package": "ica",
+      "version": "1.0-3",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/ica_1.0-3.tar.gz",
+      "sha256": "474d3530b16b76a1bf1a1114d24092678ea7215fa57c6fdcee6333f1e768b865",
+      "size": 12825
+    },
+    {
+      "package": "inline",
+      "version": "0.3.21",
+      "dependencies": [
+        "methods"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/inline_0.3.21.tar.gz",
+      "sha256": "7ef9410a933a47f6a346bc8c0e55b62931379b464b92696aee9865ec6378bc98",
+      "size": 25454
+    },
+    {
+      "package": "kernlab",
+      "version": "0.9-33",
+      "dependencies": [
+        "grDevices",
+        "graphics",
+        "methods",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/kernlab_0.9-33.tar.gz",
+      "sha256": "70c0787d6d3762c89bb68218fbee19e861fcb5d4c05b787a9692055d95dd3061",
+      "size": 1025337
+    },
+    {
+      "package": "ks",
+      "version": "1.15.3",
+      "dependencies": [
+        "FNN",
+        "KernSmooth",
+        "Matrix",
+        "kernlab",
+        "mclust",
+        "mgcv",
+        "multicool",
+        "mvtnorm",
+        "pracma"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/ks_1.15.3.tar.gz",
+      "sha256": "95b540db5fd385ad2eca9c1d2914473eed74ba91bf59c85ef7debfbaadccb82d",
+      "size": 888587
+    },
+    {
+      "package": "listenv",
+      "version": "1.1.0",
+      "dependencies": [],
+      "url": "https://cloud.r-project.org/src/contrib/listenv_1.1.0.tar.gz",
+      "sha256": "08ce62df335de0a623c289fcb6e26f883445581377b5c405dbb449c840311760",
+      "size": 56056
+    },
+    {
+      "package": "loo",
+      "version": "2.10.1",
+      "dependencies": [
+        "checkmate",
+        "matrixStats",
+        "parallel",
+        "posterior",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/loo_2.10.1.tar.gz",
+      "sha256": "a4c7759ec0923f775fd7b5e4cf8341e7f7c3520d6b68d2d5b3af0aafc465b432",
+      "size": 2882328
+    },
+    {
+      "package": "mclust",
+      "version": "6.1.4",
+      "dependencies": [
+        "grDevices",
+        "graphics",
+        "stats",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/mclust_6.1.4.tar.gz",
+      "sha256": "e65b518e31421071c806230849be570ee8e7263ead6fddc9845ee3db1f805217",
+      "size": 2782934
+    },
+    {
+      "package": "multicool",
+      "version": "1.0.2",
+      "dependencies": [
+        "Rcpp",
+        "gmp",
+        "methods"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/multicool_1.0.2.tar.gz",
+      "sha256": "41b1cfbb9537b0c7c3aef6670d2bdda8a440c9cc1dffc944435cf2b0ecad0ab7",
+      "size": 20371
+    },
+    {
+      "package": "pROC",
+      "version": "1.19.1",
+      "dependencies": [
+        "Rcpp",
+        "methods"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/pROC_1.19.1.tar.gz",
+      "sha256": "cb1849e8e55c43e15072646757c9c12e3fe7f9b662dd3ff769a7c87bdd32e65c",
+      "size": 628265
+    },
+    {
+      "package": "patchwork",
+      "version": "1.3.2",
+      "dependencies": [
+        "cli",
+        "farver",
+        "ggplot2",
+        "grDevices",
+        "graphics",
+        "grid",
+        "gtable",
+        "rlang",
+        "stats",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/patchwork_1.3.2.tar.gz",
+      "sha256": "0ec469acfd69d1a4f1a6317c861e6bf000f768c2d5047e3aed6713df9afe27eb",
+      "size": 3322521
+    },
+    {
+      "package": "pbapply",
+      "version": "1.7-5",
+      "dependencies": [
+        "parallel"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/pbapply_1.7-5.tar.gz",
+      "sha256": "1a6473e93da0f891e8dd6d967a7a93fa9a680a6f77d08f41502e8110b5ca9c68",
+      "size": 23767
+    },
+    {
+      "package": "pheatmap",
+      "version": "1.0.13",
+      "dependencies": [
+        "RColorBrewer",
+        "grDevices",
+        "graphics",
+        "grid",
+        "gtable",
+        "scales",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/pheatmap_1.0.13.tar.gz",
+      "sha256": "4ac34d4c5f787624f45cc98a97b8c28295c57eb635d1523554252c5a583142f7",
+      "size": 15162
+    },
+    {
+      "package": "pls",
+      "version": "2.9-0",
+      "dependencies": [
+        "grDevices",
+        "graphics",
+        "methods",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/pls_2.9-0.tar.gz",
+      "sha256": "fd99cba675b189bda7dbfe56ad2e3c187dc0942a0ac53839dccd64ddfae78e1f",
+      "size": 4371152
+    },
+    {
+      "package": "polynom",
+      "version": "1.4-1",
+      "dependencies": [
+        "graphics",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/polynom_1.4-1.tar.gz",
+      "sha256": "bc1edb7bb16c8b299103f80a52ab8c5fc200cd07a9056578c1f672e9f5019278",
+      "size": 334803
+    },
+    {
+      "package": "posterior",
+      "version": "1.8.1",
+      "dependencies": [
+        "abind",
+        "checkmate",
+        "distributional",
+        "matrixStats",
+        "methods",
+        "parallel",
+        "pillar",
+        "rlang",
+        "stats",
+        "tensorA",
+        "tibble",
+        "vctrs"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/posterior_1.8.1.tar.gz",
+      "sha256": "cd37d441eedd4b4d3d37a65776364b42417031df9af144984c6b769cfc596bb6",
+      "size": 476603
+    },
+    {
+      "package": "pracma",
+      "version": "2.4.6",
+      "dependencies": [
+        "grDevices",
+        "graphics",
+        "stats",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/pracma_2.4.6.tar.gz",
+      "sha256": "1857b831ec7da6eb651574ccdb12e1baef4c7150cbdc6380cf9fd70e60ae4552",
+      "size": 398691
+    },
+    {
+      "package": "progressr",
+      "version": "1.1.0",
+      "dependencies": [
+        "tools",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/progressr_1.1.0.tar.gz",
+      "sha256": "55d287b046162f04087308640b03a53160fa92dab7824f0e15efc5f7cb20dd0b",
+      "size": 665903
+    },
+    {
+      "package": "quantreg",
+      "version": "6.1",
+      "dependencies": [
+        "MASS",
+        "Matrix",
+        "MatrixModels",
+        "SparseM",
+        "graphics",
+        "methods",
+        "stats",
+        "survival"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/quantreg_6.1.tar.gz",
+      "sha256": "f42292c5ab25a15f39295b93391deafef192fe09eefde563399a64eba7e0169a",
+      "size": 925163
+    },
+    {
+      "package": "rstan",
+      "version": "2.32.7",
+      "dependencies": [
+        "BH",
+        "QuickJSR",
+        "Rcpp",
+        "RcppEigen",
+        "RcppParallel",
+        "StanHeaders",
+        "ggplot2",
+        "gridExtra",
+        "inline",
+        "loo",
+        "methods",
+        "pkgbuild",
+        "stats4"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/rstan_2.32.7.tar.gz",
+      "sha256": "5931cf77fb01672f962c203c49bb4508f86f55553cac97f58ff0c7a55b72174a",
+      "size": 1557831
+    },
+    {
+      "package": "rstantools",
+      "version": "2.7.1",
+      "dependencies": [
+        "QuickJSR",
+        "Rcpp",
+        "RcppParallel",
+        "desc",
+        "stats",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/rstantools_2.7.1.tar.gz",
+      "sha256": "d8339de70d3b42c4fe77e53ba5a47a96abbffbcfe31619c608f67c44116b7d14",
+      "size": 544240
+    },
+    {
+      "package": "rstatix",
+      "version": "1.1.0",
+      "dependencies": [
+        "broom",
+        "car",
+        "corrplot",
+        "dplyr",
+        "generics",
+        "magrittr",
+        "purrr",
+        "rlang",
+        "stats",
+        "tibble",
+        "tidyr",
+        "tidyselect",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/rstatix_1.1.0.tar.gz",
+      "sha256": "b71a99d3cebdcf9acb96b2ce97bee12df618c7e1875aabb7851f3fc8e0b5dd19",
+      "size": 505913
+    },
+    {
+      "package": "scDblFinder",
+      "version": "1.26.9",
+      "dependencies": [
+        "BiocGenerics",
+        "BiocNeighbors",
+        "BiocParallel",
+        "BiocSingular",
+        "DelayedArray",
+        "GenomeInfoDb",
+        "GenomicRanges",
+        "IRanges",
+        "MASS",
+        "Matrix",
+        "Rsamtools",
+        "S4Vectors",
+        "SingleCellExperiment",
+        "SummarizedExperiment",
+        "bluster",
+        "igraph",
+        "methods",
+        "rtracklayer",
+        "scater",
+        "scran",
+        "scrapper",
+        "scuttle",
+        "stats",
+        "utils",
+        "xgboost"
+      ],
+      "url": "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib/scDblFinder_1.26.9.tar.gz",
+      "sha256": "8d09ea9982f0785d7e05989e3767f6daf56b32df2c4ba1a02a6e2e23740385f0",
+      "size": 2285770
+    },
+    {
+      "package": "scater",
+      "version": "1.40.2",
+      "dependencies": [
+        "BiocGenerics",
+        "BiocNeighbors",
+        "BiocParallel",
+        "BiocSingular",
+        "DelayedArray",
+        "Matrix",
+        "MatrixGenerics",
+        "RColorBrewer",
+        "RcppML",
+        "Rtsne",
+        "S4Vectors",
+        "SingleCellExperiment",
+        "SparseArray",
+        "SummarizedExperiment",
+        "beachmat",
+        "ggbeeswarm",
+        "ggplot2",
+        "ggrepel",
+        "methods",
+        "pheatmap",
+        "rlang",
+        "scuttle",
+        "stats",
+        "utils",
+        "uwot",
+        "viridis"
+      ],
+      "url": "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib/scater_1.40.2.tar.gz",
+      "sha256": "9591a0681cef04568ab2f847cdc905dc8fd8c4c6adac370747adcd78eabc4465",
+      "size": 4567162
+    },
+    {
+      "package": "scattermore",
+      "version": "1.2",
+      "dependencies": [
+        "ggplot2",
+        "grDevices",
+        "graphics",
+        "grid",
+        "scales"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/scattermore_1.2.tar.gz",
+      "sha256": "5534a87b0bdd1375f0fbffc1a5c980ad64e33a108435a67469b8324b580602d1",
+      "size": 261296
+    },
+    {
+      "package": "scrapper",
+      "version": "1.6.3",
+      "dependencies": [
+        "BiocNeighbors",
+        "DelayedArray",
+        "Rcpp",
+        "Rigraphlib",
+        "S4Vectors",
+        "SparseArray",
+        "assorthead",
+        "beachmat",
+        "methods",
+        "parallel"
+      ],
+      "url": "https://bioconductor.posit.co/packages/3.23/bioc/src/contrib/scrapper_1.6.3.tar.gz",
+      "sha256": "7393be2a22a31d334b3213b88da138f73ce030f3ced57d4fe79e25cf8c8de234",
+      "size": 1436203
+    },
+    {
+      "package": "sctransform",
+      "version": "0.4.3",
+      "dependencies": [
+        "MASS",
+        "Matrix",
+        "Rcpp",
+        "RcppArmadillo",
+        "dplyr",
+        "future",
+        "future.apply",
+        "ggplot2",
+        "gridExtra",
+        "magrittr",
+        "matrixStats",
+        "methods",
+        "parallelly",
+        "reshape2",
+        "rlang"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/sctransform_0.4.3.tar.gz",
+      "sha256": "f07fdf1875eea9b89a2d7bedc4bd542bf7da836b1defc1aaf687018053377a50",
+      "size": 187408
+    },
+    {
+      "package": "shape",
+      "version": "1.4.6.1",
+      "dependencies": [
+        "grDevices",
+        "graphics",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/shape_1.4.6.1.tar.gz",
+      "sha256": "43f9bd0f997fd6cf1838efd8b2509c9a6396513f4e54a20360481634affd22a4",
+      "size": 646412
+    },
+    {
+      "package": "sp",
+      "version": "2.2-4",
+      "dependencies": [
+        "grDevices",
+        "graphics",
+        "grid",
+        "lattice",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/sp_2.2-4.tar.gz",
+      "sha256": "73f03473e61e89f3c0c1a96ac6e17e81a075637963d1d6b156dc9c969b2dbc93",
+      "size": 4477952
+    },
+    {
+      "package": "spam",
+      "version": "2.11-4",
+      "dependencies": [
+        "Rcpp",
+        "dotCall64",
+        "grid",
+        "methods"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/spam_2.11-4.tar.gz",
+      "sha256": "e206414c4220f0716fdc49654a3b450483920a5046f840f97452e1d93a689886",
+      "size": 3250893
+    },
+    {
+      "package": "tensorA",
+      "version": "0.36.2.1",
+      "dependencies": [
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/tensorA_0.36.2.1.tar.gz",
+      "sha256": "06588261fe7dff6a8edafe2b9d436b39a3b46c754f2ed327ae6322561a617db7",
+      "size": 47335
+    },
+    {
+      "package": "uwot",
+      "version": "0.2.5",
+      "dependencies": [
+        "FNN",
+        "Matrix",
+        "RSpectra",
+        "Rcpp",
+        "RcppAnnoy",
+        "RcppProgress",
+        "dqrng",
+        "irlba",
+        "methods"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/uwot_0.2.5.tar.gz",
+      "sha256": "da0571a7a5db41cddfac54b11aefa3a61c913b208aeb5bf66e9428ba1e1c4be6",
+      "size": 618542
+    },
+    {
+      "package": "vipor",
+      "version": "0.4.7",
+      "dependencies": [
+        "graphics",
+        "stats"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/vipor_0.4.7.tar.gz",
+      "sha256": "baad41e9ddaa13b5a1db1abab34253b27d5b99e5a6a649b2036aaf1483370b9e",
+      "size": 4688496
+    },
+    {
+      "package": "viridis",
+      "version": "0.6.5",
+      "dependencies": [
+        "ggplot2",
+        "gridExtra",
+        "viridisLite"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/viridis_0.6.5.tar.gz",
+      "sha256": "862b5cb6be115deea0207cdd3c8bb33de28552cfdc29900777512fd488d0005c",
+      "size": 3047363
+    },
+    {
+      "package": "xgboost",
+      "version": "3.2.1.1",
+      "dependencies": [
+        "Matrix",
+        "data.table",
+        "jsonlite",
+        "methods"
+      ],
+      "url": "https://cloud.r-project.org/src/contrib/xgboost_3.2.1.1.tar.gz",
+      "sha256": "54f3f59aa5689117977aab725b6bda88db71fff4b1b6d92289f81cb10bcee2a5",
+      "size": 1625267
+    }
+  ]
+}

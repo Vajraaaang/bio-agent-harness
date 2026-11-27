@@ -7,16 +7,16 @@ No ambient trust store, environment override, or unverified fallback is loaded.
 
 import base64
 import hashlib
-from importlib import metadata
+import http.client as _http_client
 import os
-from pathlib import Path
 import re
-from ssl import CERT_REQUIRED, PROTOCOL_TLS_CLIENT, SSLContext
 import stat
 import sys
+from importlib import metadata
+from pathlib import Path
+from ssl import CERT_REQUIRED, PROTOCOL_TLS_CLIENT, SSLContext
 
 import certifi
-
 
 _MAX_CA_BYTES = 1024 * 1024
 
@@ -25,7 +25,11 @@ def _canonical_path(value: str) -> Path:
     if not isinstance(value, str):
         raise ValueError("Certifi trust path must be an absolute canonical path")
     path = Path(value)
-    if not path.is_absolute() or str(path) != value or path.resolve(strict=True) != path:
+    if (
+        not path.is_absolute()
+        or str(path) != value
+        or path.resolve(strict=True) != path
+    ):
         raise ValueError("Certifi trust path must be canonical and contain no symlinks")
     return path
 
@@ -41,7 +45,8 @@ def _read_ca(path: Path, expected_size: int) -> bytes:
             os.close(directory)
             directory = child
         descriptor = os.open(
-            path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+            path.name,
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
             dir_fd=directory,
         )
         try:
@@ -68,23 +73,34 @@ def _verified_bundle() -> tuple[bytes, dict]:
         if ca == prefix or not ca.is_relative_to(prefix):
             raise ValueError("Certifi CA file must be inside the current runtime")
         distribution = metadata.distribution("certifi")
-        entries = [entry for entry in distribution.files or ()
-                   if str(entry) == "certifi/cacert.pem"]
+        entries = [
+            entry
+            for entry in distribution.files or ()
+            if str(entry) == "certifi/cacert.pem"
+        ]
         if len(entries) != 1:
             raise ValueError("Certifi CA file must have exactly one RECORD entry")
         entry = entries[0]
-        recorded_path = _canonical_path(os.fspath(distribution.locate_file(entry)))
+        installed = distribution.locate_file(entry)
+        if not isinstance(installed, (str, os.PathLike)):
+            raise ValueError("Certifi RECORD requires a filesystem path")
+        recorded_path = _canonical_path(os.fspath(installed))
         if recorded_path != ca:
             raise ValueError("Certifi CA file does not match the installed RECORD path")
         recorded_hash = entry.hash
-        if (recorded_hash is None or recorded_hash.mode != "sha256"
-                or re.fullmatch(r"[A-Za-z0-9_-]{43}", recorded_hash.value) is None):
+        if (
+            recorded_hash is None
+            or recorded_hash.mode != "sha256"
+            or re.fullmatch(r"[A-Za-z0-9_-]{43}", recorded_hash.value) is None
+        ):
             raise ValueError("Certifi CA file requires a SHA-256 RECORD hash")
         if type(entry.size) is not int or not 0 < entry.size <= _MAX_CA_BYTES:
             raise ValueError("Certifi CA file requires a bounded RECORD size")
         version = distribution.version
-        if (not isinstance(version, str)
-                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.!+_-]{0,127}", version) is None):
+        if (
+            not isinstance(version, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.!+_-]{0,127}", version) is None
+        ):
             raise ValueError("Certifi version must be bounded public metadata")
         raw = _read_ca(ca, entry.size)
         digest = hashlib.sha256(raw).digest()
@@ -125,7 +141,6 @@ def tls_identity() -> dict:
 
 # Additive, explicitly selected HTTP framing support. Existing TLS APIs above
 # retain their original behavior; ordinary HTTP connections keep stdlib defaults.
-import http.client as _http_client
 
 
 class _StrictHeaderLines:
@@ -139,9 +154,15 @@ class _StrictHeaderLines:
         line = self.stream.readline(8193)
         self.lines += 1
         self.total += len(line)
-        if (len(line) > 8192 or not line.endswith(b"\r\n")
-                or self.lines > 128 or self.total > 65536):
-            raise _http_client.HTTPException("Invalid or oversized HTTP response headers")
+        if (
+            len(line) > 8192
+            or not line.endswith(b"\r\n")
+            or self.lines > 128
+            or self.total > 65536
+        ):
+            raise _http_client.HTTPException(
+                "Invalid or oversized HTTP response headers"
+            )
         return line
 
     def close(self):
@@ -179,10 +200,19 @@ class StrictTrailerHTTPResponse(_http_client.HTTPResponse):
                 raise _http_client.HTTPException("Defective HTTP response headers")
             encodings = self.headers.get_all("Transfer-Encoding", [])
             lengths = self.headers.get_all("Content-Length", [])
-            if encodings and (len(encodings) != 1 or encodings[0].lower() != "chunked" or lengths):
-                raise _http_client.HTTPException("Unsupported or ambiguous HTTP response framing")
-            if lengths and (len(lengths) != 1 or re.fullmatch(r"[0-9]+", lengths[0].strip(" \t")) is None):
-                raise _http_client.HTTPException("Invalid or ambiguous HTTP response length")
+            if encodings and (
+                len(encodings) != 1 or encodings[0].lower() != "chunked" or lengths
+            ):
+                raise _http_client.HTTPException(
+                    "Unsupported or ambiguous HTTP response framing"
+                )
+            if lengths and (
+                len(lengths) != 1
+                or re.fullmatch(r"[0-9]+", lengths[0].strip(" \t")) is None
+            ):
+                raise _http_client.HTTPException(
+                    "Invalid or ambiguous HTTP response length"
+                )
         except _http_client.HTTPException:
             self._close_conn()
             raise _http_client.HTTPException("Invalid HTTP response headers") from None
@@ -192,7 +222,9 @@ class StrictTrailerHTTPResponse(_http_client.HTTPResponse):
 
     def _strict_framing_failure(self):
         self._close_conn()
-        raise _http_client.HTTPException("Invalid or oversized HTTP chunk framing") from None
+        raise _http_client.HTTPException(
+            "Invalid or oversized HTTP chunk framing"
+        ) from None
 
     def _strict_account_metadata(self, size):
         self._strict_metadata_bytes += size
@@ -256,8 +288,10 @@ class StrictTrailerHTTPResponse(_http_client.HTTPResponse):
 
 def strict_chunked_response_complete(response) -> bool:
     """Recognize actual completed strict chunked framing, without caller flags."""
-    return (type(response) is StrictTrailerHTTPResponse
-            and response.strict_trailer_complete is True
-            and response.chunked is True and response.chunk_left is None
-            and response.isclosed())
-
+    return (
+        type(response) is StrictTrailerHTTPResponse
+        and response.strict_trailer_complete is True
+        and response.chunked is True
+        and response.chunk_left is None
+        and response.isclosed()
+    )

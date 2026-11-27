@@ -38,7 +38,30 @@ from ._sources import (
 )
 
 PUBLIC = {"public", "synthetic"}
-_FILE_TYPES = {"csv", "tsv", "parquet", "h5ad", "h5mu", "json", "mtx"}
+_AUXILIARY_FORMATS = {
+    "bam",
+    "bai",
+    "vcf",
+    "tbi",
+    "csi",
+    "fa",
+    "fasta",
+    "fai",
+    "bed",
+    "txt",
+    "ud",
+    "mu",
+    "h5",
+}
+_FILE_TYPES = _AUXILIARY_FORMATS | {
+    "csv",
+    "tsv",
+    "parquet",
+    "h5ad",
+    "h5mu",
+    "json",
+    "mtx",
+}
 _KINDS = {
     "expression": "expression_matrix",
     "spatial": "expression_matrix",
@@ -92,7 +115,8 @@ class _LocalArrayStore(Mapping):
             return canonical(self.tree.metadata[key])
         if key not in self.tree.array_chunks:
             raise KeyError(key)
-        path = scoped_path(self.tree.path, key)
+        physical = getattr(self.tree, "chunk_paths", {}).get(key, key)
+        path = scoped_path(self.tree.path, physical)
         sha = self.tree.array_chunks[key]
         with pinned_file(path, self.tree.until, expected=sha) as (stream, _, size):
             if size > 32 * BLOCK:
@@ -100,10 +124,10 @@ class _LocalArrayStore(Mapping):
             return stream.read()
 
     def __iter__(self):
-        return iter(self.tree.array_chunks)
+        return iter(self.tree.array_chunks.keys() | self.tree.metadata.keys())
 
     def __len__(self):
-        return len(self.tree.array_chunks)
+        return len(self.tree.array_chunks.keys() | self.tree.metadata.keys())
 
     def __contains__(self, key):
         return key in self.tree.metadata or key in self.tree.array_chunks
@@ -328,6 +352,9 @@ def _directory_profile(tree, fmt, layers, hidden):
                 False,
                 True,
             )
+    from .intake_zarr import inspected_store
+
+    tree = inspected_store(tree)
     dimensions = _zarr_axes(tree, layers)
     return dimensions, _zarr_forensics(tree, dimensions), False, True
 
@@ -377,7 +404,62 @@ def _input_path(ctx, value):
         raise OperationBlocked(SCOPE) from error
 
 
+def _zarr_donors(tree, details):
+    import zarr
+
+    from devbench.core.donor_forensics import intake_zarr_forensics
+    from devbench.core.zarr_expression_store import _check_array
+
+    from .intake_zarr import inspected_store
+
+    tree = inspected_store(tree)
+    for key, meta in tree.metadata.items():
+        if key.endswith("/.zarray") and key.split("/")[0] in {
+            "X",
+            "obs",
+            "var",
+        }:
+            _check_array(meta)
+            if np.dtype(meta["dtype"]).hasobject and meta.get("filters") != [
+                {"id": "vlen-utf8"}
+            ]:
+                raise ValueError("Unsupported Zarr axis codec")
+    group = zarr.open_group(zarr.storage.KVStore(_LocalArrayStore(tree)), mode="r")
+    return intake_zarr_forensics(
+        group,
+        source_sha256=tree.sha256,
+        count_forensics=details[1],
+        check_time=lambda: check_time(tree.until),
+    )
+
+
+def _file_details(stream, sha, hidden, path, fmt, kind, layers, until):
+    donor = None
+    if hidden:
+        details = axes(), unassessed(), True, True
+    elif fmt in _AUXILIARY_FORMATS:
+        # The public control plane retains a digest manifest only. The
+        # mounted consumer validates the tool-specific binary layout.
+        from .auxiliary_intake import auxiliary_sensitive
+
+        details = axes(), unassessed(), auxiliary_sensitive(stream, fmt, until), True
+    else:
+        details = file_profile(stream, path, fmt, kind, layers, until)
+    if fmt == "h5ad" and not hidden and not details[2]:
+        from devbench.core.donor_forensics import intake_h5ad_forensics
+
+        stream.seek(0)
+        donor = intake_h5ad_forensics(
+            stream,
+            source_sha256=sha,
+            count_forensics=details[1],
+            check_time=lambda: check_time(until),
+        )
+    return details, donor
+
+
 def _inspect(ctx, entry, layers, until, *, admit):
+    donor = None
     hidden = _known_private(ctx.input_root, entry)
     if hidden and not admit:
         raise OperationBlocked(PRIVATE)
@@ -392,15 +474,20 @@ def _inspect(ctx, entry, layers, until, *, admit):
         hidden = hidden or tainted or ctx.protected(digests=(sha,))
         fmt = _store_format(tree, hidden or tree.clinical)
         details = _directory_profile(tree, fmt, layers, hidden)
+        if (
+            fmt == "zarr"
+            and not hidden
+            and not details[2]
+            and (".zgroup" in tree.metadata or "zarr.json" in tree.metadata)
+        ):
+            donor = _zarr_donors(tree, details)
     else:
         merkle = None
         with pinned_file(path, until) as (stream, sha, size):
             hidden = hidden or ctx.protected(digests=(sha,))
             fmt = _file_format(path, hidden)
-            details = (
-                (axes(), unassessed(), True, True)
-                if hidden
-                else file_profile(stream, path, fmt, entry["file_kind"], layers, until)
+            details, donor = _file_details(
+                stream, sha, hidden, path, fmt, entry["file_kind"], layers, until
             )
     dimensions, counts, clinical_header, expression = details
     ctx.check_embargo((sha,))
@@ -418,6 +505,7 @@ def _inspect(ctx, entry, layers, until, *, admit):
             "merkle_root_sha256": merkle,
             "axes": dimensions,
             "count_1_forensics": counts,
+            "donor_forensics": donor,
             "data_classification": label,
         },
         expression,
@@ -463,6 +551,9 @@ def register_investigation_input(ctx, args):
         "provenance_declaration": args["provenance_declaration"],
         "axes": profile["axes"],
         "count_1_forensics": checked,
+        "donor_forensics": profile["donor_forensics"],
+        "raw_unfiltered_declared": representation == "raw_reads_or_droplets"
+        and args["provenance_declaration"].get("raw_unfiltered_droplets") is True,
         "source_format": fmt,
         "source_sha256": sha,
         "contains_expression_matrix": expression,
@@ -475,7 +566,7 @@ def register_investigation_input(ctx, args):
     }
     if members:
         detail["member_sha256s"] = members
-    if fmt in {"mtx", "10x_mtx", "opaque"}:
+    if fmt in {"mtx", "10x_mtx", "opaque"} | _AUXILIARY_FORMATS:
         sha, size, detail["manifest"] = _manifest_ref(profile)
         fmt = "json"
     kind = _KINDS[entry["file_kind"]]

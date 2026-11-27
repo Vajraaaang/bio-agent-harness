@@ -357,6 +357,14 @@ def _dispatch(jobs, rid, plan, stage, request, module, image):
         worker_module=module,
         timeout=override.get("timeout_sec", 14_400),
         memory_mb=override.get("memory_mb", 2048),
+        resource_profile={
+            "memory_mb": override.get("memory_mb", 2048),
+            "timeout_sec": override.get("timeout_sec", 14_400),
+            "gpu": override.get("gpu", False),
+            "cpus": override.get("cpus", 2),
+        },
+        data_classification=plan.get("data_classification", "unclassified"),
+        epistemic_purpose=plan.get("epistemic_purpose", "exploratory"),
     )
     if (
         result.get("cleanup_confirmed") is not True
@@ -427,6 +435,12 @@ def execute_mounted_kernel(jobs, rid, plan, bindings, output_dir, *, ctx=None):
     inputs.mkdir(mode=0o700, parents=True)
     (stage / "outputs").mkdir(mode=0o700)
     params = plan["kernel"]["parameters"]
+    from rna_kernels.m2_contract import KERNEL_AXES
+
+    if name in KERNEL_AXES:
+        from .registry_m2 import execute_m2
+
+        return execute_m2(ctx, jobs, rid, plan, bindings, output_dir, stage, image)
     if name in {"bulk_de", "bulk_continuous_contrast"}:
         from .registry_bulk import execute_bulk
 

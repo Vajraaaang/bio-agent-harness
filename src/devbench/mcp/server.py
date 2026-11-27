@@ -60,6 +60,7 @@ _REMEDIATION = {
     "resource_quota_exceeded": "Narrow the inspection or request a smaller projection.",
     "plan_identity_mismatch": "Retry with the retained digest.",
     "stale_revision_conflict": "Read the current revision and retry.",
+    "missing_raw_droplet_matrix": "This method requires verified unfiltered droplets.",
     "scientific_refusal": "Review the design and retained evidence before proceeding.",
     "awaiting_information": "Supply the required declarations or verified evidence.",
     "runtime_prerequisite_missing": "Check installed runtime capabilities.",

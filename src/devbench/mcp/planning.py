@@ -183,6 +183,7 @@ def _settings(ctx, plan):
                 kernel["kernel_id"],
                 session_id=plan["session_id"],
                 version=kernel["version"],
+                require_gpu=(plan.get("resource_override") or {}).get("gpu", False),
             ),
             "required_representations": kernel["required_representations"],
         }
@@ -201,14 +202,21 @@ def require_runtime_pins(supervisor, plan):
     """Fail before enqueue when a frozen adapter has no locally available image."""
     from devbench.mcp.runtime import available_images
 
-    live = {row["image_id"] for row in available_images(supervisor, backend="docker")}
+    from .registry import _image_backend
+
+    inventories: dict[str, set] = {}
     for step in (plan, *_steps(plan)):
         if step["plan_kind"] == "tier2_exploratory_code":
             image = step["exploratory_code"]["base_image_id"]
         else:
             pin = plan["runtime_pin"]["steps"].get(step.get("step_key", "root"), {})
             image = pin.get("oci_image_digest")
-        if not image or image not in live:
+        backend = _image_backend((step.get("kernel") or {}).get("kernel_id"))
+        if backend not in inventories:
+            inventories[backend] = {
+                row["image_id"] for row in available_images(supervisor, backend=backend)
+            }
+        if not image or image not in inventories[backend]:
             raise OperationBlocked("runtime_prerequisite_missing")
 
 
@@ -277,6 +285,27 @@ def _origins(ctx, db, plan):
                 raise OperationBlocked("scientific_refusal")
 
 
+def _admit_input_purpose(plan, step, bound):
+    records = bound.values()
+    from rna_kernels.m2_contract import KERNEL_AXES
+
+    from .registry_m2 import validate_bindings
+
+    kernel = step.get("kernel") or {}
+    name = kernel.get("kernel_id")
+    purpose = plan["epistemic_purpose"]
+    if purpose == "confirmatory" and any(
+        r["detail"].get("donor_conflict_halted")
+        or r["ref"]["representation_class"] == "ambient_adjusted_counts"
+        for r in records
+    ):
+        raise OperationBlocked("scientific_refusal")
+    if name in KERNEL_AXES:
+        for variant in (plan.get("sweep_spec") or {}).get("parameter_sets", [{}]):
+            validate_bindings(name, bound, {**kernel["parameters"], **variant}, purpose)
+    return name in KERNEL_AXES
+
+
 def _bind_inputs(ctx, db, plan, pins):
     roots = set()
     warnings = []
@@ -286,12 +315,16 @@ def _bind_inputs(ctx, db, plan, pins):
             .get(step.get("step_key", "root"), {})
             .get("required_representations", ())
         )
-        records = [
-            ctx.artifact(
+        bound = {
+            port: ctx.artifact(
                 plan["session_id"], binding["artifact_id"], binding["sha256"], db
             )
-            for binding in step.get("input_bindings", plan["input_bindings"]).values()
-        ]
+            for port, binding in step.get(
+                "input_bindings", plan["input_bindings"]
+            ).items()
+        }
+        records = list(bound.values())
+        m2_admitted = _admit_input_purpose(plan, step, bound)
         if code := step.get("exploratory_code"):
             warnings.extend(approval_preflight.input_warnings(code, records))
         roots.update(record["ref"]["sha256"] for record in records)
@@ -300,6 +333,8 @@ def _bind_inputs(ctx, db, plan, pins):
             for record in records
             if record["detail"].get("source_sha256")
         )
+        if m2_admitted:
+            continue
         if not records and representations:
             raise OperationBlocked("awaiting_information")
         for record in records:

@@ -336,7 +336,7 @@ def run_exploratory_recipe(
     work.mkdir(mode=0o700)
     collected = work / "outputs"
     collected.mkdir(mode=0o700)
-    matrix_pins = {}
+    matrix_pins: dict[str, dict] = {}
     inputs = executor._stage_oci_inputs(
         material.envelope,
         material.step,

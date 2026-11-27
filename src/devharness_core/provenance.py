@@ -13,13 +13,14 @@ import stat
 import tempfile
 import threading
 import uuid
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Callable, Optional, Union
 
-from rna_kernels.canonical import MAX_JSON_BYTES as MAX_JSON_BYTES, canonical_json as canonical_json
+from rna_kernels.canonical import MAX_JSON_BYTES as MAX_JSON_BYTES
+from rna_kernels.canonical import canonical_json as canonical_json
 
-PathLike = Union[str, Path]
+PathLike = str | Path
 SCHEMA_VERSION = "devharness.execution-dag/1"
 CANONICALIZATION = "devharness.canonical-json/1"
 ARTIFACT_VERSION = "devharness.directory-artifact/1"
@@ -64,7 +65,8 @@ def _open_regular(path: Path):
     # A FIFO must reach the descriptor type check without waiting for a writer.
     # O_NONBLOCK does not bound ordinary regular-file I/O.
     descriptor = os.open(
-        str(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        str(path),
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
     )
     if not stat.S_ISREG(os.fstat(descriptor).st_mode):
         os.close(descriptor)
@@ -82,8 +84,11 @@ def _stream_digest(path: Path, sink=None, *, max_bytes=None) -> tuple:
         while True:
             # Read the descriptor directly to avoid buffered read-ahead.
             # One lookahead byte detects growth; it is never written to a sink.
-            chunk = (source.read(CHUNK_BYTES) if max_bytes is None else
-                     os.read(source.fileno(), min(CHUNK_BYTES, max_bytes - size + 1)))
+            chunk = (
+                source.read(CHUNK_BYTES)
+                if max_bytes is None
+                else os.read(source.fileno(), min(CHUNK_BYTES, max_bytes - size + 1))
+            )
             if not chunk:
                 break
             if max_bytes is not None and size + len(chunk) > max_bytes:
@@ -105,7 +110,9 @@ def _sync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def _publish(temporary: Path, destination: Path, digest: str, allow_existing=True) -> None:
+def _publish(
+    temporary: Path, destination: Path, digest: str, allow_existing=True
+) -> None:
     """Atomically publish complete bytes without replacing an existing name."""
     if destination.parent.is_symlink() or not destination.parent.is_dir():
         raise ValueError("Invalid evidence storage directory")
@@ -113,11 +120,11 @@ def _publish(temporary: Path, destination: Path, digest: str, allow_existing=Tru
         os.chmod(temporary, 0o444)  # Advisory protection; explicitly not WORM.
         try:
             os.link(str(temporary), str(destination))
-        except FileExistsError:
+        except FileExistsError as error:
             if not allow_existing:
                 raise
             if _stream_digest(destination)[0] != digest:
-                raise ValueError("Corrupt existing evidence: hash mismatch")
+                raise ValueError("Corrupt existing evidence: hash mismatch") from error
         _sync_directory(destination.parent)
     finally:
         temporary.unlink(missing_ok=True)
@@ -131,52 +138,80 @@ def _atomic_bytes(destination: Path, data: bytes, allow_existing=True) -> None:
             output.write(data)
             output.flush()
             os.fsync(output.fileno())
-        _publish(temporary, destination, hashlib.sha256(data).hexdigest(), allow_existing)
+        _publish(
+            temporary, destination, hashlib.sha256(data).hexdigest(), allow_existing
+        )
     finally:
         temporary.unlink(missing_ok=True)
 
 
-def _member_name(name: str) -> bool:
-    if not isinstance(name, str) or not name or name == "." or "\\" in name or "\x00" in name:
+def _member_name(name: object) -> bool:
+    if (
+        not isinstance(name, str)
+        or not name
+        or name == "."
+        or "\\" in name
+        or "\x00" in name
+    ):
         return False
     member = PurePosixPath(name)
-    return (not member.is_absolute() and name == member.as_posix()
-            and all(part not in (".", "..") for part in member.parts))
+    return (
+        not member.is_absolute()
+        and name == member.as_posix()
+        and all(part not in (".", "..") for part in member.parts)
+    )
+
+
+def _bounded_inventory(source, max_entries):
+    entries: list[tuple[str, Path, str, tuple]] = []
+    # os.walk materializes each directory before yielding it. Use scandir
+    # incrementally so a single wide directory cannot evade the entry cap.
+    pending = [source]
+    while pending:
+        base = pending.pop()
+        if base.is_symlink():
+            raise ValueError("Symlink artifacts are not permitted")
+        with os.scandir(base) as children:
+            for child in children:
+                if len(entries) >= max_entries:
+                    raise ArtifactLimitError("Artifact entry limit exceeded")
+                path = base / child.name
+                if child.is_symlink():
+                    raise ValueError("Symlink artifacts are not permitted")
+                info = child.stat(follow_symlinks=False)
+                is_directory = stat.S_ISDIR(info.st_mode)
+                if not is_directory and not stat.S_ISREG(info.st_mode):
+                    raise ValueError(
+                        "Artifacts must contain only regular files and directories"
+                    )
+                member = path.relative_to(source).as_posix()
+                if not _member_name(member):
+                    raise ValueError("Unsafe artifact member name")
+                entries.append(
+                    (
+                        member,
+                        path,
+                        "directory" if is_directory else "file",
+                        _signature(info),
+                    )
+                )
+                if is_directory:
+                    pending.append(path)
+    return sorted(entries, key=lambda item: item[0])
 
 
 def _inventory(source: Path, *, max_entries=None) -> list:
     _limit(max_entries, "max_entries")
-    entries = []
+    entries: list[tuple[str, Path, str, tuple]] = []
     if max_entries is not None:
-        # os.walk materializes each directory before yielding it. Use scandir
-        # incrementally so a single wide directory cannot evade the entry cap.
-        pending = [source]
-        while pending:
-            base = pending.pop()
-            if base.is_symlink():
-                raise ValueError("Symlink artifacts are not permitted")
-            with os.scandir(base) as children:
-                for child in children:
-                    if len(entries) >= max_entries:
-                        raise ArtifactLimitError("Artifact entry limit exceeded")
-                    path = base / child.name
-                    if child.is_symlink():
-                        raise ValueError("Symlink artifacts are not permitted")
-                    info = child.stat(follow_symlinks=False)
-                    directory = stat.S_ISDIR(info.st_mode)
-                    if not directory and not stat.S_ISREG(info.st_mode):
-                        raise ValueError("Artifacts must contain only regular files and directories")
-                    member = path.relative_to(source).as_posix()
-                    if not _member_name(member):
-                        raise ValueError("Unsafe artifact member name")
-                    entries.append((member, path, "directory" if directory else "file", _signature(info)))
-                    if directory:
-                        pending.append(path)
-        return sorted(entries, key=lambda item: item[0])
+        return _bounded_inventory(source, max_entries)
 
     def unreadable(error):
         raise error
-    for directory, directories, files in os.walk(str(source), followlinks=False, onerror=unreadable):
+
+    for directory, directories, files in os.walk(
+        str(source), followlinks=False, onerror=unreadable
+    ):
         base = Path(directory)
         for name in sorted(directories + files):
             path = base / name
@@ -184,30 +219,62 @@ def _inventory(source: Path, *, max_entries=None) -> list:
                 raise ValueError("Symlink artifacts are not permitted")
             info = path.stat()
             if not stat.S_ISDIR(info.st_mode) and not stat.S_ISREG(info.st_mode):
-                raise ValueError("Artifacts must contain only regular files and directories")
+                raise ValueError(
+                    "Artifacts must contain only regular files and directories"
+                )
             member = path.relative_to(source).as_posix()
             if not _member_name(member):
                 raise ValueError("Unsafe artifact member name")
-            entries.append((member, path, "directory" if stat.S_ISDIR(info.st_mode) else "file",
-                            _signature(info)))
+            entries.append(
+                (
+                    member,
+                    path,
+                    "directory" if stat.S_ISDIR(info.st_mode) else "file",
+                    _signature(info),
+                )
+            )
     return sorted(entries, key=lambda item: item[0])
 
 
-def _artifact(source: Path, read_file: Callable, save_directory: Optional[Callable] = None,
-              *, max_bytes=None, max_entries=None, prepare_directory: Optional[Callable] = None) -> dict:
+def _file_artifact(source, info, read_file, max_entries, max_bytes):
+    if max_entries is not None and max_entries < 1:
+        raise ArtifactLimitError("Artifact entry limit exceeded")
+    if max_bytes is not None and info.st_size > max_bytes:
+        raise ArtifactLimitError("Artifact byte limit exceeded")
+    digest, size = read_file(source)
+    return {
+        "kind": "file",
+        "name": source.name,
+        "sha256": digest,
+        "size_bytes": size,
+    }
+
+
+def _artifact(
+    source: Path,
+    read_file: Callable,
+    save_directory: Callable | None = None,
+    *,
+    max_bytes=None,
+    max_entries=None,
+    prepare_directory: Callable | None = None,
+) -> dict:
     info = source.stat()
     if stat.S_ISREG(info.st_mode):
-        if max_entries is not None and max_entries < 1:
-            raise ArtifactLimitError("Artifact entry limit exceeded")
-        if max_bytes is not None and info.st_size > max_bytes:
-            raise ArtifactLimitError("Artifact byte limit exceeded")
-        digest, size = read_file(source)
-        return {"kind": "file", "name": source.name, "sha256": digest, "size_bytes": size}
+        return _file_artifact(source, info, read_file, max_entries, max_bytes)
     if not stat.S_ISDIR(info.st_mode):
         raise ValueError("Artifact must be a regular file or directory")
     before = _signature(info)
-    inventory = _inventory(source) if max_entries is None else _inventory(source, max_entries=max_entries)
-    if max_bytes is not None and sum(signature[2] for _, _, kind, signature in inventory if kind == "file") > max_bytes:
+    inventory = (
+        _inventory(source)
+        if max_entries is None
+        else _inventory(source, max_entries=max_entries)
+    )
+    if (
+        max_bytes is not None
+        and sum(signature[2] for _, _, kind, signature in inventory if kind == "file")
+        > max_bytes
+    ):
         raise ArtifactLimitError("Artifact byte limit exceeded")
     if prepare_directory is not None:
         prepare_directory()
@@ -221,15 +288,24 @@ def _artifact(source: Path, read_file: Callable, save_directory: Optional[Callab
         entries.append(entry)
     if _signature(source.stat()) != before:
         raise ValueError("Artifact directory changed while being read")
-    after = _inventory(source) if max_entries is None else _inventory(source, max_entries=max_entries)
+    after = (
+        _inventory(source)
+        if max_entries is None
+        else _inventory(source, max_entries=max_entries)
+    )
     if after != inventory:
         raise ValueError("Artifact directory changed while being read")
     descriptor = {"schema_version": ARTIFACT_VERSION, "entries": entries}
     digest = _digest(descriptor)
     if save_directory is not None:
         save_directory(digest, canonical_json(descriptor))
-    return {"kind": "directory", "name": source.name, "sha256": digest,
-            "size_bytes": size, "entries": entries}
+    return {
+        "kind": "directory",
+        "name": source.name,
+        "sha256": digest,
+        "size_bytes": size,
+        "entries": entries,
+    }
 
 
 def hash_artifact(abs_path: PathLike, *, max_bytes=None, max_entries=None) -> dict:
@@ -242,15 +318,23 @@ def hash_artifact(abs_path: PathLike, *, max_bytes=None, max_entries=None) -> di
     _limit(max_bytes, "max_bytes")
     _limit(max_entries, "max_entries")
     used = 0
+
     def read_file(path):
         nonlocal used
-        digest, size = _stream_digest(path, max_bytes=None if max_bytes is None else max_bytes-used)
+        digest, size = _stream_digest(
+            path, max_bytes=None if max_bytes is None else max_bytes - used
+        )
         used += size
         return digest, size
-    return _artifact(_absolute(abs_path), read_file, max_bytes=max_bytes, max_entries=max_entries)
+
+    return _artifact(
+        _absolute(abs_path), read_file, max_bytes=max_bytes, max_entries=max_entries
+    )
 
 
-def copy_artifact(source: PathLike, destination: PathLike, *, max_bytes: int, max_entries: int) -> dict:
+def copy_artifact(
+    source: PathLike, destination: PathLike, *, max_bytes: int, max_entries: int
+) -> dict:
     """Copy a stable artifact to a new path with cumulative streaming limits.
 
     Partial output on failure remains within the configured payload/inventory
@@ -269,30 +353,41 @@ def copy_artifact(source: PathLike, destination: PathLike, *, max_bytes: int, ma
     if not destination.parent.is_dir():
         raise ValueError("Artifact destination parent must already exist")
     used = 0
+
     def copy_file(path):
         nonlocal used
-        target = destination if path == source else destination / path.relative_to(source)
+        target = (
+            destination if path == source else destination / path.relative_to(source)
+        )
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         with target.open("xb") as sink:
             os.chmod(target, 0o600)
-            digest, size = _stream_digest(path, sink, max_bytes=max_bytes-used)
+            digest, size = _stream_digest(path, sink, max_bytes=max_bytes - used)
             sink.flush()
             os.fsync(sink.fileno())
         used += size
         return digest, size
+
     # Reserve a directory with one exclusive operation before copying any of its
     # members. A prior exists() check alone permits concurrent copies to merge.
-    reference = _artifact(source, copy_file, max_bytes=max_bytes, max_entries=max_entries,
-                          prepare_directory=lambda: destination.mkdir(mode=0o700))
+    reference = _artifact(
+        source,
+        copy_file,
+        max_bytes=max_bytes,
+        max_entries=max_entries,
+        prepare_directory=lambda: destination.mkdir(mode=0o700),
+    )
     if reference["kind"] == "directory":
         for member in reference["entries"]:
             if member["kind"] == "directory":
-                (destination / member["name"]).mkdir(mode=0o700, parents=True, exist_ok=True)
+                (destination / member["name"]).mkdir(
+                    mode=0o700, parents=True, exist_ok=True
+                )
     return dict(reference, name=destination.name)
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 class ExecutionDAG:
@@ -306,18 +401,29 @@ class ExecutionDAG:
 
     def __init__(self, root_dir: PathLike, actor_id: str = "local-unverified") -> None:
         if not isinstance(actor_id, str) or not actor_id.strip() or len(actor_id) > 200:
-            raise ValueError("actor_id must be a nonempty label of at most 200 characters")
+            raise ValueError(
+                "actor_id must be a nonempty label of at most 200 characters"
+            )
         self.root_dir = _absolute(root_dir)
         self.root_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
         if any(self.root_dir.iterdir()):
             raise FileExistsError("Execution ledger directory must be empty")
         self._lock = threading.RLock()
-        self._node_ids, self._artifacts = [], {}
-        self._receipt = None
+        self._node_ids: list[str] = []
+        self._artifacts: dict[str, dict] = {}
+        self._receipt: dict | None = None
         self._checkpointed = False
-        self._identity = {"run_id": str(uuid.uuid4()), "actor_id": actor_id,
-                          "identity_assurance": "caller-asserted", "created_at_utc": _now()}
-        _atomic_bytes(self.root_dir / "ledger.json", canonical_json(self._identity), allow_existing=False)
+        self._identity = {
+            "run_id": str(uuid.uuid4()),
+            "actor_id": actor_id,
+            "identity_assurance": "caller-asserted",
+            "created_at_utc": _now(),
+        }
+        _atomic_bytes(
+            self.root_dir / "ledger.json",
+            canonical_json(self._identity),
+            allow_existing=False,
+        )
         (self.root_dir / "objects").mkdir(mode=0o700)
         (self.root_dir / "nodes").mkdir(mode=0o700)
         _sync_directory(self.root_dir)
@@ -326,18 +432,27 @@ class ExecutionDAG:
         if self._receipt is not None:
             raise RuntimeError("Execution ledger has been finalized")
         if self._checkpointed:
-            raise RuntimeError("Execution ledger is suspended at a checkpoint; use verified resume")
+            raise RuntimeError(
+                "Execution ledger is suspended at a checkpoint; use verified resume"
+            )
         for name in ("objects", "nodes"):
-            if (self.root_dir / name).is_symlink() or not (self.root_dir / name).is_dir():
+            if (self.root_dir / name).is_symlink() or not (
+                self.root_dir / name
+            ).is_dir():
                 raise ValueError("Invalid evidence storage directory")
 
     def _copy_file(self, source: Path, *, max_bytes=None) -> tuple:
-        descriptor, name = tempfile.mkstemp(prefix=".pending-", dir=str(self.root_dir / "objects"))
+        descriptor, name = tempfile.mkstemp(
+            prefix=".pending-", dir=str(self.root_dir / "objects")
+        )
         temporary = Path(name)
         try:
             with os.fdopen(descriptor, "wb") as output:
-                digest, size = (_stream_digest(source, output) if max_bytes is None else
-                                _stream_digest(source, output, max_bytes=max_bytes))
+                digest, size = (
+                    _stream_digest(source, output)
+                    if max_bytes is None
+                    else _stream_digest(source, output, max_bytes=max_bytes)
+                )
                 output.flush()
                 os.fsync(output.fileno())
             _publish(temporary, self.root_dir / "objects" / digest, digest)
@@ -345,7 +460,9 @@ class ExecutionDAG:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def add_artifact(self, abs_path: PathLike, *, max_bytes=None, max_entries=None) -> dict:
+    def add_artifact(
+        self, abs_path: PathLike, *, max_bytes=None, max_entries=None
+    ) -> dict:
         """Preserve bytes, with optional cumulative payload and member limits.
 
         Limits have the same meaning as hash_artifact and do not change identity.
@@ -356,18 +473,33 @@ class ExecutionDAG:
         with self._lock:
             self._check_open()
             source = _absolute(abs_path)
-            if source.is_relative_to(self.root_dir) or self.root_dir.is_relative_to(source):
-                raise ValueError("Source artifact and execution ledger must not overlap")
+            if source.is_relative_to(self.root_dir) or self.root_dir.is_relative_to(
+                source
+            ):
+                raise ValueError(
+                    "Source artifact and execution ledger must not overlap"
+                )
             used = 0
+
             def copy_file(path):
                 nonlocal used
-                digest, size = (self._copy_file(path) if max_bytes is None else
-                                self._copy_file(path, max_bytes=max_bytes-used))
+                digest, size = (
+                    self._copy_file(path)
+                    if max_bytes is None
+                    else self._copy_file(path, max_bytes=max_bytes - used)
+                )
                 used += size
                 return digest, size
-            reference = _artifact(source, copy_file, lambda digest, data:
-                                  _atomic_bytes(self.root_dir / "objects" / digest, data),
-                                  max_bytes=max_bytes, max_entries=max_entries)
+
+            reference = _artifact(
+                source,
+                copy_file,
+                lambda digest, data: _atomic_bytes(
+                    self.root_dir / "objects" / digest, data
+                ),
+                max_bytes=max_bytes,
+                max_entries=max_entries,
+            )
             self._artifacts[_digest(reference)] = _copy_json(reference)
             return _copy_json(reference)
 
@@ -380,37 +512,56 @@ class ExecutionDAG:
             if type(payload) is not dict:
                 raise TypeError("Node payload must be a JSON object")
             parents = list(parents)
-            if (any(not isinstance(parent, str) or parent not in self._node_ids for parent in parents)
-                    or len(set(parents)) != len(parents)):
+            if any(
+                not isinstance(parent, str) or parent not in self._node_ids
+                for parent in parents
+            ) or len(set(parents)) != len(parents):
                 raise ValueError("Every parent must be a distinct existing node")
-            node = {"schema_version": SCHEMA_VERSION, "run_id": self._identity["run_id"],
-                    "sequence": len(self._node_ids) + 1, "kind": kind,
-                    "payload": _copy_json(payload), "parents": parents,
-                    "previous": self._node_ids[-1] if self._node_ids else None,
-                    "actor_id": self._identity["actor_id"], "identity_assurance": "caller-asserted",
-                    "timestamp_utc": _now()}
+            node = {
+                "schema_version": SCHEMA_VERSION,
+                "run_id": self._identity["run_id"],
+                "sequence": len(self._node_ids) + 1,
+                "kind": kind,
+                "payload": _copy_json(payload),
+                "parents": parents,
+                "previous": self._node_ids[-1] if self._node_ids else None,
+                "actor_id": self._identity["actor_id"],
+                "identity_assurance": "caller-asserted",
+                "timestamp_utc": _now(),
+            }
             node_id = _digest(node)
             node["node_id"] = node_id
-            _atomic_bytes(self.root_dir / "nodes" / (node_id + ".json"), canonical_json(node),
-                          allow_existing=False)
+            _atomic_bytes(
+                self.root_dir / "nodes" / (node_id + ".json"),
+                canonical_json(node),
+                allow_existing=False,
+            )
             self._node_ids.append(node_id)
             return node_id
 
     def _manifest_record(self, analysis_fingerprint):
         if analysis_fingerprint is not None and not _is_digest(analysis_fingerprint):
             raise ValueError("Invalid analysis fingerprint")
-        record = {"schema_version": SCHEMA_VERSION, "canonicalization": CANONICALIZATION,
-                  **self._identity, "finalized_at_utc": _now(), "node_ids": list(self._node_ids),
-                  "node_count": len(self._node_ids), "artifacts": list(self._artifacts.values()),
-                  "analysis_fingerprint": analysis_fingerprint}
+        record = {
+            "schema_version": SCHEMA_VERSION,
+            "canonicalization": CANONICALIZATION,
+            **self._identity,
+            "finalized_at_utc": _now(),
+            "node_ids": list(self._node_ids),
+            "node_count": len(self._node_ids),
+            "artifacts": list(self._artifacts.values()),
+            "analysis_fingerprint": analysis_fingerprint,
+        }
         record["root_hash"] = _digest(record)
         return record
 
-    def finalize(self, *, analysis_fingerprint: Optional[str] = None) -> dict:
+    def finalize(self, *, analysis_fingerprint: str | None = None) -> dict:
         """Seal a manifest and return a receipt; retain its root outside this store."""
         with self._lock:
             if self._receipt is not None:
-                report = verify_execution(self._receipt["manifest_path"], self._receipt["root_hash"])
+                report = verify_execution(
+                    self._receipt["manifest_path"], self._receipt["root_hash"]
+                )
                 if not report["valid"]:
                     raise ValueError("Finalized evidence has been altered")
                 return _copy_json(self._receipt)
@@ -419,18 +570,32 @@ class ExecutionDAG:
             root_hash = manifest["root_hash"]
             manifest_path = self.root_dir / "manifest.json"
             _atomic_bytes(manifest_path, canonical_json(manifest))
-            _atomic_bytes(self.root_dir / "root.sha256", (root_hash + "\n").encode("ascii"))
+            _atomic_bytes(
+                self.root_dir / "root.sha256", (root_hash + "\n").encode("ascii")
+            )
             report = verify_execution(manifest_path, root_hash)
             if not report["valid"]:
-                raise ValueError("Cannot finalize invalid evidence: " + "; ".join(report["errors"]))
-            self._receipt = {"schema_version": SCHEMA_VERSION, "manifest_path": str(manifest_path),
-                             "root_hash": root_hash, "node_count": len(self._node_ids),
-                             "artifact_count": len(self._artifacts),
-                             "analysis_fingerprint": analysis_fingerprint}
+                raise ValueError(
+                    "Cannot finalize invalid evidence: " + "; ".join(report["errors"])
+                )
+            self._receipt = {
+                "schema_version": SCHEMA_VERSION,
+                "manifest_path": str(manifest_path),
+                "root_hash": root_hash,
+                "node_count": len(self._node_ids),
+                "artifact_count": len(self._artifacts),
+                "analysis_fingerprint": analysis_fingerprint,
+            }
             return _copy_json(self._receipt)
 
-    def checkpoint(self, destination: PathLike, *, max_bytes: int, max_entries: int,
-                   analysis_fingerprint: Optional[str] = None) -> dict:
+    def checkpoint(
+        self,
+        destination: PathLike,
+        *,
+        max_bytes: int,
+        max_entries: int,
+        analysis_fingerprint: str | None = None,
+    ) -> dict:
         """Seal a bounded copy and suspend this writer without finalizing it.
 
         The original working store can later acquire a verified new writer. The
@@ -441,19 +606,35 @@ class ExecutionDAG:
         """
         with self._lock:
             self._check_open()
-            if any((self.root_dir / name).exists() or (self.root_dir / name).is_symlink()
-                   for name in ("manifest.json", "root.sha256")):
-                raise ValueError("Working ledger already contains finalization evidence")
+            if any(
+                (self.root_dir / name).exists() or (self.root_dir / name).is_symlink()
+                for name in ("manifest.json", "root.sha256")
+            ):
+                raise ValueError(
+                    "Working ledger already contains finalization evidence"
+                )
             destination = _absolute(destination)
-            byte_limit, entry_limit = _limit(max_bytes, "max_bytes"), _limit(max_entries, "max_entries")
+            byte_limit, entry_limit = (
+                _limit(max_bytes, "max_bytes"),
+                _limit(max_entries, "max_entries"),
+            )
             if byte_limit is None or entry_limit is None:
                 raise ValueError("Checkpoint copy bounds are required")
             # _now() always uses a fixed-width UTC microsecond timestamp. While
             # this lock is held, the eventual manifest has this exact length.
-            sealing_bytes = len(canonical_json(self._manifest_record(analysis_fingerprint))) + 65
+            sealing_bytes = (
+                len(canonical_json(self._manifest_record(analysis_fingerprint))) + 65
+            )
             if byte_limit <= sealing_bytes or entry_limit <= 2:
-                raise ArtifactLimitError("Checkpoint bounds cannot hold sealing metadata")
-            copy_artifact(self.root_dir, destination, max_bytes=byte_limit-sealing_bytes, max_entries=entry_limit-2)
+                raise ArtifactLimitError(
+                    "Checkpoint bounds cannot hold sealing metadata"
+                )
+            copy_artifact(
+                self.root_dir,
+                destination,
+                max_bytes=byte_limit - sealing_bytes,
+                max_entries=entry_limit - 2,
+            )
             snapshot = type(self).__new__(type(self))
             snapshot.root_dir = destination
             snapshot._lock = threading.RLock()
@@ -465,8 +646,32 @@ class ExecutionDAG:
             self._checkpointed = True
             return receipt
 
+    @staticmethod
+    def _check_resume_inventory(root, checkpoint, manifest):
+        for folder in ("nodes", "objects"):
+            if (root / folder).is_symlink() or not (root / folder).is_dir():
+                raise ValueError("Invalid working evidence directory")
+            if {path.name for path in (root / folder).iterdir()} != {
+                path.name for path in (checkpoint.parent / folder).iterdir()
+            }:
+                raise ValueError("Working evidence inventory differs from checkpoint")
+        for node_id in manifest["node_ids"]:
+            if _read_json(root / "nodes" / (node_id + ".json")) != _read_json(
+                checkpoint.parent / "nodes" / (node_id + ".json")
+            ):
+                raise ValueError("Working node differs from checkpoint")
+        checked: dict[str, int] = {}
+        for reference in manifest["artifacts"]:
+            _verify_artifact(reference, root, checked)
+
     @classmethod
-    def resume(cls, working_root: PathLike, checkpoint_manifest: PathLike, *, expected_root: str):
+    def resume(
+        cls,
+        working_root: PathLike,
+        checkpoint_manifest: PathLike,
+        *,
+        expected_root: str,
+    ):
         """Reopen exactly a verified working prefix with a single-use claim.
 
         This preserves the ledger identity; it never opens the finalized copy
@@ -477,48 +682,68 @@ class ExecutionDAG:
         if not _is_digest(expected_root):
             raise ValueError("Resume requires a retained checkpoint root")
         root, checkpoint = _absolute(working_root), _absolute(checkpoint_manifest)
-        if root.is_relative_to(checkpoint.parent) or checkpoint.parent.is_relative_to(root):
+        if root.is_relative_to(checkpoint.parent) or checkpoint.parent.is_relative_to(
+            root
+        ):
             raise ValueError("Working ledger and checkpoint must not overlap")
         report = verify_execution(checkpoint, expected_root)
         if not report["valid"]:
-            raise ValueError("Checkpoint verification failed: " + "; ".join(report["errors"]))
-        if any((root / name).exists() or (root / name).is_symlink()
-               for name in ("manifest.json", "root.sha256")):
+            raise ValueError(
+                "Checkpoint verification failed: " + "; ".join(report["errors"])
+            )
+        if any(
+            (root / name).exists() or (root / name).is_symlink()
+            for name in ("manifest.json", "root.sha256")
+        ):
             raise ValueError("A finalized working ledger cannot be resumed")
         manifest = _read_json(checkpoint)
-        identity = {key: manifest[key] for key in ("run_id", "actor_id", "identity_assurance", "created_at_utc")}
+        identity = {
+            key: manifest[key]
+            for key in ("run_id", "actor_id", "identity_assurance", "created_at_utc")
+        }
         if _read_json(root / "ledger.json") != identity:
             raise ValueError("Working ledger identity differs from checkpoint")
-        for folder in ("nodes", "objects"):
-            if (root / folder).is_symlink() or not (root / folder).is_dir():
-                raise ValueError("Invalid working evidence directory")
-            if {path.name for path in (root / folder).iterdir()} != {path.name for path in (checkpoint.parent / folder).iterdir()}:
-                raise ValueError("Working evidence inventory differs from checkpoint")
-        for node_id in manifest["node_ids"]:
-            if _read_json(root / "nodes" / (node_id + ".json")) != _read_json(checkpoint.parent / "nodes" / (node_id + ".json")):
-                raise ValueError("Working node differs from checkpoint")
-        checked = {}
-        for reference in manifest["artifacts"]:
-            _verify_artifact(reference, root, checked)
+        cls._check_resume_inventory(root, checkpoint, manifest)
         # The claim is outside the ledger so it can be captured as an artifact.
         # Exclusive publication resolves concurrent resume attempts before any
         # new scientific/model work can receive the returned writer.
         claim = root.parent / ("." + root.name + "-resume-" + expected_root + ".json")
-        _atomic_bytes(claim, canonical_json({"format": "devharness.resume-claim/1",
-            "checkpoint_root": expected_root, "run_id": identity["run_id"],
-            "claim_id": str(uuid.uuid4()), "claimed_at_utc": _now()}), allow_existing=False)
+        _atomic_bytes(
+            claim,
+            canonical_json(
+                {
+                    "format": "devharness.resume-claim/1",
+                    "checkpoint_root": expected_root,
+                    "run_id": identity["run_id"],
+                    "claim_id": str(uuid.uuid4()),
+                    "claimed_at_utc": _now(),
+                }
+            ),
+            allow_existing=False,
+        )
         resumed = cls.__new__(cls)
         resumed.root_dir, resumed._lock = root, threading.RLock()
         resumed._identity = _copy_json(identity)
         resumed._node_ids = list(manifest["node_ids"])
-        resumed._artifacts = {_digest(reference): _copy_json(reference) for reference in manifest["artifacts"]}
+        resumed._artifacts = {
+            _digest(reference): _copy_json(reference)
+            for reference in manifest["artifacts"]
+        }
         resumed._receipt, resumed._checkpointed = None, False
         checkpoint_ref = resumed.add_artifact(checkpoint, max_bytes=MAX_JSON_BYTES)
         claim_ref = resumed.add_artifact(claim, max_bytes=MAX_JSON_BYTES)
-        resumed.append("execution.resumed", {"checkpoint_root": expected_root,
-            "checkpoint_manifest": checkpoint_ref, "claim": claim_ref,
-            "identity_assurance": "caller-asserted; no renewed execution authorization"},
-            parents=(() if not resumed._node_ids else (resumed._node_ids[-1],)))
+        resumed.append(
+            "execution.resumed",
+            {
+                "checkpoint_root": expected_root,
+                "checkpoint_manifest": checkpoint_ref,
+                "claim": claim_ref,
+                "identity_assurance": (
+                    "caller-asserted; no renewed execution authorization"
+                ),
+            },
+            parents=(() if not resumed._node_ids else (resumed._node_ids[-1],)),
+        )
         return resumed
 
 
@@ -554,7 +779,8 @@ def _valid_time(value) -> bool:
     if not isinstance(value, str) or not value.endswith("Z"):
         return False
     try:
-        return datetime.fromisoformat(value[:-1] + "+00:00").utcoffset().total_seconds() == 0
+        offset = datetime.fromisoformat(value[:-1] + "+00:00").utcoffset()
+        return offset is not None and offset.total_seconds() == 0
     except (ValueError, AttributeError):
         return False
 
@@ -567,17 +793,26 @@ def _verify_artifact(reference: dict, root: Path, checked: dict) -> None:
             _require(actual == digest, "Artifact hash mismatch: " + digest)
             checked[digest] = count
         if size is not None:
-            _require(type(size) is int and size >= 0 and checked[digest] == size,
-                     "Artifact size mismatch: " + digest)
+            _require(
+                type(size) is int and size >= 0 and checked[digest] == size,
+                "Artifact size mismatch: " + digest,
+            )
 
     _require(type(reference) is dict, "Invalid artifact reference")
     kind = reference.get("kind")
     _require(kind in ("file", "directory"), "Unknown artifact kind")
-    expected = {"kind", "name", "sha256", "size_bytes"} | ({"entries"} if kind == "directory" else set())
+    expected = {"kind", "name", "sha256", "size_bytes"} | (
+        {"entries"} if kind == "directory" else set()
+    )
     _require(set(reference) == expected, "Invalid artifact fields")
-    _require(_member_name(reference["name"]) and "/" not in reference["name"], "Unsafe artifact name")
-    _require(type(reference["size_bytes"]) is int and reference["size_bytes"] >= 0,
-             "Invalid artifact size")
+    _require(
+        _member_name(reference["name"]) and "/" not in reference["name"],
+        "Unsafe artifact name",
+    )
+    _require(
+        type(reference["size_bytes"]) is int and reference["size_bytes"] >= 0,
+        "Invalid artifact size",
+    )
     if kind == "file":
         blob(reference["sha256"], reference["size_bytes"])
         return
@@ -586,69 +821,174 @@ def _verify_artifact(reference: dict, root: Path, checked: dict) -> None:
     _require(type(entries) is list, "Invalid directory entries")
     names, directories, total = [], set(), 0
     for entry in entries:
-        _require(type(entry) is dict and _member_name(entry.get("name")), "Unsafe artifact member name")
+        _require(
+            type(entry) is dict and _member_name(entry.get("name")),
+            "Unsafe artifact member name",
+        )
         name, entry_kind = entry["name"], entry.get("kind")
         _require(name not in names, "Duplicate artifact member")
         parent = PurePosixPath(name).parent.as_posix()
-        _require(parent == "." or parent in directories, "Missing artifact parent directory")
+        _require(
+            parent == "." or parent in directories, "Missing artifact parent directory"
+        )
         names.append(name)
         if entry_kind == "directory":
             _require(set(entry) == {"name", "kind"}, "Invalid directory member")
             directories.add(name)
         else:
-            _require(entry_kind == "file" and set(entry) == {"name", "kind", "sha256", "size_bytes"},
-                     "Invalid file member")
+            _require(
+                entry_kind == "file"
+                and set(entry) == {"name", "kind", "sha256", "size_bytes"},
+                "Invalid file member",
+            )
             blob(entry["sha256"], entry["size_bytes"])
             total += entry["size_bytes"]
     _require(names == sorted(names), "Directory members are not canonically ordered")
-    _require(type(reference["size_bytes"]) is int and reference["size_bytes"] == total,
-             "Directory size mismatch")
+    _require(
+        type(reference["size_bytes"]) is int and reference["size_bytes"] == total,
+        "Directory size mismatch",
+    )
     descriptor = {"schema_version": ARTIFACT_VERSION, "entries": entries}
-    _require(_read_json(root / "objects" / reference["sha256"]) == descriptor,
-             "Directory descriptor mismatch")
+    _require(
+        _read_json(root / "objects" / reference["sha256"]) == descriptor,
+        "Directory descriptor mismatch",
+    )
 
 
-def verify_execution(manifest_path: PathLike, expected_root_hash: Optional[str] = None) -> dict:
-    """Fail closed on malformed or changed evidence; anchors must come from a trusted source.
+def _verify_nodes(root, ids, manifest, errors):
+    seen = set()
+    for index, node_id in enumerate(ids):
+        try:
+            node = _read_json(root / "nodes" / (node_id + ".json"))
+            _require(
+                type(node) is dict and node.get("node_id") == node_id,
+                "Node identity mismatch",
+            )
+            content = {key: value for key, value in node.items() if key != "node_id"}
+            _require(_digest(content) == node_id, "Node hash mismatch")
+            _require(
+                node.get("schema_version") == SCHEMA_VERSION
+                and node.get("run_id") == manifest["run_id"],
+                "Node execution identity mismatch",
+            )
+            _require(
+                node.get("actor_id") == manifest["actor_id"]
+                and node.get("identity_assurance") == "caller-asserted",
+                "Node actor identity mismatch",
+            )
+            _require(
+                type(node.get("sequence")) is int and node["sequence"] == index + 1,
+                "Node sequence mismatch",
+            )
+            _require(
+                node.get("previous") == (ids[index - 1] if index else None),
+                "Broken previous-node link",
+            )
+            parents = node.get("parents")
+            _require(
+                type(parents) is list
+                and all(_is_digest(parent) and parent in seen for parent in parents)
+                and len(set(parents)) == len(parents),
+                "Missing, duplicate or cyclic parent links",
+            )
+            _require(
+                _valid_time(node.get("timestamp_utc")), "Invalid UTC node timestamp"
+            )
+            _require(
+                isinstance(node.get("kind"), str)
+                and bool(node["kind"].strip())
+                and type(node.get("payload")) is dict,
+                "Invalid node kind or payload",
+            )
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            errors.append(f"Node {node_id}: {error}")
+        seen.add(node_id)
+
+
+def verify_execution(
+    manifest_path: PathLike, expected_root_hash: str | None = None
+) -> dict:
+    """Fail closed on malformed or changed evidence.
+
+    Anchors must come from a trusted source.
 
     Without an independently retained root this checks internal consistency only.
     No record in this local directory can authenticate the directory against a full
     rewrite by its owner. The return value never certifies regulatory compliance.
     """
-    report = {"valid": False, "errors": [], "anchored": expected_root_hash is not None,
-              "root_hash": None, "compliance_certified": False}
-    errors = report["errors"]
+    errors: list[str] = []
+    report = {
+        "valid": False,
+        "errors": errors,
+        "anchored": expected_root_hash is not None,
+        "root_hash": None,
+        "compliance_certified": False,
+    }
     try:
         path = _absolute(manifest_path)
         root = path.parent
         for name in ("nodes", "objects"):
-            _require(not (root / name).is_symlink() and (root / name).is_dir(), "Invalid evidence storage directory")
+            _require(
+                not (root / name).is_symlink() and (root / name).is_dir(),
+                "Invalid evidence storage directory",
+            )
         manifest = _read_json(path)
         _require(type(manifest) is dict, "Manifest must be a JSON object")
-        _require(manifest.get("schema_version") == SCHEMA_VERSION, "Unknown execution schema version")
-        _require(manifest.get("canonicalization") == CANONICALIZATION, "Unknown canonicalization version")
+        _require(
+            manifest.get("schema_version") == SCHEMA_VERSION,
+            "Unknown execution schema version",
+        )
+        _require(
+            manifest.get("canonicalization") == CANONICALIZATION,
+            "Unknown canonicalization version",
+        )
         root_hash = manifest.get("root_hash")
         report["root_hash"] = root_hash
         unsigned = {key: value for key, value in manifest.items() if key != "root_hash"}
         if not _is_digest(root_hash) or root_hash != _digest(unsigned):
             errors.append("Manifest root hash mismatch")
-        if expected_root_hash is not None and (not _is_digest(expected_root_hash) or root_hash != expected_root_hash):
+        if expected_root_hash is not None and (
+            not _is_digest(expected_root_hash) or root_hash != expected_root_hash
+        ):
             errors.append("Manifest does not match the trusted root")
         with _open_regular(root / "root.sha256") as root_file:
             if root_file.read(100) != (str(root_hash) + "\n").encode("ascii"):
                 errors.append("Local root receipt mismatch")
         identity = _read_json(root / "ledger.json")
-        _require(identity == {key: manifest.get(key) for key in
-                              ("run_id", "actor_id", "identity_assurance", "created_at_utc")},
-                 "Ledger identity mismatch")
-        _require(manifest.get("identity_assurance") == "caller-asserted", "Unsupported identity assurance claim")
-        _require(_valid_time(manifest.get("created_at_utc")) and _valid_time(manifest.get("finalized_at_utc")),
-                 "Invalid UTC execution timestamps")
-        _require(manifest.get("analysis_fingerprint") is None or _is_digest(manifest["analysis_fingerprint"]),
-                 "Invalid analysis fingerprint")
+        _require(
+            identity
+            == {
+                key: manifest.get(key)
+                for key in (
+                    "run_id",
+                    "actor_id",
+                    "identity_assurance",
+                    "created_at_utc",
+                )
+            },
+            "Ledger identity mismatch",
+        )
+        _require(
+            manifest.get("identity_assurance") == "caller-asserted",
+            "Unsupported identity assurance claim",
+        )
+        _require(
+            _valid_time(manifest.get("created_at_utc"))
+            and _valid_time(manifest.get("finalized_at_utc")),
+            "Invalid UTC execution timestamps",
+        )
+        _require(
+            manifest.get("analysis_fingerprint") is None
+            or _is_digest(manifest["analysis_fingerprint"]),
+            "Invalid analysis fingerprint",
+        )
         ids = manifest.get("node_ids")
-        _require(type(ids) is list and type(manifest.get("node_count")) is int
-                 and manifest["node_count"] == len(ids), "Node count mismatch")
+        _require(
+            type(ids) is list
+            and type(manifest.get("node_count")) is int
+            and manifest["node_count"] == len(ids),
+            "Node count mismatch",
+        )
         if not all(_is_digest(node_id) for node_id in ids):
             errors.append("Invalid node ID; filesystem traversal is forbidden")
             return report
@@ -657,31 +997,10 @@ def verify_execution(manifest_path: PathLike, expected_root_hash: Optional[str] 
         actual_files = {item.name for item in (root / "nodes").iterdir()}
         if actual_files != expected_files:
             errors.append("Missing or unreferenced node files")
-        seen = set()
-        for index, node_id in enumerate(ids):
-            try:
-                node = _read_json(root / "nodes" / (node_id + ".json"))
-                _require(type(node) is dict and node.get("node_id") == node_id, "Node identity mismatch")
-                content = {key: value for key, value in node.items() if key != "node_id"}
-                _require(_digest(content) == node_id, "Node hash mismatch")
-                _require(node.get("schema_version") == SCHEMA_VERSION and node.get("run_id") == manifest["run_id"],
-                         "Node execution identity mismatch")
-                _require(node.get("actor_id") == manifest["actor_id"] and node.get("identity_assurance") == "caller-asserted",
-                         "Node actor identity mismatch")
-                _require(type(node.get("sequence")) is int and node["sequence"] == index + 1, "Node sequence mismatch")
-                _require(node.get("previous") == (ids[index - 1] if index else None), "Broken previous-node link")
-                parents = node.get("parents")
-                _require(type(parents) is list and all(_is_digest(parent) and parent in seen for parent in parents)
-                         and len(set(parents)) == len(parents), "Missing, duplicate or cyclic parent links")
-                _require(_valid_time(node.get("timestamp_utc")), "Invalid UTC node timestamp")
-                _require(isinstance(node.get("kind"), str) and bool(node["kind"].strip())
-                         and type(node.get("payload")) is dict, "Invalid node kind or payload")
-            except (OSError, ValueError, TypeError, KeyError) as error:
-                errors.append(f"Node {node_id}: {error}")
-            seen.add(node_id)
+        _verify_nodes(root, ids, manifest, errors)
         references = manifest.get("artifacts")
         _require(type(references) is list, "Artifact references must be a list")
-        checked = {}
+        checked: dict[str, int] = {}
         for reference in references:
             try:
                 _verify_artifact(reference, root, checked)
@@ -693,8 +1012,15 @@ def verify_execution(manifest_path: PathLike, expected_root_hash: Optional[str] 
     return report
 
 
-def analysis_fingerprint(*, inputs: dict, code: dict, environment: dict,
-                         parameters: dict, seeds: dict, method: dict) -> str:
+def analysis_fingerprint(
+    *,
+    inputs: dict,
+    code: dict | str,
+    environment: dict,
+    parameters: dict,
+    seeds: dict,
+    method: dict | str,
+) -> str:
     """Hash the scientific specification separately from run IDs and timestamps.
 
     Supply content digests and version identifiers, not temporary paths, timing,
@@ -702,16 +1028,33 @@ def analysis_fingerprint(*, inputs: dict, code: dict, environment: dict,
     reproducibility still requires replay and numerical comparison. Remote model
     inference is not made deterministic by recording its seed or model label.
     """
-    return _digest({"schema_version": "devharness.analysis-fingerprint/1",
-                    "inputs": inputs, "code": code, "environment": environment,
-                    "parameters": parameters, "seeds": seeds, "method": method})
+    return _digest(
+        {
+            "schema_version": "devharness.analysis-fingerprint/1",
+            "inputs": inputs,
+            "code": code,
+            "environment": environment,
+            "parameters": parameters,
+            "seeds": seeds,
+            "method": method,
+        }
+    )
 
 
 REQUIRED_CONTROLS = (
-    "intended_use_validation", "qualified_identity", "validated_configuration",
-    "security_access_control", "retention_policy", "backup_restore_validation",
-    "audit_trail_review", "change_control", "electronic_signature_validation",
-    "external_trust_anchor", "clinical_biomarker_validation", "reference_data_licensing", "release_approval",
+    "intended_use_validation",
+    "qualified_identity",
+    "validated_configuration",
+    "security_access_control",
+    "retention_policy",
+    "backup_restore_validation",
+    "audit_trail_review",
+    "change_control",
+    "electronic_signature_validation",
+    "external_trust_anchor",
+    "clinical_biomarker_validation",
+    "reference_data_licensing",
+    "release_approval",
 )
 
 
@@ -726,14 +1069,24 @@ def evaluate_controls(evidence: dict) -> dict:
     if type(evidence) is not dict:
         raise TypeError("Control evidence must be a JSON object")
     canonical_json(evidence)
+
     def documented(key):
         record = evidence.get(key)
-        return (type(record) is dict and record.get("status") == "verified"
-                and isinstance(record.get("reference"), str) and bool(record["reference"].strip()))
+        return (
+            type(record) is dict
+            and record.get("status") == "verified"
+            and isinstance(record.get("reference"), str)
+            and bool(record["reference"].strip())
+        )
+
     missing = [key for key in REQUIRED_CONTROLS if not documented(key)]
-    return {"schema_version": "devharness.control-readiness/1",
-            "status": "not_qualified" if missing else "ready_for_independent_review",
-            "required_controls": list(REQUIRED_CONTROLS), "missing_controls": missing,
-            "evidenced_controls": [key for key in REQUIRED_CONTROLS if key not in missing],
-            "evidence_assurance": "caller-attested; independent qualification required",
-            "clinical_release_allowed": False, "compliance_certified": False}
+    return {
+        "schema_version": "devharness.control-readiness/1",
+        "status": "not_qualified" if missing else "ready_for_independent_review",
+        "required_controls": list(REQUIRED_CONTROLS),
+        "missing_controls": missing,
+        "evidenced_controls": [key for key in REQUIRED_CONTROLS if key not in missing],
+        "evidence_assurance": "caller-attested; independent qualification required",
+        "clinical_release_allowed": False,
+        "compliance_certified": False,
+    }

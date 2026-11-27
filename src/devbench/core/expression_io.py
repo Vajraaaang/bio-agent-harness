@@ -62,6 +62,8 @@ class BackedExpression:
     Allocation estimates are conservative guards, not operating-system caps.
     """
 
+    _closed = False
+
     def __init__(self, handle, layer):
         self._handle = handle
         if layer is not None and (

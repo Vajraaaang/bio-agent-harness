@@ -47,6 +47,8 @@ except FileNotFoundError:
     _KERNEL = {"image_ids": {}, "versions": {}}
 KERNEL_IMAGES = _KERNEL["image_ids"]
 MOUNTED_KERNEL_IMAGES = _KERNEL.get("mounted_image_ids", KERNEL_IMAGES)
+M2_CUDA_IMAGES = _KERNEL.get("m2_cuda_image_ids", {})
+M2_QC_IMAGES = _KERNEL.get("m2_qc_image_ids", {})
 SCRNA_KERNEL_IMAGES = _KERNEL.get("scrna_image_ids", {})
 SCCODA_KERNEL_IMAGES = _KERNEL.get("sccoda_image_ids", {})
 SCCODA_VERSIONS = _KERNEL.get("sccoda_versions", {})
@@ -123,6 +125,8 @@ def single_cell_kernel_images() -> frozenset[str]:
 def kernel_test_platform(image_id: str) -> str | None:
     """Resolve a verified local bulk or additive RNA kernel for OCI tests."""
     profiles = (
+        M2_CUDA_IMAGES,
+        M2_QC_IMAGES,
         ROUTED_DE_KERNEL_IMAGES,
         _ORIGINAL_ROUTED_IMAGES,
         LIMMA_VOOM_KERNEL_IMAGES,

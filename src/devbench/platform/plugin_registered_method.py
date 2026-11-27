@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from devbench.analysis.evidence_access import EvidenceBroker
 from devbench.core._files import hash_bounded_file
 from devbench.core.binary_artifacts import check_flat_parquet
+from devbench.core.procedure_profile import ProcedureProfile
 from devbench.engine.exploratory_images import exploratory_image
 from devbench.engine.methods import MethodService, exploratory_method
 from devbench.engine.tier2_artifacts import LANE_TAGS, port_kind
@@ -221,27 +222,29 @@ def freeze_registered_method(
         step_id="plugin-" + plan_id,
         branch_id="plugin-" + plan_id,
         operation_id=OPERATION,
-        profile={
-            "profile_id": "plugin-oci-" + method_version_id,
-            "version": 1,
-            "operations": [
-                {
-                    "operation_id": OPERATION,
-                    "output_kinds": sorted(
-                        {port_kind(v) for v in contract["outputs"].values()}
-                    ),
-                    "max_memory_mb": contract["execution"]["memory_mb"],
-                    "timeout_seconds": contract["execution"]["timeout_seconds"],
-                }
-            ],
-            "input_representations": sorted(
-                {item.representation for item in sources.values()}
-            ),
-            "biological_units": sorted(
-                {item.biological_unit for item in sources.values()}
-            ),
-            "permitted_claims": ["exploratory_finding"],
-        },
+        profile=ProcedureProfile.model_validate(
+            {
+                "profile_id": "plugin-oci-" + method_version_id,
+                "version": 1,
+                "operations": [
+                    {
+                        "operation_id": OPERATION,
+                        "output_kinds": sorted(
+                            {port_kind(v) for v in contract["outputs"].values()}
+                        ),
+                        "max_memory_mb": contract["execution"]["memory_mb"],
+                        "timeout_seconds": contract["execution"]["timeout_seconds"],
+                    }
+                ],
+                "input_representations": sorted(
+                    {item.representation for item in sources.values()}
+                ),
+                "biological_units": sorted(
+                    {item.biological_unit for item in sources.values()}
+                ),
+                "permitted_claims": ["exploratory_finding"],
+            }
+        ),
         environment_sha256=digest(
             {
                 **contract["environment"],
@@ -253,10 +256,12 @@ def freeze_registered_method(
         parameters_sha256=digest(parameters),
         inputs=tuple(
             InputLink(
-                port=Port(
-                    name=name,
-                    artifact_kind=item.kind,
-                    required=contract["inputs"][name]["required"],
+                port=Port.model_validate(
+                    {
+                        "name": name,
+                        "artifact_kind": item.kind,
+                        "required": contract["inputs"][name]["required"],
+                    }
                 ),
                 source_id=item.version_id,
             )

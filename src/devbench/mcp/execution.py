@@ -199,6 +199,21 @@ def _bind(ctx, plan):
         port: ctx.artifact(plan["session_id"], ref["artifact_id"], ref["sha256"])
         for port, ref in plan["input_bindings"].items()
     }
+    from rna_kernels.m2_contract import KERNEL_AXES
+
+    from .registry_m2 import validate_bindings
+
+    purpose = plan["epistemic_purpose"]
+    if purpose == "confirmatory" and any(
+        r["detail"].get("donor_conflict_halted")
+        or r["ref"]["representation_class"] == "ambient_adjusted_counts"
+        for r in records.values()
+    ):
+        raise OperationBlocked("scientific_refusal")
+    kernel = plan.get("kernel") or {}
+    if kernel.get("kernel_id") in KERNEL_AXES:
+        validate_bindings(kernel["kernel_id"], records, kernel["parameters"], purpose)
+        return records
     required = set(plan.get("runtime_pin", {}).get("required_representations", ()))
     count_families = {
         "count_1_raw_counts",

@@ -1,0 +1,9 @@
+**
+!containers/rna-kernel-2.0/r-m2-qc-sources.lock.json
+!containers/rna-kernel-2.0/install-m2-qc-packages.R
+!src/devbench/core/*.py
+!src/devbench/analysis/singlecell.py
+!src/devbench/analysis/annotation.py
+!src/rna_kernels/*.py
+!src/rna_kernels/r/*.R
+!containers/rna-kernel-2.0/verify-m2-qc-sources.R

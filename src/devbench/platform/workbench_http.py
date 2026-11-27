@@ -1326,6 +1326,9 @@ class _WorkbenchHandler:
         from .plugin_graph_studio import studio_launch
 
         with self._private_execution_approval(request, private_run[1]):
+            assert (
+                request.body is not None
+            )  # The approval guard requires a concrete plan.
             result = studio_launch(app, private_run[1], request.body)
         return self._json(result, 202, admitted=True)
 
@@ -1503,6 +1506,7 @@ class _WorkbenchHandler:
         from .plugin_motor_umap import studio_launch
 
         with self._private_execution_approval(request, session_id):
+            assert request.body is not None
             result = studio_launch(request.app, session_id, request.body)
         return self._json(result, 202)
 

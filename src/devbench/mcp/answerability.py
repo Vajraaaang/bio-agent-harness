@@ -260,6 +260,40 @@ def _inputs(ctx, args):
     return records
 
 
+def _conflicted_design(design, axis, records):
+    return (design or axis in _DESIGN_AXES) and any(
+        record["detail"].get("donor_conflict_halted")
+        or (
+            record["ref"]["representation_class"] == "count_1_raw_counts"
+            and record["detail"]
+            .get("count_1_forensics", {})
+            .get("suspected_transformed")
+        )
+        for record in records
+    )
+
+
+def _answerability_status(problem, missing, axis):
+    if problem:
+        status, reason = "refused", problem
+    elif missing:
+        status, reason = (
+            "awaiting_information",
+            "Additional evidence is required for this question.",
+        )
+    elif axis == "B_OPEN":
+        status, reason = (
+            "tier2_exploratory_only",
+            "The open question requires a governed exploratory plan.",
+        )
+    else:
+        status, reason = (
+            "ready",
+            "The registered measurements, design and runtime support this analysis.",
+        )
+    return status, reason
+
+
 def check_answerability(ctx, args):
     until = deadline()
     sid = args.get("session_id")
@@ -279,6 +313,11 @@ def check_answerability(ctx, args):
         missing.extend(needed)
     elif axis in _DESIGN_AXES:
         missing.append("A biological-unit design and estimable contrast.")
+    if _conflicted_design(design, axis, records):
+        problem = (
+            "Unresolved donor or count-provenance conflict prevents "
+            "biological-unit inference."
+        )
     kernels = _recommendations(ctx, args, axis, records)
     if axis != "B_OPEN" and not records:
         missing.append("Registered measurement artifacts for the specified question.")
@@ -286,23 +325,7 @@ def check_answerability(ctx, args):
         missing.append(
             "A compatible kernel, verified input representation and available runtime."
         )
-    if problem:
-        status, reason = "refused", problem
-    elif missing:
-        status, reason = (
-            "awaiting_information",
-            "Additional evidence is required for this question.",
-        )
-    elif axis == "B_OPEN":
-        status, reason = (
-            "tier2_exploratory_only",
-            "The open question requires a governed exploratory plan.",
-        )
-    else:
-        status, reason = (
-            "ready",
-            "The registered measurements, design and runtime support this analysis.",
-        )
+    status, reason = _answerability_status(problem, missing, axis)
     ctx.require_public(sid)
     return {
         "status": status,

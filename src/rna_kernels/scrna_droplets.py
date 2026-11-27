@@ -46,6 +46,106 @@ _EMPTYDROPS_FIELDS = ("barcode", "total_umi", "p_value", "fdr", "limited", "call
 Method = Literal["emptydrops", "cellbender"]
 
 
+@dataclass(frozen=True)
+class AmbientRoute:
+    ambient_method: str
+    decontamination_regime: str
+    input_matrix_tier: str
+    hardware_backend: str
+    cellbender_version: str | None
+    cellbender_deferred_reason: str | None
+
+
+def cellbender_supported(version: str | None) -> bool:
+    if version is None or _VERSION.fullmatch(version) is None:
+        return False
+    return tuple(map(int, version.split("."))) >= (0, 3, 2)
+
+
+def _deferred_reason(method, version, hardware, allow_cpu, droplets, captures):
+    if method in {"soupx", "decontx"}:
+        return "explicit_cpu_method"
+    if not cellbender_supported(version):
+        return (
+            "cellbender_yanked_0.3.1"
+            if version == "0.3.1"
+            else "cellbender_supported_version_unavailable"
+        )
+    if hardware == "cpu" and not allow_cpu:
+        return "cellbender_cpu_not_opted_in"
+    if hardware == "cpu" and (droplets > 25_000 or captures > 4):
+        return "cellbender_cpu_budget_exceeded"
+    return None
+
+
+def route_ambient_decontamination(
+    *,
+    input_matrix_tier: str,
+    hardware_backend: str,
+    modality: str,
+    raw_droplets: int = 0,
+    captures: int = 1,
+    allow_cellbender_cpu: bool = False,
+    cellbender_version: str | None = None,
+    requested_method: str = "auto",
+    fallback_reason: str | None = None,
+) -> AmbientRoute:
+    """Apply ADR-27 to observed tier, capture count and effective worker hardware."""
+    if input_matrix_tier not in {"R0", "R1"} or hardware_backend not in {"cpu", "cuda"}:
+        raise ValueError("invalid_ambient_tier_or_hardware")
+    if modality not in {"snrna_seq", "scrna_seq"} or requested_method not in {
+        "auto",
+        "cellbender",
+        "soupx",
+        "decontx",
+    }:
+        raise ValueError("invalid_ambient_method_or_modality")
+    if (
+        type(captures) is not int
+        or captures < 1
+        or type(allow_cellbender_cpu) is not bool
+    ):
+        raise ValueError("invalid_ambient_budget")
+    if input_matrix_tier == "R1":
+        if requested_method in {"cellbender", "soupx"}:
+            raise ValueError("missing_raw_droplet_matrix")
+        return AmbientRoute(
+            "decontx",
+            "r1_filtered_only_decontx_heuristic",
+            "R1",
+            "cpu",
+            cellbender_version,
+            "missing_raw_droplet_matrix",
+        )
+    if type(raw_droplets) is not int or raw_droplets < 1:
+        raise ValueError("invalid_raw_droplet_count")
+    reason = fallback_reason or _deferred_reason(
+        requested_method,
+        cellbender_version,
+        hardware_backend,
+        allow_cellbender_cpu,
+        raw_droplets,
+        captures,
+    )
+    if reason is None:
+        return AmbientRoute(
+            "cellbender",
+            "r0_cellbender",
+            "R0",
+            hardware_backend,
+            cellbender_version,
+            None,
+        )
+    method = (
+        "decontx"
+        if modality == "snrna_seq" or requested_method == "decontx"
+        else "soupx"
+    )
+    return AmbientRoute(
+        method, "r0_cpu_soupx_decontx", "R0", "cpu", cellbender_version, reason
+    )
+
+
 def _digest(document: object) -> str:
     return sha256(canonical_json(document)).hexdigest()
 
@@ -94,7 +194,11 @@ class CellBenderAction:
     total_droplets_included: int
     fpr: float = 0.01
 
+    allow_cellbender_cpu: bool = False
+
     def __post_init__(self) -> None:
+        if type(self.allow_cellbender_cpu) is not bool:
+            raise ValueError("allow_cellbender_cpu must be boolean")
         _integer(self.expected_cells, 1, _MAX_DROPLETS - 1, "expected_cells")
         _integer(
             self.total_droplets_included,
@@ -124,6 +228,10 @@ class DropletRuntime:
             or not _VERSION.fullmatch(self.package_version)
         ):
             raise ValueError("Cell calling requires an exact image and package pin")
+        if self.method == "cellbender" and not cellbender_supported(
+            self.package_version
+        ):
+            raise ValueError("cellbender_requires_version_at_least_0.3.2")
 
 
 class _RuntimeUnavailable(Exception):
@@ -416,6 +524,8 @@ def _package_version(method: Method, *, scratch: Path, env: dict[str, str]) -> s
     installed = result.stdout.strip()
     if not installed:
         raise _RuntimeUnavailable("pinned_droplet_package_unavailable")
+    if method == "cellbender" and not cellbender_supported(installed):
+        raise _RuntimeUnavailable("cellbender_requires_version_at_least_0.3.2")
     return installed
 
 
@@ -640,6 +750,10 @@ def _refusal(source: DropletInput, action: DropletAction) -> str | None:
             (totals > 0) & (totals <= action.lower)
         ):
             return "emptydrops_requires_nonempty_ambient_and_tested_droplets"
+    elif not action.allow_cellbender_cpu:
+        return "cellbender_cpu_not_opted_in"
+    elif len(source.barcodes) > 25_000:
+        return "cellbender_cpu_budget_exceeded"
     elif action.total_droplets_included > len(source.barcodes):
         return "cellbender_droplet_scope_exceeds_measured_barcodes"
     return None
@@ -671,6 +785,24 @@ def _finish_action(
         "count1_admissible": False,
         "permitted_uses": ["checked_observation", "exploratory"],
     }
+    if isinstance(action, CellBenderAction):
+        receipt = asdict(
+            AmbientRoute(
+                "cellbender",
+                "r0_cellbender",
+                "R0",
+                "cpu",
+                record["runtime"]["package_version"],
+                None,
+            )
+        )
+        artifact.update(receipt)
+        with h5py.File(destination, "r+") as container:
+            for key, value in receipt.items():
+                container.attrs[key] = value if value is not None else ""
+        artifact["sha256"] = hash_artifact(destination, max_bytes=_MAX_FILE_BYTES)[
+            "sha256"
+        ]
     return {
         **record,
         "status": "completed",
