@@ -18,9 +18,16 @@ def main(argv=None):
         action="store_true",
         help="Keep Studio links passive (default)",
     )
+    parser.add_argument("--mounted-image-id")
+    parser.add_argument("--allow-external-input-files", action="store_true")
     args = parser.parse_args(argv)
     try:
-        return stdio_shim(args.workspace, args.input_root)
+        return stdio_shim(
+            args.workspace,
+            args.input_root,
+            mounted_image_id=args.mounted_image_id,
+            allow_external_input_files=args.allow_external_input_files,
+        )
     except (OSError, ValueError, RuntimeError):
         print("devbench mcp: workspace daemon connection failed", file=sys.stderr)
         return 1

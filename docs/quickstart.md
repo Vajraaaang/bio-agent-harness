@@ -1,6 +1,6 @@
 # Connect an MCP client
 
-Install with `uv sync --locked --python 3.13` from the checkout root.
+Install with `uv sync --locked --extra dev --python-preference only-managed` from the checkout root.
 Check the interpreter and patched SQLite runtime before connecting the server.
 [Installation](installation.md)
 
@@ -17,7 +17,7 @@ mkdir -p "$workspace"
 
 ## Install the Codex plugin
 
-The plugin adds the `rna-workbench` skill and carries the configured server
+The plugin adds eight modular research skills and carries the configured server
 entry. Set up a local marketplace using the directories from the first block.
 
 ```sh
@@ -31,7 +31,7 @@ codex plugin marketplace add "$marketplace" --json
 codex plugin add devharness@devharness-local
 ```
 
-Start a new session and select `@devharness` or invoke `$rna-workbench`.
+Start a new session and select `@devharness` or invoke `$rna-research-core`.
 Keep the configured copy local because it contains local paths. Choose either
 the plugin or the direct server registration below for this workspace.
 [Plugin configuration reference](../integrations/codex/devharness/README.md)
@@ -39,8 +39,8 @@ the plugin or the direct server registration below for this workspace.
 ## Register the server directly in Codex
 
 ```sh
-codex mcp add devharness -- "$repo/.venv/bin/devbench" plugin-mcp \
-  --input-root "$input_root" --workspace "$workspace"
+codex mcp add devharness -- "$repo/.venv/bin/devbench" mcp \
+  --input-root "$input_root" --workspace "$workspace" --no-auto-browser
 codex mcp list
 ```
 
@@ -48,8 +48,8 @@ codex mcp list
 
 ```sh
 claude mcp add --transport stdio --scope local devharness -- \
-  "$repo/.venv/bin/devbench" plugin-mcp \
-  --input-root "$input_root" --workspace "$workspace"
+  "$repo/.venv/bin/devbench" mcp \
+  --input-root "$input_root" --workspace "$workspace" --no-auto-browser
 claude mcp list
 ```
 
@@ -68,17 +68,17 @@ Replace each example path with an actual absolute path.
       "type": "stdio",
       "command": "/absolute/bio-agent-harness/.venv/bin/devbench",
       "args": [
-        "plugin-mcp",
+        "mcp",
         "--input-root", "/absolute/bio-agent-harness/examples/bulk-rnaseq/data",
-        "--workspace", "/absolute/bio-agent-harness/results/mcp-quickstart"
+        "--workspace", "/absolute/bio-agent-harness/results/mcp-quickstart",
+        "--no-auto-browser"
       ]
     }
   }
 }
 ```
 
-If your Python needs a macOS SQLite library override, add it to the launched
-process’s environment. Some clients use an `env` map for this. [Cursor MCP documentation](https://cursor.com/docs/mcp) · [SQLite setup](installation.md#sqlite-for-local-execution)
+The configured plugin binds the verified Python runtime automatically. [Cursor MCP documentation](https://cursor.com/docs/mcp) · [SQLite setup](installation.md#sqlite-for-local-execution)
 
 ## First investigation
 

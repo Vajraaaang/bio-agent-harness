@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from typing import Never
 
 from devbench.core._files import read_bounded_file
 from devbench.core._hashing import decode_receipt_json
@@ -15,7 +16,7 @@ from ._sources import clinical
 _LIMIT = 4 * 1024**2
 
 
-def _reject():
+def _reject() -> Never:
     raise OperationBlocked("scientific_refusal")
 
 

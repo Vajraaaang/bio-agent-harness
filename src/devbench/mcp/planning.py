@@ -394,6 +394,7 @@ def freeze_analysis_plan(ctx, args):
         operation="control_plane",
         author_id="mcp-scientist",
         input_root=str(ctx.input_root),
+        allow_external_input_files=ctx.config.get("allow_external_input_files") is True,
         plan_id=uuid4().hex,
         execution_lane="tier2_exploratory" if script else "tier1_curated",
         claim_tier="L1_execution_verified",

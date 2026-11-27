@@ -72,5 +72,18 @@ runs/
 /y/
 
 # Local workspace notes and generated integration outputs.
-/.agents/
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/rna-research-core/
+!/.agents/skills/scrna-snrna-qc-integration/
+!/.agents/skills/pseudobulk-and-de/
+!/.agents/skills/composition-and-da/
+!/.agents/skills/trajectory-and-programs/
+!/.agents/skills/spatial-and-ccc/
+!/.agents/skills/method-benchmarking-and-critic/
+!/.agents/skills/private-data-studio/
+.claude/skills/
+.cursor/skills/
+.devharness-mirror-manifest.json
 /integrations/codex/validation/

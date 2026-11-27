@@ -1,25 +1,33 @@
 {
   "name": "devharness",
-  "version": "0.2.0",
-  "description": "Governed local single-cell, bulk and staged FASTQ research via DevHarness.",
+  "version": "0.3.0",
+  "description": "Governed local single-cell, single-nucleus, and general RNA-seq research engine.",
   "author": {
     "name": "DevHarness contributors"
   },
   "license": "MIT",
-  "keywords": ["rna-seq", "scrna-seq", "transcriptomics", "research"],
+  "keywords": [
+    "rna-seq",
+    "scrna-seq",
+    "transcriptomics",
+    "research"
+  ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "DevHarness RNA Research",
-    "shortDescription": "Inspect RNA inputs and run reviewed research workflows.",
+    "shortDescription": "Inspect RNA datasets, check design identifiability, and run governed scRNA/bulk workflows.",
     "longDescription": "Plan and run local RNA-seq research with reviewed execution and evidence receipts. Continue visual and private-data work in Companion Studio.",
     "developerName": "DevHarness contributors",
     "category": "Education & Research",
-    "capabilities": ["Read", "Write"],
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
     "defaultPrompt": [
-      "Inspect my single-cell RNA-seq input and donor metadata.",
-      "Check whether my bulk RNA-seq design supports the intended contrast.",
-      "Plan a Salmon workflow for my locally staged FASTQ."
+      "Inspect my single-cell H5AD input and donor metadata.",
+      "Check whether my study design supports donor-level differential state testing.",
+      "Check available local Python, R, and container runtimes."
     ]
   }
 }

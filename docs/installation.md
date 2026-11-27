@@ -1,10 +1,10 @@
 # Install DevHarness
 
-Use a native Python 3.13 or newer on macOS or Linux. The locked setup below
-selects Python 3.13. Install `uv` and run these commands from the repository root.
+Install uv (CI uses 0.13.10) and run these commands from the repository root
+to provision its pinned, native Python 3.13.18 on macOS or Linux.
 
 ```sh
-uv sync --locked --python 3.13
+uv sync --locked --extra dev --python-preference only-managed
 repo="$(pwd -P)"
 "$repo/.venv/bin/python" -c 'import platform, sqlite3; print(platform.machine(), sqlite3.sqlite_version)'
 ```
@@ -18,24 +18,13 @@ single-cell packages, and `--extra reporting` for local figure exports.
 
 ## SQLite for local execution
 
-Scientific sessions use SQLite WAL with the WAL-reset fix. Use SQLite 3.51.3
-or newer, or a backport recognized by the runtime check. On macOS with a patched
-Homebrew SQLite, expose its library to the Python process and check it from the
-checkout root.
+The pinned interpreter supplies stdlib SQLite 3.51.3 or later for scientific WAL. Verify it from the checkout root.
 
 ```sh
-export DYLD_LIBRARY_PATH="$(brew --prefix sqlite)/lib"
 make check-sqlite-wal VERIFY_PYTHON="$repo/.venv/bin/python"
 ```
 
-On Linux, select a Python build linked to a fixed SQLite and run the same
-`make` check without the macOS variable. If a client launches the server with
-its own environment on macOS, pass the library path to that server entry
-explicitly. For Codex, add `--env "DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"` before
-the MCP server name in `codex mcp add`. For Claude Code, pass
-`--env "DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"` before `--transport stdio`.
-For Cursor, add `env.DYLD_LIBRARY_PATH` to the server configuration with the
-absolute library path. [Client setup](quickstart.md)
+For a separately installed system or Conda Python, the plugin configurator can check a patched Homebrew library on macOS or a Linux library selected with `DEVBENCH_SQLITE_LIB`. If macOS SIP strips the loader setting, run `uv python install` and repeat the locked sync. [Plugin binding and fallback options](../integrations/codex/devharness/README.md)
 
 ## Numerical runtimes
 

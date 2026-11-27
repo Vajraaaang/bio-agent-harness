@@ -1,0 +1,40 @@
+name: Tier 3 - scientific qualification admission
+on:
+  workflow_dispatch:
+    inputs:
+      campaign:
+        description: Locked campaign to request for independent review
+        type: choice
+        required: true
+        options:
+          - ADR-15 and ADR-17 solver calibration
+          - M5 Scorecards 2-6
+      protocol_sha256:
+        description: SHA-256 of the externally retained preregistered protocol
+        type: string
+        required: true
+permissions: {}
+jobs:
+  admission:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: independent-scientific-qualification
+    steps:
+      - name: Record request and hold qualification
+        env:
+          CAMPAIGN: ${{ inputs.campaign }}
+          PROTOCOL: ${{ inputs.protocol_sha256 }}
+        run: |
+          [[ "$PROTOCOL" =~ ^[a-f0-9]{64}$ ]]
+          {
+            echo "Campaign: $CAMPAIGN"
+            echo "Candidate revision: $GITHUB_SHA"
+            echo "Declared protocol digest: $PROTOCOL"
+            echo 'clinical_release_allowed = false'
+            echo 'L2 requires independently seeded null and planted strata with frozen ADR-15/17 gates.'
+            echo 'L3 requires locked Scorecards 2–6, study-disjoint evaluation and independent blinded adjudication.'
+            echo 'Awaiting independent custody, named sign-off and a qualified campaign runner.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # M1 scaffolds admission. Until M5 integrates verified receipts and independent
+          # adjudication, a manual dispatch or environment approval cannot pass release.
+          exit 1

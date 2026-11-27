@@ -1,0 +1,36 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "devharness",
+  "version": "0.3.0",
+  "description": "Governed local single-cell, single-nucleus, and general RNA-seq research engine.",
+  "author": {
+    "name": "DevHarness contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "rna-seq",
+    "scrna-seq",
+    "transcriptomics",
+    "research"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "DevHarness RNA Research",
+        "shortDescription": "Inspect RNA datasets, check design identifiability, and run governed scRNA/bulk workflows.",
+        "longDescription": "Plan and run local RNA-seq research with reviewed execution and evidence receipts. Continue visual and private-data work in Companion Studio.",
+        "developerName": "DevHarness contributors",
+        "category": "Education & Research",
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
+        "defaultPrompt": [
+          "Inspect my single-cell H5AD input and donor metadata.",
+          "Check whether my study design supports donor-level differential state testing.",
+          "Check available local Python, R, and container runtimes."
+        ]
+      }
+    }
+  }
+}

@@ -49,7 +49,7 @@ _POLICY_HOLDS = {
     "explicit_plan_approval_required": "awaiting_approval",
     "outcome_blind_critic_required": "awaiting_approval",
 }
-_LOCAL = {}
+_LOCAL: dict[Path, Supervisor] = {}
 _LOCAL_LOCK = threading.Lock()
 
 

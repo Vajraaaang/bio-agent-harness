@@ -23,7 +23,7 @@ from scipy.stats import f, t
 
 from ._hashing import canonical_sha256
 from .design import DESIGN_CONDITION_NUMBER_LIMIT, require_design_condition
-from .h5ad_gene_blocks import H5adGeneBlocks, ZarrGeneBlocks
+from .h5ad_gene_blocks import H5adGeneBlocks
 from .population_data import bound_query_file
 from .publication_families import Sha, budgeted_bh
 from .trajectory_evidence import DonorTrajectoryEvidence
@@ -640,16 +640,10 @@ def _check_trajectory_evidence(
 @contextmanager
 def _gene_store(path, spec):
     if path.suffix.lower() == ".zarr":
-        from devharness_core.provenance import hash_artifact
+        from rna_kernels.trajectory_zarr import bound_trajectory_zarr
 
-        from .expression_io import open_expression
-
-        if hash_artifact(path, max_entries=100_000)["sha256"] != spec.expression_sha256:
-            raise ValueError("Evidence input hash mismatch")
-        with open_expression(path, layer=spec.layer) as source:
-            yield ZarrGeneBlocks(source)
-        if hash_artifact(path, max_entries=100_000)["sha256"] != spec.expression_sha256:
-            raise ValueError("Evidence input changed during trajectory execution")
+        with bound_trajectory_zarr(path, spec) as store:
+            yield store
     elif path.suffix.lower() == ".h5ad":
         with bound_query_file(
             path, spec.expression_sha256, path.lstat().st_size

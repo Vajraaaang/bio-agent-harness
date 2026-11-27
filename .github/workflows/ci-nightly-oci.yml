@@ -1,0 +1,106 @@
+name: Tier 2 - native OCI and Codex interoperability
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '25 7 * * *'
+permissions:
+  contents: read
+jobs:
+  fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.10'
+      - run: uv sync --locked --extra dev --python-preference only-managed
+      - run: .venv/bin/python -m tests.native_oci_parity inputs "$RUNNER_TEMP/inputs"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-mounted-inputs
+          path: ${{ runner.temp }}/inputs
+          if-no-files-found: error
+  native:
+    needs: fixture
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: amd64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.10'
+      - run: uv sync --locked --extra dev --python-preference only-managed
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --global @openai/codex@0.147.0
+      - name: Isolated Codex CLI smoke
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: .venv/bin/python -m pytest -q -rs tests/test_codex_live_smoke.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: synthetic-mounted-inputs
+          path: ${{ runner.temp }}/inputs
+      - name: Build the native mounted runtime
+        run: |
+          docker build --target bulk-runtime -f containers/rna-kernel-2.0/Dockerfile -t devbench-nightly:local .
+          image=$(docker image inspect -f '{{.Id}}' devbench-nightly:local)
+          echo "DEVBENCH_RNA_KERNEL_TEST_IMAGE=$image" >> "$GITHUB_ENV"
+      - name: Prepare local rootless Podman
+        run: |
+          command -v podman || { sudo apt-get update && sudo apt-get install -y podman uidmap; }
+          sudo loginctl enable-linger "$(id -un)"
+          systemctl --user show-environment >/dev/null
+          docker save devbench-nightly:local | podman load
+      - name: Run the same mounted synthetic fit on both engines
+        run: |
+          for engine in docker podman; do
+            .venv/bin/python -m tests.native_oci_parity run "$engine" "$DEVBENCH_RNA_KERNEL_TEST_IMAGE" \
+              "$RUNNER_TEMP/inputs" "$RUNNER_TEMP/results/$engine"
+          done
+          .venv/bin/python -m pytest -q tests/test_mounted_oci_recovery.py \
+            tests/test_mcp_resilience_recovery.py::test_killed_worker_leaves_no_docker_orphan
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-fit-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/results/*/*.json
+            ${{ runner.temp }}/results/*/genes.parquet
+          if-no-files-found: error
+  compare:
+    needs: native
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.10'
+      - run: uv sync --locked --extra dev --python-preference only-managed
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-fit-*
+          path: ${{ runner.temp }}/fits
+      - name: Compare native arm64 and amd64 families with ADR-16
+        run: |
+          for engine in docker podman; do
+            .venv/bin/python -m tests.native_oci_parity compare \
+              "$RUNNER_TEMP/fits/native-fit-amd64/$engine" "$RUNNER_TEMP/fits/native-fit-arm64/$engine" \
+              > "$RUNNER_TEMP/adr16-$engine.json"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: adr16-comparison
+          path: ${{ runner.temp }}/adr16-*.json
+          if-no-files-found: error

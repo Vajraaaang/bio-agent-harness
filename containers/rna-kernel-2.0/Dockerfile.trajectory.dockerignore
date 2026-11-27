@@ -13,3 +13,4 @@
 !src/devbench/core/population_data.py
 !src/devbench/core/scrna_donor_trajectory.py
 !src/devbench/core/trajectory_evidence.py
+!src/rna_kernels/trajectory_zarr.py

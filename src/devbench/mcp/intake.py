@@ -357,13 +357,33 @@ def member_custody(ctx, digests, until, *, db=None):
     return protected
 
 
+def _input_path(ctx, value):
+    path = Path(value)
+    if not path.is_absolute() or path.is_relative_to(ctx.input_root):
+        return scoped_path(ctx.input_root, path)
+    if not ctx.config.get("allow_external_input_files") or path.is_relative_to(
+        ctx.workspace
+    ):
+        raise OperationBlocked(SCOPE)
+    # The operator opt-in admits only a specifically named, supported regular
+    # file. It never grants directory discovery or access to the workspace.
+    from devbench.analysis.workbench_inputs import InputDiscovery
+
+    try:
+        return InputDiscovery([ctx.input_root], allow_external_files=True).source_path(
+            path
+        )
+    except (OSError, ValueError) as error:
+        raise OperationBlocked(SCOPE) from error
+
+
 def _inspect(ctx, entry, layers, until, *, admit):
     hidden = _known_private(ctx.input_root, entry)
     if hidden and not admit:
         raise OperationBlocked(PRIVATE)
-    path = scoped_path(ctx.input_root, entry["path"])
+    path = _input_path(ctx, entry["path"])
     members = ()
-    if path.is_dir():
+    if path.is_relative_to(ctx.input_root) and path.is_dir():
         tree = DirectoryInventory(path, until)
         sha = merkle = tree.sha256
         size = tree.size
@@ -491,6 +511,8 @@ def register_investigation_input(ctx, args):
 
 def _artifact_path(ctx, record):
     path = Path(record["path"])
+    if not record.get("producer_step_id"):
+        return _input_path(ctx, path)
     if path.is_relative_to(ctx.input_root):
         return scoped_path(ctx.input_root, path)
     if record.get("producer_step_id") and path.is_relative_to(ctx.workspace):
@@ -521,7 +543,9 @@ def verify_artifact_file(ctx, record, *, until=None, allow_private=False):
 def verify_artifact_identity(ctx, record, *, until=None, allow_private=False):
     until = deadline() if until is None else until
     path = _artifact_path(ctx, record)
-    if path.is_dir():
+    if (
+        path.is_relative_to(ctx.input_root) or path.is_relative_to(ctx.workspace)
+    ) and path.is_dir():
         inventory = DirectoryInventory(path, until)
         expected = (
             record.get("detail", {}).get("source_sha256") or record["ref"]["sha256"]

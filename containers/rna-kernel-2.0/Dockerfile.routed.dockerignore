@@ -41,3 +41,4 @@
 !src/rna_kernels/rank_sensitivity.py
 !src/rna_kernels/scrna_nb_clustering.py
 !src/rna_kernels/scrna_nb_pseudobulk.py
+!src/rna_kernels/trajectory_zarr.py
