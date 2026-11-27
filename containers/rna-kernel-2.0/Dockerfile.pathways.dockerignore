@@ -7,10 +7,12 @@
 !src/devharness_server/
 !src/devharness_server/__init__.py
 !src/devharness_server/tools_rna_pathways.py
-!src/devharness_server/r/
-!src/devharness_server/r/rna_pathways.R
+!src/rna_kernels/r/
+!src/rna_kernels/r/rna_pathways.R
 !src/devbench/
 !src/devbench/core/
 !src/devbench/core/publication_families.py
 !src/devbench/core/rna_pathway_analysis.py
 !src/devbench/core/scientific_types.py
+!src/rna_kernels/
+!src/rna_kernels/pathways.py

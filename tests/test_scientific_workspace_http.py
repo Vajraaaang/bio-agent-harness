@@ -4,6 +4,7 @@ import http.client
 import json
 import threading
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 import pytest
 
@@ -29,8 +30,31 @@ def running(app):
         thread.join(timeout=5)
 
 
+_TEST_STUDIO = ContextVar("test_studio_credentials", default=None)
+
+
+@contextmanager
+def authenticated_studio(port, workspace, *, standalone=False):
+    """Scope the ephemeral test daemon credential to its own loopback port."""
+    from devbench.daemon.auth import read_file, read_token, state_directory
+
+    if standalone:
+        with state_directory(workspace) as fd:
+            secret = read_file(fd, "studio.token", 64).decode("ascii")
+    else:
+        secret = read_token(workspace)
+    binding = _TEST_STUDIO.set((port, secret))
+    try:
+        yield
+    finally:
+        _TEST_STUDIO.reset(binding)
+
+
 def call(port, path, *, body=None, origin=None, timeout=10):
     headers = {}
+    studio = _TEST_STUDIO.get()
+    if studio and port == studio[0]:
+        headers["Authorization"] = "Bearer " + studio[1]
     if origin is not None:
         headers["Origin"] = origin
     encoded = None
@@ -60,7 +84,7 @@ def test_workflow_page_link_keeps_loopback_and_frame_boundary(tmp_path):
                 response = connection.getresponse()
                 assert response.status == 200
                 assert response.getheader("X-Frame-Options") == "DENY"
-                assert b'data-workflow-band' in response.read()
+                assert b"data-workflow-band" in response.read()
             finally:
                 connection.close()
             for query in (
@@ -70,9 +94,14 @@ def test_workflow_page_link_keeps_loopback_and_frame_boundary(tmp_path):
                 f"session_id={sid}&view=qc&unexpected=1",
             ):
                 assert call(port, "/?" + query)[0] == 400
-            assert call(
-                port, f"/?session_id={sid}&view=qc", origin="https://example.invalid",
-            )[0] == 403
+            assert (
+                call(
+                    port,
+                    f"/?session_id={sid}&view=qc",
+                    origin="https://example.invalid",
+                )[0]
+                == 403
+            )
     finally:
         app.close()
 
@@ -106,8 +135,11 @@ def test_retained_comparison_figure_uses_the_scoped_studio_route(tmp_path, monke
         calls.append((owner, sid, sha256))
         return figure
 
-    monkeypatch.setitem(sys.modules, "devbench.platform.workbench_retained_comparison",
-                        SimpleNamespace(local_comparison_figure=read))
+    monkeypatch.setitem(
+        sys.modules,
+        "devbench.platform.workbench_retained_comparison",
+        SimpleNamespace(local_comparison_figure=read),
+    )
     route = f"/api/scientific/adaptive/{session_id}/comparison/{checksum}.png"
     try:
         with running(app) as port:
@@ -123,8 +155,13 @@ def test_retained_comparison_figure_uses_the_scoped_studio_route(tmp_path, monke
 
 
 def _fixture_adaptive_controller(
-    planner, ledger, lineage, broker, *,
-    step_id="bounded-qc", thesis_lifecycle=None,
+    planner,
+    ledger,
+    lineage,
+    broker,
+    *,
+    step_id="bounded-qc",
+    thesis_lifecycle=None,
 ):
     from devbench.analysis.checkpoints import digest
     from devbench.analysis.episode_agent import (
@@ -406,7 +443,8 @@ def test_adaptive_workbench_routes_use_current_graph_and_exact_startup_scope(
             status, body, _ = call(port, "/api/scientific/sessions")
             assert status == 200
             studio = next(
-                row for row in json.loads(body)["sessions"]
+                row
+                for row in json.loads(body)["sessions"]
                 if row["session_id"] == lineage
             )
             assert studio["origin"] == "studio" and studio["step_count"] == 1
@@ -828,34 +866,36 @@ def test_workbench_cli_attaches_current_retained_disclosure_without_execution_au
             assert address["pid"] == process.pid and address["offline_only"] is True
             assert liveness.stat().st_mode & 0o777 == 0o600
             path = "/api/scientific/adaptive/" + lineage
-            status, data, _ = call(port, path)
-            graph = json.loads(data)
-            assert status == 200 and graph["graph_status"] == "available"
-            assert graph["graph"]["entries"][0]["step_id"] == "retained-qc"
-            assert graph["actions"] == {
-                "advance": False,
-                "resume": False,
-                "cancel": False,
-                "model_required": False,
-                "model_available": False,
-                "run_checked_step": None,
-                "run_operator_steps": [],
-            }
-            request = {
-                "action": "advance",
-                "expected_revision": graph["revision"],
-                "allow_data_execution": True,
-            }
-            assert (
-                call(port, path, body=request, origin="http://127.0.0.1:" + str(port))[
-                    0
-                ]
-                == 403
-            )
-            broker.register_policy(
-                AccessPolicy("cli-readback", 2, allow_outcomes=False)
-            )
-            assert call(port, path)[0] == 403
+            assert call(port, path)[0] == 401
+            with authenticated_studio(port, app.workspace, standalone=True):
+                status, data, _ = call(port, path)
+                graph = json.loads(data)
+                assert status == 200 and graph["graph_status"] == "available"
+                assert graph["graph"]["entries"][0]["step_id"] == "retained-qc"
+                assert graph["actions"] == {
+                    "advance": False,
+                    "resume": False,
+                    "cancel": False,
+                    "model_required": False,
+                    "model_available": False,
+                    "run_checked_step": None,
+                    "run_operator_steps": [],
+                }
+                request = {
+                    "action": "advance",
+                    "expected_revision": graph["revision"],
+                    "allow_data_execution": True,
+                }
+                assert (
+                    call(
+                        port, path, body=request, origin="http://127.0.0.1:" + str(port)
+                    )[0]
+                    == 403
+                )
+                broker.register_policy(
+                    AccessPolicy("cli-readback", 2, allow_outcomes=False)
+                )
+                assert call(port, path)[0] == 403
         finally:
             if process.poll() is None:
                 process.send_signal(signal.SIGTERM)
@@ -961,7 +1001,8 @@ def test_workbench_dispatches_an_owner_bound_reviewed_trajectory(workspace_tmp_p
             ledger, allow_data_execution=True, mounted_image_id=image
         )
         source, _ = _sources(
-            workspace_tmp_path / "trajectory-data", {"intent": "confirmatory"},
+            workspace_tmp_path / "trajectory-data",
+            {"intent": "confirmatory"},
         )
         reviewed = _candidate_evidence(source)
         links, pins = {}, {}
@@ -987,18 +1028,20 @@ def test_workbench_dispatches_an_owner_bound_reviewed_trajectory(workspace_tmp_p
         aims = ThesisAimLifecycle(
             ledger, lineage, authorize_operator=lambda actor: actor == "researcher"
         )
-        aims.propose(_aim(
-            "trajectory",
-            kind="confirmatory",
-            input_sha256s=tuple(pins.values()),
-            evaluation_sha256s=[pins["trajectory_expression"]],
-            multiplicity={
-                "family_id": "trajectory-testing",
-                "aim_ids": ["trajectory"],
-                "hypotheses_sha256": reviewed.hypotheses_sha256(),
-                "fdr": 0.05,
-            },
-        ))
+        aims.propose(
+            _aim(
+                "trajectory",
+                kind="confirmatory",
+                input_sha256s=tuple(pins.values()),
+                evaluation_sha256s=[pins["trajectory_expression"]],
+                multiplicity={
+                    "family_id": "trajectory-testing",
+                    "aim_ids": ["trajectory"],
+                    "hypotheses_sha256": reviewed.hypotheses_sha256(),
+                    "fdr": 0.05,
+                },
+            )
+        )
         _approve(aims, "trajectory")
         axis = digest("ordered cell inventory")
         measurements = (
@@ -1031,7 +1074,9 @@ def test_workbench_dispatches_an_owner_bound_reviewed_trajectory(workspace_tmp_p
         )
         host_receipts = (*measurements, design, runtime, reviewed)
         thesis = ThesisWorkflow(
-            ledger, lineage, verify_attestation=lambda _db, item: item in host_receipts,
+            ledger,
+            lineage,
+            verify_attestation=lambda _db, item: item in host_receipts,
         )
         broker = EvidenceBroker(authority)
         policy = AccessPolicy("trajectory-readback", 1, allow_outcomes=True)
@@ -1051,45 +1096,66 @@ def test_workbench_dispatches_an_owner_bound_reviewed_trajectory(workspace_tmp_p
             classification="structural",
         )
         controller, selector = _fixture_adaptive_controller(
-            app.scientific.planner(), ledger, lineage, broker,
-            step_id=step.step_id, thesis_lifecycle=thesis,
+            app.scientific.planner(),
+            ledger,
+            lineage,
+            broker,
+            step_id=step.step_id,
+            thesis_lifecycle=thesis,
         )
-        app.bind_adaptive_workflow(WorkbenchAdaptiveBinding(
-            lineage, broker.delivery("viewer", "graph"), controller=controller,
-            tier_a_executor=executor,
-        ))
+        app.bind_adaptive_workflow(
+            WorkbenchAdaptiveBinding(
+                lineage,
+                broker.delivery("viewer", "graph"),
+                controller=controller,
+                tier_a_executor=executor,
+            )
+        )
         revision = _graph_revision(flow)
         args = {
             "step": step,
             "aim_id": "trajectory",
             "request": AnswerabilityRequest(
-                family_id=7, question="donor_trajectory",
-                assay="single_nucleus_rna_seq", entry_point="annotated_object",
+                family_id=7,
+                question="donor_trajectory",
+                assay="single_nucleus_rna_seq",
+                entry_point="annotated_object",
             ),
             "measurements": measurements,
             "design": design,
         }
         with pytest.raises(OperationConflict, match="revision changed"):
             bind_workbench_donor_trajectory(
-                app, lineage, **args, trajectory_evidence=reviewed,
+                app,
+                lineage,
+                **args,
+                trajectory_evidence=reviewed,
                 expected_revision=revision - 1,
             )
         unverified = reviewed.model_copy(update={"review_receipt_sha256": "5" * 64})
         with pytest.raises(OperationBlocked, match="trajectory_evidence_unverified"):
             bind_workbench_donor_trajectory(
-                app, lineage, **args, trajectory_evidence=unverified,
+                app,
+                lineage,
+                **args,
+                trajectory_evidence=unverified,
                 expected_revision=revision,
             )
         assert _graph_revision(flow) == revision
         assert flow.history(step.step_id) == ()
         held = bind_workbench_donor_trajectory(
-            app, lineage, **{**args, "measurements": measurements[:1]},
+            app,
+            lineage,
+            **{**args, "measurements": measurements[:1]},
             expected_revision=revision,
         )
         assert held["decision"]["missing_measurements"] == [["inferred_pseudotime"]]
         assert held["step_id"] is None
         receipt = bind_workbench_donor_trajectory(
-            app, lineage, **args, trajectory_evidence=reviewed,
+            app,
+            lineage,
+            **args,
+            trajectory_evidence=reviewed,
             expected_revision=held["revision"],
         )
         assert receipt["step_id"] == step.step_id

@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 # Room for separately packaged kernel and validation modules. Byte limits still apply.
-SOURCE_BUNDLE_MAX_FILES = 768
+SOURCE_BUNDLE_MAX_FILES = 832
 _SRC_PACKAGES = (
     "devbench",
     "devbench_engine",
@@ -59,6 +59,21 @@ def _listed_bundle_member(name):
         "benchmarks/reference_data/provenance.json",
         "benchmarks/reference_data/README.md",
         "devharness_server/r/native_nb.R",
+        "rna_kernels/r/bulk_deseq2_sensitivity.R",
+        "rna_kernels/r/bulk_dream.R",
+        "rna_kernels/r/bulk_edger.R",
+        "rna_kernels/r/bulk_latent_diagnostics.R",
+        "rna_kernels/r/bulk_voom_sensitivity.R",
+        "rna_kernels/r/erql_1_1.R",
+        "rna_kernels/r/erql_1_2.R",
+        "rna_kernels/r/erql_1_3.R",
+        "rna_kernels/r/mounted_edger.R",
+        "rna_kernels/r/mounted_general.R",
+        "rna_kernels/r/native_nb.R",
+        "rna_kernels/r/paired_tximport_svaseq.R",
+        "rna_kernels/r/rna_pathways.R",
+        "rna_kernels/r/scrna_emptydrops.R",
+        "rna_kernels/r/scrna_scran.R",
         "devharness_server/r/mounted_edger.R",
         "devharness_server/r/mounted_general.R",
         "devharness_server/r/bulk_edger.R",
@@ -149,6 +164,13 @@ def _listed_bundle_member(name):
         "tests/test_code_action_audit.py",
         "tests/test_code_action_audit_limits.py",
         "tests/test_clinical_audit_regressions.py",
+        "examples/__init__.py",
+        "examples/motor_programs/__init__.py",
+        "examples/motor_programs/code.py",
+        "examples/motor_programs/programs.py",
+        "examples/motor_programs/models.py",
+        "examples/motor_programs/umap.py",
+        "examples/motor_programs/server.py",
         "scripts/__init__.py",
         "scripts/source_bundle.py",
         # Retained archive compatibility. New exports omit these runners.
@@ -269,6 +291,8 @@ def _bundle_source_candidates(root):
     )
     packages = (
         *runtime_source_paths(root),
+        "examples/motor_programs",
+        "examples/__init__.py",
         "benchmarks",
         "experiments",
         "scripts",
@@ -291,7 +315,10 @@ def _read_bundle_sources(root, candidates):
     except FileNotFoundError as error:
         raise ValueError("Source bundle is missing required project files") from error
     package_dirs = (
-        tomllib.loads(layout).get("tool", {}).get("setuptools", {}).get("package-dir", {})
+        tomllib.loads(layout)
+        .get("tool", {})
+        .get("setuptools", {})
+        .get("package-dir", {})
     )
     selected = []
     total = 0
@@ -415,7 +442,8 @@ def _installed_source_bundle(resource, distribution):
         names = [path.relative_to(source).as_posix() for path in members]
         archived = set(names)
         if not {"pyproject.toml", "README.md", "uv.lock"}.issubset(archived) or not {
-            "scripts/source_bundle.py", "scripts/colab_run.py"
+            "scripts/source_bundle.py",
+            "scripts/colab_run.py",
         }.intersection(archived):
             raise ValueError(
                 "Packaged source resource is missing required project files"

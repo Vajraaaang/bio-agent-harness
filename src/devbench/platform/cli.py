@@ -47,6 +47,8 @@ _DEADLINE_PROFILES = ("qc", "standard", "long")
 
 
 def _daemon_parser():
+    from devbench.mcp import LITERATURE_PROVIDERS
+
     parser = argparse.ArgumentParser(
         prog="devbench daemon", description=run_daemon.__doc__
     )
@@ -61,6 +63,14 @@ def _daemon_parser():
     start.add_argument("--idle-timeout-sec", type=float, default=1800)
     start.add_argument("--offline-only", action="store_true")
     start.add_argument("--enable-streamable-http", action="store_true")
+    start.add_argument(
+        "--auto-approve-tier2-public", action="store_true", default=argparse.SUPPRESS
+    )
+    start.add_argument(
+        "--literature-provider",
+        choices=LITERATURE_PROVIDERS,
+        help="Allow public literature queries through this fixed host broker",
+    )
     for name in ("cpu-slots", "gpu-slots", "memory-budget-mb", "max-concurrent-runs"):
         start.add_argument(f"--{name}", type=int, default=argparse.SUPPRESS)
     start.add_argument("--cancel-grace-sec", dest="grace_sec", type=float)
@@ -73,6 +83,8 @@ def run_daemon(argv):
     """Start, inspect or stop the research daemon for one workspace."""
     from devbench.daemon import ipc
 
+    if argv and argv[0].startswith("--") and "--auto-approve-tier2-public" in argv:
+        argv = ["start", *argv]
     options = vars(_daemon_parser().parse_args(argv))
     operation = options.pop("operation")
     workspace = options.pop("workspace")
@@ -103,25 +115,27 @@ def run_daemon(argv):
 
 def run_mcp_shim(argv):
     """Connect an MCP STDIO client to the workspace's Unix socket."""
-    from devbench.daemon.ipc import stdio_shim
+    from devbench.mcp.shim import main as shim
 
-    parser = argparse.ArgumentParser(
-        prog="devbench mcp", description=run_mcp_shim.__doc__
-    )
-    parser.add_argument("--workspace", required=True, type=Path)
-    parser.add_argument("--input-root", required=True, type=Path)
-    parser.add_argument(
-        "--no-auto-browser",
-        action="store_true",
-        help="Keep Studio links passive (default)",
-    )
-    args = parser.parse_args(argv)
-    try:
-        return stdio_shim(args.workspace, args.input_root)
-    except (OSError, ValueError, RuntimeError):
-        # STDIO is the protocol channel. Keep local data out of diagnostics.
-        print("devbench mcp: workspace daemon connection failed", file=sys.stderr)
-        return 1
+    return shim(argv)
+
+
+def _local_review_action(args):
+    action = "approve"
+    extra = {}
+    if args.issue_native_confirmation:
+        action = "native_confirmation"
+    elif args.show_gate1_subject:
+        action = "gate1_subject"
+    elif args.record_gate1:
+        if not args.subject_sha256:
+            raise ValueError("Supply the digest of the reviewed Gate 1 packet")
+        action = "gate1_review"
+        extra = {
+            "subject_sha256": args.subject_sha256,
+            "status": args.record_gate1,
+        }
+    return action, extra
 
 
 def approve(argv):
@@ -140,10 +154,44 @@ def approve(argv):
         "--actor", help="Operator attribution (defaults to the OS user)"
     )
     parser.add_argument("--rationale", default="")
+    parser.add_argument(
+        "--offline-only",
+        action="store_true",
+        help="Review locally with all data egress disabled",
+    )
+    review = parser.add_mutually_exclusive_group()
+    review.add_argument(
+        "--submit",
+        action="store_true",
+        help="After local approval, enqueue this exact frozen plan",
+    )
+    review.add_argument(
+        "--issue-native-confirmation",
+        action="store_true",
+        help="Authorize a short-lived plan-bound interactive client token",
+    )
+    review.add_argument(
+        "--show-gate1-subject",
+        action="store_true",
+        help="Show the preregistered design packet for a local reviewer",
+    )
+    review.add_argument(
+        "--record-gate1",
+        choices=("passed", "flagged"),
+        help="Record an independent outcome-blind review",
+    )
+    parser.add_argument("--subject-sha256", help="Exact reviewed Gate 1 packet digest")
     args = parser.parse_args(argv)
     try:
         actor = args.actor if args.actor is not None else local_actor()
-        if ipc.daemon_status(args.workspace)["status"] != "running":
+        owner = ipc.daemon_status(args.workspace)
+        if (
+            args.offline_only
+            and owner["status"] == "running"
+            and not owner["offline_only"]
+        ):
+            raise ValueError("Private review requires an offline daemon")
+        if owner["status"] != "running":
             if not (args.workspace / "plugin-jobs.sqlite3").is_file():
                 raise ValueError("No frozen plan exists in this workspace")
             from devbench.engine.scientific_authority import require_patched_wal
@@ -165,7 +213,17 @@ def approve(argv):
                     [sys.executable, "-I", "-B", "-c", entry, *argv], env=env
                 ).returncode
             require_patched_wal()
-            result = JobStore(args.workspace).approve(
+            if (
+                args.issue_native_confirmation
+                or args.record_gate1
+                or args.show_gate1_subject
+            ):
+                raise ValueError("Start the workspace daemon to review the plan")
+            jobs = JobStore(args.workspace)
+            canonical_plan = (
+                jobs.control_plan(args.session_id, args.plan_id) is not None
+            )
+            result = jobs.approve(
                 args.session_id,
                 args.plan_id,
                 args.plan_sha256,
@@ -173,17 +231,30 @@ def approve(argv):
                 surface="cli",
                 auth_method="local_os_user",
                 rationale=args.rationale,
+                require_public=canonical_plan and not args.offline_only,
+                offline_approval=args.offline_only,
             )
         else:
+            action, extra = _local_review_action(args)
             result = ipc.request(
                 args.workspace,
-                "approve",
+                action,
+                **extra,
                 session_id=args.session_id,
                 plan_id=args.plan_id,
                 plan_sha256=args.plan_sha256,
                 actor_id=actor,
                 rationale=args.rationale,
             )
+        if args.submit:
+            from .plugin_jobs import JobStore
+
+            run = JobStore(args.workspace).launch(
+                args.session_id, args.plan_id, args.plan_sha256
+            )
+            result = {
+                key: run[key] for key in ("session_id", "plan_id", "run_id", "status")
+            }
     except (OSError, ValueError, RuntimeError) as error:
         return _runtime_failure(error)
     print(json.dumps(result, allow_nan=False))

@@ -23,8 +23,9 @@ from mcp.shared.message import SessionMessage
 
 from devbench.analysis.checkpoints import atomic_json
 from devbench.engine.workflow_operations import OperationBlocked
-from devbench.platform.plugin_jobs import JobStore, directory
-from devbench.platform.plugin_mcp import Plugin, build_server
+from devbench.mcp.approval import load_policy
+from devbench.platform.plugin_jobs import directory
+from devbench.platform.plugin_mcp import Plugin
 from devbench.platform.workbench_ui import (
     _remove_studio_liveness,
     decode_json,
@@ -32,10 +33,13 @@ from devbench.platform.workbench_ui import (
     make_server,
 )
 
-from . import ipc
+from . import auth, ipc
 from .supervisor import Supervisor
 
 _FRAME_BYTES = ipc.MAX_FRAME
+# The base plan and at most sixteen graph steps may each carry a 512 KiB
+# script. JSON escaping can expand a byte to six ASCII characters.
+_MCP_INPUT_BYTES = 17 * 512 * 1024 * 6 + ipc.MAX_FRAME
 _POOL_SETTINGS = {
     "cpu_slots",
     "gpu_slots",
@@ -124,7 +128,7 @@ async def _serve_mcp(server, reader, writer):
     async def read_messages():
         async with send_in:
             while line := await reader.readline():
-                if not line.endswith(b"\n") or len(line) > _FRAME_BYTES:
+                if not line.endswith(b"\n") or len(line) > _MCP_INPUT_BYTES:
                     raise ValueError("Invalid MCP frame")
                 try:
                     message = types.JSONRPCMessage.model_validate_json(line)
@@ -164,7 +168,7 @@ def _http_body(handler):
     if headers.get_all("Transfer-Encoding") or len(lengths) > 1:
         raise ValueError("Invalid MCP body framing")
     raw = lengths[0] if lengths else "0"
-    if not re.fullmatch(r"[0-9]{1,9}", raw) or int(raw) > _FRAME_BYTES:
+    if not re.fullmatch(r"[0-9]{1,9}", raw) or int(raw) > _MCP_INPUT_BYTES:
         raise ValueError("MCP body too large")
     length = int(raw)
     if length and handler.command != "POST":
@@ -285,7 +289,7 @@ class _Streamable:
                 allowed_hosts=[self.origin.removeprefix("http://")],
                 allowed_origins=[self.origin],
             ),
-            max_request_body_size=_FRAME_BYTES,
+            max_request_body_size=_MCP_INPUT_BYTES,
         )
 
         async def lifespan():
@@ -329,7 +333,12 @@ class _Daemon:
         self.socket_path = socket_path
         settings = {k: v for k, v in config.items() if k in _POOL_SETTINGS}
         self.supervisor = Supervisor(
-            workspace, offline_only=config["offline_only"], **settings
+            workspace,
+            offline_only=config["offline_only"],
+            policy_sha256=load_policy(
+                workspace, cli_enabled=config.get("auto_approve_tier2_public")
+            ),
+            **settings,
         )
         self.activity = _Activity()
         self.stop = asyncio.Event()
@@ -371,7 +380,13 @@ class _Daemon:
         plugin = await asyncio.to_thread(
             Plugin, self.workspace, root, self.config.get("mounted_image_id")
         )
-        server = build_server(plugin, auto_studio=False)
+        from devbench.mcp.context import ControlPlane
+        from devbench.mcp.server import build_server
+
+        control = await asyncio.to_thread(
+            ControlPlane, plugin, self.supervisor, self.config, self.url
+        )
+        server = build_server(control)
         if self.streamable is not None:
             await self.streamable.start(server)
         self.mcp = server
@@ -445,17 +460,54 @@ class _Daemon:
                 ("profile", "pool", "memory_mb", "resume_from_run_id"),
             )
             return await asyncio.to_thread(supervisor.submit, **fields)
-        if op == "approve":
-            _keys(
-                fields,
-                ("session_id", "plan_id", "plan_sha256", "actor_id"),
-                ("rationale",),
-            )
-            return await asyncio.to_thread(self._approve, fields)
+        if op in {"approve", "gate1_subject", "gate1_review", "native_confirmation"}:
+            required = ("session_id", "plan_id", "plan_sha256", "actor_id")
+            if op == "gate1_review":
+                required += ("subject_sha256", "status")
+            _keys(fields, required, ("rationale",))
+            return await asyncio.to_thread(self._approve, op, fields)
         raise ValueError("Unknown IPC operation")
 
-    def _approve(self, fields):
-        return JobStore(self.workspace).approve(
+    def _approve(self, op, fields):
+        from devbench.engine.scientific_authority import verify_frozen_plan
+        from devbench.mcp.approval import (
+            gate1_subject,
+            issue_native_confirmation,
+            protected_scope,
+            record_gate1,
+        )
+        from devbench.platform.plugin_jobs import digest
+
+        jobs = self.supervisor.jobs
+        identity = {
+            key: fields[key] for key in ("session_id", "plan_id", "plan_sha256")
+        }
+        offline = self.config["offline_only"]
+        if op == "native_confirmation":
+            return {
+                "token": issue_native_confirmation(jobs, identity, fields["actor_id"])
+            }
+        if op == "gate1_review":
+            return record_gate1(
+                jobs,
+                identity,
+                reviewer=fields["actor_id"],
+                subject_sha256=fields["subject_sha256"],
+                status=fields["status"],
+                rationale=fields.get("rationale", ""),
+                offline=offline,
+            )
+        if op == "gate1_subject":
+            with jobs.frozen_policy(*identity.values()) as (plan, protected):
+                verify_frozen_plan(plan, **identity)
+                if not offline and (
+                    protected
+                    or jobs.authority.daemon_read(lambda db: protected_scope(db, plan))
+                ):
+                    raise OperationBlocked("private_data_local_studio_only")
+                subject = gate1_subject(plan)
+                return {"subject": subject, "subject_sha256": digest(subject)}
+        return jobs.approve(
             fields["session_id"],
             fields["plan_id"],
             fields["plan_sha256"],
@@ -463,6 +515,8 @@ class _Daemon:
             surface="cli",
             auth_method="local_os_user",
             rationale=fields.get("rationale", ""),
+            require_public=not offline,
+            offline_approval=offline,
         )
 
     async def handle(self, reader, writer):
@@ -566,6 +620,10 @@ class _Daemon:
             stack.callback(self.http.server_close)
             self.url = f"http://127.0.0.1:{self.http.server_port}"
             if enabled:
+                with auth.state_directory(self.workspace) as directory:
+                    auth.write_file(
+                        directory, "mcp.token", self.http.mcp_token.encode("ascii")
+                    )
                 self.streamable = _Streamable(self.url)
                 stack.push_async_callback(self.streamable.close)
             if root is not None:
@@ -587,7 +645,7 @@ class _Daemon:
             server = await asyncio.start_unix_server(
                 self.handle,
                 sock=listener.dup(),
-                limit=_FRAME_BYTES,
+                limit=_MCP_INPUT_BYTES,
                 cleanup_socket=False,
             )
             async with server:

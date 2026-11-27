@@ -83,11 +83,12 @@ devbench-fastq-de = "devbench.analysis.fastq_cli:main"
 benchmarks = "benchmarks"
 experiments = "experiments"
 scripts = "scripts"
+examples = "examples"
 
 [tool.setuptools.packages.find]
 where = ["src", "."]
 namespaces = false
-include = ["devharness*", "devbench*", "benchmarks*", "experiments*", "scripts*", "rna_kernels*"]
+include = ["devharness*", "devbench*", "benchmarks*", "experiments*", "scripts*", "rna_kernels*", "examples", "examples.motor_programs"]
 
 [tool.setuptools.package-data]
 benchmarks = ["task_definitions/*.json", "task_definitions/expanded/*.json", "reference_data/*.json", "reference_data/*.md"]
@@ -101,6 +102,7 @@ devbench = ["adaptive/*.py", "tasks/catalog.json", "study/public_sources.json", 
 ]
 devharness_controlled = ["native-package-sources.lock.json", "native-kernel-runtime.lock.json", "erql-package-sources.lock.json"]
 devharness_server = ["r/*.R"]
+rna_kernels = ["r/*.R"]
 
 [tool.ruff]
 target-version = "py311"

@@ -147,12 +147,22 @@ def write_file(directory_fd: int, name: str, data: bytes) -> None:
             pass
 
 
-def read_token(workspace: Path) -> str:
+def _read_token(workspace: Path, name: str) -> str:
     with state_directory(workspace) as fd:
-        token = read_file(fd, "daemon.token", 65).decode("ascii").rstrip("\n")
+        token = read_file(fd, name, 65).decode("ascii").rstrip("\n")
     if not _TOKEN.fullmatch(token):
         raise ValueError("Invalid daemon credential")
     return token
+
+
+def read_token(workspace: Path) -> str:
+    """Read the local Studio operator credential."""
+    return _read_token(workspace, "daemon.token")
+
+
+def read_mcp_token(workspace: Path) -> str:
+    """Read the independent bearer for the optional research MCP endpoint."""
+    return _read_token(workspace, "mcp.token")
 
 
 def valid_bearer(header_value: str | None, token: str) -> bool:

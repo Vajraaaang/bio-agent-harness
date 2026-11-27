@@ -2,12 +2,15 @@
 ARG KERNEL_IMAGE=devbench-rna-kernel:2.0-thesis-trajectory-reviewed-arm64
 FROM ${KERNEL_IMAGE}
 
-COPY src/devharness_server/r/bulk_voom_sensitivity.R \
-    src/devharness_server/r/mounted_general.R \
+COPY src/rna_kernels/r/bulk_voom_sensitivity.R \
+    src/rna_kernels/r/mounted_general.R \
+    /opt/rna/runtime/rna_kernels/r/
+COPY src/rna_kernels/r/bulk_voom_sensitivity.R \
+    src/rna_kernels/r/mounted_general.R \
     /opt/rna/runtime/devharness_server/r/
 COPY src/rna_kernels/bulk_solver_policy.py \
     src/rna_kernels/mounted_model.py \
     /opt/rna/runtime/rna_kernels/
 
 RUN --network=none Rscript --vanilla -e \
-    'stopifnot(as.character(packageVersion("limma")) == "3.68.5"); source("/opt/rna/runtime/devharness_server/r/bulk_voom_sensitivity.R")'
+    'stopifnot(as.character(packageVersion("limma")) == "3.68.5"); source("/opt/rna/runtime/rna_kernels/r/bulk_voom_sensitivity.R")'

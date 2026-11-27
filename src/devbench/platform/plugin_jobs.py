@@ -23,6 +23,7 @@ from urllib.parse import urlencode, urlsplit
 
 import psutil
 
+from devbench.engine.dispatch_deadline import remaining
 from devbench.engine.scientific_authority import verify_frozen_plan
 from devbench.engine.workflow_operations import OperationBlocked
 from devbench.engine.workspace import read_bounded_file
@@ -207,7 +208,33 @@ def fastq_cpu_slots(plan):
     return 1 if quantification_only is True else 2
 
 
-def require_execution_policy(authority, plan, sha, protected, *, offline_only):
+def require_execution_policy(
+    authority, plan, sha, protected, *, offline_only, policy_sha=None, db=None
+):
+    from devbench.mcp.approval import (
+        FORMAT,
+        _legacy_gate1,
+        require_governance,
+        require_legacy_grant,
+    )
+
+    if plan.get("format") == FORMAT:
+        return require_governance(
+            authority,
+            plan,
+            sha,
+            protected,
+            offline_only=offline_only,
+            policy_sha=policy_sha,
+            db=db,
+            gate1=plan["epistemic_purpose"] == "confirmatory",
+        )
+    if plan.get("governance_action") in {"record_waiver", "promote_kernel"}:
+        raise OperationBlocked("input_scope_violation")
+    if plan.get("operation") == "registered_exploratory" or _legacy_gate1(plan):
+        return require_legacy_grant(
+            authority, plan, sha, protected, offline_only=offline_only, db=db
+        )
     if not protected:
         return
     if not offline_only:
@@ -298,7 +325,9 @@ class JobStore:
 
     def _connect(self, *, readonly: bool = False) -> sqlite3.Connection:
         mode = "ro" if readonly else "rw"
-        db = sqlite3.connect(f"{self.path.as_uri()}?mode={mode}", uri=True, timeout=10)
+        db = sqlite3.connect(
+            f"{self.path.as_uri()}?mode={mode}", uri=True, timeout=remaining(10.0)
+        )
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
         return db
@@ -311,7 +340,12 @@ class JobStore:
 
     def freeze(self, plan: dict[str, Any]) -> tuple[str, str]:
         encoded = canonical(plan)
-        if len(encoded) > MAX_DOCUMENT_BYTES:
+        limit = (
+            64 * 1024**2
+            if plan.get("format") == "devbench.control-plan/1"
+            else MAX_DOCUMENT_BYTES
+        )
+        if len(encoded) > limit:
             raise ValueError("Plan exceeds its immutable document budget")
         plan_id, sha = plan["plan_id"], hashlib.sha256(encoded).hexdigest()
         with self._write() as db:
@@ -339,8 +373,37 @@ class JobStore:
         return plan
 
     @staticmethod
-    def _has_private_input(db, fingerprints):
+    def _control_privacy(db, sid, hashes):
+        from devbench.engine.workflow_operations import (
+            LEDGER_NAME,
+            WorkflowOperationLedger,
+        )
+        from devbench.mcp.context import guarded_digest
+
+        # These callers also include read-only Studio snapshots. Follow only the
+        # canonical DB adjacent to the already-open job store; never initialize it.
+        path = next(
+            row[2] for row in db.execute("PRAGMA database_list") if row[1] == "main"
+        )
+        if not path:
+            return False
+        ledger_path = Path(path).parent / "methods" / LEDGER_NAME
+        if not ledger_path.exists() and not ledger_path.is_symlink():
+            return False
+
+        def inspect(research):
+            table = research.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='mcp_sessions'"
+            ).fetchone()
+            return bool(table and guarded_digest(research, sid, hashes))
+
+        return WorkflowOperationLedger(ledger_path, readonly=True)._read(inspect)
+
+    @staticmethod
+    def _has_private_input(db, fingerprints, *, session_id=None):
         hashes = sorted({value for value in fingerprints if value is not None})
+        if JobStore._control_privacy(db, session_id, hashes):
+            return True
         if not hashes:
             return False
         # Scope includes the same H5AD, FASTQ inventory and lineage-root identities
@@ -391,25 +454,75 @@ class JobStore:
         ):
             return True
         roots = {*plan.get("session_roots", ()), *(item.get("sha256") for item in rows)}
-        return JobStore._has_private_input(db, roots)
+        return JobStore._has_private_input(db, roots, session_id=plan.get("session_id"))
+
+    def control_plan(self, sid, plan_id):
+        """Read a canonical plan without initializing a legacy ledger."""
+        from devbench.engine.workflow_operations import (
+            LEDGER_NAME,
+            WorkflowOperationLedger,
+        )
+
+        def lookup(db):
+            if not db.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='mcp_frozen_plans'"
+            ).fetchone():
+                return None
+            return db.execute(
+                "SELECT * FROM mcp_frozen_plans WHERE session_id=? AND plan_id=?",
+                (sid, plan_id),
+            ).fetchone()
+
+        if authority := self.__dict__.get("authority"):
+            row = authority.daemon_read(lookup)
+        else:
+            path = self.workspace / "methods" / LEDGER_NAME
+            if not path.exists():
+                return None
+            row = WorkflowOperationLedger(path, readonly=True)._read(lookup)
+        return self._plan(row, plan_id) if row is not None else None
 
     @contextmanager
     def frozen_policy(self, sid, plan_id, sha):
         """Fence custody changes until the caller finishes the admission decision."""
+        authoritative = self.control_plan(sid, plan_id)
+        session_hashes = ()
+        if authoritative is not None:
+            session_hashes = self.authority.daemon_read(
+                lambda conn: [
+                    item[0]
+                    for item in conn.execute(
+                        "SELECT sha256 FROM mcp_artifacts WHERE session_id=?", (sid,)
+                    )
+                ]
+            )
         with self._write() as db:
             row = db.execute(
                 "SELECT * FROM plugin_plans WHERE session_id=? AND plan_id=?",
                 (sid, plan_id),
             ).fetchone()
             try:
-                plan = self._plan(row, plan_id, sha)
+                plan = (
+                    authoritative
+                    if authoritative is not None
+                    else self._plan(row, plan_id, sha)
+                )
+                if (
+                    authoritative is None
+                    and plan.get("format") == "devbench.control-plan/1"
+                ):
+                    raise OperationBlocked("plan_identity_mismatch")
                 verify_frozen_plan(plan, sid, plan_id, sha)
-                protected = self.protected_inputs(db, plan)
+                protected = self.protected_inputs(db, plan) or self._has_private_input(
+                    db, session_hashes
+                )
             except (AttributeError, TypeError, ValueError, KeyError) as error:
                 raise OperationBlocked("invalid_frozen_data_scope") from error
             yield plan, protected
 
     def plan(self, sid: str, plan_id: str | None = None) -> dict[str, Any]:
+        if plan_id and (authoritative := self.control_plan(sid, plan_id)) is not None:
+            return authoritative
         with closing(self._connect(readonly=True)) as db:
             if plan_id is not None:
                 row = db.execute(
@@ -422,7 +535,13 @@ class JobStore:
                     "ORDER BY created_at DESC, rowid DESC LIMIT 1",
                     (sid,),
                 ).fetchone()
-            return self._plan(row)
+            plan = self._plan(row)
+        if plan.get("format") == "devbench.control-plan/1":
+            current = self.control_plan(sid, plan["plan_id"])
+            if current is None:
+                raise OperationBlocked("plan_identity_mismatch")
+            return current
+        return plan
 
     @cached_property
     def authority(self):
@@ -449,12 +568,38 @@ class JobStore:
         auth_method,
         rationale="",
         require_public=False,
+        offline_approval=None,
+        grant_guard=None,
     ):
+        from devbench.mcp.approval import FORMAT, protected_scope
+
+        plan = self.plan(sid, plan_id)
+        if surface == "codex_native" and grant_guard is None:
+            raise OperationBlocked("explicit_plan_approval_required")
+        offline = (
+            surface == "studio" and not require_public
+            if offline_approval is None
+            else offline_approval
+        )
+
+        def check(db):
+            if (
+                not offline
+                and (require_public or plan.get("format") == FORMAT)
+                and protected_scope(db, plan)
+            ):
+                raise OperationBlocked("private_data_local_studio_only")
+
+            if grant_guard is not None:
+                grant_guard(db)
+
         return self.authority.record_plan_approval(
             session_id=sid,
             plan_id=plan_id,
             plan_sha256=sha,
-            frozen_plan=self.plan(sid, plan_id),
+            frozen_plan=plan,
+            check_grant=check,
+            offline_approval=offline,
             actor_id=actor_id,
             surface=surface,
             auth_method=auth_method,
@@ -531,7 +676,19 @@ class JobStore:
             cleanup_state=fields["cleanup_state"],
         )
         fields["stage_json"] = canonical(stage).decode()
+        plan = self.control_plan(fields["session_id"], fields["plan_id"])
         with self._write() as db:
+            if plan is not None:
+                db.execute(
+                    "INSERT OR IGNORE INTO plugin_plans VALUES(?,?,?,?,?)",
+                    (
+                        plan["plan_id"],
+                        plan["session_id"],
+                        fields["plan_sha256"],
+                        canonical(plan).decode(),
+                        fields["started_at"],
+                    ),
+                )
             db.execute(
                 """INSERT INTO plugin_runs VALUES (
                     :run_id,:session_id,:plan_id,:plan_sha256,:status,:pid,:stage_json,
@@ -629,11 +786,15 @@ class JobStore:
             raise OperationBlocked("worker_ownership_unavailable")
         return dict(row)
 
-    def start(self, rid: str) -> dict[str, Any]:
-        # The parent holds BEGIN IMMEDIATE across spawn and process identification.
-        # An uncommitted/rolled-back launch can never start scientific work.
+    @contextmanager
+    def worker_admission(self, rid):
+        """Fence a short launch or publication against changed custody."""
+        from devbench.mcp.approval import active_policy_digest
+
         with self.authority.daemon_transaction() as db:
             row = self._owned(db, rid)
+            if row["cancel_requested_at"] is not None:
+                raise OperationBlocked("worker_ownership_unavailable")
             with self.frozen_policy(
                 row["session_id"], row["plan_id"], row["plan_sha256"]
             ) as (plan, protected):
@@ -645,7 +806,18 @@ class JobStore:
                     protected,
                     offline_only=json.loads(row["stage_json"]).get("_offline_only")
                     is True,
+                    policy_sha=active_policy_digest(
+                        self.workspace,
+                        json.loads(row["stage_json"]).get("_approval_policy_sha256"),
+                    ),
+                    db=db,
                 )
+                yield db, plan
+
+    def start(self, rid: str) -> dict[str, Any]:
+        # The spawning parent's transaction first commits exact process identity.
+        with self.worker_admission(rid) as (db, plan):
+            row = self._owned(db, rid)
         if row["resume_from_run_id"]:
             self.resume_checkpoint(rid)  # Check again inside the admitted worker.
         self._start_heartbeat(row)
@@ -1010,6 +1182,11 @@ def verify_native_resume_plan(plan, state):
 
 
 def _compute_or_restore(jobs, rid, plan):
+    if plan.get("format") == "devbench.control-plan/1":
+        from devbench.mcp.execution import execute
+
+        return execute(jobs, rid, plan)
+
     from .plugin_mcp import run_frozen_plan
 
     checkpoint = jobs.resume_checkpoint(rid)

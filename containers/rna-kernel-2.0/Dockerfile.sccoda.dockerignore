@@ -13,3 +13,5 @@
 !src/devbench/engine/runtime_contracts.py
 !src/devharness_server/
 !src/devharness_server/tools_scrna_composition.py
+!src/rna_kernels/
+!src/rna_kernels/scrna_composition.py

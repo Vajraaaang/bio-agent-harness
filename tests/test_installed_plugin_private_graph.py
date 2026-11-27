@@ -23,7 +23,7 @@ from scipy.sparse import csr_matrix
 from devbench.analysis.workbench_motor_programs import MARKERS
 from devbench.platform.adaptive_workflow import AdaptiveWorkflow
 from devbench.platform.plugin_mcp import _ledger
-from tests.test_scientific_workspace_http import call
+from tests.test_scientific_workspace_http import authenticated_studio, call
 
 pytestmark = pytest.mark.wal
 _CONFIGURE = (
@@ -80,6 +80,9 @@ def _install_configured_plugin(root, inputs, workspace):
 
 @contextmanager
 def _offline_studio(settings, inputs, workspace):
+    from devbench.daemon import ipc
+
+    prior = ipc.daemon_status(workspace)
     marker = workspace / "studio-server.json"
     env = {**os.environ, **settings.get("env", {})}
     with (workspace.parent / "studio.log").open("w+") as log:
@@ -108,7 +111,7 @@ def _offline_studio(settings, inputs, workspace):
         )
         try:
             deadline = time.monotonic() + 60
-            while time.monotonic() < deadline and process.poll() is None:
+            while time.monotonic() < deadline and process.poll() in {None, 0}:
                 if marker.is_file():
                     state = json.loads(marker.read_text())
                     assert state["workspace"] == str(workspace)
@@ -119,7 +122,17 @@ def _offline_studio(settings, inputs, workspace):
                         and url.hostname == "127.0.0.1"
                         and url.port
                     )
-                    yield url.port
+                    assert call(url.port, "/api/config")[0] == 401
+                    with authenticated_studio(url.port, workspace):
+                        assert (
+                            call(
+                                url.port,
+                                "/api/config",
+                                origin="https://example.invalid",
+                            )[0]
+                            == 403
+                        )
+                        yield url.port
                     return
                 time.sleep(0.1)
             log.seek(0)
@@ -132,6 +145,11 @@ def _offline_studio(settings, inputs, workspace):
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=10)
+            if (
+                prior["status"] == "stopped"
+                and ipc.daemon_status(workspace)["status"] == "running"
+            ):
+                ipc.stop_daemon(workspace)
 
 
 def _fixture_days(inputs):
@@ -265,8 +283,13 @@ def test_installed_plugin_composes_two_private_studio_graph_operations(
         {"path": str(path), "data_classification": "private"} for path in paths
     ]
     settings, _ = _install_configured_plugin(workspace_tmp_path, inputs, workspace)
+    # Invoke the installed optional recipe with the workspace configuration
+    # from the installed plugin. The research control plane has no motor ops.
+    args = list(settings["args"])
+    entry = args.index("devbench.platform.plugin_mcp")
+    args[entry] = "examples.motor_programs.server"
     parameters = StdioServerParameters(
-        **{**settings, "args": [*settings["args"], "--no-auto-studio"]}
+        **{**settings, "args": [*args, "--no-auto-studio"]}
     )
 
     async def exercise(port):

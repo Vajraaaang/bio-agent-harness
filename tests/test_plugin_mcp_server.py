@@ -1198,8 +1198,13 @@ def test_stdio_explicit_files_outside_input_root(workspace_tmp_path):
                 assert private.structuredContent["status"] == "local_studio_only"
                 assert str(counts) not in json.dumps(private.structuredContent)
 
-    asyncio.run(roundtrip(False))
-    asyncio.run(roundtrip(True))
+    from tests.test_research_daemon import _stop_when_idle
+
+    try:
+        asyncio.run(roundtrip(False))
+        asyncio.run(roundtrip(True))
+    finally:
+        _stop_when_idle(workspace)
 
 
 @pytest.mark.parametrize("classification", ["public", "synthetic", "private"])

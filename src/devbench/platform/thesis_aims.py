@@ -49,7 +49,6 @@ from .adaptive_workflow_state import _State as AdaptiveState
 _STREAM = "thesis_aims"
 _FORMAT = "devbench.thesis-aim-lifecycle/1"
 _MAX_AIMS = 32
-_MAX_REVISIONS = 3
 _BASIS_PREFIX = "thesis-aim:"
 _POSITIVE_OUTCOMES = frozenset({"supported", "no_significant_finding"})
 
@@ -477,7 +476,9 @@ def _require_blinded_outcome(aim: _Aim, outcome: AimOutcome) -> None:
 
 
 def _verify_explanation_evidence(
-    assessment: ExplanationAssessment, aim: _Aim, context: _EvidenceContext,
+    assessment: ExplanationAssessment,
+    aim: _Aim,
+    context: _EvidenceContext,
 ) -> None:
     node = context.adaptive.nodes.get(assessment.evidence.step_id)
     if node is not None and node.branch_id in context.adaptive.retired:
@@ -505,7 +506,9 @@ def _check_competing_explanations(aim: _Aim, context: _EvidenceContext) -> None:
 
 
 def _check_positive_evidence(
-    aim: _Aim, evidence: Sequence[AimEvidence], context: _EvidenceContext,
+    aim: _Aim,
+    evidence: Sequence[AimEvidence],
+    context: _EvidenceContext,
 ) -> None:
     for reference in evidence:
         _verify_evidence(reference, aim, context)
@@ -770,8 +773,6 @@ class ThesisAimLifecycle:
 
         def build(state, _):
             old = _lookup_aim(state, definition.aim_id)
-            if old.version > _MAX_REVISIONS:
-                raise OperationBlocked("thesis_aim_revision_budget_exhausted")
             if old.definition.blinded_review_required and not (
                 definition.blinded_review_required
             ):
@@ -917,7 +918,8 @@ class ThesisAimLifecycle:
         def build(state, db):
             aim = _lookup_aim(state, aim_id)
             if (
-                version != aim.version or aim.outcome is not None
+                version != aim.version
+                or aim.outcome is not None
                 or aim.review_panel is not None
             ):
                 raise OperationConflict("Blinded review requires an unused current aim")
@@ -948,8 +950,12 @@ class ThesisAimLifecycle:
             return aim.model_copy(update={"review_panel": panel}), []
 
         return self._change(
-            "review_opened", build, expected_revision=expected_revision,
-            connection=connection, actor=actor, rationale=rationale,
+            "review_opened",
+            build,
+            expected_revision=expected_revision,
+            connection=connection,
+            actor=actor,
+            rationale=rationale,
         )
 
     def submit_blinded_review(
@@ -997,19 +1003,28 @@ class ThesisAimLifecycle:
             return aim.model_copy(update={"review_panel": updated}), []
 
         return self._change(
-            "review_assessed", build, expected_revision=expected_revision,
-            connection=connection, actor=assessment.reviewer,
+            "review_assessed",
+            build,
+            expected_revision=expected_revision,
+            connection=connection,
+            actor=assessment.reviewer,
             rationale=assessment.rationale,
         )
 
     def blinded_review_history(
-        self, aim_id: str, *, version: int, connection: Connection | None = None,
+        self,
+        aim_id: str,
+        *,
+        version: int,
+        connection: Connection | None = None,
     ) -> _Document:
         """Read the exact attributed local audit, including a superseded panel."""
+
         def read(db):
             state, _ = self._projection(db)
             records = [
-                item for item in state.history
+                item
+                for item in state.history
                 if item["aim_id"] == aim_id and item["aim_version"] == version
             ]
             subjects = [r["review_subject"] for r in records if "review_subject" in r]
@@ -1120,9 +1135,7 @@ class ThesisAimLifecycle:
             state, _ = self._projection(db)
             context = self._evidence_context(db)
             aims = [_context_row(state, aim, context) for aim in state.aims.values()]
-            panels = [
-                row["blinded_review"] for row in aims if "blinded_review" in row
-            ]
+            panels = [row["blinded_review"] for row in aims if "blinded_review" in row]
             reviews = (
                 {"blinded_review_metrics": review_metrics(panels)} if panels else {}
             )
@@ -1202,7 +1215,9 @@ def _context_row(state: _Projection, aim: _Aim, context: _EvidenceContext) -> _D
 
 
 def _current_panel_state(
-    state: _Projection, aim: _Aim, context: _EvidenceContext,
+    state: _Projection,
+    aim: _Aim,
+    context: _EvidenceContext,
 ) -> _Document:
     panel = aim.review_panel
     if panel is None:

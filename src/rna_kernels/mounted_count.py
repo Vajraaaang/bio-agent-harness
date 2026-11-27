@@ -11,7 +11,7 @@ import numpy as np
 
 from .streaming_rle import streaming_median_ratio_factors
 
-_DRIVER = Path(__file__).resolve().parent.parent / "devharness_server/r/mounted_edger.R"
+_DRIVER = Path(__file__).resolve().parent / "r/mounted_edger.R"
 _MAX_BINARY_BYTES = 512 * 1024**2
 _REASONS = {
     1: ("filtered", "independent_low_count_filter"),
