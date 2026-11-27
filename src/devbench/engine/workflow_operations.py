@@ -685,8 +685,10 @@ class WorkflowOperationLedger:
             if read_transaction:
                 timeout = 0.25
             timeout = dispatch_deadline.remaining(timeout)
+            # ATTACH uses mode=rw URIs too. Enable URI handling explicitly on
+            # writers even when SQLite was built without SQLITE_USE_URI.
             with closing(
-                sqlite3.connect(database, timeout=timeout, uri=self.readonly)
+                sqlite3.connect(database, timeout=timeout, uri=True)
             ) as connection:
                 self._configure_connection(
                     connection,

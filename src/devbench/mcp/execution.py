@@ -314,7 +314,11 @@ def _execute_graph(ctx, jobs, rid, plan, root):
 
 def execute(jobs, rid, plan):
     stage = json.loads(jobs.managed_run(rid)["stage_json"])
-    config = {"offline_only": stage.get("_offline_only") is True}
+    config = {
+        "offline_only": stage.get("_offline_only") is True,
+        "allow_external_input_files": stage.get("_allow_external_input_files") is True
+        and plan.get("allow_external_input_files") is True,
+    }
     ctx = ControlPlane(
         SimpleNamespace(jobs=jobs, input_root=Path(plan["input_root"])), config=config
     )

@@ -1,46 +1,72 @@
 # DevHarness RNA Research
 
-The Codex plugin connects to the governed DevHarness MCP server over local STDIO. Install the DevHarness runtime separately using the release's locked environment.
+Use the DevHarness 0.3.0 plugin to inspect local RNA inputs, test whether a study
+design supports a question, freeze a plan, and follow reviewed execution through
+its receipts. The 13 tools run through the workspace-scoped `devbench mcp` STDIO
+shim. Studio links are passive by default. Open an investigation link explicitly
+for interactive review. Private and clinical work requires local offline Studio.
 
-## Configure a local copy
+## Install the configured plugin
 
-Run `scripts/configure.py` with these absolute paths and options.
+From the source checkout, run `uv python install` and
+`uv sync --locked --extra dev --python-preference only-managed`. The pinned
+Python build uses patched stdlib SQLite (minimum 3.51.3). Configuration checks
+the runtime before creating any plugin files. For system or Conda Python with
+an unpatched SQLite, the helper can probe Homebrew's
+`/opt/homebrew/opt/sqlite/lib` or `/usr/local/opt/sqlite/lib` on macOS. On Linux,
+set `DEVBENCH_SQLITE_LIB` to the absolute directory of a patched library. If
+macOS SIP strips the loader setting, use the uv-managed interpreter.
 
-- `--python` selects the installed Python 3.13+ runtime. Keep the virtual environment executable path.
-- `--input-root` selects an existing directory of read-only input data.
-- `--allow-external-input-files` accepts explicitly named, canonical files from other directories. Folder discovery and files referenced by a FASTQ manifest still use the configured input root. Private and unclassified inputs still go to offline Companion Studio.
-- `--workspace` selects an existing, dedicated directory for mutable receipts, ledgers and runs. Keep it separate from inputs, source code and the plugin.
-- `--output` selects a new directory named `devharness`.
-- `--expect-version` optionally requires an exact installed backend version.
-- `--mounted-image-id` optionally selects a local mounted kernel image by full SHA-256 ID. By default the helper discovers a locally installed locked image when Docker is available.
-- `--write-marketplace` optionally writes `.agents/plugins/marketplace.json` under a local marketplace directory containing the configured copy.
+Run `scripts/configure.py` with these bindings.
 
-The helper checks the patched SQLite WAL runtime and, on macOS, retries with Homebrew's SQLite library when needed. It writes the STDIO command and thread limits to the configured copy's `.mcp.json`. It performs no installation or scientific execution.
+- `--python` selects the installed Python 3.13+ virtual environment executable.
+- `--input-root` selects an existing canonical read-only input directory.
+- `--workspace` selects an existing canonical directory for the daemon, ledgers and runs. Keep it separate from inputs, source and the plugin.
+- `--output` selects a fresh directory named `devharness`.
+- `--expect-version` optionally checks the installed backend version.
+- `--mounted-image-id` optionally binds a local mounted kernel image by full SHA-256 ID. Automatic discovery checks local images for native architecture.
+- `--allow-external-input-files` opts into explicitly named external file bindings under the daemon's intake policy.
+- `--write-marketplace` creates a local marketplace containing the configured copy.
 
-For a local marketplace, run `codex plugin marketplace add /absolute/marketplace --json` and then `codex plugin add devharness@devharness-local`. Set `CODEX_HOME` to a dedicated test directory when validating an installation. Share the unconfigured package when distributing it, since a configured copy contains local paths.
+The portable root manifest follows the published
+[Agent Plugins 1.0.0 schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json).
+Portable clients discover `skills/` and `mcp.json` in fixed locations. The
+portable command uses a package-relative launcher for the bound Python
+interpreter. The compatibility manifest in `.codex-plugin/plugin.json`
+references the same skills and a machine-local `.mcp.json`. Both launch
+`-I -B -m devbench.platform.cli mcp` with the same daemon options.
 
-## Research scope
+Use `--no-legacy-codex-manifest` to omit the compatibility manifest. The default
+mirror sunsets once the pinned minimum Codex CLI **and** Desktop App builds
+resolve the portable root manifest across two consecutive releases. Record
+CLI and Desktop results separately.
 
-Use the plugin to inspect supported RNA inputs, check whether a biological question is answerable, plan workflows for review, and follow execution and its receipts. Staged FASTQ requires local reads and references, and Salmon requires a pinned transcript-to-gene map. Companion Studio provides interactive QC, figures, and private-data analysis. Support depends on the installed runtime, input eligibility and recorded approval.
+Register a configured marketplace with
+`codex plugin marketplace add /absolute/path/to/marketplace --json`.
+Install `devharness@devharness-local` through `codex plugin add` where supported
+or use the plugin picker. A configured package contains machine-local paths.
 
-The first valid tool call starts or reuses offline Companion Studio for the configured workspace and opens it in the default browser. If that call returns an investigation link, Studio opens that view. Add `--no-auto-studio` to the server arguments for a headless client that manages Studio separately.
+## Skills and client mirrors
 
-Follow the plugin route from inspection and answerability through the reviewed plan, run status, and receipt or verified Studio results. Starting Studio leaves the existing execution reviews in place. When the registry or local runtime cannot execute a question, report the missing requirements and the available Studio route in the same investigation.
+The package includes `rna-research-core`, `scrna-snrna-qc-integration`,
+`pseudobulk-and-de`, `composition-and-da`, `trajectory-and-programs`,
+`spatial-and-ccc`, `method-benchmarking-and-critic` and `private-data-studio`.
+Use `$rna-research-core` for intake and evidence reporting. Each other skill
+covers the corresponding assay, method or local-private workflow.
 
-Reuse `session_id` for a follow-up over admitted inputs. Native graph plans can declare `depends_on` with the exact predecessor `plan_id` and `plan_sha256`. Studio or MCP prepares each approved step against the current accepted predecessor receipt. Dependency edges enforce order and reuse completed work. A registered exploratory method can consume declared, current graph artifact version IDs in its closed input ports.
+Pure Codex setup requires no client mirrors. From the repository root, run
+the following to populate or verify an explicitly selected project.
 
-Private motor-program comparisons and the registered local solvers use the standard offline Studio review. Review the exact plan under Workflows, then use Findings for verified summaries. The shared motor UMAP also retains its figures and artifact downloads. The release audit tracks actual installed-plugin execution separately from scientific answerability.
+```sh
+.venv/bin/python integrations/codex/devharness/scripts/configure.py \
+  --mirror-clients all --mirror-root /absolute/path/to/project
+.venv/bin/python integrations/codex/devharness/scripts/configure.py \
+  --check-mirrors --mirror-root /absolute/path/to/project
+```
 
-## Interactive figures
-
-Figures in offline Companion Studio prefer an interactive Plotly view for the
-shared motor-neuron UMAP and retained custom figures with compatible chart
-data. The UMAP uses the verified coordinates from its completed run.
-
-For retained comparisons, keep the existing PNG entry in the figure manifest.
-To add an interactive companion, supply its data-only Plotly figure as a local
-JSON member beside the PNG and add `"plotly": {"filename": "figure.plotly.json",
-"sha256": "<digest>"}` to that figure entry. The current adapter supports
-bounded scatter, ScatterGL, bar, and heatmap traces with a restricted layout.
-Studio verifies the companion before retaining it. Existing PNG-only manifests
-continue to display their images.
+Select `claude`, `cursor`, a comma-separated list, or `all`. Claude reads copies
+under `.claude/skills/`. Cursor uses native `.agents/skills/` discovery.
+In another project, the helper materializes the canonical files there.
+Add `--legacy-cursor-skills` to also populate `.cursor/skills/`.
+The checksum manifest records SHA-256 for each source and mirrored file.
+Verification reopens the files and reports drift, missing files or unsafe links.

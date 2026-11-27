@@ -47,6 +47,7 @@ COPY src/rna_kernels/bulk_solver_policy.py \
     src/rna_kernels/rank_sensitivity.py \
     src/rna_kernels/scrna_nb_clustering.py \
     src/rna_kernels/scrna_nb_pseudobulk.py \
+    src/rna_kernels/trajectory_zarr.py \
     /opt/rna/runtime/rna_kernels/
 
 RUN --network=none --mount=type=tmpfs,target=/tmp \

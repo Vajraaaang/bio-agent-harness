@@ -24,6 +24,14 @@ BENCHMARK_TOOLS = {
     "motif_enrichment",
     "audit_expression_quality",
 }
+# Three names from the previous plugin remain valid on the research plane.
+# These four were removed when the configured plugin switched transports.
+RETIRED_PLUGIN_TOOLS = {
+    "inspect_rna_inputs",
+    "plan_rna_workflow",
+    "execute_reviewed_plan",
+    "get_execution_receipt",
+}
 
 
 def _general_research_docs():
@@ -39,7 +47,9 @@ def test_general_research_guidance_excludes_benchmark_tools():
     # Leading delimiters include MCP namespace separators, e.g. mcp__server__<name>.
     legacy = re.compile(
         r"(?<![a-zA-Z0-9])(?:"
-        + "|".join(sorted(BENCHMARK_TOOLS))
+        + "|".join(
+            sorted(BENCHMARK_TOOLS | RETIRED_PLUGIN_TOOLS | {"devharness_server"})
+        )
         + r")(?![a-zA-Z0-9_])"
     )
     coordinator = set(dispatcher._COORDINATOR_TOOL_CONTRACT) | set(

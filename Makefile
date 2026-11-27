@@ -3,13 +3,13 @@ SHELL := /bin/sh
 PROJECT := $(CURDIR)
 VENV ?= $(PROJECT)/.venv
 READINESS_VENV ?= $(PROJECT)/.pytest-readiness-locked-env
-PYTHON_VERSION ?= 3.13
+PYTHON_VERSION ?= $(shell cat "$(PROJECT)/.python-version")
 VERIFY_PYTHON ?= $(shell if test -x "$(READINESS_VENV)/bin/python"; then printf '%s\n' "$(READINESS_VENV)/bin/python"; else printf '%s\n' "$(VENV)/bin/python"; fi)
 UV_SYNC = uv sync --project "$(PROJECT)" --locked --python "$(PYTHON_VERSION)"
 PYTEST_ROOT := $(PROJECT)/.pytest-workspaces
 export PYTHONPATH := $(PROJECT)/src:$(PROJECT)
-VERIFY_SQLITE_LIB ?= $(or $(DYLD_LIBRARY_PATH),$(wildcard /opt/homebrew/opt/sqlite/lib))
-VERIFY := DYLD_LIBRARY_PATH="$(VERIFY_SQLITE_LIB)" "$(VERIFY_PYTHON)" -P
+VERIFY_SQLITE_LIB ?=
+VERIFY := $(if $(VERIFY_SQLITE_LIB),DYLD_LIBRARY_PATH="$(VERIFY_SQLITE_LIB)") "$(VERIFY_PYTHON)" -P
 RUFF ?= $(VERIFY) -m ruff
 MYPY ?= $(VERIFY) -m mypy
 export PATH := $(VENV)/bin:$(PATH)

@@ -17,13 +17,13 @@
 **1. Install.** Clone the repository, open its root in a terminal, and sync the locked environment.
 
 ```sh
-uv sync --locked --python 3.13
+uv sync --locked --extra dev --python-preference only-managed
 ```
 
 Use a native macOS or Linux runtime. See the runtime and SQLite checks if startup fails. [Installation](docs/installation.md)
 
 **2. Connect an MCP client.** The [Codex plugin](docs/quickstart.md#install-the-codex-plugin)
-includes the RNA workflow skill. For direct STDIO registration in Codex,
+includes eight RNA research skills. For direct STDIO registration in Codex,
 run the following from the repository root.
 
 ```sh
@@ -31,8 +31,8 @@ repo="$(pwd -P)"
 input_root="$repo/examples/bulk-rnaseq/data"
 workspace="$repo/results/mcp-quickstart"
 mkdir -p "$workspace"
-codex mcp add devharness -- "$repo/.venv/bin/devbench" plugin-mcp \
-  --input-root "$input_root" --workspace "$workspace"
+codex mcp add devharness -- "$repo/.venv/bin/devbench" mcp \
+  --input-root "$input_root" --workspace "$workspace" --no-auto-browser
 ```
 
 Claude Code, Cursor, and generic STDIO clients can use the same server command.
@@ -67,17 +67,7 @@ The exact methods, required inputs, and review points are in the [workflow guide
 
 ## MCP tools
 
-| Tool | Role |
-| --- | --- |
-| `inspect_rna_inputs` | Identify input types, axes, and bounded metadata |
-| `check_answerability` | Check measurements, design, and route prerequisites |
-| `plan_rna_workflow` | Freeze the workflow, its sources, and the plan digest |
-| `manage_research_aim` | Create, revise, and inspect versioned aims and packages |
-| `execute_reviewed_plan` | Request execution with the exact session, plan ID, and digest |
-| `get_run_status` | Read progress, holds, and failures |
-| `get_execution_receipt` | Read results and verify retained evidence |
-
-[Request examples and field definitions](docs/mcp-tools.md)
+The daemon publishes 13 tools for intake, design checks, aim management, plan review, execution and bounded readback. Start with `inspect_runtime_capabilities` to discover local methods and runtimes. [Request examples and tool reference](docs/mcp-tools.md)
 
 ## Architecture
 

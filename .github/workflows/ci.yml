@@ -1,4 +1,4 @@
-name: Public software verification
+name: Tier 1 - L1 software verification
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
@@ -20,13 +20,29 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
-          version: '0.11.3'
+          version: '0.13.10'
           enable-cache: true
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
       - name: Install locked environment
-        run: uv sync --locked --extra dev --python 3.13
+        run: |
+          uv sync --locked --extra dev --python-preference only-managed
+          .venv/bin/python -c 'import sqlite3; from devbench.engine.scientific_authority import require_patched_wal; require_patched_wal(); print(sqlite3.sqlite_version); assert sqlite3.sqlite_version_info >= (3, 51, 3)'
+      - name: Install pinned Codex CLI for marketplace checks
+        run: npm install --global @openai/codex@0.147.0
+      - name: Check control plane, plugin and verification code
+        shell: bash
+        run: |
+          files=(src/devbench/mcp src/devbench/daemon src/devbench/engine/container_backend.py
+            src/devbench/engine/workflow_operations.py integrations/codex/devharness/scripts
+            integrations/codex/tests tests/test_mcp_conformance.py tests/test_mcp_resilience_recovery.py
+            tests/test_privacy_sentinel_leakage.py tests/test_codex_live_smoke.py
+            tests/native_oci_parity.py tests/test_research_daemon.py tests/test_adr18_benchmark_mode_separation.py
+            src/rna_kernels/trajectory_zarr.py src/devbench/core/scrna_donor_trajectory.py)
+          .venv/bin/ruff check "${files[@]}"
+          .venv/bin/ruff format --check "${files[@]}"
+          .venv/bin/mypy --follow-imports=silent src/devbench/mcp src/devbench/daemon src/devbench/engine/container_backend.py
       - name: Lint runnable RNA walkthroughs
         run: |
           "$GITHUB_WORKSPACE/.venv/bin/python" -m ruff check \
@@ -60,15 +76,11 @@ jobs:
             tests/test_phenotype_prediction.py \
             tests/test_cross_arch_equivalence.py \
             tests/test_bulk_solver_routing.py
-      # Configured plugin execution requires a separately verified patched SQLite runtime.
-      - name: Verify plugin packaging and admission guards
+      - name: Verify daemon, protocol, privacy and complete installed plugin suite
         run: |
-          .venv/bin/python -m pytest -q \
-            integrations/codex/tests/test_plugin.py::test_manifest_and_inactive_template \
-            integrations/codex/tests/test_plugin.py::test_workspace_scope_is_explicit \
-            integrations/codex/tests/test_plugin.py::test_missing_runtime_preserves_destination \
-            integrations/codex/tests/test_plugin.py::test_package_rejects_symlink_references \
-            integrations/codex/tests/test_plugin.py::test_existing_destination_is_preserved \
-            integrations/codex/tests/test_plugin.py::test_unpatched_runtime_is_refused_and_darwin_can_retry \
-            integrations/codex/tests/test_plugin.py::test_pathway_and_spatial_payload_contracts \
-            integrations/codex/tests/test_plugin.py::test_retired_codex_package_is_absent
+          .venv/bin/python integrations/codex/devharness/scripts/configure.py --mirror-clients all --mirror-root "$RUNNER_TEMP/mirrors"
+          .venv/bin/python integrations/codex/devharness/scripts/configure.py --check-mirrors --mirror-root "$RUNNER_TEMP/mirrors"
+          .venv/bin/python -m pytest -q tests/test_adr18_benchmark_mode_separation.py \
+            tests/test_research_daemon.py tests/test_mcp_13_tool_control_plane.py \
+            tests/test_mcp_conformance.py tests/test_mcp_resilience_recovery.py \
+            tests/test_privacy_sentinel_leakage.py integrations/codex/tests/test_plugin.py

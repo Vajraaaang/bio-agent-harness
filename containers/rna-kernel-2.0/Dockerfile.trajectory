@@ -11,6 +11,7 @@ COPY src/devbench/core/design.py \
     /opt/rna/runtime/devbench/core/
 COPY src/rna_kernels/mounted_scrna.py \
     src/rna_kernels/scrna_upstream_contract.py \
+    src/rna_kernels/trajectory_zarr.py \
     /opt/rna/runtime/rna_kernels/
 
 RUN --network=none python3.13 -c \

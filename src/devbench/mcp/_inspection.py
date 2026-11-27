@@ -18,7 +18,7 @@ from devbench.analysis.workbench_inputs import (
 )
 from devbench.core.count_forensics import CountDistribution
 from devbench.engine.workflow_operations import OperationBlocked
-from devbench.platform.plugin_mcp import (
+from devbench.platform.plugin_workflows import (
     _h5_declares_count_transform,
     _h5_matrix_storage,
     _h5_value_blocks,

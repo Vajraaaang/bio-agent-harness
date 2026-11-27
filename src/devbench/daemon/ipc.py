@@ -13,6 +13,7 @@ import socket
 import stat
 import subprocess
 import sys
+import sysconfig
 import threading
 import time
 from collections.abc import Callable
@@ -110,7 +111,7 @@ def socket_path(workspace: Path) -> Path:
     raise ValueError("No short daemon socket address is available")
 
 
-def _socket_address(workspace: Path, value: str) -> Path:
+def _socket_address(workspace: Path, value: object) -> Path:
     if not isinstance(value, str):
         raise DaemonError("invalid_daemon_metadata")
     path = Path(value)
@@ -125,7 +126,7 @@ def _socket_address(workspace: Path, value: str) -> Path:
     return path
 
 
-def _check_socket(workspace: Path, value: str) -> Path:
+def _check_socket(workspace: Path, value: object) -> Path:
     path = _socket_address(workspace, value)
     with auth.owned_directory(path.parent) as directory:
         info = os.lstat(path.name, dir_fd=directory)
@@ -181,7 +182,8 @@ def _is_live(record: dict, *, owns_lifetime_lock: bool = False) -> bool:
     if (
         type(pid) is not int
         or pid <= 0
-        or type(created) not in (int, float)
+        or not isinstance(created, (int, float))
+        or isinstance(created, bool)
         or not math.isfinite(created)
     ):
         raise DaemonError("invalid_daemon_identity")
@@ -435,6 +437,7 @@ def _config(
         "grace_sec",
         "deadlines",
         "mounted_image_id",
+        "allow_external_input_files",
         "allow_data_execution",
         "auto_approve_tier2_public",
         "literature_provider",
@@ -448,6 +451,13 @@ def _config(
         raise ValueError("Unknown operator-approved literature provider")
     if offline_only and options.get("literature_provider"):
         options = {**options, "literature_provider": None}
+    if type(options.get("allow_external_input_files", False)) is not bool:
+        raise ValueError("Invalid external input policy")
+    image = options.get("mounted_image_id")
+    if image is not None and (
+        not isinstance(image, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", image)
+    ):
+        raise ValueError("Expected a pinned image digest")
     if set(options) - allowed:
         raise ValueError("Unknown daemon configuration option")
     if type(http_port) is not int or not 0 <= http_port <= 65535:
@@ -485,10 +495,17 @@ def _attach(workspace: Path, record: dict, config: dict, options: dict) -> dict:
     fields.update(k for k in ("offline_only", "enable_streamable_http") if config[k])
     if config["idle_timeout_sec"] != 1800:
         fields.add("idle_timeout_sec")
+    if "allow_external_input_files" in fields:
+        fields.remove("allow_external_input_files")
+        if config["allow_external_input_files"] != record.get(
+            "allow_external_input_files", False
+        ):
+            raise DaemonError("daemon_configuration_mismatch")
     if any(config.get(key) != record.get(key) for key in fields):
         raise DaemonError("daemon_configuration_mismatch")
-    if config["http_port"] and config["http_port"] != int(
-        _LOOPBACK.fullmatch(record["http_url"]).group(1)
+    origin = _LOOPBACK.fullmatch(record["http_url"])
+    if config["http_port"] and (
+        origin is None or config["http_port"] != int(origin.group(1))
     ):
         raise DaemonError("daemon_configuration_mismatch")
     root = config["input_root"]
@@ -511,10 +528,14 @@ def _macos_sqlite_environment(env: dict[str, str]) -> None:
 
     try:
         require_patched_wal()
-    except OperationConflict:
+    except OperationConflict as error:
+        if sysconfig.get_config_var("PYTHON_BUILD_STANDALONE"):
+            raise OperationConflict(
+                "Install the pinned patched runtime with uv python install"
+            ) from error
         # macOS strips DYLD_* when a long console-script shebang goes through
         # /bin/sh. The detached interpreter performs its own WAL check on startup.
-        prefixes = ("/opt/homebrew", "/usr/local")
+        prefixes: tuple[str, ...] = ("/opt/homebrew", "/usr/local")
         if os.uname().machine == "x86_64":
             prefixes = tuple(reversed(prefixes))
         for prefix in prefixes:

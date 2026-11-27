@@ -19,7 +19,7 @@ from devbench.analysis.rna_scrna_input_contract import _closed_storage
 from devbench.analysis.workbench_inputs import _h5ad_axis_header, _h5ad_index_name
 from devbench.engine.workflow_operations import OperationBlocked
 from devbench.platform.plugin_h5ad_axes import _reader
-from devbench.platform.plugin_mcp import _validate_h5_dataset
+from devbench.platform.plugin_workflows import _validate_h5_dataset
 
 from . import schemas
 from ._inspection import (
@@ -49,7 +49,7 @@ def _json_scalar(value):
 class Table(NamedTuple):
     fields: list
     rows: object
-    count: int | None
+    row_count: int | None
 
 
 def _h5_values(node, field, length, selection):
@@ -441,16 +441,16 @@ def query_artifact_table(ctx, args):
 
 def _query_page(table, ref, args, until):
     wanted, outputs = _requirements(table.fields, args)
-    if table.count is not None and not any(
+    if table.row_count is not None and not any(
         args.get(k) for k in ("order_by", "filters", "aggregate")
     ):
         offset = args.get("offset", 0)
         rows = (
             table.rows(outputs, offset, args.get("limit", 50))
-            if offset < table.count
+            if offset < table.row_count
             else ()
         )
-        return _bounded_page(ref, outputs, table.count, rows, offset)
+        return _bounded_page(ref, outputs, table.row_count, rows, offset)
     with closing(sqlite3.connect("")) as db:
         try:
             index = _spool(db, wanted, table.rows, until)

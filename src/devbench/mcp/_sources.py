@@ -59,7 +59,10 @@ def pinned_file(path, until, *, expected=None):
     parent_info = parent.stat()
     parent_id = parent_info.st_dev, parent_info.st_ino
     with _open_file(parent, (path.name,), parent_id) as fd:
-        signature = _signature(os.fstat(fd))
+        info = os.fstat(fd)
+        if info.st_nlink != 1:
+            raise OperationBlocked(SCOPE)
+        signature = _signature(info)
         with os.fdopen(os.dup(fd), "rb") as stream:
             hasher = hashlib.sha256()
             while block := stream.read(BLOCK):
@@ -140,7 +143,7 @@ class DirectoryInventory:
                 return "dir", self._branch(child, parts, depth + 1)
             finally:
                 os.close(child)
-        if not stat.S_ISREG(info.st_mode):
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise OperationBlocked(SCOPE)
         child = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
         hasher = hashlib.sha256()

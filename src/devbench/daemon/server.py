@@ -25,7 +25,7 @@ from devbench.analysis.checkpoints import atomic_json
 from devbench.engine.workflow_operations import OperationBlocked
 from devbench.mcp.approval import load_policy
 from devbench.platform.plugin_jobs import directory
-from devbench.platform.plugin_mcp import Plugin
+from devbench.platform.plugin_workflows import Plugin
 from devbench.platform.workbench_ui import (
     _remove_studio_liveness,
     decode_json,
@@ -335,6 +335,7 @@ class _Daemon:
         self.supervisor = Supervisor(
             workspace,
             offline_only=config["offline_only"],
+            allow_external_input_files=config.get("allow_external_input_files", False),
             policy_sha256=load_policy(
                 workspace, cli_enabled=config.get("auto_approve_tier2_public")
             ),
@@ -378,7 +379,11 @@ class _Daemon:
 
     async def _enable_mcp(self, root):
         plugin = await asyncio.to_thread(
-            Plugin, self.workspace, root, self.config.get("mounted_image_id")
+            Plugin,
+            self.workspace,
+            root,
+            self.config.get("mounted_image_id"),
+            allow_external_files=self.config.get("allow_external_input_files", False),
         )
         from devbench.mcp.context import ControlPlane
         from devbench.mcp.server import build_server

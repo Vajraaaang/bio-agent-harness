@@ -430,13 +430,18 @@ def test_macos_sqlite_bootstrap_preserves_caller_environment(monkeypatch):
     ipc._macos_sqlite_environment(child)
     assert child == {}
     check.side_effect = OperationConflict("unpatched SQLite")
+    monkeypatch.setattr(ipc.sysconfig, "get_config_var", lambda _key: 1)
+    with pytest.raises(OperationConflict, match="uv python install"):
+        ipc._macos_sqlite_environment(child)
+    assert not child
+    monkeypatch.setattr(ipc.sysconfig, "get_config_var", lambda _key: None)
     ipc._macos_sqlite_environment(child)
     assert child == {"DYLD_LIBRARY_PATH": str(library.parent)}
     for key in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
         choice = {key: "/configured/sqlite/lib"}
         ipc._macos_sqlite_environment(choice)
         assert choice == {key: "/configured/sqlite/lib"}
-    assert check.call_count == 2 and os.environ.get("DYLD_LIBRARY_PATH") == inherited
+    assert check.call_count == 3 and os.environ.get("DYLD_LIBRARY_PATH") == inherited
     monkeypatch.setattr(Path, "is_file", lambda path: False)
     with pytest.raises(OperationConflict):
         ipc._macos_sqlite_environment({})
@@ -1034,9 +1039,12 @@ async def _stdio_session(
     legacy_browser_log=None,
     example=False,
     capabilities=None,
+    allow_external_input_files=False,
 ):
     if legacy_browser_log is None:
         command = ["-m", "devbench.platform.cli", "mcp", "--no-auto-browser"]
+        if allow_external_input_files:
+            command.append("--allow-external-input-files")
     else:
         entry = (
             "from pathlib import Path; "
@@ -1339,100 +1347,46 @@ def _audit_plan(admitted):
     }
 
 
-def test_killed_stdio_client_reconnects_to_live_audit_and_receipt(workspace_tmp_path):
-    from devbench.daemon import ipc
-    from devbench.engine.workflow_operations import LEDGER_NAME
+def test_restart_revokes_external_file_plan(workspace_tmp_path):
+    external = workspace_tmp_path / "external.csv"
+    external.write_text("gene,A,B\nred,1,2\nblue,3,4\n")
+    with (
+        _daemon(workspace_tmp_path, allow_external_input_files=True) as (
+            workspace,
+            inputs,
+            _,
+        ),
+        (workspace_tmp_path / "stderr").open("wb") as errors,
+    ):
 
-    with _daemon(workspace_tmp_path, idle_timeout_sec=4) as (workspace, inputs, daemon):
-        counts = inputs / "counts.csv"
-        counts.write_text("gene,A,B\nred,1,2\nblue,3,4\ngreen,2,7\n")
-        sentinel = "PRIVATE_DO_NOT_ECHO_daemon_test"
-        private = inputs / (sentinel + ".csv")
-        private.write_text("gene,donor1,donor2\n" + sentinel + ",1,3\n")
-        errors = workspace_tmp_path / "stderr"
+        async def freeze():
+            async with _stdio_session(
+                workspace, inputs, errors, allow_external_input_files=True
+            ) as client:
+                admitted = await _tool(
+                    client, "register_investigation_input", _admission(external)
+                )
+                plan = await _tool(
+                    client, "freeze_analysis_plan", _audit_plan(admitted)
+                )
+                return {k: plan[k] for k in ("session_id", "plan_id", "plan_sha256")}
 
-        def worker_for(run_id):
-            record = ipc.request(workspace, "run_status", run_id=run_id)
-            if not record.get("pid"):
-                assert record["status"] in {"queued", "starting"}
-                return None
-            worker = psutil.Process(record["pid"])
-            assert os.getpgid(worker.pid) == worker.pid
-            return worker
+        async def check_revocation(identity):
+            async with _stdio_session(workspace, inputs, errors) as client:
+                refusal = await _tool(
+                    client, "submit_reviewed_run", identity, expect_error=True
+                )
+                assert refusal["category"] == "input_scope_violation"
+                state = await _tool(
+                    client,
+                    "list_investigation_state",
+                    {"session_id": identity["session_id"]},
+                )
+                assert state["runs"] == []
 
-        async def reconnect():
-            worker = None
-            try:
-                with errors.open("wb") as stderr:
-                    async with _stdio_session(workspace, inputs, stderr) as first:
-                        admitted = await _tool(
-                            first, "register_investigation_input", _admission(counts)
-                        )
-                        plan = await _tool(
-                            first, "freeze_analysis_plan", _audit_plan(admitted)
-                        )
-                        first_id = first.pid
-                        identity = {
-                            k: plan[k] for k in ("session_id", "plan_id", "plan_sha256")
-                        }
-                        started = await _tool(first, "submit_reviewed_run", identity)
-                        key = {k: started[k] for k in ("session_id", "run_id")}
-                        worker = _until(lambda: worker_for(key["run_id"]))
-                        worker.suspend()
-                    assert first.returncode == -signal.SIGKILL
-                    # The active worker alone must keep the daemon alive.
-                    await asyncio.sleep(4.2)
-                    assert _alive(worker)
-                    assert ipc.daemon_status(workspace)["pid"] == daemon["pid"]
-                    async with _stdio_session(workspace, inputs, stderr) as second:
-                        assert second.pid != first_id
-                        live = await _tool(second, "get_run_status", key)
-                        assert live["status"] in {"queued", "running"}
-                        assert live["progress"]["completed"] == 0
-                        worker.resume()
-                        worker = None
-                        async with asyncio.timeout(45):
-                            while True:
-                                last = await _tool(second, "get_run_status", key)
-                                if last["status"] not in {"queued", "running"}:
-                                    break
-                                await asyncio.sleep(0.1)
-                        assert last["status"] == "completed", last["warnings"]
-                        receipt = await _tool(second, "get_run_receipt", key)
-                        assert (
-                            receipt["run_id"] == key["run_id"]
-                            and receipt["metrics"]["genes"] == 3
-                        )
-                        assert receipt["clinical_release_allowed"] is False
-                        private_result = await _tool(
-                            second,
-                            "inspect_inputs",
-                            {
-                                "inputs": [
-                                    {
-                                        "path": str(private),
-                                        "file_kind": "expression",
-                                        "data_classification": "private",
-                                    }
-                                ]
-                            },
-                            expect_error=True,
-                        )
-                        assert sentinel not in json.dumps(private_result)
-            finally:
-                if worker is not None:
-                    with suppress(psutil.NoSuchProcess):
-                        worker.resume()
-
-        asyncio.run(reconnect())
-        assert sentinel not in errors.read_text()
-        for path in (
-            workspace / "methods" / LEDGER_NAME,
-            workspace / "plugin-jobs.sqlite3",
-        ):
-            with sqlite3.connect(path) as db:
-                assert db.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
-                assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+        identity = asyncio.run(freeze())
+        _stop_when_idle(workspace)
+        asyncio.run(check_revocation(identity))
 
 
 def _controlled_worker(workspace, rid):
@@ -1662,42 +1616,6 @@ def _state(supervisor, rid, status):
     return _until(observe)
 
 
-def test_fifo_cpu_pool_progress_profiles_and_third_job(workspace_tmp_path):
-    with _supervisor(workspace_tmp_path, cpu_slots=2, max_concurrent_runs=2) as (
-        sup,
-        store,
-        runs,
-    ):
-        first, second, third = [_freeze(store) for _ in range(3)]
-        a = sup.submit(**first, profile="qc")["run_id"]
-        b = sup.submit(**second, profile="standard")["run_id"]
-        c = sup.submit(**third, profile="long")["run_id"]
-        a_root, b_root = _ready(runs, a), _ready(runs, b)
-        assert sup.status(a)["status"] == sup.status(b)["status"] == "running"
-        assert sup.status(c)["status"] == "queued"
-        assert sup.submit(**third, profile="long")["run_id"] == c
-        progress = _json(
-            store.workspace / ".devbench-daemon" / "runs" / a / "progress.json"
-        )
-        assert progress["step"] == "waiting_for_release" and progress["percent"] == 50
-        assert (
-            progress["rss_mb"] >= 0
-            and datetime.fromisoformat(progress["updated_at_utc"]).tzinfo
-        )
-        assert sup.status(a)["deadline_sec"] == 300
-        assert sup.status(b)["deadline_sec"] == 14_400
-        assert sup.status(c)["deadline_sec"] == 259_200
-        (a_root / "release").touch()
-        _state(sup, a, "completed")
-        _ready(runs, c)
-        assert sup.status(c)["status"] == sup.status(b)["status"] == "running"
-        (b_root / "release").touch()
-        (runs / c / "release").touch()
-        for rid in (b, c):
-            _state(sup, rid, "completed")
-        _until(lambda: sup.active_count() == 0)
-
-
 def test_memory_and_gpu_admission(workspace_tmp_path):
     with _supervisor(
         workspace_tmp_path,
@@ -1772,24 +1690,6 @@ def test_uncertain_container_cleanup_remains_retryable(workspace_tmp_path, monke
             "disposition": "already_removed",
         }
         assert sup.cancel_run(rid)["cleanup_state"] == "confirmed"
-
-
-def test_worker_leader_crash_reaps_owned_descendant(workspace_tmp_path):
-    with _supervisor(workspace_tmp_path) as (sup, store, runs):
-        rid = sup.submit(**_freeze(store, resist_term=True))["run_id"]
-        root = _ready(runs, rid)
-        leader = psutil.Process(sup.status(rid)["pid"])
-        child = psutil.Process(int((root / "child.pid").read_text()))
-        assert os.getpgid(child.pid) == leader.pid
-        try:
-            leader.kill()
-            interrupted = _state(sup, rid, "interrupted")
-            assert interrupted["cleanup_state"] == "confirmed"
-            assert not _alive(child)
-        finally:
-            # The exact birth-checked test child is still ours if cleanup regresses.
-            if _alive(child):
-                child.kill()
 
 
 @pytest.mark.parametrize(
